@@ -1,0 +1,30 @@
+{
+  "name": "skelm-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "description": "skelm monorepo workspace root",
+  "license": "MIT",
+  "author": "Scott Glover <scottgl@gmail.com>",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.0.3",
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm test",
+    "clean": "pnpm -r clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  }
+}
