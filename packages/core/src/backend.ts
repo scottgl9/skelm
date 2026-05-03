@@ -6,6 +6,7 @@
 // implement only one. The capability flags tell the runtime what the
 // backend can and cannot enforce natively.
 
+import type { McpHost } from './mcp/host.js'
 import type { ResolvedPolicy } from './permissions.js'
 import type { SkelmSchema } from './schema.js'
 
@@ -135,6 +136,8 @@ export interface AgentResponse {
 export interface BackendContext {
   /** Aborts when the run is cancelled or the gateway drains. */
   signal: AbortSignal
+  /** Optional MCP host available to wrapped-tool backends. */
+  mcpHost?: McpHost
 }
 
 /**

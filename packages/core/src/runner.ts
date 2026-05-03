@@ -1,6 +1,12 @@
-import { type AgentRequest, BackendNotFoundError, type BackendRegistry } from './backend.js'
+import {
+  type AgentRequest,
+  BackendCapabilityError,
+  BackendNotFoundError,
+  type BackendRegistry,
+} from './backend.js'
 import { RunCancelledError, WaitTimeoutError, serializeError } from './errors.js'
 import { EventBus } from './events.js'
+import { createMcpHost } from './mcp/host.js'
 import { TrustEnforcer, resolvePermissions } from './permissions.js'
 import { SchemaValidationError, validate } from './schema.js'
 import type { Context, Pipeline, Run, RunMetadata, Step, StepId, StepResult } from './types.js'
@@ -443,6 +449,13 @@ async function runStep(
           }
         }
       }
+      if (mcpServers !== undefined && mcpServers.length > 0 && !backend.capabilities.mcp) {
+        throw new BackendCapabilityError(
+          `backend ${backend.id} does not support per-step MCP attachments`,
+          backend.id,
+          'mcp',
+        )
+      }
       const req: AgentRequest = {
         prompt: promptText,
         ...(systemText !== undefined && { system: systemText }),
@@ -451,16 +464,29 @@ async function runStep(
         ...(mcpServers !== undefined && { mcpServers }),
         ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
       }
-      // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
-      const response = await backend.run!(req, { signal: ctx.signal })
-      if (step.outputSchema !== undefined) {
-        const candidate = response.structured ?? response.text
-        return await validate(step.outputSchema, candidate, 'output')
-      }
-      return {
-        text: response.text ?? '',
-        ...(response.usage !== undefined && { usage: response.usage }),
-        ...(response.stopReason !== undefined && { stopReason: response.stopReason }),
+      const mcpHost =
+        mcpServers !== undefined &&
+        mcpServers.length > 0 &&
+        backend.capabilities.toolPermissions === 'wrapped'
+          ? await createMcpHost(mcpServers)
+          : undefined
+      try {
+        // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
+        const response = await backend.run!(req, {
+          signal: ctx.signal,
+          ...(mcpHost !== undefined && { mcpHost }),
+        })
+        if (step.outputSchema !== undefined) {
+          const candidate = response.structured ?? response.text
+          return await validate(step.outputSchema, candidate, 'output')
+        }
+        return {
+          text: response.text ?? '',
+          ...(response.usage !== undefined && { usage: response.usage }),
+          ...(response.stopReason !== undefined && { stopReason: response.stopReason }),
+        }
+      } finally {
+        await mcpHost?.dispose()
       }
     }
     case 'parallel':
