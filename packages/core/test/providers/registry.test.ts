@@ -3,8 +3,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest'
-import { ProviderCapabilityRegistry } from '../src/providers/registry.js'
-import type { ProviderCapabilities } from '../src/providers/base.js'
+import { ProviderCapabilityRegistry } from '../../src/providers/registry.js'
+import type { ProviderCapabilities } from '../../src/providers/base.js'
 
 describe('ProviderCapabilityRegistry', () => {
   let registry: ProviderCapabilityRegistry

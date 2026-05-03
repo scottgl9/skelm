@@ -182,13 +182,10 @@ describe('OpencodeProvider', () => {
       expect(status.status).toBe('not-initialized')
     })
 
-    it('should return unhealthy when no API key', async () => {
+    it('should throw when no API key provided', async () => {
       const newProvider = createOpencodeProvider()
-      await newProvider.initialize({})
-      
-      const status = await newProvider.healthCheck()
-      expect(status.healthy).toBe(false)
-      expect(status.status).toBe('no-api-key')
+      await expect(newProvider.initialize({})).rejects.toThrow('API key is required')
+      expect(newProvider.state).toBe('error')
     })
 
     it('should return healthy on successful API check', async () => {

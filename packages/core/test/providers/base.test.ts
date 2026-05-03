@@ -3,9 +3,9 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { ProviderPluginBase, ProviderError, ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError } from '../src/providers/base.js'
-import type { ProviderCapabilities } from '../src/providers/base.js'
-import type { PluginConfig, PluginHealthStatus } from '../src/plugins.js'
+import { ProviderPluginBase, ProviderError, ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError } from '../../src/providers/base.js'
+import type { ProviderCapabilities } from '../../src/providers/base.js'
+import type { PluginConfig, PluginHealthStatus } from '../../src/plugins.js'
 
 // Mock provider implementation for testing
 class TestProvider extends ProviderPluginBase {
@@ -171,7 +171,11 @@ describe('ProviderPluginBase', () => {
     it('should transition to error state on start failure', async () => {
       const failingProvider = new TestProvider()
       await failingProvider.initialize({})
-      await expect(failingProvider.start({ failStart: true })).rejects.toThrow()
+      
+      // Override doStart to throw
+      vi.spyOn(failingProvider, 'doStart').mockRejectedValue(new Error('Start failed'))
+      
+      await expect(failingProvider.start()).rejects.toThrow()
       expect(failingProvider.state).toBe('error')
     })
   })
@@ -223,6 +227,7 @@ describe('ProviderPluginBase', () => {
 
     it('should return error status if in error state', async () => {
       provider.state = 'error'
+      provider['initialized'] = true // Ensure initialized is true so error state is checked
       const status = await provider.healthCheck()
       expect(status.healthy).toBe(false)
       expect(status.status).toBe('error')

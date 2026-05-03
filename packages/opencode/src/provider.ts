@@ -4,10 +4,10 @@
  * Implements ProviderPluginBase for the opencode.ai coding agent.
  */
 
-import { ProviderPluginBase, ProviderCapabilities, ProviderSpecificCapabilities } from '../providers/base.js'
-import type { ProviderModel, PluginConfig } from '../plugins.js'
-import { createOpencodeBackend } from '../opencode/backend.js'
-import type { OpencodeBackendOptions } from '../opencode/types.js'
+import { ProviderPluginBase } from '@skelm/core'
+import type { ProviderCapabilities, ProviderSpecificCapabilities, ProviderModel, PluginConfig } from '@skelm/core'
+import { createOpencodeBackend } from './backend.js'
+import type { OpencodeBackendOptions } from './types.js'
 
 /**
  * Opencode provider configuration
