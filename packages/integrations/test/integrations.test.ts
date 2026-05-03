@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { IntegrationRegistry } from '../src/registry.js'
 import { GitHubIntegration } from '../src/github.js'
 import { SlackIntegration } from '../src/slack.js'
@@ -7,8 +7,12 @@ import type { GitHubConfig, SlackConfig } from '../src/types.js'
 describe('IntegrationRegistry', () => {
   let registry: IntegrationRegistry
 
-  beforeEach(() => {
+  beforeEach(async () => {
     registry = new IntegrationRegistry()
+  })
+
+  afterEach(async () => {
+    await registry.shutdown()
   })
 
   it('creates an empty registry', () => {
@@ -58,7 +62,7 @@ describe('IntegrationRegistry', () => {
 
   it('filters enabled integrations', async () => {
     const githubEnabled: GitHubConfig = {
-      id: 'github-enabled',
+      id: 'github',
       name: 'GitHub Enabled',
       enabled: true,
       credentials: {
@@ -68,23 +72,22 @@ describe('IntegrationRegistry', () => {
       },
     }
 
-    const githubDisabled: GitHubConfig = {
-      id: 'github-disabled',
-      name: 'GitHub Disabled',
+    const slackConfig: SlackConfig = {
+      id: 'slack',
+      name: 'Slack Disabled',
       enabled: false,
       credentials: {
-        token: 'ghp_test123',
-        ownerId: 'scottgl9',
-        repoName: 'test-repo',
+        botToken: 'xoxb-test',
+        signingSecret: 'secret',
       },
     }
 
     await registry.register(new GitHubIntegration(githubEnabled))
-    await registry.register(new GitHubIntegration(githubDisabled))
+    await registry.register(new SlackIntegration(slackConfig))
 
     expect(registry.list()).toHaveLength(2)
     expect(registry.listEnabled()).toHaveLength(1)
-    expect(registry.listEnabled()[0].id).toBe('github-enabled')
+    expect(registry.listEnabled()[0].id).toBe('github')
   })
 
   it('dispatches events to handlers', async () => {

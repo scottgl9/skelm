@@ -10,8 +10,8 @@ import type { GitHubConfig, GitHubWebhookEvent, GitHubIssueTrigger } from './typ
  * - Repository polling
  */
 export class GitHubIntegration extends IntegrationBase {
-  readonly id = 'github' as const
-  readonly name = 'GitHub'
+  override readonly id = 'github' as const
+  override readonly name = 'GitHub'
   readonly capabilities = {
     canTrigger: true,
     canReceiveWebhooks: true,
@@ -35,7 +35,8 @@ export class GitHubIntegration extends IntegrationBase {
 
     // In production, validate the token with GitHub API
     // For now, we just check it exists and has reasonable format
-    if (!token.startsWith('ghp_') && !token.startsWith('gho_') && !token.startsWith('github_')) {
+    const tokenStr = String(token)
+    if (!tokenStr.startsWith('ghp_') && !tokenStr.startsWith('gho_') && !tokenStr.startsWith('github_')) {
       // Warning only - might be a fine-grained token
       console.warn('GitHub token does not match expected patterns')
     }
