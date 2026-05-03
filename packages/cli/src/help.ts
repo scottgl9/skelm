@@ -7,6 +7,8 @@ Usage:
   skelm history [--workflow <id>] [--last <n>] [--run <id>] [--events] [--json]
   skelm workspace <list|show|clean> [args]
   skelm serve [flags]
+  skelm audit query [flags]
+  skelm secrets <get|set|list> [args]
   skelm init [<dir>] [--force]
   skelm --version
   skelm --help
@@ -42,6 +44,15 @@ Serve flags:
   --auth <mode>         none (loopback only) | bearer (requires token)
   --token <value>       Bearer token (or set SKELM_TOKEN env var)
   --config <path>       Config file path (default: skelm.config.ts)
+
+Audit flags:
+  skelm audit query [--run <runId>] [--actor <name>] [--action <type>]
+                      [--since <ISO8601>] [--until <ISO8601>] [--limit <n>] [--json]
+
+Secrets flags:
+  skelm secrets list [--json]
+  skelm secrets get <name> [--json]
+  skelm secrets set <name> --value <value> [--json]
 
 Init flags:
   --force                 Allow scaffolding into a non-empty directory

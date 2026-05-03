@@ -13,6 +13,8 @@ export interface ParsedArgv {
     | 'history'
     | 'workspace'
     | 'serve'
+    | 'audit'
+    | 'secrets'
     | 'version'
     | 'help'
     | 'unknown'
@@ -55,11 +57,26 @@ export function parseArgv(argv: readonly string[]): ParsedArgv {
   if (first === 'serve') {
     return parseSubcommand('serve', argv.slice(1))
   }
+  if (first === 'audit') {
+    return parseSubcommand('audit', argv.slice(1))
+  }
+  if (first === 'secrets') {
+    return parseSubcommand('secrets', argv.slice(1))
+  }
   return { command: 'unknown', positional: [first], flags: {} }
 }
 
 function parseSubcommand(
-  command: 'run' | 'init' | 'list' | 'describe' | 'history' | 'workspace' | 'serve',
+  command:
+    | 'run'
+    | 'init'
+    | 'list'
+    | 'describe'
+    | 'history'
+    | 'workspace'
+    | 'serve'
+    | 'audit'
+    | 'secrets',
   rest: readonly string[],
 ): ParsedArgv {
   const positional: string[] = []
