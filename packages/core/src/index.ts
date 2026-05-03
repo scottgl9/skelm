@@ -4,6 +4,7 @@
 export const VERSION = '0.1.0'
 
 export * from './acp/index.js'
+export * from './anthropic/index.js'
 export { DEFAULT_CONFIG, defineConfig } from './config.js'
 export type {
   SkelmConfig,
