@@ -17,7 +17,7 @@ export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancel
 export type StepStatus = 'completed' | 'failed' | 'skipped' | 'waiting'
 
 /** Discriminator for step kinds; the union grows in later stages. */
-export type StepKind = 'code'
+export type StepKind = 'code' | 'llm'
 
 /** Metadata about the current run, available on `ctx.run`. */
 export interface RunMetadata {
@@ -63,8 +63,21 @@ export interface CodeStep<TOutput = unknown> {
   readonly run: (ctx: Context) => TOutput | Promise<TOutput>
 }
 
+/** An `llm()` step: single-shot inference against a backend. */
+export interface LlmStep<TOutput = unknown> {
+  readonly kind: 'llm'
+  readonly id: StepId
+  readonly backend?: string
+  readonly model?: string
+  readonly system?: string | ((ctx: Context) => string)
+  readonly prompt: string | ((ctx: Context) => string)
+  readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
+  readonly temperature?: number
+  readonly maxTokens?: number
+}
+
 /** Discriminated union of all step kinds. Grows in later stages. */
-export type Step = CodeStep
+export type Step = CodeStep | LlmStep
 
 /** A pipeline value produced by `pipeline()`. */
 export interface Pipeline<TInput = unknown, TOutput = unknown> {

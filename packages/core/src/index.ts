@@ -3,7 +3,23 @@
 
 export const VERSION = '0.0.0'
 
-export { code, pipeline } from './builders.js'
+export {
+  BackendCapabilityError,
+  BackendNotFoundError,
+  BackendRegistry,
+} from './backend.js'
+export type {
+  BackendCapabilities,
+  BackendContext,
+  BackendId,
+  InferRequest,
+  InferResponse,
+  PromptMessage,
+  SkelmBackend,
+  ToolPermissionEnforcement,
+  Usage,
+} from './backend.js'
+export { code, llm, pipeline } from './builders.js'
 export { RunCancelledError, StepError, serializeError } from './errors.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
@@ -28,6 +44,7 @@ export type { SkelmSchema } from './schema.js'
 export type {
   CodeStep,
   Context,
+  LlmStep,
   Pipeline,
   Run,
   RunId,

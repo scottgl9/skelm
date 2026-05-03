@@ -1,3 +1,4 @@
+import { BackendNotFoundError, type BackendRegistry } from './backend.js'
 import { RunCancelledError, serializeError } from './errors.js'
 import { EventBus } from './events.js'
 import { SchemaValidationError, validate } from './schema.js'
@@ -10,6 +11,8 @@ export interface RunOptions {
   signal?: AbortSignal
   /** Optional event bus to publish run events to; one is created if omitted. */
   events?: EventBus
+  /** Optional backend registry; required if any step references a backend. */
+  backends?: BackendRegistry
 }
 
 /**
@@ -101,7 +104,7 @@ export async function runPipeline<TInput, TOutput>(
         run: runMeta,
         signal: controller.signal,
       })
-      const output = await runStep(step, ctx)
+      const output = await runStep(step, ctx, options.backends)
       const completedAt = Date.now()
       stepOutputs[step.id] = output
       stepResults.push({
@@ -205,13 +208,47 @@ export async function runPipeline<TInput, TOutput>(
 
 export { SchemaValidationError }
 
-async function runStep(step: Step, ctx: Context): Promise<unknown> {
+async function runStep(
+  step: Step,
+  ctx: Context,
+  backends: BackendRegistry | undefined,
+): Promise<unknown> {
   switch (step.kind) {
     case 'code':
       return await step.run(ctx)
+    case 'llm': {
+      if (!backends) {
+        throw new BackendNotFoundError(
+          `step "${step.id}" requires a backend registry but none was provided to runPipeline()`,
+        )
+      }
+      const backend = backends.resolveForLlm({ backendId: step.backend })
+      const promptText = typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt
+      const systemText =
+        step.system === undefined
+          ? undefined
+          : typeof step.system === 'function'
+            ? step.system(ctx)
+            : step.system
+      const req = {
+        messages: [{ role: 'user' as const, content: promptText }],
+        ...(systemText !== undefined && { system: systemText }),
+        ...(step.model !== undefined && { model: step.model }),
+        ...(step.temperature !== undefined && { temperature: step.temperature }),
+        ...(step.maxTokens !== undefined && { maxTokens: step.maxTokens }),
+        ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
+      }
+      // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForLlm
+      const response = await backend.infer!(req, { signal: ctx.signal })
+      if (step.outputSchema !== undefined) {
+        const candidate = response.structured ?? response.text
+        return await validate(step.outputSchema, candidate, 'output')
+      }
+      return { text: response.text ?? '', usage: response.usage }
+    }
     default: {
-      const exhaustive: never = step.kind
-      throw new Error(`unknown step kind: ${exhaustive as string}`)
+      const exhaustive: never = step
+      throw new Error(`unknown step kind: ${(exhaustive as { kind: string }).kind}`)
     }
   }
 }
