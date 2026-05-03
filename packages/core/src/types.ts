@@ -17,7 +17,7 @@ export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancel
 export type StepStatus = 'completed' | 'failed' | 'skipped' | 'waiting'
 
 /** Discriminator for step kinds; the union grows in later stages. */
-export type StepKind = 'code' | 'llm'
+export type StepKind = 'code' | 'llm' | 'parallel' | 'forEach' | 'branch' | 'loop'
 
 /** Metadata about the current run, available on `ctx.run`. */
 export interface RunMetadata {
@@ -76,8 +76,47 @@ export interface LlmStep<TOutput = unknown> {
   readonly maxTokens?: number
 }
 
-/** Discriminated union of all step kinds. Grows in later stages. */
-export type Step = CodeStep | LlmStep
+export type ParallelWaitFor = 'all' | 'any' | { atLeast: number }
+export type ParallelOnError = 'fail' | 'continue' | 'partial'
+
+/** A `parallel()` step: runs named children concurrently; output is keyed by child id. */
+export interface ParallelStep {
+  readonly kind: 'parallel'
+  readonly id: StepId
+  readonly steps: readonly Step[]
+  readonly waitFor?: ParallelWaitFor
+  readonly onError?: ParallelOnError
+}
+
+/** A `forEach()` step: maps a step factory over a collection. */
+export interface ForEachStep {
+  readonly kind: 'forEach'
+  readonly id: StepId
+  readonly items: (ctx: Context) => readonly unknown[]
+  readonly concurrency?: number
+  readonly step: (item: unknown, index: number) => Step
+}
+
+/** A `branch()` step: discriminator-driven case selection. */
+export interface BranchStep {
+  readonly kind: 'branch'
+  readonly id: StepId
+  readonly on: (ctx: Context) => string
+  readonly cases: Readonly<Record<string, Step>>
+  readonly default?: Step
+}
+
+/** A `loop()` step: bounded iteration while a predicate holds. */
+export interface LoopStep {
+  readonly kind: 'loop'
+  readonly id: StepId
+  readonly while: (ctx: Context) => boolean | Promise<boolean>
+  readonly maxIterations: number
+  readonly step: Step
+}
+
+/** Discriminated union of all step kinds. */
+export type Step = CodeStep | LlmStep | ParallelStep | ForEachStep | BranchStep | LoopStep
 
 /** A pipeline value produced by `pipeline()`. */
 export interface Pipeline<TInput = unknown, TOutput = unknown> {
