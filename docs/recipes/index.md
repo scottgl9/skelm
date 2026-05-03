@@ -1,0 +1,46 @@
+# Recipes
+
+Complete, runnable workflows for the patterns customers ship most often. Each recipe is a self-contained project: full `skelm.config.ts`, full workflow, agent definitions where used, schedule registration, and a "why each piece is here" section explaining the trade-offs.
+
+## Long-running scheduled workflows
+
+- **[Coding agent on chat](./coding-agent-on-chat.md)** — webhook-triggered coding workflow with a persistent repo workspace. Receives chat messages, opens PRs, replies. The canonical "long-running agent reachable via chat" pattern.
+- **[Ticket to PR](./ticket-to-pr.md)** — poll-triggered queue worker. For each new ticket, attempts the change in a per-repo persistent workspace and opens a PR. Demonstrates `forEach`, `compensate`, and per-item workspaces.
+- **[Email triage](./email-triage.md)** — poll-triggered classifier. No agent loop; uses `llm()` with structured output. Demonstrates `forEach`, `branch`, decision journals, and a paired digest workflow.
+
+## HTTP-triggered workflows
+
+- **[HTTP enrichment](./http-enrichment.md)** — sync workflow called from existing infrastructure (queue worker, webhook). Deterministic normalization plus LLM classification, then posts to Slack. The simplest production-shaped pattern.
+
+## How to use these
+
+Every recipe has the same shape:
+
+1. **Project layout** — what files go where.
+2. **Config** — `skelm.config.ts` with default-deny permissions, backends, secrets, server config.
+3. **Sources / agents / skills** — supporting markdown and TypeScript.
+4. **Workflow** — the full TypeScript module.
+5. **Schedule it** — the CLI invocation that wires the workflow to a trigger.
+6. **Why each piece is here** — the design choices and trade-offs.
+7. **Observability** — how to inspect what happened after the fact.
+
+Recipes are kept tight: each is a working project, not a tutorial. If you want the conceptual background, read [Concepts](../concepts/) first; if you want to ship the pattern, copy the recipe and adjust.
+
+## Choosing a recipe
+
+| Question                                           | Start here                                                |
+| -------------------------------------------------- | --------------------------------------------------------- |
+| "I want a chat-reachable bot that codes."          | [Coding agent on chat](./coding-agent-on-chat.md)         |
+| "I want to autonomously work a ticket queue."      | [Ticket to PR](./ticket-to-pr.md)                         |
+| "I want to triage / digest a stream of items."     | [Email triage](./email-triage.md)                         |
+| "I want to add LLM enrichment to my existing API." | [HTTP enrichment](./http-enrichment.md)                   |
+
+If your shape is none of these, mix and match. A workflow is just a typed orchestration; the recipes are not normative.
+
+## Common patterns across recipes
+
+- **Default-deny permissions.** Every agent step declares exactly what it can do. There is no implicit access.
+- **Idempotency at the right layer.** HTTP-triggered workflows use `Idempotency-Key`; long-running ones use `ctx.state.cas` or watermarks; queue-driven ones use the scheduler's `dedupeKey`.
+- **Decision journals.** Long-running workflows append to `ctx.state.append('decisions', ...)` so a human can review what the workflow has done over time without scrolling chat history.
+- **Structured output on `llm()` and `agent()`.** The runtime validates and the consuming `code()` step does not have to guess at parsing.
+- **Workspaces for filesystem state, KV state for structured decisions, run history for behavior, audit for security.** Four artifacts; one per question.
