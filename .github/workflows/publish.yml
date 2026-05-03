@@ -1,0 +1,103 @@
+name: Publish to GitHub Packages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to publish (core, cli, opencode, pi, server, integrations, skelm)'
+        required: true
+        default: 'all'
+      dry-run:
+        description: 'Dry run (do not publish)'
+        required: false
+        default: 'false'
+
+jobs:
+  publish:
+    name: Publish ${{ github.event.inputs.package || 'all' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          registry-url: 'https://npm.pkg.github.com'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Determine packages to publish
+        id: packages
+        run: |
+          if [ "${{ github.event.inputs.package }}" = "all" ] || [ -z "${{ github.event.inputs.package }}" ]; then
+            echo "packages=@skelm/core,@skelm/cli,@skelm/opencode,@skelm/pi,@skelm/server,@skelm/integrations,skelm" >> $GITHUB_OUTPUT
+          else
+            case "${{ github.event.inputs.package }}" in
+              core) echo "packages=@skelm/core" >> $GITHUB_OUTPUT ;;
+              cli) echo "packages=@skelm/cli" >> $GITHUB_OUTPUT ;;
+              opencode) echo "packages=@skelm/opencode" >> $GITHUB_OUTPUT ;;
+              pi) echo "packages=@skelm/pi" >> $GITHUB_OUTPUT ;;
+              server) echo "packages=@skelm/server" >> $GITHUB_OUTPUT ;;
+              integrations) echo "packages=@skelm/integrations" >> $GITHUB_OUTPUT ;;
+              skelm) echo "packages=skelm" >> $GITHUB_OUTPUT ;;
+              *) echo "packages=${{ github.event.inputs.package }}" >> $GITHUB_OUTPUT ;;
+            esac
+          fi
+
+      - name: Publish to GitHub Packages
+        if: github.event.inputs.dry-run != 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISH_PACKAGES: ${{ steps.packages.outputs.packages }}
+        run: |
+          echo "Publishing: $PUBLISH_PACKAGES"
+          IFS=',' read -ra PKGS <<< "$PUBLISH_PACKAGES"
+          for pkg in "${PKGS[@]}"; do
+            echo "Publishing $pkg..."
+            cd packages/${pkg#/skelm/} 2>/dev/null || cd packages/${pkg#@skelm/} 2>/dev/null || echo "Package $pkg not found in packages/"
+            if [ -f "package.json" ]; then
+              # Update version from git tag if available
+              if [ -n "${{ github.event.release.tag_name }}" ]; then
+                TAG_VERSION="${{ github.event.release.tag_name }}"
+                TAG_VERSION="${TAG_VERSION#v}"
+                echo "Setting version to $TAG_VERSION from release tag"
+                npm version $TAG_VERSION --no-git-tag-version
+              fi
+              npm publish --registry=https://npm.pkg.github.com/scottgl9 --access=public
+              cd ../..
+            else
+              echo "Warning: $pkg package.json not found"
+            fi
+          done
+
+      - name: Dry run (verify publish config)
+        if: github.event.inputs.dry-run == 'true'
+        run: |
+          echo "Dry run mode - verifying configuration"
+          echo "Packages to publish: ${{ steps.packages.outputs.packages }}"
+          echo ""
+          echo "Package versions:"
+          pnpm ls --depth 0
+          echo ""
+          echo "To actually publish, run this workflow again with dry-run=false"

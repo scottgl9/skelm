@@ -38,6 +38,10 @@
     }
   },
   "files": ["dist", "../../README.md", "../../LICENSE"],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com/scottgl9",
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

@@ -2,6 +2,22 @@
   "name": "@skelm/pi",
   "version": "0.1.0",
   "description": "Pi coding-agent backend for skelm with full permission enforcement",
+  "license": "MIT",
+  "author": "Scott Glover <scottgl@gmail.com>",
+  "homepage": "https://github.com/scottgl9/skelm#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scottgl9/skelm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/scottgl9/skelm/issues"
+  },
+  "keywords": [
+    "skelm",
+    "pi",
+    "agent",
+    "backend"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,14 +33,11 @@
     "test:watch": "vitest",
     "clean": "rm -rf dist"
   },
-  "keywords": [
-    "skelm",
-    "pi",
-    "agent",
-    "backend"
-  ],
-  "author": "Scott Glover",
-  "license": "MIT",
+  "files": ["dist"],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com/scottgl9",
+    "access": "public"
+  },
   "dependencies": {},
   "devDependencies": {
     "@skelm/core": "workspace:*",
