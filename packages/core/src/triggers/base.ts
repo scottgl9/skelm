@@ -101,6 +101,9 @@ export abstract class TriggerPluginBase {
   /** Configuration */
   protected config: TriggerConfig | null = null
   
+  /** Optional workflow executor for invoking workflows */
+  private workflowExecutor?: { execute: (invocation: import('../workflows/types.js').WorkflowInvocation) => Promise<import('../workflows/types.js').WorkflowExecutionResult> }
+  
   constructor(
     id: string,
     name: string,
@@ -135,6 +138,13 @@ export abstract class TriggerPluginBase {
         console.error(`[Trigger:${this.id}] ${msg}`, ...args)
       },
     }
+  }
+  
+  /**
+   * Set the workflow executor for this trigger
+   */
+  setWorkflowExecutor(executor: { execute: (invocation: import('../workflows/types.js').WorkflowInvocation) => Promise<import('../workflows/types.js').WorkflowExecutionResult> }): void {
+    this.workflowExecutor = executor
   }
   
   /**
@@ -255,6 +265,32 @@ export abstract class TriggerPluginBase {
     }
     
     this.logger.debug(`Emitting event: ${event.eventId}`)
+    
+    // Invoke workflow if configured
+    const workflowId = this.config?.workflowId as string | undefined
+    if (workflowId && this.workflowExecutor) {
+      this.logger.debug(`Invoking workflow: ${workflowId}`)
+      try {
+        const invocation: import('../workflows/types.js').WorkflowInvocation = {
+          workflowId,
+          triggerEvent: event,
+          input: this.config?.input as unknown,
+        }
+        
+        const context: Record<string, unknown> = {}
+        if (event.metadata.userId) context.userId = event.metadata.userId
+        if (event.metadata.channelId) context.channelId = event.metadata.channelId
+        if (event.metadata.correlationId) context.correlationId = event.metadata.correlationId
+        
+        if (Object.keys(context).length > 0) {
+          invocation.context = context
+        }
+        
+        await this.workflowExecutor.execute(invocation)
+      } catch (error) {
+        this.logger.error(`Workflow invocation error: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
     
     const promises = this.handlers.map(async (handler) => {
       try {

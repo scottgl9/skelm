@@ -23,6 +23,10 @@ export interface TriggerConfig {
   enabled?: boolean
   /** Log level for debugging */
   logLevel?: 'debug' | 'info' | 'warn' | 'error'
+  /** ID of workflow to invoke when trigger fires */
+  workflowId?: string
+  /** Input data to pass to the workflow */
+  input?: unknown
   /** Plugin-specific configuration */
   [key: string]: unknown
 }
