@@ -3,6 +3,7 @@
 
 export const VERSION = '0.1.0'
 
+export * from './acp/index.js'
 export { DEFAULT_CONFIG, defineConfig } from './config.js'
 export type {
   SkelmConfig,
@@ -19,6 +20,8 @@ export {
   BackendRegistry,
 } from './backend.js'
 export type {
+  AgentRequest,
+  AgentResponse,
   BackendCapabilities,
   BackendContext,
   BackendId,
@@ -29,7 +32,7 @@ export type {
   ToolPermissionEnforcement,
   Usage,
 } from './backend.js'
-export { branch, code, forEach, llm, loop, parallel, pipeline } from './builders.js'
+export { agent, branch, code, forEach, llm, loop, parallel, pipeline } from './builders.js'
 export { RunCancelledError, StepError, serializeError } from './errors.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
@@ -52,6 +55,7 @@ export type { RunOptions } from './runner.js'
 export { runPipeline, SchemaValidationError } from './runner.js'
 export type { SkelmSchema } from './schema.js'
 export type {
+  AgentStep,
   BranchStep,
   CodeStep,
   Context,

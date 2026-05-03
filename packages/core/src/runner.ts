@@ -1,6 +1,7 @@
-import { BackendNotFoundError, type BackendRegistry } from './backend.js'
+import { type AgentRequest, BackendNotFoundError, type BackendRegistry } from './backend.js'
 import { RunCancelledError, serializeError } from './errors.js'
 import { EventBus } from './events.js'
+import { resolvePermissions } from './permissions.js'
 import { SchemaValidationError, validate } from './schema.js'
 import type { Context, Pipeline, Run, RunMetadata, Step, StepId, StepResult } from './types.js'
 
@@ -245,6 +246,40 @@ async function runStep(
         return await validate(step.outputSchema, candidate, 'output')
       }
       return { text: response.text ?? '', usage: response.usage }
+    }
+    case 'agent': {
+      if (!backends) {
+        throw new BackendNotFoundError(
+          `step "${step.id}" requires a backend registry but none was provided to runPipeline()`,
+        )
+      }
+      const backend = backends.resolveForAgent({ backendId: step.backend })
+      const promptText = typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt
+      const systemText =
+        step.system === undefined
+          ? undefined
+          : typeof step.system === 'function'
+            ? step.system(ctx)
+            : step.system
+      const policy = step.permissions ? resolvePermissions(undefined, step.permissions) : undefined
+      const req: AgentRequest = {
+        prompt: promptText,
+        ...(systemText !== undefined && { system: systemText }),
+        ...(step.maxTurns !== undefined && { maxTurns: step.maxTurns }),
+        ...(policy !== undefined && { permissions: policy }),
+        ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
+      }
+      // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
+      const response = await backend.run!(req, { signal: ctx.signal })
+      if (step.outputSchema !== undefined) {
+        const candidate = response.structured ?? response.text
+        return await validate(step.outputSchema, candidate, 'output')
+      }
+      return {
+        text: response.text ?? '',
+        ...(response.usage !== undefined && { usage: response.usage }),
+        ...(response.stopReason !== undefined && { stopReason: response.stopReason }),
+      }
     }
     case 'parallel':
       return await runParallel(step, ctx, backends)

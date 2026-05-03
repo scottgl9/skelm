@@ -6,6 +6,7 @@
 // implement only one. The capability flags tell the runtime what the
 // backend can and cannot enforce natively.
 
+import type { ResolvedPolicy } from './permissions.js'
 import type { SkelmSchema } from './schema.js'
 
 export type BackendId = string
@@ -80,6 +81,39 @@ export interface InferResponse {
   usage?: Usage
 }
 
+/** Request shape for `run()` — multi-turn agent loop. */
+export interface AgentRequest {
+  /** User prompt / task description. */
+  prompt: string
+  /** Optional system prompt. */
+  system?: string
+  /** Hard cap on agent turns. */
+  maxTurns?: number
+  /** Optional working directory hint for the agent. */
+  cwd?: string
+  /**
+   * Resolved permission policy. Backends that report
+   * `toolPermissions: 'native'` enforce these themselves; backends with
+   * `'wrapped'` ask the runtime per call; backends with `'unsupported'`
+   * fail at step start when the policy is non-empty.
+   */
+  permissions?: ResolvedPolicy
+  /** When set, the runtime expects a structured value matching this schema. */
+  outputSchema?: SkelmSchema
+}
+
+/** Response shape for `run()`. */
+export interface AgentResponse {
+  /** Final assistant text. */
+  text?: string
+  /** Final structured value (when outputSchema was requested). */
+  structured?: unknown
+  /** Reason the agent stopped. */
+  stopReason?: string
+  /** Token / cost accounting. */
+  usage?: Usage
+}
+
 /** Context handed to a backend per call. */
 export interface BackendContext {
   /** Aborts when the run is cancelled or the gateway drains. */
@@ -99,8 +133,8 @@ export interface SkelmBackend {
   /** Single-shot inference (powers `llm()`). */
   infer?(req: InferRequest, ctx: BackendContext): Promise<InferResponse>
 
-  /** Multi-turn agent loop (powers `agent()`). Will be added in a later stage. */
-  run?(req: never, ctx: BackendContext): Promise<never>
+  /** Multi-turn agent loop (powers `agent()`). */
+  run?(req: AgentRequest, ctx: BackendContext): Promise<AgentResponse>
 
   /** Optional teardown when the registry is disposed. */
   dispose?(): Promise<void>
@@ -160,6 +194,28 @@ export class BackendRegistry {
       }
     }
     throw new BackendNotFoundError('no backend with prompt capability is registered')
+  }
+
+  /** Pick a backend for an agent() step. */
+  resolveForAgent(opts: { backendId?: BackendId | undefined }): SkelmBackend {
+    if (opts.backendId !== undefined) {
+      const found = this.backends.get(opts.backendId)
+      if (!found) {
+        throw new BackendNotFoundError(`backend not registered: ${opts.backendId}`)
+      }
+      if (typeof found.run !== 'function') {
+        throw new BackendCapabilityError(
+          `backend ${opts.backendId} does not support agent() steps`,
+          opts.backendId,
+          'prompt',
+        )
+      }
+      return found
+    }
+    for (const candidate of this.backends.values()) {
+      if (typeof candidate.run === 'function') return candidate
+    }
+    throw new BackendNotFoundError('no backend with run() capability is registered')
   }
 
   list(): readonly SkelmBackend[] {

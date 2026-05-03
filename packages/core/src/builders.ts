@@ -1,5 +1,7 @@
+import type { AgentPermissions } from './permissions.js'
 import type { SkelmSchema } from './schema.js'
 import type {
+  AgentStep,
   BranchStep,
   CodeStep,
   Context,
@@ -103,6 +105,39 @@ export function llm<TOutput>(def: {
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.temperature !== undefined && { temperature: def.temperature }),
     ...(def.maxTokens !== undefined && { maxTokens: def.maxTokens }),
+  })
+}
+
+/**
+ * Author a multi-turn agent step. The backend's `run()` drives the agent
+ * loop; `permissions` enforce default-deny over tools, executables, MCP
+ * servers, skills, network, and filesystem access. When `output` is
+ * supplied the runtime validates the agent's final result against it.
+ */
+export function agent<TOutput>(def: {
+  id: StepId
+  backend?: string
+  prompt: string | ((ctx: Context) => string)
+  system?: string | ((ctx: Context) => string)
+  output?: SkelmSchema<TOutput>
+  permissions?: AgentPermissions
+  maxTurns?: number
+}): AgentStep<TOutput> {
+  if (!def.id) {
+    throw new Error('agent(): id is required')
+  }
+  if (def.prompt === undefined) {
+    throw new Error(`agent(${def.id}): prompt is required`)
+  }
+  return Object.freeze({
+    kind: 'agent',
+    id: def.id,
+    prompt: def.prompt,
+    ...(def.backend !== undefined && { backend: def.backend }),
+    ...(def.system !== undefined && { system: def.system }),
+    ...(def.output !== undefined && { outputSchema: def.output }),
+    ...(def.permissions !== undefined && { permissions: def.permissions }),
+    ...(def.maxTurns !== undefined && { maxTurns: def.maxTurns }),
   })
 }
 

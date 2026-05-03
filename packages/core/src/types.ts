@@ -17,7 +17,7 @@ export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancel
 export type StepStatus = 'completed' | 'failed' | 'skipped' | 'waiting'
 
 /** Discriminator for step kinds; the union grows in later stages. */
-export type StepKind = 'code' | 'llm' | 'parallel' | 'forEach' | 'branch' | 'loop'
+export type StepKind = 'code' | 'llm' | 'agent' | 'parallel' | 'forEach' | 'branch' | 'loop'
 
 /** Metadata about the current run, available on `ctx.run`. */
 export interface RunMetadata {
@@ -76,6 +76,18 @@ export interface LlmStep<TOutput = unknown> {
   readonly maxTokens?: number
 }
 
+/** An `agent()` step: full agentic loop against a backend.run(). */
+export interface AgentStep<TOutput = unknown> {
+  readonly kind: 'agent'
+  readonly id: StepId
+  readonly backend?: string
+  readonly prompt: string | ((ctx: Context) => string)
+  readonly system?: string | ((ctx: Context) => string)
+  readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
+  readonly permissions?: import('./permissions.js').AgentPermissions
+  readonly maxTurns?: number
+}
+
 export type ParallelWaitFor = 'all' | 'any' | { atLeast: number }
 export type ParallelOnError = 'fail' | 'continue' | 'partial'
 
@@ -116,7 +128,14 @@ export interface LoopStep {
 }
 
 /** Discriminated union of all step kinds. */
-export type Step = CodeStep | LlmStep | ParallelStep | ForEachStep | BranchStep | LoopStep
+export type Step =
+  | CodeStep
+  | LlmStep
+  | AgentStep
+  | ParallelStep
+  | ForEachStep
+  | BranchStep
+  | LoopStep
 
 /** A pipeline value produced by `pipeline()`. */
 export interface Pipeline<TInput = unknown, TOutput = unknown> {
