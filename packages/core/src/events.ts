@@ -32,6 +32,16 @@ export type RunEvent =
       at: number
     }
   | {
+      type: 'step.retry'
+      runId: RunId
+      stepId: StepId
+      kind: StepKind
+      attempt: number
+      error: SerializedError
+      delayMs?: number
+      at: number
+    }
+  | {
       type: 'run.waiting'
       runId: RunId
       stepId: StepId

@@ -47,6 +47,13 @@ export interface Context<TInput = unknown> {
   readonly signal: AbortSignal
 }
 
+/** Per-step retry policy applied by the runner around step execution. */
+export interface RetryPolicy {
+  readonly maxAttempts: number
+  readonly delayMs?: number
+  readonly backoffMultiplier?: number
+}
+
 /** Result of a single step's execution. */
 export interface StepResult<TOutput = unknown> {
   readonly id: StepId
@@ -70,6 +77,7 @@ export interface CodeStep<TOutput = unknown> {
   readonly kind: 'code'
   readonly id: StepId
   readonly run: (ctx: Context) => TOutput | Promise<TOutput>
+  readonly retry?: RetryPolicy
 }
 
 /** An `llm()` step: single-shot inference against a backend. */
@@ -83,6 +91,7 @@ export interface LlmStep<TOutput = unknown> {
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   readonly temperature?: number
   readonly maxTokens?: number
+  readonly retry?: RetryPolicy
 }
 
 /** An `agent()` step: full agentic loop against a backend.run(). */
@@ -95,6 +104,7 @@ export interface AgentStep<TOutput = unknown> {
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   readonly permissions?: import('./permissions.js').AgentPermissions
   readonly maxTurns?: number
+  readonly retry?: RetryPolicy
 }
 
 export type ParallelWaitFor = 'all' | 'any' | { atLeast: number }
@@ -107,6 +117,7 @@ export interface ParallelStep {
   readonly steps: readonly Step[]
   readonly waitFor?: ParallelWaitFor
   readonly onError?: ParallelOnError
+  readonly retry?: RetryPolicy
 }
 
 /** A `forEach()` step: maps a step factory over a collection. */
@@ -116,6 +127,7 @@ export interface ForEachStep {
   readonly items: (ctx: Context) => readonly unknown[]
   readonly concurrency?: number
   readonly step: (item: unknown, index: number) => Step
+  readonly retry?: RetryPolicy
 }
 
 /** A `branch()` step: discriminator-driven case selection. */
@@ -125,6 +137,7 @@ export interface BranchStep {
   readonly on: (ctx: Context) => string
   readonly cases: Readonly<Record<string, Step>>
   readonly default?: Step
+  readonly retry?: RetryPolicy
 }
 
 /** A `loop()` step: bounded iteration while a predicate holds. */
@@ -134,6 +147,7 @@ export interface LoopStep {
   readonly while: (ctx: Context) => boolean | Promise<boolean>
   readonly maxIterations: number
   readonly step: Step
+  readonly retry?: RetryPolicy
 }
 
 /** A `wait()` step: pause until a caller resumes the run with input. */
@@ -143,6 +157,7 @@ export interface WaitStep<TOutput = unknown> {
   readonly message?: string | ((ctx: Context) => string)
   readonly timeoutMs?: number
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
+  readonly retry?: RetryPolicy
 }
 
 /** A `pipelineStep()` step: run a nested pipeline and adopt its output. */
@@ -151,6 +166,7 @@ export interface PipelineStep<TInput = unknown, TOutput = unknown> {
   readonly id: StepId
   readonly pipeline: Pipeline<TInput, TOutput>
   readonly input?: TInput | ((ctx: Context) => TInput)
+  readonly retry?: RetryPolicy
 }
 
 /** Discriminated union of all step kinds. */

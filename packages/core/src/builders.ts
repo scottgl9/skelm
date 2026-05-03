@@ -13,6 +13,7 @@ import type {
   ParallelWaitFor,
   Pipeline,
   PipelineStep,
+  RetryPolicy,
   Step,
   StepId,
   WaitStep,
@@ -61,6 +62,7 @@ export function pipeline<TInput, TOutput>(def: {
 export function code<TOutput>(def: {
   id: StepId
   run: (ctx: Context) => TOutput | Promise<TOutput>
+  retry?: RetryPolicy
 }): CodeStep<TOutput> {
   if (!def.id) {
     throw new Error('code(): id is required')
@@ -68,10 +70,12 @@ export function code<TOutput>(def: {
   if (typeof def.run !== 'function') {
     throw new Error(`code(${def.id}): run must be a function`)
   }
+  assertValidRetryPolicy('code', def.id, def.retry)
   return Object.freeze({
     kind: 'code',
     id: def.id,
     run: def.run,
+    ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
 
@@ -90,6 +94,7 @@ export function llm<TOutput>(def: {
   output?: SkelmSchema<TOutput>
   temperature?: number
   maxTokens?: number
+  retry?: RetryPolicy
 }): LlmStep<TOutput> {
   if (!def.id) {
     throw new Error('llm(): id is required')
@@ -97,6 +102,7 @@ export function llm<TOutput>(def: {
   if (def.prompt === undefined) {
     throw new Error(`llm(${def.id}): prompt is required`)
   }
+  assertValidRetryPolicy('llm', def.id, def.retry)
   return Object.freeze({
     kind: 'llm',
     id: def.id,
@@ -107,6 +113,7 @@ export function llm<TOutput>(def: {
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.temperature !== undefined && { temperature: def.temperature }),
     ...(def.maxTokens !== undefined && { maxTokens: def.maxTokens }),
+    ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
 
@@ -124,6 +131,7 @@ export function agent<TOutput>(def: {
   output?: SkelmSchema<TOutput>
   permissions?: AgentPermissions
   maxTurns?: number
+  retry?: RetryPolicy
 }): AgentStep<TOutput> {
   if (!def.id) {
     throw new Error('agent(): id is required')
@@ -131,6 +139,7 @@ export function agent<TOutput>(def: {
   if (def.prompt === undefined) {
     throw new Error(`agent(${def.id}): prompt is required`)
   }
+  assertValidRetryPolicy('agent', def.id, def.retry)
   return Object.freeze({
     kind: 'agent',
     id: def.id,
@@ -140,6 +149,7 @@ export function agent<TOutput>(def: {
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.permissions !== undefined && { permissions: def.permissions }),
     ...(def.maxTurns !== undefined && { maxTurns: def.maxTurns }),
+    ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
 
@@ -149,11 +159,13 @@ export function parallel(def: {
   steps: readonly Step[]
   waitFor?: ParallelWaitFor
   onError?: ParallelOnError
+  retry?: RetryPolicy
 }): ParallelStep {
   if (!def.id) throw new Error('parallel(): id is required')
   if (!def.steps || def.steps.length === 0) {
     throw new Error(`parallel(${def.id}): steps must contain at least one step`)
   }
+  assertValidRetryPolicy('parallel', def.id, def.retry)
   // Sibling ids must be unique within a parallel block (they become the keys
   // of the parallel output object). We do not require global uniqueness across
   // the whole pipeline tree — that is the runtime's job to track per-scope.
@@ -170,6 +182,7 @@ export function parallel(def: {
     steps: Object.freeze([...def.steps]),
     ...(def.waitFor !== undefined && { waitFor: def.waitFor }),
     ...(def.onError !== undefined && { onError: def.onError }),
+    ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
 
@@ -179,6 +192,7 @@ export function forEach(def: {
   items: (ctx: Context) => readonly unknown[]
   concurrency?: number
   step: (item: unknown, index: number) => Step
+  retry?: RetryPolicy
 }): ForEachStep {
   if (!def.id) throw new Error('forEach(): id is required')
   if (typeof def.items !== 'function') {
@@ -190,12 +204,14 @@ export function forEach(def: {
   if (def.concurrency !== undefined && def.concurrency < 1) {
     throw new Error(`forEach(${def.id}): concurrency must be >= 1`)
   }
+  assertValidRetryPolicy('forEach', def.id, def.retry)
   return Object.freeze({
     kind: 'forEach',
     id: def.id,
     items: def.items,
     step: def.step,
     ...(def.concurrency !== undefined && { concurrency: def.concurrency }),
+    ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
 
@@ -205,6 +221,7 @@ export function branch(def: {
   on: (ctx: Context) => string
   cases: Readonly<Record<string, Step>>
   default?: Step
+  retry?: RetryPolicy
 }): BranchStep {
   if (!def.id) throw new Error('branch(): id is required')
   if (typeof def.on !== 'function') {
@@ -213,12 +230,14 @@ export function branch(def: {
   if (!def.cases || Object.keys(def.cases).length === 0) {
     throw new Error(`branch(${def.id}): cases must have at least one entry`)
   }
+  assertValidRetryPolicy('branch', def.id, def.retry)
   return Object.freeze({
     kind: 'branch',
     id: def.id,
     on: def.on,
     cases: Object.freeze({ ...def.cases }),
     ...(def.default !== undefined && { default: def.default }),
+    ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
 
@@ -228,6 +247,7 @@ export function loop(def: {
   while: (ctx: Context) => boolean | Promise<boolean>
   maxIterations: number
   step: Step
+  retry?: RetryPolicy
 }): LoopStep {
   if (!def.id) throw new Error('loop(): id is required')
   if (typeof def.while !== 'function') {
@@ -236,12 +256,14 @@ export function loop(def: {
   if (def.maxIterations < 1) {
     throw new Error(`loop(${def.id}): maxIterations must be >= 1`)
   }
+  assertValidRetryPolicy('loop', def.id, def.retry)
   return Object.freeze({
     kind: 'loop',
     id: def.id,
     while: def.while,
     maxIterations: def.maxIterations,
     step: def.step,
+    ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
 
@@ -251,17 +273,20 @@ export function wait<TOutput>(def: {
   message?: string | ((ctx: Context) => string)
   timeoutMs?: number
   output?: SkelmSchema<TOutput>
+  retry?: RetryPolicy
 }): WaitStep<TOutput> {
   if (!def.id) throw new Error('wait(): id is required')
   if (def.timeoutMs !== undefined && def.timeoutMs < 1) {
     throw new Error(`wait(${def.id}): timeoutMs must be >= 1`)
   }
+  assertValidRetryPolicy('wait', def.id, def.retry)
   return Object.freeze({
     kind: 'wait',
     id: def.id,
     ...(def.message !== undefined && { message: def.message }),
     ...(def.timeoutMs !== undefined && { timeoutMs: def.timeoutMs }),
     ...(def.output !== undefined && { outputSchema: def.output }),
+    ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
 
@@ -270,17 +295,33 @@ export function pipelineStep<TInput, TOutput>(def: {
   id: StepId
   pipeline: Pipeline<TInput, TOutput>
   input?: TInput | ((ctx: Context) => TInput)
+  retry?: RetryPolicy
 }): PipelineStep<TInput, TOutput> {
   if (!def.id) throw new Error('pipelineStep(): id is required')
   if (!def.pipeline) {
     throw new Error(`pipelineStep(${def.id}): pipeline is required`)
   }
+  assertValidRetryPolicy('pipelineStep', def.id, def.retry)
   return Object.freeze({
     kind: 'pipelineStep',
     id: def.id,
     pipeline: def.pipeline,
     ...(def.input !== undefined && { input: def.input }),
+    ...(def.retry !== undefined && { retry: def.retry }),
   })
+}
+
+function assertValidRetryPolicy(kind: string, id: StepId, retry: RetryPolicy | undefined): void {
+  if (!retry) return
+  if (retry.maxAttempts < 1) {
+    throw new Error(`${kind}(${id}): retry.maxAttempts must be >= 1`)
+  }
+  if (retry.delayMs !== undefined && retry.delayMs < 0) {
+    throw new Error(`${kind}(${id}): retry.delayMs must be >= 0`)
+  }
+  if (retry.backoffMultiplier !== undefined && retry.backoffMultiplier < 1) {
+    throw new Error(`${kind}(${id}): retry.backoffMultiplier must be >= 1`)
+  }
 }
 
 function assertUniqueStepIds(pipelineId: string, steps: readonly Step[]): void {

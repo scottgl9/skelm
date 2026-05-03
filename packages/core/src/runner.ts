@@ -221,7 +221,13 @@ export async function runPipeline<TInput, TOutput>(
         run: runMeta,
         signal: controller.signal,
       })
-      const output = await runStep(step, ctx, options.backends, options.waitForInput)
+      const output = await runStepWithRetry(
+        step,
+        ctx,
+        options.backends,
+        options.waitForInput,
+        events,
+      )
       const completedAt = Date.now()
       stepOutputs[step.id] = output
       stepResults.push({
@@ -324,6 +330,44 @@ export async function runPipeline<TInput, TOutput>(
 }
 
 export { SchemaValidationError }
+
+async function runStepWithRetry(
+  step: Step,
+  ctx: Context,
+  backends: BackendRegistry | undefined,
+  waitForInput: RunOptions['waitForInput'],
+  events: EventBus,
+): Promise<unknown> {
+  const maxAttempts = step.retry?.maxAttempts ?? 1
+  const backoffMultiplier = step.retry?.backoffMultiplier ?? 1
+  let delayMs = step.retry?.delayMs ?? 0
+  let attempt = 1
+
+  while (true) {
+    try {
+      return await runStep(step, ctx, backends, waitForInput)
+    } catch (err) {
+      if (attempt >= maxAttempts || !isRetryableError(err)) {
+        throw err
+      }
+      events.publish({
+        type: 'step.retry',
+        runId: ctx.run.runId,
+        stepId: step.id,
+        kind: step.kind,
+        attempt,
+        error: serializeError(err),
+        ...(delayMs > 0 && { delayMs }),
+        at: Date.now(),
+      })
+      if (delayMs > 0) {
+        await sleep(delayMs, ctx.signal)
+      }
+      attempt += 1
+      delayMs *= backoffMultiplier
+    }
+  }
+}
 
 async function runStep(
   step: Step,
@@ -583,4 +627,33 @@ function restoreSerializedError(error: Run['error'], fallbackMessage: string): E
     restored.stack = error.stack
   }
   return restored
+}
+
+function isRetryableError(err: unknown): boolean {
+  if (err instanceof RunCancelledError || err instanceof WaitTimeoutError) {
+    return false
+  }
+  if (err instanceof Error) {
+    return err.name !== RunCancelledError.name && err.name !== WaitTimeoutError.name
+  }
+  return true
+}
+
+async function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    throw new RunCancelledError()
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', onAbort)
+      reject(new RunCancelledError())
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    timer.unref?.()
+  })
 }
