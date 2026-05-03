@@ -19,7 +19,8 @@ export {
   BackendCapabilityError,
   BackendNotFoundError,
   BackendRegistry,
-} from './backend.js'
+}
+from './backend.js'
 export type {
   AgentRequest,
   AgentResponse,
@@ -59,7 +60,7 @@ export { CustomTrigger, createCustomTrigger } from './triggers/custom.js'
 export type { CustomTriggerConfig } from './triggers/custom.js'
 export { ScriptTrigger, createScriptTrigger } from './triggers/script.js'
 export type { ScriptTriggerConfig } from './triggers/script.js'
-export type { ProviderModel, PluginMetadata, PluginConfig, PluginLifecycle, PluginHealthStatus, PluginType, SkelmPlugin, ProviderPlugin, WorkflowPlugin } from './plugins.js'
+export type { ProviderModel, PluginMetadata, PluginConfig, PluginLifecycle, PluginHealthStatus, PluginType, SkelmPlugin, ModelPlugin, AgentPlugin, WorkflowPlugin } from './plugins.js'
 export {
   agent,
   branch,
@@ -84,6 +85,23 @@ export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
 export * from './mcp/index.js'
 export * from './openai/index.js'
+export { ModelProviderBase, ModelRegistry, executeLlmStep } from './model-provider.js'
+export type {
+  ModelProvider,
+  ModelProviderConfig,
+  ChatMessage,
+  LlmCompletion,
+} from './model-provider.js'
+// Model providers: OpenAI, Anthropic, vllm, sglang, ollama, gemini, etc.
+// Agent providers: ACP, opencode, pi, github-copilot, etc.
+export { AgentProviderBase, AgentRegistry, executeAgentStep } from './agent-provider.js'
+export type {
+  AgentProvider,
+  AgentProviderConfig,
+  AgentMessage,
+  AgentToolCall,
+  AgentToolResult,
+} from './agent-provider.js'
 export { MemoryRunStore, SqliteRunStore } from './run-store.js'
 export type {
   AuditEntry,
