@@ -30,6 +30,11 @@ export class WaitTimeoutError extends Error {
   }
 }
 
+/** Thrown when a permission check blocks a privileged action. */
+export class PermissionDeniedError extends Error {
+  override readonly name = 'PermissionDeniedError'
+}
+
 /** Convert any thrown value to the serializable error shape we record. */
 export function serializeError(err: unknown): SerializedError {
   if (err instanceof Error) {

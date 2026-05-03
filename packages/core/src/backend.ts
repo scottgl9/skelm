@@ -136,6 +136,8 @@ export interface AgentResponse {
 export interface BackendContext {
   /** Aborts when the run is cancelled or the gateway drains. */
   signal: AbortSignal
+  /** Resolved permission policy for this run when the step declared one. */
+  permissions?: ResolvedPolicy
   /** Optional MCP host available to wrapped-tool backends. */
   mcpHost?: McpHost
 }

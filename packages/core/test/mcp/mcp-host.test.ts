@@ -74,7 +74,7 @@ describe('MCP host', () => {
               args: ['--import', 'tsx/esm', MOCK_MCP],
             },
           ],
-          permissions: { allowedMcpServers: ['echo'] },
+          permissions: { allowedTools: ['echo.echo'], allowedMcpServers: ['echo'] },
           prompt: 'hi',
         }),
       ],
