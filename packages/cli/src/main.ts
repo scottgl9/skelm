@@ -1,4 +1,5 @@
 import { parseArgv } from './argv.js'
+import { auditCommand, secretsCommand } from './audit.js'
 import { describeCommand } from './describe.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { HELP_TEXT } from './help.js'
@@ -147,6 +148,49 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         if (typeof tokenFlag === 'string') serveArgs.token = tokenFlag
         if (typeof configFlag === 'string') serveArgs.configPath = configFlag
         const result = await serveCommand(serveArgs, io)
+        return { exitCode: result.exitCode }
+      }
+      case 'audit': {
+        const subcommand = parsed.positional[0]
+        if (subcommand !== 'query') {
+          io.stderr.write('error: audit requires query subcommand\n')
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        const sinceFlag = parsed.flags.since
+        const untilFlag = parsed.flags.until
+        const limitFlag = parsed.flags.limit
+        const result = await auditCommand(
+          {
+            runId: parsed.flags.run,
+            actor: parsed.flags.actor,
+            action: parsed.flags.action,
+            since: typeof sinceFlag === 'string' ? sinceFlag : undefined,
+            until: typeof untilFlag === 'string' ? untilFlag : undefined,
+            limit:
+              typeof limitFlag === 'string' && /^\d+$/.test(limitFlag)
+                ? Number.parseInt(limitFlag, 10)
+                : undefined,
+            json: parsed.flags.json === true,
+          },
+          io,
+        )
+        return { exitCode: result.exitCode }
+      }
+      case 'secrets': {
+        const subcommand = parsed.positional[0]
+        if (!subcommand || (subcommand !== 'get' && subcommand !== 'set' && subcommand !== 'list')) {
+          io.stderr.write('error: secrets requires get, set, or list subcommand\n')
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        const result = await secretsCommand(
+          {
+            command: subcommand as 'get' | 'set' | 'list',
+            name: parsed.positional[1],
+            value: parsed.flags.value,
+            json: parsed.flags.json === true,
+          },
+          io,
+        )
         return { exitCode: result.exitCode }
       }
       case 'init': {
