@@ -61,6 +61,9 @@ importers:
       better-sqlite3:
         specifier: ^12.9.0
         version: 12.9.0
+      vitest:
+        specifier: ^2.1.5
+        version: 2.1.9(@types/node@22.19.17)
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.13
