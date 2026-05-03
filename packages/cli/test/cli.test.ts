@@ -1,3 +1,4 @@
+import { createServer } from 'node:http'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
@@ -81,6 +82,49 @@ describe('main — integration', () => {
     expect(stderr).toContain('> running hello-fixture')
     expect(stderr).toContain('> completed')
   })
+
+  it('loads the default OpenAI backend for llm() workflows without a config file', async () => {
+    const filePath = join(FIXTURES_DIR, 'openai-default.workflow.ts')
+
+    const seenAuth: string[] = []
+    const server = await startOpenAIServer(async (req, headers) => {
+      if (typeof headers.authorization === 'string') {
+        seenAuth.push(headers.authorization)
+      }
+      expect(req).toEqual(
+        expect.objectContaining({
+          model: 'gpt-4.1-mini',
+        }),
+      )
+      return {
+        choices: [{ message: { content: 'hello, world' } }],
+      }
+    })
+
+    const prevApiKey = process.env.OPENAI_API_KEY
+    const prevBaseUrl = process.env.OPENAI_BASE_URL
+    process.env.OPENAI_API_KEY = 'test-openai-key'
+    process.env.OPENAI_BASE_URL = server.baseUrl
+
+    try {
+      const { stdout, exitCode } = await invoke(['run', filePath])
+      expect(exitCode).toBe(EXIT.OK)
+      expect(stdout.trim()).toBe('{"text":"hello, world"}')
+      expect(seenAuth).toEqual(['Bearer test-openai-key'])
+    } finally {
+      if (prevApiKey === undefined) {
+        process.env.OPENAI_API_KEY = undefined
+      } else {
+        process.env.OPENAI_API_KEY = prevApiKey
+      }
+      if (prevBaseUrl === undefined) {
+        process.env.OPENAI_BASE_URL = undefined
+      } else {
+        process.env.OPENAI_BASE_URL = prevBaseUrl
+      }
+      await server.close()
+    }
+  })
 })
 
 interface InvocationResult {
@@ -110,5 +154,39 @@ async function invoke(argv: readonly string[]): Promise<InvocationResult> {
     stdout: stdoutChunks.join(''),
     stderr: stderrChunks.join(''),
     exitCode: result.exitCode,
+  }
+}
+
+async function startOpenAIServer(
+  respond: (
+    body: unknown,
+    headers: Record<string, string | string[] | undefined>,
+  ) => Promise<unknown> | unknown,
+): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+    }
+    const raw = Buffer.concat(chunks).toString('utf8')
+    const parsed = raw.length === 0 ? undefined : JSON.parse(raw)
+    const body = await respond(parsed, req.headers)
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(body))
+  })
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  const address = server.address()
+  if (!address || typeof address === 'string') {
+    throw new Error('expected TCP server address')
+  }
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    close: async () => {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()))
+      })
+    },
   }
 }

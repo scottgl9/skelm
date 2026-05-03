@@ -72,6 +72,7 @@ function mergeWithDefaults(user: SkelmConfig): SkelmConfig {
   const merged: SkelmConfig = {
     ...DEFAULT_CONFIG,
     ...user,
+    backends: { ...DEFAULT_CONFIG.backends, ...user.backends },
     pipelines: { ...DEFAULT_CONFIG.pipelines, ...user.pipelines },
     secrets: { ...DEFAULT_CONFIG.secrets, ...user.secrets },
   }

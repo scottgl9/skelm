@@ -1,7 +1,10 @@
 import { readFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
 import { EventBus, Runner, SchemaValidationError, WaitTimeoutError } from '@skelm/core'
 import type { Run } from '@skelm/core'
+import { applyConfiguredBackends, buildBackendRegistry } from './backends.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
+import { loadSkelmConfig } from './load-config.js'
 import { CliError, loadWorkflowFromFile } from './load-workflow.js'
 
 export interface RunCommandArgs {
@@ -86,7 +89,14 @@ export async function runCommand(
     })
   }
 
-  const run = await new Runner({ events: bus }).start(workflow, input).wait()
+  const workflowDir = dirname(resolve(process.cwd(), workflowPath))
+  const { config } = await loadSkelmConfig({ fromDir: workflowDir })
+  const resolvedWorkflow = applyConfiguredBackends(workflow, config)
+  const backends = buildBackendRegistry(config)
+
+  const run = await new Runner({ events: bus, ...(backends !== undefined && { backends }) })
+    .start(resolvedWorkflow, input)
+    .wait()
 
   if (run.status === 'completed') {
     const json = `${JSON.stringify(run.output)}\n`
