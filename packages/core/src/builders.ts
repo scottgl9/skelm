@@ -1,5 +1,5 @@
 import type { SkelmSchema } from './schema.js'
-import type { CodeStep, Context, Pipeline, Step, StepId } from './types.js'
+import type { CodeStep, Context, LlmStep, Pipeline, Step, StepId } from './types.js'
 
 /**
  * Author a pipeline. The result is a plain immutable value carrying its
@@ -55,6 +55,41 @@ export function code<TOutput>(def: {
     kind: 'code',
     id: def.id,
     run: def.run,
+  })
+}
+
+/**
+ * Author a single-shot LLM inference step. The backend resolves at run
+ * time (step-level `backend` overrides the registry's default). When
+ * `output` is supplied, the runtime requests structured output from the
+ * backend and validates the result against the schema before recording it.
+ */
+export function llm<TOutput>(def: {
+  id: StepId
+  backend?: string
+  model?: string
+  system?: string | ((ctx: Context) => string)
+  prompt: string | ((ctx: Context) => string)
+  output?: SkelmSchema<TOutput>
+  temperature?: number
+  maxTokens?: number
+}): LlmStep<TOutput> {
+  if (!def.id) {
+    throw new Error('llm(): id is required')
+  }
+  if (def.prompt === undefined) {
+    throw new Error(`llm(${def.id}): prompt is required`)
+  }
+  return Object.freeze({
+    kind: 'llm',
+    id: def.id,
+    prompt: def.prompt,
+    ...(def.backend !== undefined && { backend: def.backend }),
+    ...(def.model !== undefined && { model: def.model }),
+    ...(def.system !== undefined && { system: def.system }),
+    ...(def.output !== undefined && { outputSchema: def.output }),
+    ...(def.temperature !== undefined && { temperature: def.temperature }),
+    ...(def.maxTokens !== undefined && { maxTokens: def.maxTokens }),
   })
 }
 
