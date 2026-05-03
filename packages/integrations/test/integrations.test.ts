@@ -26,8 +26,8 @@ describe('IntegrationRegistry', () => {
       name: 'GitHub',
       enabled: true,
       credentials: {
-        token: 'ghp_test123',
-        ownerId: 'scottgl9',
+        token: 'ghp_testtoken',
+        ownerId: 'test-owner',
         repoName: 'test-repo',
       },
     }
@@ -46,8 +46,8 @@ describe('IntegrationRegistry', () => {
       name: 'GitHub',
       enabled: true,
       credentials: {
-        token: 'ghp_test123',
-        ownerId: 'scottgl9',
+        token: 'ghp_testtoken',
+        ownerId: 'test-owner',
         repoName: 'test-repo',
       },
     }
@@ -66,8 +66,8 @@ describe('IntegrationRegistry', () => {
       name: 'GitHub Enabled',
       enabled: true,
       credentials: {
-        token: 'ghp_test123',
-        ownerId: 'scottgl9',
+        token: 'ghp_testtoken',
+        ownerId: 'test-owner',
         repoName: 'test-repo',
       },
     }
@@ -77,7 +77,7 @@ describe('IntegrationRegistry', () => {
       name: 'Slack Disabled',
       enabled: false,
       credentials: {
-        botToken: 'xoxb-test',
+        botToken: 'xoxb-testtoken',
         signingSecret: 'secret',
       },
     }
@@ -114,8 +114,8 @@ describe('IntegrationRegistry', () => {
       name: 'GitHub',
       enabled: true,
       credentials: {
-        token: 'ghp_test123',
-        ownerId: 'scottgl9',
+        token: 'ghp_testtoken',
+        ownerId: 'test-owner',
         repoName: 'test-repo',
       },
     }
@@ -138,8 +138,8 @@ describe('GitHubIntegration', () => {
       name: 'GitHub',
       enabled: true,
       credentials: {
-        token: 'ghp_test123',
-        ownerId: 'scottgl9',
+        token: 'ghp_testtoken',
+        ownerId: 'test-owner',
         repoName: 'test-repo',
       },
     }
@@ -159,7 +159,7 @@ describe('GitHubIntegration', () => {
       enabled: true,
       credentials: {
         token: '',
-        ownerId: 'scottgl9',
+        ownerId: 'test-owner',
         repoName: 'test-repo',
       },
     }
@@ -175,8 +175,8 @@ describe('GitHubIntegration', () => {
       name: 'GitHub',
       enabled: true,
       credentials: {
-        token: 'ghp_test123',
-        ownerId: 'scottgl9',
+        token: 'ghp_testtoken',
+        ownerId: 'test-owner',
         repoName: 'test-repo',
       },
     }
@@ -187,7 +187,7 @@ describe('GitHubIntegration', () => {
       event: 'issues',
       payload: {
         action: 'opened',
-        owner: 'scottgl9',
+        owner: 'test-owner',
         repo: 'test-repo',
         issueNumber: 42,
         title: 'Test issue',
@@ -213,7 +213,7 @@ describe('SlackIntegration', () => {
       name: 'Slack',
       enabled: true,
       credentials: {
-        botToken: 'xoxb-test-token',
+        botToken: 'xoxb-testtoken',
         signingSecret: 'test-secret',
         channelId: 'C123456',
       },
@@ -249,7 +249,7 @@ describe('SlackIntegration', () => {
       name: 'Slack',
       enabled: true,
       credentials: {
-        botToken: 'xoxb-test-token',
+        botToken: 'xoxb-testtoken',
         signingSecret: 'test-secret',
         channelId: 'C123456',
       },
@@ -262,7 +262,7 @@ describe('SlackIntegration', () => {
       name: 'Slack',
       enabled: true,
       credentials: {
-        botToken: 'xoxb-test-token',
+        botToken: 'xoxb-testtoken',
         signingSecret: 'test-secret',
       },
     } as SlackConfig

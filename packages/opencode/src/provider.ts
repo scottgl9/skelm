@@ -5,7 +5,7 @@
  */
 
 import { ProviderPluginBase } from '@skelm/core'
-import type { ProviderCapabilities, ProviderSpecificCapabilities, ProviderModel, PluginConfig } from '@skelm/core'
+import type { ProviderCapabilities, ProviderSpecificCapabilities, ProviderModel, PluginConfig, PluginHealthStatus } from '@skelm/core'
 import { createOpencodeBackend } from './backend.js'
 import type { OpencodeBackendOptions } from './types.js'
 
@@ -31,7 +31,14 @@ export interface OpencodeProviderConfig extends PluginConfig {
  * Opencode provider implementation
  */
 export class OpencodeProvider extends ProviderPluginBase {
-  private config: OpencodeProviderConfig = {}
+  protected override config: {
+    apiKey?: string
+    apiUrl?: string
+    agent?: string
+    timeout?: number
+    maxRetries?: number
+    logLevel?: 'debug' | 'info' | 'warn' | 'error'
+  } = {}
 
   constructor(options?: { logLevel?: 'debug' | 'info' | 'warn' | 'error' }) {
     super({
@@ -39,14 +46,14 @@ export class OpencodeProvider extends ProviderPluginBase {
       name: 'Opencode.ai',
       version: '1.0.0',
       description: 'Opencode.ai coding agent provider',
-      logLevel: options?.logLevel,
+      logLevel: options?.logLevel ?? 'info',
     })
   }
 
   /**
    * Provider capabilities
    */
-  get capabilities(): ProviderCapabilities {
+  override get capabilities(): ProviderCapabilities {
     return {
       prompt: true,
       streaming: true,
@@ -79,22 +86,35 @@ export class OpencodeProvider extends ProviderPluginBase {
   /**
    * Initialize the provider
    */
-  async initialize(config: OpencodeProviderConfig): Promise<void> {
-    this.config = {
-      apiKey: config.apiKey,
-      apiUrl: config.apiUrl,
-      agent: config.agent,
-      timeout: config.timeout,
-      maxRetries: config.maxRetries,
-      logLevel: config.logLevel,
+  override async initialize(config: OpencodeProviderConfig): Promise<void> {
+    this.config = {}
+    
+    if (config.apiKey !== undefined) {
+      this.config.apiKey = config.apiKey
     }
+    if (config.apiUrl !== undefined) {
+      this.config.apiUrl = config.apiUrl
+    }
+    if (config.agent !== undefined) {
+      this.config.agent = config.agent
+    }
+    if (config.timeout !== undefined) {
+      this.config.timeout = config.timeout
+    }
+    if (config.maxRetries !== undefined) {
+      this.config.maxRetries = config.maxRetries
+    }
+    if (config.logLevel !== undefined) {
+      this.config.logLevel = config.logLevel
+    }
+    
     await super.initialize(config)
   }
 
   /**
    * Provider-specific initialization
    */
-  protected async doInitialize(config: OpencodeProviderConfig): Promise<void> {
+  protected override async doInitialize(config: OpencodeProviderConfig): Promise<void> {
     // Validate API key
     const apiKey = config.apiKey ?? process.env.OPENCODE_API_KEY
     if (!apiKey) {
@@ -112,11 +132,22 @@ export class OpencodeProvider extends ProviderPluginBase {
 
     const config: OpencodeBackendOptions = {
       apiKey: this.config.apiKey ?? process.env.OPENCODE_API_KEY!,
-      ...(this.config.apiUrl !== undefined && { apiUrl: this.config.apiUrl }),
-      ...(this.config.agent !== undefined && { agent: this.config.agent }),
-      ...(options?.timeout !== undefined && { timeout: options.timeout }),
-      ...(options?.maxRetries !== undefined && { maxRetries: options.maxRetries }),
-      ...(options?.logLevel !== undefined && { logLevel: options.logLevel }),
+    }
+    
+    if (this.config.apiUrl !== undefined) {
+      config.apiUrl = this.config.apiUrl
+    }
+    if (this.config.agent !== undefined) {
+      config.agent = this.config.agent
+    }
+    if (options?.timeout !== undefined) {
+      config.timeout = options.timeout
+    }
+    if (options?.maxRetries !== undefined) {
+      config.maxRetries = options.maxRetries
+    }
+    if (options?.logLevel !== undefined) {
+      config.logLevel = options.logLevel
     }
 
     return createOpencodeBackend(config)
@@ -125,7 +156,7 @@ export class OpencodeProvider extends ProviderPluginBase {
   /**
    * List available models
    */
-  async listModels(): Promise<ProviderModel[]> {
+  override async listModels(): Promise<ProviderModel[]> {
     // Opencode supports multiple models including Qwen variants
     return [
       {
@@ -176,7 +207,7 @@ export class OpencodeProvider extends ProviderPluginBase {
   /**
    * Health check
    */
-  protected async doHealthCheck(): Promise<Partial<PluginHealthStatus>> {
+  protected override async doHealthCheck(): Promise<{ healthy: boolean; status: string; details?: Record<string, unknown> }> {
     // Basic connectivity check
     const apiKey = this.config.apiKey ?? process.env.OPENCODE_API_KEY
     if (!apiKey) {
@@ -185,19 +216,24 @@ export class OpencodeProvider extends ProviderPluginBase {
 
     // Try a simple API call
     try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000)
+      
       const response = await fetch(`${this.config.apiUrl ?? 'https://api.opencode.ai'}/health`, {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
         },
-        timeout: 5000,
+        signal: controller.signal,
       })
+      
+      clearTimeout(timeoutId)
 
       if (response.ok) {
         return { healthy: true, status: 'healthy' }
       }
 
       return { healthy: false, status: `api-error-${response.status}` }
-    } catch (error) {
+    } catch {
       return { healthy: false, status: 'api-unreachable' }
     }
   }
@@ -205,7 +241,7 @@ export class OpencodeProvider extends ProviderPluginBase {
   /**
    * Validate configuration
    */
-  protected validateConfig(config: OpencodeProviderConfig): OpencodeProviderConfig {
+  protected override validateConfig(config: OpencodeProviderConfig): OpencodeProviderConfig {
     const apiKey = config.apiKey ?? process.env.OPENCODE_API_KEY
     if (!apiKey) {
       throw new Error('Opencode API key is required')
