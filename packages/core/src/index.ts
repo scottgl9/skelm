@@ -55,6 +55,10 @@ export { GitHubTrigger, createGitHubTrigger } from './triggers/github.js'
 export type { GitHubTriggerConfig, GitHubWebhookEvent, GitHubPushEvent, GitHubPullRequestEvent, GitHubIssueCommentEvent } from './triggers/github.js'
 export { DiscordTrigger, createDiscordTrigger } from './triggers/discord.js'
 export type { DiscordTriggerConfig, DiscordMessage, DiscordInteraction } from './triggers/discord.js'
+export { CustomTrigger, createCustomTrigger } from './triggers/custom.js'
+export type { CustomTriggerConfig } from './triggers/custom.js'
+export { ScriptTrigger, createScriptTrigger } from './triggers/script.js'
+export type { ScriptTriggerConfig } from './triggers/script.js'
 export type { ProviderModel, PluginMetadata, PluginConfig, PluginLifecycle, PluginHealthStatus, PluginType, SkelmPlugin, ProviderPlugin, WorkflowPlugin } from './plugins.js'
 export {
   agent,
