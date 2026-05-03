@@ -7,6 +7,21 @@ export { code, pipeline } from './builders.js'
 export { RunCancelledError, StepError, serializeError } from './errors.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
+export {
+  resolvePermissions,
+  TrustEnforcer,
+} from './permissions.js'
+export type {
+  AgentPermissions,
+  ApprovalPolicy,
+  EnforceDecision,
+  NetworkPolicy,
+  PermissionDenialReason,
+  PermissionDimension,
+  ResolvedPolicy,
+  ResolvedToolMatcher,
+  ToolMatcher,
+} from './permissions.js'
 export type { RunOptions } from './runner.js'
 export { runPipeline, SchemaValidationError } from './runner.js'
 export type { SkelmSchema } from './schema.js'
