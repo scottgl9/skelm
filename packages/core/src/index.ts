@@ -51,6 +51,14 @@ export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
 export * from './mcp/index.js'
 export * from './openai/index.js'
+export { MemoryRunStore, SqliteRunStore } from './run-store.js'
+export type {
+  AuditEntry,
+  RunFilter,
+  RunStore,
+  RunSummary,
+  SqliteRunStoreOptions,
+} from './run-store.js'
 export {
   resolvePermissions,
   TrustEnforcer,

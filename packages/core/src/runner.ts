@@ -8,6 +8,7 @@ import { RunCancelledError, WaitTimeoutError, serializeError } from './errors.js
 import { EventBus } from './events.js'
 import { createMcpHost } from './mcp/host.js'
 import { TrustEnforcer, resolvePermissions } from './permissions.js'
+import type { RunStore } from './run-store.js'
 import { SchemaValidationError, validate } from './schema.js'
 import type { Context, Pipeline, Run, RunMetadata, Step, StepId, StepResult } from './types.js'
 
@@ -20,6 +21,8 @@ export interface RunOptions {
   events?: EventBus
   /** Optional backend registry; required if any step references a backend. */
   backends?: BackendRegistry
+  /** Optional durable run store that persists events and final run records. */
+  store?: RunStore
   /** Optional hook used by wait() steps to suspend until external input arrives. */
   waitForInput?: (request: WaitRequest) => Promise<unknown>
 }
@@ -45,7 +48,9 @@ export class Runner {
     { resolve: (value: unknown) => void; reject: (error: Error) => void; timer?: NodeJS.Timeout }
   >()
 
-  constructor(private readonly options: Pick<RunOptions, 'backends'> & { events?: EventBus } = {}) {
+  constructor(
+    private readonly options: Pick<RunOptions, 'backends' | 'store'> & { events?: EventBus } = {},
+  ) {
     this.events = options.events ?? new EventBus()
   }
 
@@ -60,6 +65,7 @@ export class Runner {
       runId,
       events: this.events,
       ...(this.options.backends !== undefined && { backends: this.options.backends }),
+      ...(this.options.store !== undefined && { store: this.options.store }),
       waitForInput: (request) => this.awaitResume(request),
     })
     return {
@@ -156,6 +162,14 @@ export async function runPipeline<TInput, TOutput>(
   const startedAt = Date.now()
   const runId = options.runId ?? generateRunId()
   const events = options.events ?? new EventBus()
+  const store = options.store
+  const storeWrites: Promise<void>[] = []
+  const unsubscribeStore =
+    store === undefined
+      ? undefined
+      : events.subscribe((event) => {
+          storeWrites.push(store.appendEvent(event))
+        })
   const controller = new AbortController()
   if (options.signal) {
     if (options.signal.aborted) {
@@ -197,17 +211,22 @@ export async function runPipeline<TInput, TOutput>(
       runError = serializeError(err)
       const completedAt = Date.now()
       events.publish({ type: 'run.failed', runId, error: runError, at: completedAt })
-      return Object.freeze({
-        runId,
-        pipelineId: pipeline.id,
-        status: runStatus,
-        input,
-        steps: Object.freeze(stepResults),
-        output: undefined,
-        error: runError,
-        startedAt,
-        completedAt,
-      })
+      return await finalizeStoredRun(
+        Object.freeze({
+          runId,
+          pipelineId: pipeline.id,
+          status: runStatus,
+          input,
+          steps: Object.freeze(stepResults),
+          output: undefined,
+          error: runError,
+          startedAt,
+          completedAt,
+        }),
+        store,
+        storeWrites,
+        unsubscribeStore,
+      )
     }
   }
 
@@ -322,17 +341,22 @@ export async function runPipeline<TInput, TOutput>(
     events.publish({ type: 'run.cancelled', runId, at: completedAt })
   }
 
-  return Object.freeze({
-    runId,
-    pipelineId: pipeline.id,
-    status: runStatus,
-    input: resolvedInput,
-    steps: Object.freeze(stepResults),
-    output: runStatus === 'completed' ? finalOutput : undefined,
-    error: runError,
-    startedAt,
-    completedAt,
-  })
+  return await finalizeStoredRun(
+    Object.freeze({
+      runId,
+      pipelineId: pipeline.id,
+      status: runStatus,
+      input: resolvedInput,
+      steps: Object.freeze(stepResults),
+      output: runStatus === 'completed' ? finalOutput : undefined,
+      error: runError,
+      startedAt,
+      completedAt,
+    }),
+    store,
+    storeWrites,
+    unsubscribeStore,
+  )
 }
 
 export { SchemaValidationError }
@@ -372,6 +396,21 @@ async function runStepWithRetry(
       attempt += 1
       delayMs *= backoffMultiplier
     }
+  }
+}
+
+async function finalizeStoredRun<TRun extends Run>(
+  run: TRun,
+  store: RunStore | undefined,
+  storeWrites: Promise<void>[],
+  unsubscribeStore: (() => void) | undefined,
+): Promise<TRun> {
+  try {
+    await Promise.all(storeWrites)
+    await store?.putRun(run)
+    return run
+  } finally {
+    unsubscribeStore?.()
   }
 }
 
