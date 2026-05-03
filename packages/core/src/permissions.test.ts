@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { BackendRegistry, type SkelmBackend } from './backend.js'
+import { agent, pipeline } from './builders.js'
 import { TrustEnforcer, resolvePermissions } from './permissions.js'
+import { runPipeline } from './runner.js'
 
 describe('resolvePermissions — default-deny', () => {
   it('returns empty allow-lists when nothing is declared', () => {
@@ -43,6 +46,21 @@ describe('resolvePermissions — default-deny', () => {
       { networkEgress: { allowHosts: ['b', 'c', 'd'] } },
     )
     expect(policy.networkEgress).toEqual({ allowHosts: ['b', 'c'] })
+  })
+
+  it('applies named permission profiles before step-level narrowing', () => {
+    const policy = resolvePermissions(
+      { allowedExecutables: ['rg', 'git'] },
+      { profile: 'readonly', allowedExecutables: ['rg', 'curl'] },
+      { readonly: { allowedExecutables: ['rg', 'git', 'bash'] } },
+    )
+    expect([...policy.allowedExecutables].sort()).toEqual(['rg'])
+  })
+
+  it('throws when a referenced permission profile is missing', () => {
+    expect(() => resolvePermissions(undefined, { profile: 'missing' }, {})).toThrow(
+      /unknown permission profile/,
+    )
   })
 })
 
@@ -120,5 +138,55 @@ describe('TrustEnforcer — default-deny enforcement', () => {
     expect(e.canAttachMcpServer('chat').allow).toBe(false)
     expect(e.canLoadSkill('triage').allow).toBe(true)
     expect(e.canLoadSkill('rogue').allow).toBe(false)
+  })
+})
+
+describe('runPipeline — permission profiles', () => {
+  it('applies project defaults and named profiles to agent steps', async () => {
+    const registry = new BackendRegistry()
+    let seenExecutables: ReadonlySet<string> | undefined
+    const backend: SkelmBackend = {
+      id: 'profile-backend',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'wrapped',
+      },
+      async run(req) {
+        seenExecutables = req.permissions?.allowedExecutables
+        return { text: 'ok' }
+      },
+    }
+    registry.register(backend)
+
+    const wf = pipeline({
+      id: 'permission-profile-runner',
+      steps: [
+        agent({
+          id: 'work',
+          backend: 'profile-backend',
+          prompt: 'hi',
+          permissions: {
+            profile: 'readonly',
+            allowedExecutables: ['rg', 'curl'],
+          },
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined, {
+      backends: registry,
+      defaultPermissions: { allowedExecutables: ['rg', 'git'] },
+      permissionProfiles: {
+        readonly: { allowedExecutables: ['rg', 'git', 'bash'] },
+      },
+    })
+
+    expect(run.status).toBe('completed')
+    expect(seenExecutables).toEqual(new Set(['rg']))
   })
 })

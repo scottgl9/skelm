@@ -5,7 +5,16 @@
  */
 
 export interface ParsedArgv {
-  command: 'run' | 'init' | 'version' | 'help' | 'unknown'
+  command:
+    | 'run'
+    | 'init'
+    | 'list'
+    | 'describe'
+    | 'history'
+    | 'workspace'
+    | 'version'
+    | 'help'
+    | 'unknown'
   positional: string[]
   flags: Record<string, string | boolean>
 }
@@ -30,10 +39,25 @@ export function parseArgv(argv: readonly string[]): ParsedArgv {
   if (first === 'init') {
     return parseSubcommand('init', argv.slice(1))
   }
+  if (first === 'list') {
+    return parseSubcommand('list', argv.slice(1))
+  }
+  if (first === 'describe') {
+    return parseSubcommand('describe', argv.slice(1))
+  }
+  if (first === 'history') {
+    return parseSubcommand('history', argv.slice(1))
+  }
+  if (first === 'workspace') {
+    return parseSubcommand('workspace', argv.slice(1))
+  }
   return { command: 'unknown', positional: [first], flags: {} }
 }
 
-function parseSubcommand(command: 'run' | 'init', rest: readonly string[]): ParsedArgv {
+function parseSubcommand(
+  command: 'run' | 'init' | 'list' | 'describe' | 'history' | 'workspace',
+  rest: readonly string[],
+): ParsedArgv {
   const positional: string[] = []
   const flags: Record<string, string | boolean> = {}
   for (let i = 0; i < rest.length; i++) {

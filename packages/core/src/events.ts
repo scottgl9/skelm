@@ -83,6 +83,13 @@ export type RunEvent =
       timeoutMs?: number
       at: number
     }
+  | {
+      type: 'run.resumed'
+      runId: RunId
+      stepId: StepId
+      output: unknown
+      at: number
+    }
   | { type: 'run.completed'; runId: RunId; output: unknown; durationMs: number; at: number }
   | { type: 'run.failed'; runId: RunId; error: SerializedError; at: number }
   | { type: 'run.cancelled'; runId: RunId; at: number }

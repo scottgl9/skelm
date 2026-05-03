@@ -77,7 +77,22 @@ function mergeWithDefaults(user: SkelmConfig): SkelmConfig {
     secrets: { ...DEFAULT_CONFIG.secrets, ...user.secrets },
   }
   const defaults = user.defaults ?? DEFAULT_CONFIG.defaults
-  if (defaults !== undefined) merged.defaults = defaults
+  if (defaults !== undefined) {
+    merged.defaults = {
+      ...(DEFAULT_CONFIG.defaults !== undefined ? { ...DEFAULT_CONFIG.defaults } : {}),
+      ...(user.defaults !== undefined ? { ...user.defaults } : {}),
+      ...(DEFAULT_CONFIG.defaults?.permissionProfiles !== undefined ||
+      user.defaults?.permissionProfiles !== undefined
+        ? {
+            permissionProfiles: {
+              ...DEFAULT_CONFIG.defaults?.permissionProfiles,
+              ...user.defaults?.permissionProfiles,
+            },
+          }
+        : {}),
+      ...(user.defaults?.permissions !== undefined && { permissions: user.defaults.permissions }),
+    }
+  }
   const userServer = user.server ?? {}
   const defaultServer = DEFAULT_CONFIG.server ?? {}
   const mergedServer = { ...defaultServer, ...userServer }
@@ -86,5 +101,14 @@ function mergeWithDefaults(user: SkelmConfig): SkelmConfig {
     mergedServer.auth = mergedAuth
   }
   merged.server = mergedServer
+  const defaultStorage = DEFAULT_CONFIG.storage ?? {}
+  const userStorage = user.storage ?? {}
+  merged.storage = {
+    ...defaultStorage,
+    ...userStorage,
+    runs: { ...defaultStorage.runs, ...userStorage.runs },
+    state: { ...defaultStorage.state, ...userStorage.state },
+    workspaces: { ...defaultStorage.workspaces, ...userStorage.workspaces },
+  }
   return merged
 }

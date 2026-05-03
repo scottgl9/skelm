@@ -1,12 +1,22 @@
+import { accessSync, createReadStream, createWriteStream, constants as fsConstants } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import { EventBus, Runner, SchemaValidationError, WaitTimeoutError } from '@skelm/core'
+import { createInterface } from 'node:readline/promises'
+import {
+  EventBus,
+  RunCancelledError,
+  SchemaValidationError,
+  type WaitRequest,
+  WaitTimeoutError,
+  runPipeline,
+} from '@skelm/core'
 import type { Run } from '@skelm/core'
 import { applyAgentDefinitions } from './agent-defs.js'
 import { applyConfiguredBackends, buildBackendRegistry } from './backends.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { loadSkelmConfig } from './load-config.js'
 import { CliError, loadWorkflowFromFile } from './load-workflow.js'
+import { closeRunStore, createRunStore, createWorkspaceManager } from './store.js'
 
 export interface RunCommandArgs {
   workflowPath: string
@@ -97,10 +107,31 @@ export async function runCommand(
     config,
   )
   const backends = buildBackendRegistry(config)
+  const store = createRunStore(config)
+  const workspaceManager = createWorkspaceManager(config)
+  const controller = new AbortController()
 
-  const run = await new Runner({ events: bus, ...(backends !== undefined && { backends }) })
-    .start(resolvedWorkflow, input)
-    .wait()
+  const run = await (async () => {
+    try {
+      return await runPipeline(resolvedWorkflow, input, {
+        signal: controller.signal,
+        events: bus,
+        store,
+        stateStore: store,
+        ...(config.defaults?.permissions !== undefined && {
+          defaultPermissions: config.defaults.permissions,
+        }),
+        ...(config.defaults?.permissionProfiles !== undefined && {
+          permissionProfiles: config.defaults.permissionProfiles,
+        }),
+        workspaceManager,
+        ...(backends !== undefined && { backends }),
+        waitForInput: async (request) => await promptForWaitInput(request, io),
+      })
+    } finally {
+      closeRunStore(store)
+    }
+  })()
 
   if (run.status === 'completed') {
     const json = `${JSON.stringify(run.output)}\n`
@@ -167,4 +198,180 @@ async function readStream(stream: NodeJS.ReadableStream): Promise<string> {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
   }
   return Buffer.concat(chunks).toString('utf8')
+}
+
+async function promptForWaitInput(request: WaitRequest, io: RunCommandIO): Promise<unknown> {
+  const promptIo = openPromptIo(io)
+  const promptSignal = createPromptSignal(request)
+  const rl = createInterface({
+    input: promptIo.input,
+    output: promptIo.output,
+    terminal: isTtyStream(promptIo.input) && isTtyStream(promptIo.output),
+  })
+  try {
+    promptIo.output.write(
+      `> waiting at ${request.stepId}${request.message ? `: ${request.message}` : ''}${
+        request.timeoutMs !== undefined ? ` (timeout ${request.timeoutMs}ms)` : ''
+      }\n`,
+    )
+    promptIo.output.write('> enter resume JSON\n')
+    while (true) {
+      let raw: string
+      try {
+        raw = await rl.question('resume JSON> ', { signal: promptSignal.signal })
+      } catch (error) {
+        if (promptSignal.timedOut) {
+          throw new WaitTimeoutError(
+            `wait(${request.stepId}) timed out after ${request.timeoutMs ?? 0}ms`,
+          )
+        }
+        if (request.signal.aborted) {
+          throw new RunCancelledError()
+        }
+        const detail = error instanceof Error ? error.message : String(error)
+        throw new RunCancelledError(`wait(${request.stepId}) input cancelled (${detail})`)
+      }
+
+      const trimmed = raw.trim()
+      if (trimmed.length === 0) {
+        promptIo.output.write('! enter JSON (use null for an empty value)\n')
+        continue
+      }
+
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(trimmed)
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        promptIo.output.write(`! invalid JSON: ${detail}\n`)
+        continue
+      }
+
+      if (request.outputSchema !== undefined) {
+        const validation = await validateWaitInput(request, parsed)
+        if (!validation.ok) {
+          promptIo.output.write(`! ${validation.message}\n`)
+          continue
+        }
+        return validation.value
+      }
+
+      return parsed
+    }
+  } finally {
+    promptSignal.dispose()
+    rl.close()
+    promptIo.close()
+  }
+}
+
+function openPromptIo(io: RunCommandIO): {
+  input: NodeJS.ReadableStream
+  output: NodeJS.WritableStream
+  close: () => void
+} {
+  if (
+    process.platform !== 'win32' &&
+    io.stdin === process.stdin &&
+    io.stderr === process.stderr &&
+    process.stderr.isTTY
+  ) {
+    try {
+      accessSync('/dev/tty', fsConstants.R_OK | fsConstants.W_OK)
+      const input = createReadStream('/dev/tty')
+      const output = createWriteStream('/dev/tty')
+      return {
+        input,
+        output,
+        close: () => {
+          input.destroy()
+          output.end()
+        },
+      }
+    } catch {
+      // Fall back to the injected IO streams when /dev/tty is unavailable.
+    }
+  }
+  return {
+    input: io.stdin,
+    output: io.stderr,
+    close: () => {},
+  }
+}
+
+function createPromptSignal(request: WaitRequest): {
+  signal: AbortSignal
+  timedOut: boolean
+  dispose: () => void
+} {
+  const controller = new AbortController()
+  let timedOut = false
+  const onAbort = () => controller.abort()
+  request.signal.addEventListener('abort', onAbort, { once: true })
+  const timer =
+    request.timeoutMs === undefined
+      ? undefined
+      : setTimeout(() => {
+          timedOut = true
+          controller.abort()
+        }, request.timeoutMs)
+  timer?.unref?.()
+  return {
+    signal: controller.signal,
+    get timedOut() {
+      return timedOut
+    },
+    dispose: () => {
+      request.signal.removeEventListener('abort', onAbort)
+      if (timer !== undefined) {
+        clearTimeout(timer)
+      }
+    },
+  }
+}
+
+async function validateWaitInput(
+  request: Pick<WaitRequest, 'outputSchema'>,
+  value: unknown,
+): Promise<{ ok: true; value: unknown } | { ok: false; message: string }> {
+  const schema = request.outputSchema
+  if (schema === undefined) return { ok: true, value }
+  const result = await schema['~standard'].validate(value)
+  if ('issues' in result && result.issues !== undefined) {
+    return {
+      ok: false,
+      message: formatSchemaIssues(
+        result.issues as ReadonlyArray<{
+          message: string
+          path: ReadonlyArray<unknown> | undefined
+        }>,
+      ),
+    }
+  }
+  return { ok: true, value: result.value }
+}
+
+function formatSchemaIssues(
+  issues: ReadonlyArray<{ message: string; path: ReadonlyArray<unknown> | undefined }>,
+): string {
+  return issues
+    .map((issue) => {
+      const path =
+        issue.path === undefined
+          ? ''
+          : issue.path
+              .map((segment) => {
+                if (typeof segment === 'object' && segment !== null && 'key' in segment) {
+                  return String((segment as { key: unknown }).key)
+                }
+                return String(segment)
+              })
+              .join('.')
+      return path ? `${path}: ${issue.message}` : issue.message
+    })
+    .join('; ')
+}
+
+function isTtyStream(stream: NodeJS.ReadableStream | NodeJS.WritableStream): boolean {
+  return 'isTTY' in stream && stream.isTTY === true
 }

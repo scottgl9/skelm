@@ -23,6 +23,8 @@ export interface SkelmConfigSecrets {
 
 export interface SkelmConfigStorage {
   runs?: { driver?: 'sqlite' | 'memory'; path?: string }
+  state?: { driver?: 'sqlite' | 'memory'; path?: string }
+  workspaces?: { base?: string; ephemeralBase?: string }
 }
 
 export interface SkelmConfigServer {
@@ -37,7 +39,10 @@ export interface SkelmConfig {
   backend?: string
   backends?: SkelmConfigBackends
   /** Project-level default permissions; per-step permissions intersect with these. */
-  defaults?: { permissions?: AgentPermissions }
+  defaults?: {
+    permissions?: AgentPermissions
+    permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+  }
   /** Workflow discovery configuration. */
   pipelines?: {
     discovery?: 'auto' | 'explicit'
@@ -79,6 +84,10 @@ export const DEFAULT_CONFIG: SkelmConfig = Object.freeze({
     },
   },
   secrets: { driver: 'env' as const },
+  storage: {
+    runs: { driver: 'sqlite' as const, path: '~/.skelm/runs.db' },
+    state: { driver: 'sqlite' as const, path: '~/.skelm/runs.db' },
+  },
   server: {
     port: 4000,
     host: '127.0.0.1',

@@ -2,6 +2,10 @@ export const HELP_TEXT = `skelm — agentic and deterministic workflows in TypeS
 
 Usage:
   skelm run <workflow.ts> [flags]
+  skelm list [--json]
+  skelm describe <workflow> [--json | --format mermaid]
+  skelm history [--workflow <id>] [--last <n>] [--run <id>] [--events] [--json]
+  skelm workspace <list|show|clean> [args]
   skelm init [<dir>] [--force]
   skelm --version
   skelm --help
@@ -11,6 +15,25 @@ Run flags:
   --input-file <path>     Input from a file
   --input-stdin           Read input JSON from stdin
   --events <fmt>          human (default) | json | none
+
+List flags:
+  --json                  Write discovered workflows as JSON
+
+Describe flags:
+  --json                  Write the workflow graph as JSON
+  --format <fmt>          human (default) | mermaid
+
+History flags:
+  --workflow <id>         Filter runs by workflow id
+  --last <n>              Limit results (default: 20)
+  --run <id>              Show one run in detail
+  --events                When used with --run, write persisted events to stderr
+  --json                  Write history output as JSON
+
+Workspace flags:
+  skelm workspace list [--json]
+  skelm workspace show <workflow-id> <name> [--json]
+  skelm workspace clean <workflow-id> <name> --force
 
 Init flags:
   --force                 Allow scaffolding into a non-empty directory

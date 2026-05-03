@@ -55,6 +55,11 @@ function patchStep(
       return step.backend !== undefined || defaultAgentBackend === undefined
         ? step
         : { ...step, backend: defaultAgentBackend }
+    case 'idempotent':
+      return {
+        ...step,
+        step: patchStep(step.step, defaultLlmBackend, defaultAgentBackend),
+      }
     case 'parallel':
       return {
         ...step,
