@@ -83,6 +83,11 @@ skelm gateway start
 - **Workflows in TypeScript.** Real types, real composition, real testability. No DSL, no markdown YAML, no visual editor.
 - **Three step kinds.** `code()` for deterministic logic, `llm()` for one-shot inference, `agent()` for full agent loops. None is a wrapper around another.
 - **Native control flow.** `parallel`, `forEach`, `branch`, `loop`, `wait`, and nested `pipelineStep` are core, not plugins.
+- **Multi-backend agent runtime.** Support for multiple agent backends:
+  - **ACP backends:** GitHub Copilot, Claude Code, Gemini CLI via Agent Client Protocol
+  - **SDK backends:** Opencode (full permission enforcement), GitHub Copilot SDK (enhanced control)
+  - **Direct LLM:** OpenAI, Anthropic, Google models
+  - **Future:** Pi coding-agent, custom backends via SkelmBackend SPI
 - **Scheduler-native.** Every run is a schedule — immediate, one-time, or recurring (cron / interval / webhook / poll / queue). One observability surface for ad-hoc and continuous runs.
 - **Per-agent workspaces.** Each agent step gets its own filesystem root, persistent across runs or ephemeral per run. Locked to prevent corruption when concurrent runs target the same workspace.
 - **Persistent state and decision journals.** `ctx.state` for typed KV across runs. Append-only journals for "what did the agent decide and why." Idempotency primitives that make 24/7 workflows trivially correct.
@@ -114,10 +119,10 @@ Customer-facing technical docs live under [`docs/`](./docs/) (a hands-on quickst
 
 Roadmap milestones land in this order:
 
-- **M1 — Core runtime + CLI.** Workflow authoring, three step kinds, three in-tree backends, full permission enforcement, SQLite run store.
+- **M1 — Core runtime + CLI.** Workflow authoring, three step kinds, three in-tree backends (copilot-acp, openai, anthropic), full permission enforcement, SQLite run store.
 - **M2 — Control flow + workspaces + state.** parallel/forEach/branch/loop/wait, per-agent workspaces, persistent KV state, agent definition markdown loader, introspection commands.
 - **M3 — Gateway, audit, scheduler, debug.** Long-running gateway service, HTTP + SSE, audit log, secrets driver, scheduler with cron/interval/webhook/poll/queue triggers, systemd user unit installer, debug breakpoints.
-- **M4 — Integrations + agent routing + Postgres.** Curated `@skelm/integrations`, OAuth setup, OpenAI-compatible HTTP surface, cost/quality routing wrappers, Postgres run store, vault secrets, distributed dedupe.
+- **M4 — Integrations + multi-backend support + Postgres.** Curated `@skelm/integrations`, OAuth setup, OpenAI-compatible HTTP surface, **new agent backends** (`@skelm/opencode`, `@skelm/copilot-sdk`, `@skelm/pi`), cost/quality routing wrappers, Postgres run store, vault secrets, distributed dedupe.
 
 See `docs/about/changelog.md` once it lands; the changelog is generated from changesets that ship with every PR.
 
