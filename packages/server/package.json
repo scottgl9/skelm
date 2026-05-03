@@ -1,15 +1,12 @@
 {
-  "name": "@skelm/cli",
+  "name": "@skelm/server",
   "version": "0.2.0",
-  "description": "skelm command line interface",
+  "description": "skelm HTTP + SSE server surface",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "skelm": "./dist/bin.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -24,10 +21,11 @@
   },
   "dependencies": {
     "@skelm/core": "workspace:*",
-    "@skelm/server": "workspace:*",
-    "tsx": "^4.19.2"
+    "h3": "^1.15.0"
   },
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
   }
 }
