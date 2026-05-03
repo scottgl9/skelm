@@ -83,6 +83,40 @@ describe('main — integration', () => {
     expect(stderr).toContain('> completed')
   })
 
+  it('writes JSON events to stderr while leaving stdout as final JSON', async () => {
+    const filePath = join(FIXTURES_DIR, 'hello.workflow.ts')
+
+    const { stdout, stderr, exitCode } = await invoke([
+      'run',
+      filePath,
+      '--input',
+      '{"name":"events"}',
+      '--events',
+      'json',
+    ])
+
+    expect(exitCode).toBe(EXIT.OK)
+    expect(JSON.parse(stdout.trim())).toEqual({ greeting: 'hello, events' })
+
+    const events = stderr
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { type: string; stepId?: string; pipelineId?: string })
+
+    expect(events.length).toBeGreaterThan(0)
+    expect(events[0]).toEqual(
+      expect.objectContaining({ type: 'run.created', pipelineId: 'hello-fixture' }),
+    )
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'run.started' }),
+        expect.objectContaining({ type: 'step.start', stepId: 'greet' }),
+        expect.objectContaining({ type: 'step.complete', stepId: 'greet' }),
+        expect.objectContaining({ type: 'run.completed' }),
+      ]),
+    )
+  })
+
   it('loads the default OpenAI backend for llm() workflows without a config file', async () => {
     const filePath = join(FIXTURES_DIR, 'openai-default.workflow.ts')
 
