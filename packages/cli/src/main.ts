@@ -1,6 +1,7 @@
 import { parseArgv } from './argv.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { HELP_TEXT } from './help.js'
+import { initCommand } from './init.js'
 import { runCommand } from './run.js'
 
 export interface MainIO {
@@ -54,6 +55,12 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
       const result = await runCommand(args, io)
       return { exitCode: result.exitCode }
     }
+    case 'init': {
+      const dir = parsed.positional[0] ?? '.'
+      const force = parsed.flags.force === true
+      const result = await initCommand({ dir, force }, io)
+      return { exitCode: result.exitCode }
+    }
     default: {
       const exhaustive: never = parsed.command
       io.stderr.write(`internal: unhandled command ${exhaustive as string}\n`)
@@ -64,5 +71,5 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
 
 function getVersion(): string {
   // Bumped on release.
-  return '0.0.0'
+  return '0.1.0'
 }

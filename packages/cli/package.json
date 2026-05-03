@@ -1,6 +1,6 @@
 {
   "name": "@skelm/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "skelm command line interface",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",

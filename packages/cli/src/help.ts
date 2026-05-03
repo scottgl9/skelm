@@ -2,6 +2,7 @@ export const HELP_TEXT = `skelm — agentic and deterministic workflows in TypeS
 
 Usage:
   skelm run <workflow.ts> [flags]
+  skelm init [<dir>] [--force]
   skelm --version
   skelm --help
 
@@ -9,6 +10,10 @@ Run flags:
   --input <json>          Input JSON (single argument)
   --input-file <path>     Input from a file
   --input-stdin           Read input JSON from stdin
+  --events <fmt>          human (default) | json | none
+
+Init flags:
+  --force                 Allow scaffolding into a non-empty directory
 
 Notes:
   * stdout receives the workflow's final output as JSON.
