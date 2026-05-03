@@ -129,9 +129,6 @@ export class CronTrigger extends TriggerPluginBase {
       throw new Error(`Invalid cron schedule: ${error instanceof Error ? error.message : String(error)}`)
     }
     
-    // Call parent initialize first to set up base config
-    await super.initialize(config)
-    
     this.logger.info(`Initialized cron trigger with schedule: ${config.schedule}`)
   }
   
