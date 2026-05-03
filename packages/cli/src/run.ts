@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { SchemaValidationError, runPipeline } from '@skelm/core'
+import { EventBus, SchemaValidationError, runPipeline } from '@skelm/core'
 import type { Run } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { CliError, loadWorkflowFromFile } from './load-workflow.js'
@@ -10,6 +10,7 @@ export interface RunCommandArgs {
   inputFile?: string
   inputStdin?: boolean
   output?: string
+  events?: 'human' | 'json' | 'none'
 }
 
 export interface RunCommandIO {
@@ -61,22 +62,51 @@ export async function runCommand(
     throw err
   }
 
-  io.stderr.write(`> running ${workflow.id}\n`)
-  const run = await runPipeline(workflow, input)
+  const eventMode: 'human' | 'json' | 'none' = args.events ?? 'human'
+  const bus = new EventBus()
+  if (eventMode === 'json') {
+    bus.subscribe((event) => {
+      io.stderr.write(`${JSON.stringify(event)}\n`)
+    })
+  } else if (eventMode === 'human') {
+    bus.subscribe((event) => {
+      switch (event.type) {
+        case 'run.started':
+          io.stderr.write(`> running ${workflow.id}\n`)
+          break
+        case 'step.start':
+          io.stderr.write(`  - ${event.stepId} (${event.kind})\n`)
+          break
+        case 'step.error':
+          io.stderr.write(`  ! ${event.stepId}: ${event.error.message}\n`)
+          break
+        default:
+          break
+      }
+    })
+  }
+
+  const run = await runPipeline(workflow, input, { events: bus })
 
   if (run.status === 'completed') {
     const json = `${JSON.stringify(run.output)}\n`
     io.stdout.write(json)
-    io.stderr.write(`> completed (runId=${run.runId})\n`)
+    if (eventMode === 'human') {
+      io.stderr.write(`> completed (runId=${run.runId})\n`)
+    }
     return { exitCode: EXIT.OK, run }
   }
 
   if (run.status === 'cancelled') {
-    io.stderr.write(`> cancelled (runId=${run.runId})\n`)
+    if (eventMode === 'human') {
+      io.stderr.write(`> cancelled (runId=${run.runId})\n`)
+    }
     return { exitCode: EXIT.CANCELLED, run }
   }
 
-  io.stderr.write(`> failed (runId=${run.runId}): ${run.error?.message ?? 'unknown'}\n`)
+  if (eventMode === 'human') {
+    io.stderr.write(`> failed (runId=${run.runId}): ${run.error?.message ?? 'unknown'}\n`)
+  }
   if (run.error?.name === SchemaValidationError.name) {
     return { exitCode: EXIT.SCHEMA_VALIDATION, run }
   }

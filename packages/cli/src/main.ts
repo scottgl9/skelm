@@ -37,6 +37,11 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         io.stderr.write('error: skelm run requires a workflow file path\n')
         return { exitCode: EXIT.CLI_ERROR }
       }
+      const eventsFlag = parsed.flags.events
+      const events: 'human' | 'json' | 'none' | undefined =
+        eventsFlag === 'json' || eventsFlag === 'none' || eventsFlag === 'human'
+          ? eventsFlag
+          : undefined
       const args = {
         workflowPath,
         ...(typeof parsed.flags.input === 'string' && { input: parsed.flags.input }),
@@ -44,6 +49,7 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
           inputFile: parsed.flags['input-file'],
         }),
         ...(parsed.flags['input-stdin'] === true && { inputStdin: true }),
+        ...(events !== undefined && { events }),
       }
       const result = await runCommand(args, io)
       return { exitCode: result.exitCode }

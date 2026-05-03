@@ -1,4 +1,5 @@
 import { RunCancelledError, serializeError } from './errors.js'
+import { EventBus } from './events.js'
 import { SchemaValidationError, validate } from './schema.js'
 import type { Context, Pipeline, Run, RunMetadata, Step, StepId, StepResult } from './types.js'
 
@@ -7,6 +8,8 @@ export interface RunOptions {
   runId?: string
   /** Optional abort signal to cancel the run from outside. */
   signal?: AbortSignal
+  /** Optional event bus to publish run events to; one is created if omitted. */
+  events?: EventBus
 }
 
 /**
@@ -26,6 +29,7 @@ export async function runPipeline<TInput, TOutput>(
 ): Promise<Run<TInput, TOutput>> {
   const startedAt = Date.now()
   const runId = options.runId ?? generateRunId()
+  const events = options.events ?? new EventBus()
   const controller = new AbortController()
   if (options.signal) {
     if (options.signal.aborted) {
@@ -36,6 +40,15 @@ export async function runPipeline<TInput, TOutput>(
       })
     }
   }
+
+  events.publish({
+    type: 'run.created',
+    runId,
+    pipelineId: pipeline.id,
+    input,
+    at: startedAt,
+  })
+  events.publish({ type: 'run.started', runId, at: startedAt })
 
   const runMeta: RunMetadata = {
     runId,
@@ -56,6 +69,8 @@ export async function runPipeline<TInput, TOutput>(
     } catch (err) {
       runStatus = 'failed'
       runError = serializeError(err)
+      const completedAt = Date.now()
+      events.publish({ type: 'run.failed', runId, error: runError, at: completedAt })
       return Object.freeze({
         runId,
         pipelineId: pipeline.id,
@@ -65,7 +80,7 @@ export async function runPipeline<TInput, TOutput>(
         output: undefined,
         error: runError,
         startedAt,
-        completedAt: Date.now(),
+        completedAt,
       })
     }
   }
@@ -78,6 +93,7 @@ export async function runPipeline<TInput, TOutput>(
     }
 
     const stepStart = Date.now()
+    events.publish({ type: 'step.start', runId, stepId: step.id, kind: step.kind, at: stepStart })
     try {
       const ctx: Context<TInput> = freezeContext({
         input: resolvedInput,
@@ -96,6 +112,15 @@ export async function runPipeline<TInput, TOutput>(
         startedAt: stepStart,
         completedAt,
       })
+      events.publish({
+        type: 'step.complete',
+        runId,
+        stepId: step.id,
+        kind: step.kind,
+        output,
+        durationMs: completedAt - stepStart,
+        at: completedAt,
+      })
     } catch (err) {
       const completedAt = Date.now()
       const serialized = serializeError(err)
@@ -107,6 +132,14 @@ export async function runPipeline<TInput, TOutput>(
         startedAt: stepStart,
         completedAt,
         error: serialized,
+      })
+      events.publish({
+        type: 'step.error',
+        runId,
+        stepId: step.id,
+        kind: step.kind,
+        error: serialized,
+        at: completedAt,
       })
       runStatus = 'failed'
       runError = serialized
@@ -137,6 +170,26 @@ export async function runPipeline<TInput, TOutput>(
     }
   }
 
+  const completedAt = Date.now()
+  if (runStatus === 'completed') {
+    events.publish({
+      type: 'run.completed',
+      runId,
+      output: finalOutput,
+      durationMs: completedAt - startedAt,
+      at: completedAt,
+    })
+  } else if (runStatus === 'failed') {
+    events.publish({
+      type: 'run.failed',
+      runId,
+      error: runError ?? serializeError(new Error('unknown run failure')),
+      at: completedAt,
+    })
+  } else if (runStatus === 'cancelled') {
+    events.publish({ type: 'run.cancelled', runId, at: completedAt })
+  }
+
   return Object.freeze({
     runId,
     pipelineId: pipeline.id,
@@ -146,7 +199,7 @@ export async function runPipeline<TInput, TOutput>(
     output: runStatus === 'completed' ? finalOutput : undefined,
     error: runError,
     startedAt,
-    completedAt: Date.now(),
+    completedAt,
   })
 }
 

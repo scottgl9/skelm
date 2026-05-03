@@ -5,6 +5,8 @@ export const VERSION = '0.0.0'
 
 export { code, pipeline } from './builders.js'
 export { RunCancelledError, StepError, serializeError } from './errors.js'
+export { EventBus, terminalEventTypeFor } from './events.js'
+export type { EventListener, RunEvent, RunEventType } from './events.js'
 export type { RunOptions } from './runner.js'
 export { runPipeline, SchemaValidationError } from './runner.js'
 export type { SkelmSchema } from './schema.js'
