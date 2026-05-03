@@ -34,6 +34,13 @@ export type {
   ToolPermissionEnforcement,
   Usage,
 } from './backend.js'
+export { ProviderPluginBase, ProviderError, ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError, ProviderNotFoundError } from './providers/base.js'
+export type { ProviderCapabilities, ProviderSpecificCapabilities } from './providers/base.js'
+export { ProviderCapabilityRegistry, globalCapabilityRegistry } from './providers/registry.js'
+export type { ProviderQuery } from './providers/registry.js'
+export { selectProviderForTask, selectProvider, ProviderSelectionError } from './providers/selector.js'
+export type { TaskRequirements, ProviderSelection } from './providers/selector.js'
+export type { ProviderModel, PluginMetadata, PluginConfig, PluginLifecycle, PluginHealthStatus, PluginType, SkelmPlugin, ProviderPlugin, WorkflowPlugin } from './plugins.js'
 export {
   agent,
   branch,

@@ -6,6 +6,8 @@
  */
 
 export { createOpencodeBackend, createOpencodeAcpBackend } from './backend.js'
+export { createOpencodeBackendFromConfig } from './factory.js'
+export { OpencodeProvider, createOpencodeProvider } from './provider.js'
 export { OpencodeClientWrapper } from './client.js'
 export {
   mapSkelmPermissionsToOpencode,

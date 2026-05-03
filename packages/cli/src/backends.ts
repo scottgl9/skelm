@@ -7,6 +7,8 @@ import {
   createAnthropicBackend,
   createOpenAIBackend,
 } from '@skelm/core'
+import { createOpencodeBackendFromConfig } from '@skelm/opencode'
+import { createPiBackendFromConfig } from '@skelm/pi'
 
 export function applyConfiguredBackends<TInput, TOutput>(
   pipeline: Pipeline<TInput, TOutput>,
@@ -131,13 +133,33 @@ function createBackend(backendId: string, config: SkelmConfig) {
         ...(model !== undefined && { model }),
       })
     }
+    case 'opencode': {
+      return createOpencodeBackendFromConfig({
+        apiKey: entry.apiKey as string | { secret: string } | undefined,
+        apiUrl: readString(entry.apiUrl),
+        agent: readString(entry.agent),
+        timeout: readNumber(entry.timeout),
+        maxRetries: readNumber(entry.maxRetries),
+        logLevel: readString(entry.logLevel) as 'debug' | 'info' | 'warn' | 'error' | undefined,
+      })
+    }
+    case 'pi': {
+      return createPiBackendFromConfig({
+        command: readString(entry.command),
+        cwd: readString(entry.cwd),
+        args: readStringArray(entry.args),
+        timeout: readNumber(entry.timeout),
+        maxRetries: readNumber(entry.maxRetries),
+        logLevel: readString(entry.logLevel) as 'debug' | 'info' | 'warn' | 'error' | undefined,
+      })
+    }
     default:
       throw new Error(`unsupported backend in CLI config: ${backendId}`)
   }
 }
 
 function configuredBackendIds(config: SkelmConfig): Set<string> {
-  const ids = new Set<string>(['openai', 'anthropic', 'copilot-acp'])
+  const ids = new Set<string>(['openai', 'anthropic', 'copilot-acp', 'opencode', 'pi'])
   const backends = config.backends ?? {}
   for (const [key, value] of Object.entries(backends)) {
     if (key === 'default' || key === 'llm' || key === 'agent') continue
@@ -175,4 +197,8 @@ function readString(value: unknown): string | undefined {
 
 function readStringArray(value: unknown): readonly string[] | undefined {
   return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : undefined
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined
 }
