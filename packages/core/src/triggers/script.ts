@@ -67,9 +67,6 @@ export class ScriptTrigger extends TriggerPluginBase {
       throw new TriggerError('Script trigger requires args array')
     }
     
-    // Call parent initialize to set up base config
-    await super.initialize(config)
-    
     this.logger.info(`Initialized script trigger: ${config.command} ${config.args.join(' ')}`)
   }
   

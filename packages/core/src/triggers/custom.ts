@@ -39,9 +39,6 @@ export class CustomTrigger extends TriggerPluginBase {
       throw new TriggerError('Custom trigger requires a handler function')
     }
     
-    // Call parent initialize to set up base config
-    await super.initialize(config)
-    
     this.logger.info(`Initialized custom trigger: ${this.name}`)
   }
   
@@ -119,8 +116,8 @@ export class CustomTrigger extends TriggerPluginBase {
       timestamp: new Date(),
       payload,
       metadata: {
-        ...metadata,
         source: 'custom',
+        ...metadata,
       },
     }
     
