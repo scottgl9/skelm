@@ -4,6 +4,7 @@ import {
   type SkelmConfig,
   type Step,
   createAcpBackend,
+  createAnthropicBackend,
   createOpenAIBackend,
 } from '@skelm/core'
 
@@ -114,8 +115,17 @@ function createBackend(backendId: string, config: SkelmConfig) {
         ...(cwd !== undefined && { cwd }),
       })
     }
-    case 'anthropic':
-      throw new Error('anthropic backend is not implemented yet')
+    case 'anthropic': {
+      const directApiKey = readString(entry.apiKey)
+      const resolvedApiKey = directApiKey ?? resolveSecret(entry.apiKey)
+      const baseUrl = readString(entry.baseUrl)
+      const model = readString(entry.model)
+      return createAnthropicBackend({
+        ...(resolvedApiKey !== undefined && { apiKey: resolvedApiKey }),
+        ...(baseUrl !== undefined && { baseUrl }),
+        ...(model !== undefined && { model }),
+      })
+    }
     default:
       throw new Error(`unsupported backend in CLI config: ${backendId}`)
   }
