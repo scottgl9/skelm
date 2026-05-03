@@ -1,0 +1,53 @@
+{
+  "name": "skelm",
+  "version": "0.0.0",
+  "description": "skelm — TypeScript framework for secure, agentic, long-running workflows",
+  "license": "MIT",
+  "author": "Scott Glover <scottgl@gmail.com>",
+  "homepage": "https://github.com/scottgl9/skelm#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scottgl9/skelm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/scottgl9/skelm/issues"
+  },
+  "keywords": [
+    "skelm",
+    "workflow",
+    "pipeline",
+    "agent",
+    "agentic",
+    "llm",
+    "mcp",
+    "acp",
+    "orchestration",
+    "typescript",
+    "automation"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "skelm": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "../../README.md", "../../LICENSE"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@skelm/core": "workspace:*",
+    "@skelm/cli": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
