@@ -1,3 +1,24 @@
 // Public surface of @skelm/core. Anything exported from this file is part
 // of the public API; anything not re-exported here is internal.
+
 export const VERSION = '0.0.0'
+
+export { code, pipeline } from './builders.js'
+export { RunCancelledError, StepError, serializeError } from './errors.js'
+export type { RunOptions } from './runner.js'
+export { runPipeline } from './runner.js'
+export type {
+  CodeStep,
+  Context,
+  Pipeline,
+  Run,
+  RunId,
+  RunMetadata,
+  RunStatus,
+  SerializedError,
+  Step,
+  StepId,
+  StepKind,
+  StepResult,
+  StepStatus,
+} from './types.js'
