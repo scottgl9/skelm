@@ -1,205 +1,320 @@
-# skelm Backends
+# skelm Providers and Backends
 
-A backend is the bridge between skelm's `agent()` step and an AI coding agent or LLM provider. Each backend implements the `SkelmBackend` interface and handles:
+## Architecture Overview
 
-- Prompt construction and system message injection
-- Tool/MCP server negotiation
-- Permission enforcement (or delegation)
-- Streaming response handling
-- Error mapping and retry logic
+skelm separates provider abstractions into two distinct types:
 
-## Built-in Backends
+### ModelProvider (LLM Endpoints)
 
-### ACP Backends (Agent Client Protocol)
+Model providers handle direct LLM API interactions for `llm()` steps in workflows. They support:
 
-ACP backends spawn a subprocess that speaks the Agent Client Protocol over stdio.
+- Multiple LLM endpoints (OpenAI, Anthropic, vllm, sglang, ollama, gemini)
+- Chat completion with system prompts
+- Streaming responses
+- Token usage tracking
+- Model discovery
 
-- **`@skelm/acp-copilot`** - GitHub Copilot via `copilot-acp`
-- **`@skelm/acp-anthropic`** - Claude Code via `claude`
-- **`@skelm/acp-gemini`** - Gemini CLI via `gemini`
+**Use ModelProvider for:**
+- Direct LLM inference without agent loops
+- Cost optimization with specific models
+- Simple text generation tasks
 
-**Limitations:**
-- Permission enforcement is advisory only (backend forwards permissions as metadata)
-- No granular tool/skill filtering at the skelm layer
-- Execution control depends on the underlying agent's configuration
+### AgentProvider (Coding Agent SDKs)
 
-**Best for:** Quick setup, existing ACP-compatible agents, editor integrations
+Agent providers integrate with coding agent SDKs for `agent()` steps. They support:
 
-### SDK Backends (Full Control)
+- Full agent loop execution with tool calls
+- Permission enforcement at the skelm layer
+- MCP server negotiation
+- Workspace management
+- Streaming and error handling
 
-SDK backends use official SDKs for direct API integration with enhanced permission control.
+**Use AgentProvider for:**
+- Complex coding workflows
+- Multi-turn agent interactions
+- Production deployments with strict permissions
 
-- **`@skelm/opencode`** - Opencode.ai with full permission enforcement ✅ **RECOMMENDED**
-- **`@skelm/copilot-sdk`** - GitHub Copilot SDK (in development)
-- **`@skelm/pi`** - Pi coding-agent (pending research)
+### SkelmBackend Interface
 
-**Advantages:**
-- Granular permission enforcement at the skelm layer
-- Dynamic agent configuration per pipeline
-- Full streaming and error handling
-- No subprocess management overhead
+The `SkelmBackend` interface is implemented by AgentProviders and represents the bridge between skelm's `agent()` step and an AI coding agent.
 
-**Best for:** Production deployments, strict permission requirements, multi-tenant setups
+## Provider Types
 
-### Direct LLM Backends
+### Model Providers
 
-Direct LLM backends call provider APIs without agent loop capabilities.
+| Provider | Type | Status |
+|----------|------|--------|
+| OpenAI | Direct API | ✅ Available |
+| Anthropic | Direct API | ✅ Available |
+| vllm | Local inference | ✅ Available |
+| sglang | Local inference | ✅ Available |
+| Ollama | Local inference | ✅ Available |
+| Google Gemini | Direct API | 🚧 In Development |
 
-- **`@skelm/openai`** - OpenAI chat completions
-- **`@skelm/anthropic`** - Anthropic messages API
-- **`@skelm/google`** - Google Gemini (in development)
+### Agent Providers
 
-**Best for:** Simple inference tasks, cost optimization, specific model requirements
+| Provider | Type | Status | Recommendation |
+|----------|------|--------|----------------|
+| Opencode | SDK | ✅ Available | ⭐ Recommended |
+| ACP (Copilot) | Subprocess | ✅ Available | Development only |
+| ACP (Claude Code) | Subprocess | ✅ Available | Development only |
+| ACP (Gemini CLI) | Subprocess | ✅ Available | Development only |
+| GitHub Copilot SDK | SDK | 🚧 In Development | - |
+| Pi | SDK | 🔜 Pending | - |
 
-## Permission Enforcement Model
+## Configuration
 
-| Backend Type | Permission Enforcement | Tool Filtering | Execution Control |
-|--------------|----------------------|----------------|-------------------|
-| ACP | Advisory (metadata only) | ❌ No | ❌ Limited |
-| SDK | Enforced (skelm layer) | ✅ Yes | ✅ Full |
-| Direct LLM | Enforced (skelm layer) | ✅ Yes | ✅ Full |
-
-**Recommendation:** Use SDK backends (`@skelm/opencode`) for production workflows requiring strict permission enforcement. Use ACP backends for development and testing with existing ACP agents.
-
-## Configuration Example
+### ModelProvider Configuration
 
 ```typescript
 // skelm.config.ts
-import { defineConfig } from 'skelm'
+import { defineConfig, ModelRegistry } from 'skelm'
 
 export default defineConfig({
-  backends: {
-    // SDK backend with full control (recommended)
-    'opencode': {
-      type: 'opencode',
-      apiKey: process.env.OPENCODE_API_KEY,
-      agent: 'build', // or 'plan', or custom agent ID
-      permissions: {
-        edit: 'allow',
-        bash: 'ask',
-        read: 'allow'
+  providers: {
+    models: {
+      'openai': {
+        provider: 'openai',
+        model: 'gpt-4o',
+        apiKey: process.env.OPENAI_API_KEY,
+        temperature: 0.7,
+        maxTokens: 4096
+      },
+      'ollama': {
+        provider: 'ollama',
+        model: 'llama3',
+        endpoint: 'http://localhost:11434'
       }
-    },
-    
-    // ACP backend for development
-    'copilot-dev': {
-      type: 'acp',
-      command: 'copilot-acp',
-      // Permissions are advisory only
     }
   }
 })
 ```
 
-## Creating a Custom Backend
-
-Implement the `SkelmBackend` interface:
+### AgentProvider Configuration
 
 ```typescript
-import type { SkelmBackend, AgentRequest, AgentResponse, BackendContext } from 'skelm'
+// skelm.config.ts
+import { defineConfig, AgentRegistry } from 'skelm'
 
-export const myCustomBackend: SkelmBackend = {
-  id: 'my-backend',
-  capabilities: {
-    prompt: true,
-    streaming: true,
-    toolPermissions: 'enforced', // or 'advisory' | 'unsupported'
-    // ... other capabilities
-  },
-  
-  async run(request: AgentRequest, context: BackendContext): Promise<AgentResponse> {
-    // Implement your backend logic
-    // Handle streaming, permissions, errors, etc.
-    return {
-      text: 'response',
-      stopReason: 'complete'
+export default defineConfig({
+  providers: {
+    agents: {
+      'opencode': {
+        provider: 'opencode',
+        apiKey: process.env.OPENCODE_API_KEY,
+        agent: 'build', // or 'plan', or custom agent ID
+        permissions: {
+          edit: 'allow',
+          bash: 'ask',
+          read: 'allow'
+        },
+        timeoutMs: 300000 // 5 minutes
+      },
+      'copilot-dev': {
+        provider: 'acp',
+        command: 'copilot-acp',
+        // Permissions are advisory only for ACP
+      }
     }
   }
-}
+})
 ```
 
-See `packages/core/src/acp/backend.ts` and `packages/core/src/anthropic/backend.ts` for reference implementations.
+## Using Providers in Workflows
 
-## Backend Selection
-
-Select a backend per pipeline or per step:
+### ModelProvider with `llm()` Step
 
 ```typescript
-import { pipeline, agent } from 'skelm'
+import { pipeline, llm } from 'skelm'
 
 export default pipeline({
-  id: 'my-workflow',
+  id: 'text-processing',
   steps: [
-    agent({
-      id: 'coder',
-      backend: 'opencode', // SDK backend with full control
-      agentDef: './agents/developer',
-      permissions: {
-        edit: 'allow',
-        bash: 'ask'
-      }
-    }),
-    agent({
-      id: 'reviewer',
-      backend: 'copilot-dev', // ACP backend for quick iteration
-      agentDef: './agents/reviewer',
-      permissions: {
-        edit: 'deny',
-        bash: 'deny'
-      }
+    llm({
+      id: 'summarize',
+      backend: 'openai', // Uses ModelProvider
+      system: 'You are a helpful summarizer.',
+      prompt: 'Summarize: {{previous_step_output}}',
+      temperature: 0.5
     })
   ]
 })
 ```
 
+### AgentProvider with `agent()` Step
+
+```typescript
+import { pipeline, agent } from 'skelm'
+
+export default pipeline({
+  id: 'coding-workflow',
+  steps: [
+    agent({
+      id: 'coder',
+      backend: 'opencode', // Uses AgentProvider
+      agentDef: './agents/developer',
+      permissions: {
+        edit: 'allow',
+        bash: 'ask'
+      },
+      mcp: [
+        { name: 'filesystem', url: 'http://localhost:3000' }
+      ]
+    })
+  ]
+})
+```
+
+## Creating Custom Providers
+
+### ModelProvider Implementation
+
+```typescript
+import { ModelProviderBase, ChatMessage, LlmCompletion } from 'skelm'
+
+export class MyModelProvider extends ModelProviderBase {
+  readonly id = 'my-provider'
+  readonly name = 'My Custom Model Provider'
+  
+  async doInitialize(config: ModelProviderConfig): Promise<void> {
+    // Initialize your provider (API clients, etc.)
+  }
+  
+  async doComplete(
+    messages: ChatMessage[],
+    options?: Partial<ModelProviderConfig>
+  ): Promise<LlmCompletion> {
+    // Implement completion logic
+    return {
+      content: 'response',
+      model: config.model,
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 }
+    }
+  }
+}
+```
+
+### AgentProvider Implementation
+
+```typescript
+import { AgentProviderBase, AgentRequest, AgentResponse } from 'skelm'
+import type { SkelmBackend } from 'skelm'
+
+export class MyAgentProvider extends AgentProviderBase {
+  readonly id = 'my-agent-provider'
+  readonly name = 'My Custom Agent Provider'
+  
+  async doInitialize(config: AgentProviderConfig): Promise<void> {
+    // Initialize your provider (SDK clients, etc.)
+  }
+  
+  async doCreateBackend(config?: Partial<AgentProviderConfig>): Promise<SkelmBackend> {
+    // Return a SkelmBackend implementation
+    return {
+      id: 'my-backend',
+      capabilities: {
+        prompt: true,
+        streaming: true,
+        toolPermissions: 'enforced'
+      },
+      async run(request, context) {
+        // Implement agent logic
+        return { text: 'response', stopReason: 'complete' }
+      }
+    }
+  }
+  
+  async doExecute(request: AgentRequest): Promise<AgentResponse> {
+    // Execute agent request
+    const backend = await this.createBackend()
+    return backend.run(request, {})
+  }
+}
+```
+
+## Provider Registry
+
+Both ModelProvider and AgentProvider implement registry patterns for managing multiple providers:
+
+```typescript
+import { ModelRegistry, AgentRegistry } from 'skelm'
+
+// Model Registry
+const modelRegistry = new ModelRegistry()
+modelRegistry.register(new OpenAIModelProvider())
+modelRegistry.setDefault('openai')
+
+// Initialize all models
+await modelRegistry.initializeAll({
+  'openai': { provider: 'openai', model: 'gpt-4o', apiKey: '...' },
+  'ollama': { provider: 'ollama', model: 'llama3', endpoint: '...' }
+})
+
+// Health check
+const health = await modelRegistry.healthCheckAll()
+
+// Agent Registry
+const agentRegistry = new AgentRegistry()
+agentRegistry.register(new OpencodeProvider())
+agentRegistry.setDefault('opencode')
+
+// Initialize all agents
+await agentRegistry.initializeAll({
+  'opencode': { provider: 'opencode', apiKey: '...', agent: 'build' }
+})
+```
+
 ## Migration Guide
 
-### From ACP to SDK Backend
+### From Monolithic Provider to Separated Architecture
 
-If you're currently using an ACP backend and want full permission control:
+If you're using an older provider system that combined LLM and agent capabilities:
 
-1. Install the SDK backend: `npm i @skelm/opencode`
-2. Configure the backend in `skelm.config.ts`
-3. Update your pipeline to use the new backend ID
-4. Verify permissions are enforced (check audit logs)
+1. **Identify usage patterns:**
+   - `llm()` steps → ModelProvider
+   - `agent()` steps → AgentProvider
 
-### Permission Mapping
+2. **Split configurations:**
+   - Move LLM endpoint configs to `providers.models`
+   - Move agent SDK configs to `providers.agents`
 
-SDK backends map skelm permissions to the underlying agent's permission system:
+3. **Update imports:**
+   ```typescript
+   // Before
+   import { ProviderPlugin } from 'skelm'
+   
+   // After
+   import { ModelProviderBase } from 'skelm' // for LLM endpoints
+   import { AgentProviderBase } from 'skelm' // for agent SDKs
+   ```
 
-| skelm Permission | Opencode Permission |
-|-----------------|---------------------|
-| `edit` | `edit` |
-| `bash` | `bash` |
-| `read` | `read` |
-| `glob` | `glob` |
-| `grep` | `grep` |
-| `list` | `list` |
-| `task` | `task` |
-| `external_*` | `external_*` |
+4. **Update workflows:**
+   - Ensure `llm()` steps reference `backend` from ModelProvider
+   - Ensure `agent()` steps reference `backend` from AgentProvider
 
 ## Troubleshooting
 
-### Backend fails to start
+### Provider not found
 
-- Check API key is set (`OPENCODE_API_KEY`, `OPENAI_API_KEY`, etc.)
-- Verify the backend command is in PATH (for ACP backends)
-- Check logs for connection errors
+- Verify provider is registered: `registry.get('provider-id')`
+- Check provider ID matches workflow configuration
+- Review initialization logs for errors
 
-### Permissions not enforced
+### Model/Agent selection fails
 
-- Ensure you're using an SDK backend (ACP backends only forward permissions as metadata)
-- Check the backend's `capabilities.toolPermissions` value
-- Review audit logs for denial entries
+- Set a default provider: `registry.setDefault('provider-id')`
+- Ensure at least one provider is registered
+- Check provider health: `registry.healthCheckAll()`
 
-### Streaming issues
+### Permission enforcement not working
 
-- Verify SSE support in your network (for SDK backends)
-- Check subprocess stdio handling (for ACP backends)
-- Review error handling in your pipeline
+- Use SDK-based AgentProvider (not ACP/subprocess)
+- Verify `capabilities.toolPermissions = 'enforced'`
+- Check audit logs for denial entries
 
 ## See Also
 
-- [Architecture: Backends](../architecture/backends.md)
-- [API Reference: SkelmBackend](../api/backend-interface.md)
-- [Tutorial: Adding a Backend](../tutorials/custom-backend.md)
+- [Architecture: Providers](../architecture/providers.md)
+- [API Reference: ModelProvider](../api/model-provider.md)
+- [API Reference: AgentProvider](../api/agent-provider.md)
+- [Tutorial: Creating a Provider](../tutorials/custom-provider.md)

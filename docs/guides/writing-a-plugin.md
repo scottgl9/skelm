@@ -1,10 +1,11 @@
 # Guide — writing a plugin
 
-skelm plugins are regular npm packages that contribute backends, hooks, secret drivers, or skill packs. The plugin contract is small, versioned, and trust-aware: a plugin runs in the same Node process as user code, so the contract is about *clear capability declaration*, not about sandboxing.
+skelm plugins are regular npm packages that contribute **providers** (ModelProvider, AgentProvider), backends, hooks, secret drivers, or skill packs. The plugin contract is small, versioned, and trust-aware: a plugin runs in the same Node process as user code, so the contract is about *clear capability declaration*, not about sandboxing.
 
 ## When to write a plugin
 
-- You want to publish a custom **backend** (LLM, agent runtime). See the dedicated [Writing a backend](./writing-a-backend.md) guide.
+- You want to publish a custom **ModelProvider** for LLM endpoints (OpenAI, vllm, sglang, ollama, custom APIs). See the [Provider architecture](../backends/README.md) for details.
+- You want to publish a custom **AgentProvider** for coding agent SDKs (ACP, Opencode, Copilot SDK, custom agents).
 - You want to ship reusable **skill packs** as an npm package customers install.
 - You want to add a **hook** that observes runs (audit forwarder, custom metric, redaction).
 - You want to provide a custom **secret driver** (Hashicorp Vault, AWS Secrets Manager, GCP Secret Manager, internal secrets service).
@@ -59,16 +60,22 @@ The `skelm.compat.pluginApi` field is required and integer-versioned. Skelm refu
 import { definePlugin } from 'skelm/plugin'
 import { redactingAfterStepHook } from './hooks/redact.ts'
 import { vaultSecretDriver } from './secret-drivers/vault.ts'
-import { createMyBackend } from './backends/my-backend.ts'
+import { MyModelProvider } from './providers/my-model.ts'
+import { MyAgentProvider } from './providers/my-agent.ts'
 
 export default definePlugin({
   id: 'skelm-mycontrib',
   version: '0.1.0',
 
   contributes: {
-    backends: [
-      createMyBackend({ endpoint: process.env.MYCORP_LLM_ENDPOINT! }),
-    ],
+    providers: {
+      models: [
+        new MyModelProvider(), // For LLM inference
+      ],
+      agents: [
+        new MyAgentProvider(), // For agent SDKs
+      ],
+    },
     hooks: {
       afterStep: redactingAfterStepHook,
     },

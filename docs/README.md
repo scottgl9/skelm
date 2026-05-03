@@ -37,6 +37,7 @@ Complete, runnable workflows for the patterns customers ship most often:
 - [CLI](./reference/cli.md) — every command, flag, exit code
 - [HTTP](./reference/http.md) — endpoints, auth, errors, SSE
 - [Configuration](./reference/config.md) — `skelm.config.ts` schema
+- [Providers](./backends/README.md) — ModelProvider and AgentProvider architecture
 - [Agent definitions](./reference/agent-definitions.md) — `AGENTS.md` / `SOUL.md` / `MEMORY.md` / `EXAMPLES.md`
 - [Event schema](./reference/events.md)
 - [Audit categories](./reference/audit.md)

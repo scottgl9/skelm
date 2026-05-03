@@ -84,10 +84,10 @@ skelm gateway start
 - **Three step kinds.** `code()` for deterministic logic, `llm()` for one-shot inference, `agent()` for full agent loops. None is a wrapper around another.
 - **Native control flow.** `parallel`, `forEach`, `branch`, `loop`, `wait`, and nested `pipelineStep` are core, not plugins.
 - **Multi-backend agent runtime.** Support for multiple agent backends:
-  - **ACP backends:** GitHub Copilot, Claude Code, Gemini CLI via Agent Client Protocol
-  - **SDK backends:** Opencode (full permission enforcement), GitHub Copilot SDK (enhanced control)
-  - **Direct LLM:** OpenAI, Anthropic, Google models
-  - **Future:** Pi coding-agent, custom backends via SkelmBackend SPI
+  - **Model providers (LLM endpoints):** OpenAI, Anthropic, vllm, sglang, ollama, Google Gemini for direct `llm()` inference
+  - **Agent providers (coding agent SDKs):** Opencode (full permission enforcement), ACP backends (Copilot, Claude Code, Gemini CLI), GitHub Copilot SDK (in development)
+  - **Future:** Pi coding-agent, custom providers via ModelProvider/AgentProvider SPI
+  - **See:** [`docs/backends/README.md`](./docs/backends/README.md) for provider architecture and configuration
 - **Scheduler-native.** Every run is a schedule — immediate, one-time, or recurring (cron / interval / webhook / poll / queue). One observability surface for ad-hoc and continuous runs.
 - **Per-agent workspaces.** Each agent step gets its own filesystem root, persistent across runs or ephemeral per run. Locked to prevent corruption when concurrent runs target the same workspace.
 - **Persistent state and decision journals.** `ctx.state` for typed KV across runs. Append-only journals for "what did the agent decide and why." Idempotency primitives that make 24/7 workflows trivially correct.
@@ -111,6 +111,13 @@ skelm run workflows/hello.workflow.ts
 ## Documentation
 
 Customer-facing technical docs live under [`docs/`](./docs/) (a hands-on quickstart, full CLI/API/HTTP reference, deployment guides, and recipes for the common workflow shapes).
+
+- **Provider architecture:** [`docs/backends/README.md`](./docs/backends/README.md) — ModelProvider and AgentProvider abstractions, configuration, and custom provider implementation
+- **Quickstart:** [`docs/quickstart/index.md`](./docs/quickstart/index.md) — install, write a workflow, run it
+- **Guides:** [`docs/guides/`](./docs/guides/) — testing workflows, writing plugins/backends, authoring tips
+- **Recipes:** [`docs/recipes/`](./docs/recipes/) — complete workflow examples
+- **Reference:** [`docs/reference/`](./docs/reference/) — API, CLI, HTTP, configuration schemas
+- **Deployment:** [`docs/deployment/`](./docs/deployment/) — systemd, reverse proxy, Postgres, secrets
 
 - [`AGENTS.md`](./AGENTS.md) — guidance for contributors and AI coding assistants working on skelm itself.
 - [`CLAUDE.md`](./CLAUDE.md) — Claude-specific operating notes for working in this repo.
