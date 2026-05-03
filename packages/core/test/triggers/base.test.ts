@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { TriggerPluginBase, TriggerState, TriggerError } from '../src/triggers/base.js'
-import type { TriggerConfig, TriggerType, TriggerHealthStatus } from '../src/triggers/types.js'
+import { TriggerPluginBase, TriggerState, TriggerError } from '../../src/triggers/base.js'
+import type { TriggerConfig, TriggerType, TriggerHealthStatus } from '../../src/triggers/types.js'
 
 // Mock trigger implementation for testing
 class MockTrigger extends TriggerPluginBase {
