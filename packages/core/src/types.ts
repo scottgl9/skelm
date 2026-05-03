@@ -21,6 +21,7 @@ export type StepKind =
   | 'code'
   | 'llm'
   | 'agent'
+  | 'idempotent'
   | 'parallel'
   | 'forEach'
   | 'branch'
@@ -35,6 +36,61 @@ export interface RunMetadata {
   readonly startedAt: number
 }
 
+export type WorkspaceConfig =
+  | {
+      readonly mode: 'persistent'
+      readonly name: string
+      readonly base?: string
+      readonly gitRoot?: boolean
+      readonly cleanup?: 'never' | 'on-success'
+    }
+  | {
+      readonly mode: 'ephemeral'
+      readonly prefix?: string
+      readonly cleanup?: 'on-step-end' | 'on-run-end' | 'on-success'
+    }
+  | {
+      readonly mode: 'mounted'
+      readonly path: string
+    }
+
+export interface WorkspaceHandle {
+  readonly path: string
+  readonly mode: WorkspaceConfig['mode']
+  readonly name?: string
+}
+
+export type StateScope = 'pipeline' | 'step' | 'pipeline+name'
+
+export interface StateConfig {
+  readonly scope?: StateScope
+  readonly name?: string
+}
+
+export interface StateSetOptions {
+  readonly ttlMs?: number
+}
+
+export interface StateReadOptions {
+  readonly since?: number
+  readonly limit?: number
+}
+
+export interface StateEntry {
+  readonly key: string
+  readonly value: unknown
+}
+
+export interface State {
+  get<T>(key: string): Promise<T | undefined>
+  set<T>(key: string, value: T, opts?: StateSetOptions): Promise<void>
+  delete(key: string): Promise<void>
+  list(prefix?: string): AsyncIterable<StateEntry>
+  cas<T>(key: string, expected: T | undefined, next: T): Promise<boolean>
+  append(stream: string, entry: unknown): Promise<void>
+  read(stream: string, opts?: StateReadOptions): AsyncIterable<unknown>
+}
+
 /**
  * Typed context passed to every step handler. The `steps` field accumulates
  * step outputs as the run progresses; later stages will narrow it via type
@@ -45,6 +101,8 @@ export interface Context<TInput = unknown> {
   readonly steps: Readonly<Record<StepId, unknown>>
   readonly run: RunMetadata
   readonly signal: AbortSignal
+  readonly state: State
+  readonly workspace?: WorkspaceHandle
 }
 
 /** Per-step retry policy applied by the runner around step execution. */
@@ -77,6 +135,7 @@ export interface CodeStep<TOutput = unknown> {
   readonly kind: 'code'
   readonly id: StepId
   readonly run: (ctx: Context) => TOutput | Promise<TOutput>
+  readonly state?: StateConfig
   readonly retry?: RetryPolicy
 }
 
@@ -91,6 +150,7 @@ export interface LlmStep<TOutput = unknown> {
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   readonly temperature?: number
   readonly maxTokens?: number
+  readonly state?: StateConfig
   readonly retry?: RetryPolicy
 }
 
@@ -105,9 +165,21 @@ export interface AgentStep<TOutput = unknown> {
   readonly mcp?:
     | readonly import('./backend.js').McpServerConfig[]
     | ((ctx: Context) => readonly import('./backend.js').McpServerConfig[])
+  readonly workspace?: WorkspaceConfig | ((ctx: Context) => WorkspaceConfig)
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   readonly permissions?: import('./permissions.js').AgentPermissions
   readonly maxTurns?: number
+  readonly state?: StateConfig
+  readonly retry?: RetryPolicy
+}
+
+export interface IdempotentStep<TOutput = unknown> {
+  readonly kind: 'idempotent'
+  readonly id: StepId
+  readonly key: string | ((ctx: Context) => string)
+  readonly step: Step
+  readonly ttlMs?: number
+  readonly state?: StateConfig
   readonly retry?: RetryPolicy
 }
 
@@ -121,6 +193,7 @@ export interface ParallelStep {
   readonly steps: readonly Step[]
   readonly waitFor?: ParallelWaitFor
   readonly onError?: ParallelOnError
+  readonly state?: StateConfig
   readonly retry?: RetryPolicy
 }
 
@@ -131,6 +204,7 @@ export interface ForEachStep {
   readonly items: (ctx: Context) => readonly unknown[]
   readonly concurrency?: number
   readonly step: (item: unknown, index: number) => Step
+  readonly state?: StateConfig
   readonly retry?: RetryPolicy
 }
 
@@ -141,6 +215,7 @@ export interface BranchStep {
   readonly on: (ctx: Context) => string
   readonly cases: Readonly<Record<string, Step>>
   readonly default?: Step
+  readonly state?: StateConfig
   readonly retry?: RetryPolicy
 }
 
@@ -151,6 +226,7 @@ export interface LoopStep {
   readonly while: (ctx: Context) => boolean | Promise<boolean>
   readonly maxIterations: number
   readonly step: Step
+  readonly state?: StateConfig
   readonly retry?: RetryPolicy
 }
 
@@ -161,6 +237,7 @@ export interface WaitStep<TOutput = unknown> {
   readonly message?: string | ((ctx: Context) => string)
   readonly timeoutMs?: number
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
+  readonly state?: StateConfig
   readonly retry?: RetryPolicy
 }
 
@@ -170,6 +247,7 @@ export interface PipelineStep<TInput = unknown, TOutput = unknown> {
   readonly id: StepId
   readonly pipeline: Pipeline<TInput, TOutput>
   readonly input?: TInput | ((ctx: Context) => TInput)
+  readonly state?: StateConfig
   readonly retry?: RetryPolicy
 }
 
@@ -178,6 +256,7 @@ export type Step =
   | CodeStep
   | LlmStep
   | AgentStep
+  | IdempotentStep
   | ParallelStep
   | ForEachStep
   | BranchStep

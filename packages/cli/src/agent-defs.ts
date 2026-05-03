@@ -37,6 +37,8 @@ function patchStep(step: Step, workflowDir: string): Step {
         system: mergeSystemPrompt(prompt, originalSystem),
       }
     }
+    case 'idempotent':
+      return { ...step, step: patchStep(step.step, workflowDir) }
     case 'parallel':
       return {
         ...step,

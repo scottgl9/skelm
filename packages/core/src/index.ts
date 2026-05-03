@@ -39,6 +39,7 @@ export {
   branch,
   code,
   forEach,
+  idempotent,
   llm,
   loop,
   parallel,
@@ -65,6 +66,13 @@ export type {
   RunSummary,
   SqliteRunStoreOptions,
 } from './run-store.js'
+export { WorkspaceManager } from './workspace.js'
+export type {
+  PreparedWorkspace,
+  WorkspaceManagerOptions,
+  WorkspaceMetadata,
+  WorkspaceSummary,
+} from './workspace.js'
 export {
   resolvePermissions,
   TrustEnforcer,

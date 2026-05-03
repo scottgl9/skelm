@@ -10,9 +10,20 @@ import { EventBus } from './events.js'
 import { createMcpHost } from './mcp/host.js'
 import type { AgentPermissions, PermissionDimension } from './permissions.js'
 import { TrustEnforcer, resolvePermissions } from './permissions.js'
-import type { RunStore } from './run-store.js'
+import { MemoryRunStore, type RunStore } from './run-store.js'
 import { SchemaValidationError, validate } from './schema.js'
-import type { Context, Pipeline, Run, RunMetadata, Step, StepId, StepResult } from './types.js'
+import { createStateHandle } from './state.js'
+import type {
+  Context,
+  Pipeline,
+  Run,
+  RunMetadata,
+  RunStatus,
+  Step,
+  StepId,
+  StepResult,
+} from './types.js'
+import { WorkspaceManager } from './workspace.js'
 
 export interface RunOptions {
   /** Optional run id; generated if omitted. */
@@ -25,6 +36,14 @@ export interface RunOptions {
   backends?: BackendRegistry
   /** Optional durable run store that persists events and final run records. */
   store?: RunStore
+  /** Optional state store used by ctx.state; defaults to store, then in-memory. */
+  stateStore?: RunStore
+  /** Optional default permissions applied to every agent() step. */
+  defaultPermissions?: AgentPermissions
+  /** Optional named permission profiles referenced by permissions.profile. */
+  permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+  /** Optional workspace manager used by agent() steps with workspaces. */
+  workspaceManager?: WorkspaceManager
   /** Optional hook used by wait() steps to suspend until external input arrives. */
   waitForInput?: (request: WaitRequest) => Promise<unknown>
 }
@@ -36,11 +55,25 @@ export interface WaitRequest {
   readonly signal: AbortSignal
   readonly message?: string
   readonly timeoutMs?: number
+  readonly outputSchema?: import('./schema.js').SkelmSchema<unknown>
 }
+
+const defaultStateStore = new MemoryRunStore()
 
 export interface RunHandle<TInput = unknown, TOutput = unknown> {
   readonly runId: string
   wait(): Promise<Run<TInput, TOutput>>
+}
+
+interface ExecutionRuntime {
+  readonly workspaceManager: WorkspaceManager
+  readonly stateStore: RunStore
+  readonly store?: RunStore
+  readonly defaultPermissions?: AgentPermissions
+  readonly permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+  readonly currentWorkspace: Context['workspace']
+  setCurrentWorkspace(workspace: Context['workspace']): void
+  deferRunWorkspaceFinalizer(finalizer: (status: RunStatus) => Promise<void>): void
 }
 
 export class Runner {
@@ -51,7 +84,15 @@ export class Runner {
   >()
 
   constructor(
-    private readonly options: Pick<RunOptions, 'backends' | 'store'> & { events?: EventBus } = {},
+    private readonly options: Pick<
+      RunOptions,
+      | 'backends'
+      | 'store'
+      | 'stateStore'
+      | 'defaultPermissions'
+      | 'permissionProfiles'
+      | 'workspaceManager'
+    > & { events?: EventBus } = {},
   ) {
     this.events = options.events ?? new EventBus()
   }
@@ -68,6 +109,16 @@ export class Runner {
       events: this.events,
       ...(this.options.backends !== undefined && { backends: this.options.backends }),
       ...(this.options.store !== undefined && { store: this.options.store }),
+      ...(this.options.stateStore !== undefined && { stateStore: this.options.stateStore }),
+      ...(this.options.defaultPermissions !== undefined && {
+        defaultPermissions: this.options.defaultPermissions,
+      }),
+      ...(this.options.permissionProfiles !== undefined && {
+        permissionProfiles: this.options.permissionProfiles,
+      }),
+      ...(this.options.workspaceManager !== undefined && {
+        workspaceManager: this.options.workspaceManager,
+      }),
       waitForInput: (request) => this.awaitResume(request),
     })
     return {
@@ -92,14 +143,6 @@ export class Runner {
     if (this.pendingWaits.has(request.runId)) {
       throw new Error(`run ${request.runId} is already waiting`)
     }
-    this.events.publish({
-      type: 'run.waiting',
-      runId: request.runId,
-      stepId: request.stepId,
-      ...(request.message !== undefined && { message: request.message }),
-      ...(request.timeoutMs !== undefined && { timeoutMs: request.timeoutMs }),
-      at: Date.now(),
-    })
     return new Promise<unknown>((resolve, reject) => {
       const pending: {
         resolve: (value: unknown) => void
@@ -165,7 +208,11 @@ export async function runPipeline<TInput, TOutput>(
   const runId = options.runId ?? generateRunId()
   const events = options.events ?? new EventBus()
   const store = options.store
+  const stateStore = options.stateStore ?? options.store ?? defaultStateStore
   const storeWrites: Promise<void>[] = []
+  const workspaceManager = options.workspaceManager ?? new WorkspaceManager()
+  const deferredWorkspaceFinalizers: Array<(status: RunStatus) => Promise<void>> = []
+  let currentWorkspace: Context['workspace']
   const unsubscribeStore =
     store === undefined
       ? undefined
@@ -247,6 +294,12 @@ export async function runPipeline<TInput, TOutput>(
         steps: { ...stepOutputs },
         run: runMeta,
         signal: controller.signal,
+        state: createStateHandle(stateStore, {
+          pipelineId: pipeline.id,
+          stepId: step.id,
+          ...(step.state !== undefined && { config: step.state }),
+        }),
+        ...(currentWorkspace !== undefined && { workspace: currentWorkspace }),
       })
       const output = await runStepWithRetry(
         step,
@@ -254,6 +307,24 @@ export async function runPipeline<TInput, TOutput>(
         options.backends,
         options.waitForInput,
         events,
+        {
+          workspaceManager,
+          stateStore,
+          ...(options.defaultPermissions !== undefined && {
+            defaultPermissions: options.defaultPermissions,
+          }),
+          ...(options.permissionProfiles !== undefined && {
+            permissionProfiles: options.permissionProfiles,
+          }),
+          currentWorkspace,
+          ...(store !== undefined && { store }),
+          setCurrentWorkspace: (workspace) => {
+            currentWorkspace = workspace
+          },
+          deferRunWorkspaceFinalizer: (finalizer) => {
+            deferredWorkspaceFinalizers.push(finalizer)
+          },
+        },
       )
       const completedAt = Date.now()
       stepOutputs[step.id] = output
@@ -294,7 +365,7 @@ export async function runPipeline<TInput, TOutput>(
         error: serialized,
         at: completedAt,
       })
-      runStatus = 'failed'
+      runStatus = err instanceof RunCancelledError ? 'cancelled' : 'failed'
       runError = serialized
       break
     }
@@ -307,6 +378,8 @@ export async function runPipeline<TInput, TOutput>(
         steps: { ...stepOutputs },
         run: runMeta,
         signal: controller.signal,
+        state: createStateHandle(stateStore, { pipelineId: pipeline.id }),
+        ...(currentWorkspace !== undefined && { workspace: currentWorkspace }),
       })
       if (pipeline.finalize) {
         finalOutput = await pipeline.finalize(ctx)
@@ -324,6 +397,7 @@ export async function runPipeline<TInput, TOutput>(
   }
 
   const completedAt = Date.now()
+  await Promise.all(deferredWorkspaceFinalizers.map((finalizer) => finalizer(runStatus)))
   if (runStatus === 'completed') {
     events.publish({
       type: 'run.completed',
@@ -369,6 +443,7 @@ async function runStepWithRetry(
   backends: BackendRegistry | undefined,
   waitForInput: RunOptions['waitForInput'],
   events: EventBus,
+  runtime: ExecutionRuntime,
 ): Promise<unknown> {
   const maxAttempts = step.retry?.maxAttempts ?? 1
   const backoffMultiplier = step.retry?.backoffMultiplier ?? 1
@@ -377,7 +452,7 @@ async function runStepWithRetry(
 
   while (true) {
     try {
-      return await runStep(step, ctx, backends, waitForInput, events)
+      return await runStep(step, ctx, backends, waitForInput, events, runtime)
     } catch (err) {
       if (attempt >= maxAttempts || !isRetryableError(err)) {
         throw err
@@ -472,6 +547,7 @@ async function runStep(
   backends: BackendRegistry | undefined,
   waitForInput?: RunOptions['waitForInput'],
   events?: EventBus,
+  runtime?: ExecutionRuntime,
 ): Promise<unknown> {
   switch (step.kind) {
     case 'code':
@@ -513,97 +589,145 @@ async function runStep(
         )
       }
       const backend = backends.resolveForAgent({ backendId: step.backend })
-      const promptText = typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt
-      const systemText =
-        step.system === undefined
-          ? undefined
-          : typeof step.system === 'function'
-            ? step.system(ctx)
-            : step.system
-      const mcpServers =
-        step.mcp === undefined
-          ? undefined
-          : typeof step.mcp === 'function'
-            ? step.mcp(ctx)
-            : step.mcp
-      const policy =
-        step.permissions !== undefined || mcpServers !== undefined
-          ? resolvePermissions(undefined, step.permissions)
-          : undefined
-      if (policy !== undefined && mcpServers !== undefined) {
-        const enforcer = new TrustEnforcer(policy)
-        for (const server of mcpServers) {
-          const decision = enforcer.canAttachMcpServer(server.id)
-          if (!decision.allow) {
-            throw new Error(
-              `step "${step.id}" is not allowed to attach MCP server "${server.id}" (${decision.reason})`,
-            )
+      let preparedWorkspace: Awaited<ReturnType<WorkspaceManager['prepare']>> | undefined
+      let finishedWorkspace = false
+      try {
+        const workspaceConfig =
+          step.workspace === undefined
+            ? undefined
+            : typeof step.workspace === 'function'
+              ? step.workspace(ctx)
+              : step.workspace
+        preparedWorkspace =
+          workspaceConfig === undefined
+            ? undefined
+            : await runtime?.workspaceManager.prepare({
+                pipelineId: ctx.run.pipelineId,
+                runId: ctx.run.runId,
+                workspace: workspaceConfig,
+              })
+        const workspaceCtx =
+          preparedWorkspace === undefined
+            ? ctx
+            : freezeContext({
+                ...ctx,
+                workspace: preparedWorkspace.handle,
+              })
+        const resolvedPromptText =
+          typeof step.prompt === 'function' ? step.prompt(workspaceCtx) : step.prompt
+        const resolvedSystemText =
+          step.system === undefined
+            ? undefined
+            : typeof step.system === 'function'
+              ? step.system(workspaceCtx)
+              : step.system
+        const mcpServers =
+          step.mcp === undefined
+            ? undefined
+            : typeof step.mcp === 'function'
+              ? step.mcp(workspaceCtx)
+              : step.mcp
+        const policy =
+          step.permissions !== undefined ||
+          mcpServers !== undefined ||
+          preparedWorkspace !== undefined
+            ? resolvePermissions(
+                runtime?.defaultPermissions,
+                applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
+                runtime?.permissionProfiles,
+              )
+            : undefined
+        if (policy !== undefined && mcpServers !== undefined) {
+          const enforcer = new TrustEnforcer(policy)
+          for (const server of mcpServers) {
+            const decision = enforcer.canAttachMcpServer(server.id)
+            if (!decision.allow) {
+              throw new Error(
+                `step "${step.id}" is not allowed to attach MCP server "${server.id}" (${decision.reason})`,
+              )
+            }
           }
         }
-      }
-      if (mcpServers !== undefined && mcpServers.length > 0 && !backend.capabilities.mcp) {
-        throw new BackendCapabilityError(
-          `backend ${backend.id} does not support per-step MCP attachments`,
-          backend.id,
-          'mcp',
-        )
-      }
-      const declaredPermissionDimensions = collectDeclaredPermissionDimensions(
-        step.permissions,
-        mcpServers,
-      )
-      assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions)
-      const req: AgentRequest = {
-        prompt: promptText,
-        ...(systemText !== undefined && { system: systemText }),
-        ...(step.maxTurns !== undefined && { maxTurns: step.maxTurns }),
-        ...(policy !== undefined && { permissions: policy }),
-        ...(mcpServers !== undefined && { mcpServers }),
-        ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
-      }
-      const mcpHost =
-        mcpServers !== undefined &&
-        mcpServers.length > 0 &&
-        backend.capabilities.toolPermissions === 'wrapped'
-          ? await createMcpHost(mcpServers, {
-              ...(policy !== undefined && { enforcer: new TrustEnforcer(policy) }),
-              ...(events !== undefined && { events }),
-              runId: ctx.run.runId,
-              stepId: step.id,
-            })
-          : undefined
-      try {
-        // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
-        const response = await backend.run!(req, {
-          signal: ctx.signal,
+        if (mcpServers !== undefined && mcpServers.length > 0 && !backend.capabilities.mcp) {
+          throw new BackendCapabilityError(
+            `backend ${backend.id} does not support per-step MCP attachments`,
+            backend.id,
+            'mcp',
+          )
+        }
+        const declaredPermissionDimensions = collectResolvedPermissionDimensions(policy, mcpServers)
+        assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions)
+        const req: AgentRequest = {
+          prompt: resolvedPromptText,
+          ...(resolvedSystemText !== undefined && { system: resolvedSystemText }),
+          ...(step.maxTurns !== undefined && { maxTurns: step.maxTurns }),
+          ...(preparedWorkspace !== undefined && { cwd: preparedWorkspace.handle.path }),
           ...(policy !== undefined && { permissions: policy }),
-          ...(mcpHost !== undefined && { mcpHost }),
-        })
-        if (step.outputSchema !== undefined) {
-          const candidate = response.structured ?? response.text
-          return await validate(step.outputSchema, candidate, 'output')
+          ...(mcpServers !== undefined && { mcpServers }),
+          ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
         }
-        return {
-          text: response.text ?? '',
-          ...(response.usage !== undefined && { usage: response.usage }),
-          ...(response.stopReason !== undefined && { stopReason: response.stopReason }),
+        const mcpHost =
+          mcpServers !== undefined &&
+          mcpServers.length > 0 &&
+          backend.capabilities.toolPermissions === 'wrapped'
+            ? await createMcpHost(mcpServers, {
+                ...(policy !== undefined && { enforcer: new TrustEnforcer(policy) }),
+                ...(events !== undefined && { events }),
+                runId: ctx.run.runId,
+                stepId: step.id,
+              })
+            : undefined
+        try {
+          // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
+          const response = await backend.run!(req, {
+            signal: ctx.signal,
+            ...(policy !== undefined && { permissions: policy }),
+            ...(mcpHost !== undefined && { mcpHost }),
+          })
+          const candidate =
+            step.outputSchema !== undefined ? (response.structured ?? response.text) : undefined
+          const result =
+            step.outputSchema !== undefined
+              ? await validate(step.outputSchema, candidate, 'output')
+              : {
+                  text: response.text ?? '',
+                  ...(response.usage !== undefined && { usage: response.usage }),
+                  ...(response.stopReason !== undefined && { stopReason: response.stopReason }),
+                }
+          await preparedWorkspace?.finishStep('completed')
+          finishedWorkspace = true
+          if (preparedWorkspace !== undefined) {
+            const finalizedWorkspace = preparedWorkspace
+            runtime?.setCurrentWorkspace(
+              finalizedWorkspace.exposeAfterStep ? finalizedWorkspace.handle : undefined,
+            )
+            runtime?.deferRunWorkspaceFinalizer((status) => finalizedWorkspace.finishRun(status))
+          }
+          return result
+        } finally {
+          await mcpHost?.dispose()
         }
-      } finally {
-        await mcpHost?.dispose()
+      } catch (error) {
+        if (!finishedWorkspace) {
+          await preparedWorkspace?.finishStep('failed')
+        }
+        throw error
       }
     }
+    case 'idempotent':
+      return await runIdempotent(step, ctx, backends, waitForInput, events, runtime)
     case 'parallel':
-      return await runParallel(step, ctx, backends, waitForInput, events)
+      return await runParallel(step, ctx, backends, waitForInput, events, runtime)
     case 'forEach':
-      return await runForEach(step, ctx, backends, waitForInput, events)
+      return await runForEach(step, ctx, backends, waitForInput, events, runtime)
     case 'branch':
-      return await runBranch(step, ctx, backends, waitForInput, events)
+      return await runBranch(step, ctx, backends, waitForInput, events, runtime)
     case 'loop':
-      return await runLoop(step, ctx, backends, waitForInput, events)
+      return await runLoop(step, ctx, backends, waitForInput, events, runtime)
     case 'wait':
-      return await runWait(step, ctx, waitForInput)
+      return await runWait(step, ctx, waitForInput, events)
     case 'pipelineStep':
-      return await runPipelineStep(step, ctx, backends, waitForInput, events)
+      return await runPipelineStep(step, ctx, backends, waitForInput, events, runtime)
     default: {
       const exhaustive: never = step
       throw new Error(`unknown step kind: ${(exhaustive as { kind: string }).kind}`)
@@ -617,10 +741,13 @@ async function runParallel(
   backends: BackendRegistry | undefined,
   waitForInput: RunOptions['waitForInput'],
   events?: EventBus,
+  runtime?: ExecutionRuntime,
 ): Promise<Record<string, unknown>> {
   const onError = step.onError ?? 'fail'
   const settled = await Promise.allSettled(
-    step.steps.map((child) => runStep(child, ctx, backends, waitForInput, events)),
+    step.steps.map((child) =>
+      runStep(child, ctx, backends, waitForInput, events, createDetachedWorkspaceRuntime(runtime)),
+    ),
   )
   const out: Record<string, unknown> = {}
   for (let i = 0; i < step.steps.length; i++) {
@@ -640,12 +767,56 @@ async function runParallel(
   return out
 }
 
+async function runIdempotent(
+  step: Extract<Step, { kind: 'idempotent' }>,
+  ctx: Context,
+  backends: BackendRegistry | undefined,
+  waitForInput: RunOptions['waitForInput'],
+  events?: EventBus,
+  runtime?: ExecutionRuntime,
+): Promise<unknown> {
+  const state = createStateHandle(runtime?.stateStore ?? defaultStateStore, {
+    pipelineId: ctx.run.pipelineId,
+    stepId: step.id,
+    ...(step.state !== undefined && { config: step.state }),
+  })
+  const key = idempotentStateKey(resolveIdempotentKey(step.key, ctx))
+  const cached = await state.get<{ value: unknown }>(key)
+  if (cached !== undefined) {
+    return cached.value
+  }
+  const value = await runStepWithRetry(
+    step.step,
+    ctx,
+    backends,
+    waitForInput,
+    events ?? new EventBus(),
+    {
+      workspaceManager: runtime?.workspaceManager ?? new WorkspaceManager(),
+      stateStore: runtime?.stateStore ?? defaultStateStore,
+      ...(runtime?.store !== undefined && { store: runtime.store }),
+      ...(runtime?.defaultPermissions !== undefined && {
+        defaultPermissions: runtime.defaultPermissions,
+      }),
+      ...(runtime?.permissionProfiles !== undefined && {
+        permissionProfiles: runtime.permissionProfiles,
+      }),
+      currentWorkspace: runtime?.currentWorkspace,
+      setCurrentWorkspace: (workspace) => runtime?.setCurrentWorkspace(workspace),
+      deferRunWorkspaceFinalizer: (finalizer) => runtime?.deferRunWorkspaceFinalizer(finalizer),
+    },
+  )
+  await state.set(key, { value }, { ...(step.ttlMs !== undefined && { ttlMs: step.ttlMs }) })
+  return value
+}
+
 async function runForEach(
   step: Extract<Step, { kind: 'forEach' }>,
   ctx: Context,
   backends: BackendRegistry | undefined,
   waitForInput: RunOptions['waitForInput'],
   events?: EventBus,
+  runtime?: ExecutionRuntime,
 ): Promise<unknown[]> {
   const items = step.items(ctx)
   const concurrency = step.concurrency ?? 1
@@ -657,7 +828,14 @@ async function runForEach(
       const i = cursor++
       const item = items[i]
       const child = step.step(item, i)
-      results[i] = await runStep(child, ctx, backends, waitForInput, events)
+      results[i] = await runStep(
+        child,
+        ctx,
+        backends,
+        waitForInput,
+        events,
+        createDetachedWorkspaceRuntime(runtime),
+      )
     }
   }
   const lanes = Math.min(concurrency, items.length || 1)
@@ -674,13 +852,14 @@ async function runBranch(
   backends: BackendRegistry | undefined,
   waitForInput: RunOptions['waitForInput'],
   events?: EventBus,
+  runtime?: ExecutionRuntime,
 ): Promise<unknown> {
   const key = step.on(ctx)
   const chosen = step.cases[key] ?? step.default
   if (chosen === undefined) {
     throw new Error(`branch(${step.id}): no case matched "${key}" and no default was provided`)
   }
-  return await runStep(chosen, ctx, backends, waitForInput, events)
+  return await runStep(chosen, ctx, backends, waitForInput, events, runtime)
 }
 
 async function runLoop(
@@ -689,12 +868,13 @@ async function runLoop(
   backends: BackendRegistry | undefined,
   waitForInput: RunOptions['waitForInput'],
   events?: EventBus,
+  runtime?: ExecutionRuntime,
 ): Promise<{ iterations: unknown[]; last: unknown }> {
   const iterations: unknown[] = []
   let last: unknown
   for (let i = 0; i < step.maxIterations; i++) {
     if (!(await step.while(ctx))) break
-    last = await runStep(step.step, ctx, backends, waitForInput, events)
+    last = await runStep(step.step, ctx, backends, waitForInput, events, runtime)
     iterations.push(last)
   }
   return { iterations, last }
@@ -704,21 +884,42 @@ async function runWait(
   step: Extract<Step, { kind: 'wait' }>,
   ctx: Context,
   waitForInput: RunOptions['waitForInput'],
+  events?: EventBus,
 ): Promise<unknown> {
   if (!waitForInput) {
     throw new Error(
       `wait(${step.id}): no wait handler configured; use Runner.start() or pass waitForInput to runPipeline()`,
     )
   }
+  const message =
+    step.message === undefined
+      ? undefined
+      : typeof step.message === 'function'
+        ? step.message(ctx)
+        : step.message
+  events?.publish({
+    type: 'run.waiting',
+    runId: ctx.run.runId,
+    stepId: step.id,
+    ...(message !== undefined && { message }),
+    ...(step.timeoutMs !== undefined && { timeoutMs: step.timeoutMs }),
+    at: Date.now(),
+  })
   const resumed = await waitForInput({
     runId: ctx.run.runId,
     pipelineId: ctx.run.pipelineId,
     stepId: step.id,
     signal: ctx.signal,
-    ...(step.message !== undefined && {
-      message: typeof step.message === 'function' ? step.message(ctx) : step.message,
-    }),
+    ...(message !== undefined && { message }),
     ...(step.timeoutMs !== undefined && { timeoutMs: step.timeoutMs }),
+    ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
+  })
+  events?.publish({
+    type: 'run.resumed',
+    runId: ctx.run.runId,
+    stepId: step.id,
+    output: resumed,
+    at: Date.now(),
   })
   if (step.outputSchema !== undefined) {
     return await validate(step.outputSchema, resumed, 'output')
@@ -732,6 +933,7 @@ async function runPipelineStep(
   backends: BackendRegistry | undefined,
   waitForInput: RunOptions['waitForInput'],
   events?: EventBus,
+  runtime?: ExecutionRuntime,
 ): Promise<unknown> {
   const nestedInput =
     step.input === undefined
@@ -743,6 +945,15 @@ async function runPipelineStep(
     signal: ctx.signal,
     ...(events !== undefined && { events }),
     ...(backends !== undefined && { backends }),
+    ...(runtime?.store !== undefined && { store: runtime.store }),
+    ...(runtime?.stateStore !== undefined && { stateStore: runtime.stateStore }),
+    ...(runtime?.defaultPermissions !== undefined && {
+      defaultPermissions: runtime.defaultPermissions,
+    }),
+    ...(runtime?.permissionProfiles !== undefined && {
+      permissionProfiles: runtime.permissionProfiles,
+    }),
+    ...(runtime?.workspaceManager !== undefined && { workspaceManager: runtime.workspaceManager }),
     ...(waitForInput !== undefined && { waitForInput }),
   })
   if (nestedRun.status === 'completed') {
@@ -769,6 +980,88 @@ function adoptLastStepOutput<TOutput>(stepResults: readonly StepResult[]): TOutp
     return undefined
   }
   return stepResults[stepResults.length - 1]?.output as TOutput | undefined
+}
+
+function applyWorkspacePermissions(
+  permissions: AgentPermissions | undefined,
+  workspacePath: string | undefined,
+): AgentPermissions | undefined {
+  if (workspacePath === undefined) return permissions
+  const next: AgentPermissions = {
+    ...permissions,
+    fsRead: uniqueStrings([workspacePath, ...(permissions?.fsRead ?? [])]),
+    fsWrite: uniqueStrings([workspacePath, ...(permissions?.fsWrite ?? [])]),
+  }
+  return next
+}
+
+function uniqueStrings(values: readonly string[]): readonly string[] {
+  return [...new Set(values)]
+}
+
+function createDetachedWorkspaceRuntime(
+  runtime: ExecutionRuntime | undefined,
+): ExecutionRuntime | undefined {
+  if (runtime === undefined) return undefined
+  let currentWorkspace = runtime.currentWorkspace
+  return {
+    workspaceManager: runtime.workspaceManager,
+    stateStore: runtime.stateStore,
+    ...(runtime.store !== undefined && { store: runtime.store }),
+    ...(runtime.defaultPermissions !== undefined && {
+      defaultPermissions: runtime.defaultPermissions,
+    }),
+    ...(runtime.permissionProfiles !== undefined && {
+      permissionProfiles: runtime.permissionProfiles,
+    }),
+    currentWorkspace,
+    setCurrentWorkspace: (workspace) => {
+      currentWorkspace = workspace
+    },
+    deferRunWorkspaceFinalizer: runtime.deferRunWorkspaceFinalizer,
+  }
+}
+
+function resolveIdempotentKey(key: string | ((ctx: Context) => string), ctx: Context): string {
+  const resolved = typeof key === 'function' ? key(ctx) : key
+  if (resolved.trim().length === 0) {
+    throw new Error('idempotent(): key must resolve to a non-empty string')
+  }
+  return resolved
+}
+
+function idempotentStateKey(key: string): string {
+  return `idempotent:${key}`
+}
+
+function collectResolvedPermissionDimensions(
+  policy: ReturnType<typeof resolvePermissions> | undefined,
+  mcpServers: readonly unknown[] | undefined,
+): ReadonlySet<PermissionDimension> {
+  const declared = new Set<PermissionDimension>()
+  if (policy === undefined) {
+    if ((mcpServers?.length ?? 0) > 0) declared.add('mcp')
+    return declared
+  }
+  if (
+    policy.allowedTools.exact.size > 0 ||
+    policy.allowedTools.prefixes.length > 0 ||
+    policy.allowedTools.star ||
+    policy.deniedTools.exact.size > 0 ||
+    policy.deniedTools.prefixes.length > 0 ||
+    policy.deniedTools.star
+  ) {
+    declared.add('tool')
+  }
+  if (policy.allowedExecutables.size > 0) declared.add('executable')
+  if (policy.allowedMcpServers.size > 0 || (mcpServers?.length ?? 0) > 0) declared.add('mcp')
+  if (policy.allowedSkills.size > 0) declared.add('skill')
+  if (policy.networkEgress === 'allow' || typeof policy.networkEgress === 'object') {
+    declared.add('network')
+  }
+  if (policy.fsRead.size > 0) declared.add('fs.read')
+  if (policy.fsWrite.size > 0) declared.add('fs.write')
+  return declared
 }
 
 function generateRunId(): string {

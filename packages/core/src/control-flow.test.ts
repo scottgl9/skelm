@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { branch, code, forEach, loop, parallel, pipeline, pipelineStep, wait } from './builders.js'
+import { RunCancelledError } from './errors.js'
 import { Runner, runPipeline } from './runner.js'
 
 describe('parallel()', () => {
@@ -345,12 +346,27 @@ describe('wait()', () => {
     expect(run.error?.name).toBe('WaitTimeoutError')
   })
 
-  it('publishes run.waiting with step metadata while suspended', async () => {
+  it('publishes run.waiting and run.resumed with step metadata', async () => {
     const runner = new Runner()
-    const seen: Array<{ runId: string; stepId: string; message?: string }> = []
+    const seen: Array<
+      | { type: 'waiting'; runId: string; stepId: string; message?: string }
+      | { type: 'resumed'; runId: string; stepId: string; output: unknown }
+    > = []
     runner.events.subscribe((event) => {
       if (event.type === 'run.waiting') {
-        seen.push({ runId: event.runId, stepId: event.stepId, message: event.message })
+        seen.push({
+          type: 'waiting',
+          runId: event.runId,
+          stepId: event.stepId,
+          message: event.message,
+        })
+      } else if (event.type === 'run.resumed') {
+        seen.push({
+          type: 'resumed',
+          runId: event.runId,
+          stepId: event.stepId,
+          output: event.output,
+        })
       }
     })
 
@@ -366,7 +382,37 @@ describe('wait()', () => {
     await runner.resume(handle.runId, { ok: true })
     await handle.wait()
 
-    expect(seen).toEqual([{ runId: handle.runId, stepId: 'pause', message: 'approval required' }])
+    expect(seen).toEqual([
+      {
+        type: 'waiting',
+        runId: handle.runId,
+        stepId: 'pause',
+        message: 'approval required',
+      },
+      {
+        type: 'resumed',
+        runId: handle.runId,
+        stepId: 'pause',
+        output: { ok: true },
+      },
+    ])
+  })
+
+  it('marks the run cancelled when the wait handler cancels input', async () => {
+    const wf = pipeline({
+      id: 'wait-cancel',
+      steps: [wait({ id: 'pause' })],
+    })
+
+    const run = await runPipeline(wf, undefined, {
+      waitForInput: async () => {
+        throw new RunCancelledError('cancelled from wait prompt')
+      },
+    })
+
+    expect(run.status).toBe('cancelled')
+    expect(run.error?.name).toBe('RunCancelledError')
+    expect(run.steps[0]?.status).toBe('failed')
   })
 
   it('rejects wait() with an invalid timeout', () => {

@@ -7,6 +7,7 @@ import type {
   CodeStep,
   Context,
   ForEachStep,
+  IdempotentStep,
   LlmStep,
   LoopStep,
   ParallelOnError,
@@ -15,9 +16,11 @@ import type {
   Pipeline,
   PipelineStep,
   RetryPolicy,
+  StateConfig,
   Step,
   StepId,
   WaitStep,
+  WorkspaceConfig,
 } from './types.js'
 
 /**
@@ -63,6 +66,7 @@ export function pipeline<TInput, TOutput>(def: {
 export function code<TOutput>(def: {
   id: StepId
   run: (ctx: Context) => TOutput | Promise<TOutput>
+  state?: StateConfig
   retry?: RetryPolicy
 }): CodeStep<TOutput> {
   if (!def.id) {
@@ -76,6 +80,7 @@ export function code<TOutput>(def: {
     kind: 'code',
     id: def.id,
     run: def.run,
+    ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
@@ -95,6 +100,7 @@ export function llm<TOutput>(def: {
   output?: SkelmSchema<TOutput>
   temperature?: number
   maxTokens?: number
+  state?: StateConfig
   retry?: RetryPolicy
 }): LlmStep<TOutput> {
   if (!def.id) {
@@ -114,6 +120,7 @@ export function llm<TOutput>(def: {
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.temperature !== undefined && { temperature: def.temperature }),
     ...(def.maxTokens !== undefined && { maxTokens: def.maxTokens }),
+    ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
@@ -131,9 +138,11 @@ export function agent<TOutput>(def: {
   prompt: string | ((ctx: Context) => string)
   system?: string | ((ctx: Context) => string)
   mcp?: readonly McpServerConfig[] | ((ctx: Context) => readonly McpServerConfig[])
+  workspace?: WorkspaceConfig | ((ctx: Context) => WorkspaceConfig)
   output?: SkelmSchema<TOutput>
   permissions?: AgentPermissions
   maxTurns?: number
+  state?: StateConfig
   retry?: RetryPolicy
 }): AgentStep<TOutput> {
   if (!def.id) {
@@ -151,9 +160,11 @@ export function agent<TOutput>(def: {
     ...(def.agentDef !== undefined && { agentDef: def.agentDef }),
     ...(def.system !== undefined && { system: def.system }),
     ...(def.mcp !== undefined && { mcp: def.mcp }),
+    ...(def.workspace !== undefined && { workspace: def.workspace }),
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.permissions !== undefined && { permissions: def.permissions }),
     ...(def.maxTurns !== undefined && { maxTurns: def.maxTurns }),
+    ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
@@ -164,6 +175,7 @@ export function parallel(def: {
   steps: readonly Step[]
   waitFor?: ParallelWaitFor
   onError?: ParallelOnError
+  state?: StateConfig
   retry?: RetryPolicy
 }): ParallelStep {
   if (!def.id) throw new Error('parallel(): id is required')
@@ -187,6 +199,7 @@ export function parallel(def: {
     steps: Object.freeze([...def.steps]),
     ...(def.waitFor !== undefined && { waitFor: def.waitFor }),
     ...(def.onError !== undefined && { onError: def.onError }),
+    ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
@@ -197,6 +210,7 @@ export function forEach(def: {
   items: (ctx: Context) => readonly unknown[]
   concurrency?: number
   step: (item: unknown, index: number) => Step
+  state?: StateConfig
   retry?: RetryPolicy
 }): ForEachStep {
   if (!def.id) throw new Error('forEach(): id is required')
@@ -216,6 +230,7 @@ export function forEach(def: {
     items: def.items,
     step: def.step,
     ...(def.concurrency !== undefined && { concurrency: def.concurrency }),
+    ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
@@ -226,6 +241,7 @@ export function branch(def: {
   on: (ctx: Context) => string
   cases: Readonly<Record<string, Step>>
   default?: Step
+  state?: StateConfig
   retry?: RetryPolicy
 }): BranchStep {
   if (!def.id) throw new Error('branch(): id is required')
@@ -242,6 +258,7 @@ export function branch(def: {
     on: def.on,
     cases: Object.freeze({ ...def.cases }),
     ...(def.default !== undefined && { default: def.default }),
+    ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
@@ -252,6 +269,7 @@ export function loop(def: {
   while: (ctx: Context) => boolean | Promise<boolean>
   maxIterations: number
   step: Step
+  state?: StateConfig
   retry?: RetryPolicy
 }): LoopStep {
   if (!def.id) throw new Error('loop(): id is required')
@@ -268,6 +286,7 @@ export function loop(def: {
     while: def.while,
     maxIterations: def.maxIterations,
     step: def.step,
+    ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
@@ -278,6 +297,7 @@ export function wait<TOutput>(def: {
   message?: string | ((ctx: Context) => string)
   timeoutMs?: number
   output?: SkelmSchema<TOutput>
+  state?: StateConfig
   retry?: RetryPolicy
 }): WaitStep<TOutput> {
   if (!def.id) throw new Error('wait(): id is required')
@@ -291,6 +311,7 @@ export function wait<TOutput>(def: {
     ...(def.message !== undefined && { message: def.message }),
     ...(def.timeoutMs !== undefined && { timeoutMs: def.timeoutMs }),
     ...(def.output !== undefined && { outputSchema: def.output }),
+    ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
   })
 }
@@ -300,6 +321,7 @@ export function pipelineStep<TInput, TOutput>(def: {
   id: StepId
   pipeline: Pipeline<TInput, TOutput>
   input?: TInput | ((ctx: Context) => TInput)
+  state?: StateConfig
   retry?: RetryPolicy
 }): PipelineStep<TInput, TOutput> {
   if (!def.id) throw new Error('pipelineStep(): id is required')
@@ -312,6 +334,28 @@ export function pipelineStep<TInput, TOutput>(def: {
     id: def.id,
     pipeline: def.pipeline,
     ...(def.input !== undefined && { input: def.input }),
+    ...(def.state !== undefined && { state: def.state }),
+    ...(def.retry !== undefined && { retry: def.retry }),
+  })
+}
+
+export function idempotent<TOutput>(def: {
+  key: string | ((ctx: Context) => string)
+  step: Step
+  ttlMs?: number
+  state?: StateConfig
+  retry?: RetryPolicy
+}): IdempotentStep<TOutput> {
+  if (!def.step) {
+    throw new Error('idempotent(): step is required')
+  }
+  return Object.freeze({
+    kind: 'idempotent',
+    id: def.step.id,
+    key: def.key,
+    step: def.step,
+    ...(def.ttlMs !== undefined && { ttlMs: def.ttlMs }),
+    ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
   })
 }

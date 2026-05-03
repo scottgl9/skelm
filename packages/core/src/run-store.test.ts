@@ -29,6 +29,25 @@ describe('MemoryRunStore', () => {
       { type: 'run.started', runId: 'run-1', at: 1 },
     ])
   })
+
+  it('stores workflow state and journals', async () => {
+    const store = new MemoryRunStore()
+
+    await store.setState('pipeline:p', 'seen:1', true)
+    await expect(store.getState('pipeline:p', 'seen:1')).resolves.toBe(true)
+    await expect(collect(store.listState('pipeline:p'))).resolves.toEqual([
+      { key: 'seen:1', value: true },
+    ])
+    await expect(store.casState('pipeline:p', 'seen:1', true, false)).resolves.toBe(true)
+    await expect(store.casState('pipeline:p', 'seen:1', true, true)).resolves.toBe(false)
+    await store.appendState('pipeline:p', 'decisions', { ok: true })
+    await expect(collect(store.readState('pipeline:p', 'decisions'))).resolves.toEqual([
+      { ok: true },
+    ])
+
+    await store.setState('pipeline:p', 'expires', 'soon', { ttlMs: 0 })
+    await expect(store.getState('pipeline:p', 'expires')).resolves.toBeUndefined()
+  })
 })
 
 describe('SqliteRunStore', () => {
@@ -53,6 +72,29 @@ describe('SqliteRunStore', () => {
       await expect(collect(store.listEvents('run-1'))).resolves.toEqual([
         { type: 'run.started', runId: 'run-1', at: 1 },
       ])
+    } finally {
+      store.close()
+    }
+  })
+
+  it('persists workflow state and journals to sqlite', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-state-'))
+    const store = new SqliteRunStore({ path: join(dir, 'runs.db') })
+    try {
+      await store.setState('pipeline:p', 'seen:1', true)
+      await expect(store.getState('pipeline:p', 'seen:1')).resolves.toBe(true)
+      await expect(collect(store.listState('pipeline:p'))).resolves.toEqual([
+        { key: 'seen:1', value: true },
+      ])
+      await expect(store.casState('pipeline:p', 'seen:1', true, false)).resolves.toBe(true)
+      await expect(store.casState('pipeline:p', 'seen:1', true, true)).resolves.toBe(false)
+      await store.appendState('pipeline:p', 'decisions', { ok: true })
+      await expect(collect(store.readState('pipeline:p', 'decisions'))).resolves.toEqual([
+        { ok: true },
+      ])
+
+      await store.setState('pipeline:p', 'expires', 'soon', { ttlMs: 0 })
+      await expect(store.getState('pipeline:p', 'expires')).resolves.toBeUndefined()
     } finally {
       store.close()
     }
@@ -83,6 +125,85 @@ describe('runPipeline with RunStore', () => {
         expect.objectContaining({ type: 'run.completed', runId: run.runId }),
       ]),
     )
+  })
+
+  it('exposes ctx.state with pipeline, step, and shared scopes', async () => {
+    const store = new MemoryRunStore()
+    const pipelineScoped = pipeline({
+      id: 'scope-a',
+      steps: [
+        code({
+          id: 'write',
+          run: async (ctx) => {
+            await ctx.state.set('watermark', 42)
+            return null
+          },
+        }),
+        code({
+          id: 'read',
+          run: (ctx) => ctx.state.get<number>('watermark'),
+        }),
+      ],
+    })
+
+    const stepScoped = pipeline({
+      id: 'scope-step',
+      steps: [
+        code({
+          id: 'write-step',
+          state: { scope: 'step' },
+          run: async (ctx) => {
+            await ctx.state.set('secret', 'hidden')
+            return null
+          },
+        }),
+        code({
+          id: 'read-step',
+          run: (ctx) => ctx.state.get<string>('secret'),
+        }),
+      ],
+    })
+
+    const sharedA = pipeline({
+      id: 'shared-a',
+      steps: [
+        code({
+          id: 'write-shared',
+          state: { scope: 'pipeline+name', name: 'shared-box' },
+          run: async (ctx) => {
+            await ctx.state.set('flag', 'ready')
+            await ctx.state.append('journal', { from: 'shared-a' })
+            return null
+          },
+        }),
+      ],
+    })
+
+    const sharedB = pipeline({
+      id: 'shared-b',
+      steps: [
+        code({
+          id: 'read-shared',
+          state: { scope: 'pipeline+name', name: 'shared-box' },
+          run: async (ctx) => ({
+            flag: await ctx.state.get<string>('flag'),
+            journal: await collect(ctx.state.read('journal')),
+          }),
+        }),
+      ],
+    })
+
+    const pipelineRun = await runPipeline(pipelineScoped, undefined, { store })
+    const stepRun = await runPipeline(stepScoped, undefined, { store })
+    await runPipeline(sharedA, undefined, { store })
+    const sharedRun = await runPipeline(sharedB, undefined, { store })
+
+    expect(pipelineRun.output).toBe(42)
+    expect(stepRun.output).toBeUndefined()
+    expect(sharedRun.output).toEqual({
+      flag: 'ready',
+      journal: [{ from: 'shared-a' }],
+    })
   })
 })
 

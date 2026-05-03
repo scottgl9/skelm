@@ -1,13 +1,16 @@
+import { rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
+import { WorkspaceManager } from '@skelm/core'
 import { describe, expect, it } from 'vitest'
 import { parseArgv } from '../src/argv.js'
 import { EXIT } from '../src/exit-codes.js'
 import { main } from '../src/main.js'
 
 const FIXTURES_DIR = fileURLToPath(new URL('./fixtures/', import.meta.url))
+const PROJECT_FIXTURE_DIR = join(FIXTURES_DIR, 'project')
 
 describe('parseArgv', () => {
   it('returns help when no args', () => {
@@ -38,6 +41,19 @@ describe('parseArgv', () => {
 
   it('returns unknown for unrecognized commands', () => {
     expect(parseArgv(['nope']).command).toBe('unknown')
+  })
+
+  it('parses describe and workspace subcommands', () => {
+    expect(parseArgv(['describe', 'graph-workflow', '--format', 'mermaid'])).toEqual({
+      command: 'describe',
+      positional: ['graph-workflow'],
+      flags: { format: 'mermaid' },
+    })
+    expect(parseArgv(['workspace', 'show', 'alpha-workflow', 'main', '--json'])).toEqual({
+      command: 'workspace',
+      positional: ['show', 'alpha-workflow', 'main'],
+      flags: { json: true },
+    })
   })
 })
 
@@ -115,6 +131,17 @@ describe('main — integration', () => {
         expect.objectContaining({ type: 'run.completed' }),
       ]),
     )
+  })
+
+  it('prompts for wait() input and resumes interactively', async () => {
+    const filePath = join(FIXTURES_DIR, 'wait.workflow.ts')
+
+    const { stdout, stderr, exitCode } = await invoke(['run', filePath], '{"approved":true}\n')
+
+    expect(exitCode).toBe(EXIT.OK)
+    expect(stdout.trim()).toBe('{"approved":true}')
+    expect(stderr).toContain('> waiting at approval: approval required')
+    expect(stderr).toContain('resume JSON> ')
   })
 
   it('loads the default OpenAI backend for llm() workflows without a config file', async () => {
@@ -205,6 +232,91 @@ describe('main — integration', () => {
       await server.close()
     }
   })
+
+  it('lists and describes discovered workflows', async () => {
+    await withProjectDir(async (dir) => {
+      const listed = await invokeInDir(['list'], dir)
+      expect(listed.exitCode).toBe(EXIT.OK)
+      expect(listed.stdout).toContain('alpha-workflow')
+      expect(listed.stdout).toContain('graph-workflow')
+
+      const described = await invokeInDir(['describe', 'graph-workflow'], dir)
+      expect(described.exitCode).toBe(EXIT.OK)
+      expect(described.stdout).toContain('- fanout (parallel)')
+      expect(described.stdout).toContain('- route (branch)')
+      expect(described.stdout).toContain('- repeat (loop)')
+      expect(described.stdout).toContain('- collect (forEach)')
+      expect(described.stdout).toContain('permissions: tools=demo.echo; exec=rg')
+
+      const mermaid = await invokeInDir(['describe', 'graph-workflow', '--format', 'mermaid'], dir)
+      expect(mermaid.exitCode).toBe(EXIT.OK)
+      expect(mermaid.stdout).toContain('flowchart TD')
+      expect(mermaid.stdout).toContain('parallel: fanout')
+      expect(mermaid.stdout).toContain('branch: route')
+    })
+  })
+
+  it('shows run history and persisted events from the local store', async () => {
+    await withProjectDir(async (dir) => {
+      const runFile = join(dir, 'workflows/alpha.workflow.ts')
+      const run = await invokeInDir(['run', runFile], dir)
+      expect(run.exitCode).toBe(EXIT.OK)
+      const runId = run.stderr.match(/runId=([^)]+)/)?.[1]
+      expect(runId).toBeTruthy()
+      if (runId === undefined) {
+        throw new Error('expected run id in stderr')
+      }
+
+      const listed = await invokeInDir(['history', '--workflow', 'alpha-workflow'], dir)
+      expect(listed.exitCode).toBe(EXIT.OK)
+      expect(listed.stdout).toContain('alpha-workflow')
+      expect(listed.stdout).toContain('completed')
+
+      const detailed = await invokeInDir(['history', '--run', runId, '--events'], dir)
+      expect(detailed.exitCode).toBe(EXIT.OK)
+      expect(detailed.stdout).toContain('"pipelineId": "alpha-workflow"')
+      expect(detailed.stderr).toContain('"type":"run.started"')
+    })
+  })
+
+  it('lists, shows, and cleans persistent workspaces', async () => {
+    await withProjectDir(async (dir) => {
+      const manager = new WorkspaceManager({
+        persistentBase: join(dir, '.skelm/workspaces'),
+      })
+      const workspace = await manager.prepare({
+        pipelineId: 'alpha-workflow',
+        runId: 'run-1',
+        workspace: { mode: 'persistent', name: 'main' },
+      })
+      await workspace.finishStep('completed')
+      await workspace.finishRun('completed')
+
+      const listed = await invokeInDir(['workspace', 'list'], dir)
+      expect(listed.exitCode).toBe(EXIT.OK)
+      expect(listed.stdout).toContain('alpha-workflow')
+      expect(listed.stdout).toContain('main')
+
+      const shown = await invokeInDir(
+        ['workspace', 'show', 'alpha-workflow', 'main', '--json'],
+        dir,
+      )
+      expect(shown.exitCode).toBe(EXIT.OK)
+      expect(JSON.parse(shown.stdout)).toEqual(
+        expect.objectContaining({
+          pipelineId: 'alpha-workflow',
+          name: 'main',
+        }),
+      )
+
+      const cleaned = await invokeInDir(
+        ['workspace', 'clean', 'alpha-workflow', 'main', '--force'],
+        dir,
+      )
+      expect(cleaned.exitCode).toBe(EXIT.OK)
+      expect(cleaned.stdout).toContain('cleaned alpha-workflow/main')
+    })
+  })
 })
 
 interface InvocationResult {
@@ -213,7 +325,15 @@ interface InvocationResult {
   exitCode: number
 }
 
-async function invoke(argv: readonly string[]): Promise<InvocationResult> {
+async function invoke(argv: readonly string[], stdinText = ''): Promise<InvocationResult> {
+  return await invokeInDir(argv, process.cwd(), stdinText)
+}
+
+async function invokeInDir(
+  argv: readonly string[],
+  cwd: string,
+  stdinText = '',
+): Promise<InvocationResult> {
   const stdoutChunks: string[] = []
   const stderrChunks: string[] = []
   const stdout = new Writable({
@@ -228,12 +348,28 @@ async function invoke(argv: readonly string[]): Promise<InvocationResult> {
       cb()
     },
   })
-  const stdin = Readable.from([])
-  const result = await main(argv, { stdout, stderr, stdin })
-  return {
-    stdout: stdoutChunks.join(''),
-    stderr: stderrChunks.join(''),
-    exitCode: result.exitCode,
+  const stdin = Readable.from(stdinText.length === 0 ? [] : [stdinText])
+  const originalCwd = process.cwd()
+  process.chdir(cwd)
+  try {
+    const result = await main(argv, { stdout, stderr, stdin })
+    return {
+      stdout: stdoutChunks.join(''),
+      stderr: stderrChunks.join(''),
+      exitCode: result.exitCode,
+    }
+  } finally {
+    process.chdir(originalCwd)
+  }
+}
+
+async function withProjectDir(run: (dir: string) => Promise<void>): Promise<void> {
+  const dir = PROJECT_FIXTURE_DIR
+  try {
+    await rm(join(dir, '.skelm'), { recursive: true, force: true })
+    await run(dir)
+  } finally {
+    await rm(join(dir, '.skelm'), { recursive: true, force: true })
   }
 }
 

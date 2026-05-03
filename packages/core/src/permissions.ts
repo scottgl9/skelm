@@ -36,6 +36,8 @@ export interface ApprovalPolicy {
 
 /** What an `agent()` step author writes. Every field is optional; default is deny. */
 export interface AgentPermissions {
+  /** Named project profile applied before step-level narrowing. */
+  profile?: string
   /** Tool ids the agent may call (e.g. `gh.list_issues`). */
   allowedTools?: ToolMatcher
   /** Tool ids explicitly forbidden even if `allowedTools` would permit. */
@@ -103,8 +105,18 @@ const EMPTY_MATCHER: ResolvedToolMatcher = Object.freeze({
 export function resolvePermissions(
   defaults: AgentPermissions | undefined,
   stepLevel: AgentPermissions | undefined,
+  profiles: Readonly<Record<string, AgentPermissions>> = {},
 ): ResolvedPolicy {
-  const inputs = [defaults, stepLevel].filter((p): p is AgentPermissions => p !== undefined)
+  const profile =
+    stepLevel?.profile === undefined
+      ? undefined
+      : (profiles[stepLevel.profile] ??
+        (() => {
+          throw new Error(`unknown permission profile: ${stepLevel.profile}`)
+        })())
+  const inputs = [defaults, profile, stripProfile(stepLevel)].filter(
+    (p): p is AgentPermissions => p !== undefined,
+  )
 
   return Object.freeze({
     allowedTools: intersectToolMatchers(inputs.map((p) => p.allowedTools)),
@@ -274,6 +286,12 @@ function normalizeToolMatcher(m: ToolMatcher): ResolvedToolMatcher {
     prefixes: Object.freeze([...(obj.prefixes ?? [])]),
     star: obj.star ?? false,
   })
+}
+
+function stripProfile(permissions: AgentPermissions | undefined): AgentPermissions | undefined {
+  if (permissions === undefined) return undefined
+  const { profile: _profile, ...rest } = permissions
+  return rest
 }
 
 function matches(matcher: ResolvedToolMatcher, id: string): boolean {
