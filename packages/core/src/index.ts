@@ -48,6 +48,7 @@ export {
 export { RunCancelledError, StepError, WaitTimeoutError, serializeError } from './errors.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
+export * from './mcp/index.js'
 export {
   resolvePermissions,
   TrustEnforcer,
