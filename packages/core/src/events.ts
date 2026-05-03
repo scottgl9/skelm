@@ -1,3 +1,4 @@
+import type { PermissionDenialReason, PermissionDimension } from './permissions.js'
 import type { RunId, RunStatus, SerializedError, StepId, StepKind } from './types.js'
 
 /**
@@ -29,6 +30,39 @@ export type RunEvent =
       stepId: StepId
       kind: StepKind
       error: SerializedError
+      at: number
+    }
+  | {
+      type: 'tool.call'
+      runId: RunId
+      stepId: StepId
+      tool: string
+      arguments: unknown
+      at: number
+    }
+  | {
+      type: 'tool.result'
+      runId: RunId
+      stepId: StepId
+      tool: string
+      result: unknown
+      durationMs: number
+      at: number
+    }
+  | {
+      type: 'tool.denied'
+      runId: RunId
+      stepId: StepId
+      tool: string
+      reason: PermissionDenialReason
+      at: number
+    }
+  | {
+      type: 'permission.denied'
+      runId: RunId
+      stepId: StepId
+      dimension: PermissionDimension
+      detail: string
       at: number
     }
   | {

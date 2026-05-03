@@ -1,5 +1,9 @@
+import { basename } from 'node:path'
 import type { McpServerConfig } from '../backend.js'
-import { RunCancelledError } from '../errors.js'
+import { PermissionDeniedError, RunCancelledError } from '../errors.js'
+import type { EventBus } from '../events.js'
+import type { TrustEnforcer } from '../permissions.js'
+import type { RunId, StepId } from '../types.js'
 import { McpClient } from './client.js'
 import type { ToolCallResponse } from './protocol.js'
 
@@ -18,7 +22,17 @@ export interface McpHost {
   dispose(): Promise<void>
 }
 
-export async function createMcpHost(servers: readonly McpServerConfig[]): Promise<McpHost> {
+export interface McpHostOptions {
+  enforcer?: TrustEnforcer
+  events?: EventBus
+  runId?: RunId
+  stepId?: StepId
+}
+
+export async function createMcpHost(
+  servers: readonly McpServerConfig[],
+  opts: McpHostOptions = {},
+): Promise<McpHost> {
   const clients = new Map<string, McpClient>()
 
   try {
@@ -64,23 +78,159 @@ export async function createMcpHost(servers: readonly McpServerConfig[]): Promis
       args: unknown,
       signal?: AbortSignal,
     ): Promise<ToolCallResponse> {
-      const dot = toolId.indexOf('.')
-      if (dot < 1 || dot === toolId.length - 1) {
-        throw new Error(`invalid MCP tool id: ${toolId}`)
-      }
-      const serverId = toolId.slice(0, dot)
-      const toolName = toolId.slice(dot + 1)
+      const { serverId, toolName } = splitToolId(toolId)
       const client = clients.get(serverId)
       if (!client) {
         throw new Error(`unknown MCP server: ${serverId}`)
       }
-      return await awaitWithAbort(client.callTool(toolName, args), signal)
+      const enforcer = opts.enforcer
+      if (enforcer) {
+        const toolDecision = enforcer.canCallTool(toolId)
+        if (!toolDecision.allow) {
+          publishPermissionDenied(opts, toolId, toolDecision.dimension, toolDecision.reason)
+          throw new PermissionDeniedError(
+            `tool "${toolId}" is not allowed for this agent step (${toolDecision.reason})`,
+          )
+        }
+
+        const executable = requestedExecutable(toolName, args)
+        if (executable !== undefined) {
+          const execDecision = enforcer.canExec(executable)
+          if (!execDecision.allow) {
+            publishPermissionDenied(
+              opts,
+              toolId,
+              execDecision.dimension,
+              execDecision.reason,
+              `tool "${toolId}" requested executable "${executable}"`,
+            )
+            throw new PermissionDeniedError(
+              `tool "${toolId}" requested executable "${executable}" which is not allowed (${execDecision.reason})`,
+            )
+          }
+        }
+      }
+
+      const startedAt = Date.now()
+      publishToolCall(opts, toolId, args, startedAt)
+      const result = await awaitWithAbort(client.callTool(toolName, args), signal)
+      publishToolResult(opts, toolId, result, startedAt)
+      return result
     },
     async dispose(): Promise<void> {
       await Promise.all([...clients.values()].map((client) => client.stop()))
       clients.clear()
     },
   }
+}
+
+function splitToolId(toolId: string): { serverId: string; toolName: string } {
+  const dot = toolId.indexOf('.')
+  if (dot < 1 || dot === toolId.length - 1) {
+    throw new Error(`invalid MCP tool id: ${toolId}`)
+  }
+  return {
+    serverId: toolId.slice(0, dot),
+    toolName: toolId.slice(dot + 1),
+  }
+}
+
+function publishToolCall(opts: McpHostOptions, toolId: string, args: unknown, at: number): void {
+  if (opts.events === undefined || opts.runId === undefined || opts.stepId === undefined) return
+  opts.events.publish({
+    type: 'tool.call',
+    runId: opts.runId,
+    stepId: opts.stepId,
+    tool: toolId,
+    arguments: args,
+    at,
+  })
+}
+
+function publishToolResult(
+  opts: McpHostOptions,
+  toolId: string,
+  result: unknown,
+  startedAt: number,
+): void {
+  if (opts.events === undefined || opts.runId === undefined || opts.stepId === undefined) return
+  const completedAt = Date.now()
+  opts.events.publish({
+    type: 'tool.result',
+    runId: opts.runId,
+    stepId: opts.stepId,
+    tool: toolId,
+    result,
+    durationMs: completedAt - startedAt,
+    at: completedAt,
+  })
+}
+
+function publishPermissionDenied(
+  opts: McpHostOptions,
+  toolId: string,
+  dimension: 'tool' | 'executable' | 'mcp' | 'skill' | 'network' | 'fs.read' | 'fs.write',
+  reason: string,
+  detail = `tool "${toolId}" was denied by ${dimension} policy (${reason})`,
+): void {
+  if (opts.events === undefined || opts.runId === undefined || opts.stepId === undefined) return
+  const at = Date.now()
+  opts.events.publish({
+    type: 'tool.denied',
+    runId: opts.runId,
+    stepId: opts.stepId,
+    tool: toolId,
+    reason: reason as never,
+    at,
+  })
+  opts.events.publish({
+    type: 'permission.denied',
+    runId: opts.runId,
+    stepId: opts.stepId,
+    dimension,
+    detail,
+    at,
+  })
+}
+
+function requestedExecutable(toolName: string, args: unknown): string | undefined {
+  if (toolName === 'bash' || toolName === 'exec') {
+    if (toolName === 'bash') return 'bash'
+    return extractBinary(args)
+  }
+  return undefined
+}
+
+function extractBinary(args: unknown): string | undefined {
+  if (typeof args === 'string') {
+    return parseCommandBinary(args)
+  }
+  if (args === null || typeof args !== 'object') {
+    return undefined
+  }
+
+  const record = args as Record<string, unknown>
+  const argv = record.argv
+  if (Array.isArray(argv) && typeof argv[0] === 'string') {
+    return basename(argv[0])
+  }
+  const command = record.command
+  if (typeof command === 'string') {
+    return parseCommandBinary(command)
+  }
+  const cmd = record.cmd
+  if (typeof cmd === 'string') {
+    return parseCommandBinary(cmd)
+  }
+  return undefined
+}
+
+function parseCommandBinary(command: string): string | undefined {
+  const trimmed = command.trim()
+  if (trimmed.length === 0) return undefined
+  const match = trimmed.match(/^(?:"([^"]+)"|'([^']+)'|(\S+))/)
+  const token = match?.[1] ?? match?.[2] ?? match?.[3]
+  return token === undefined ? undefined : basename(token)
 }
 
 async function awaitWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {

@@ -3,10 +3,12 @@ import {
   BackendCapabilityError,
   BackendNotFoundError,
   type BackendRegistry,
+  type SkelmBackend,
 } from './backend.js'
 import { RunCancelledError, WaitTimeoutError, serializeError } from './errors.js'
 import { EventBus } from './events.js'
 import { createMcpHost } from './mcp/host.js'
+import type { AgentPermissions, PermissionDimension } from './permissions.js'
 import { TrustEnforcer, resolvePermissions } from './permissions.js'
 import type { RunStore } from './run-store.js'
 import { SchemaValidationError, validate } from './schema.js'
@@ -375,7 +377,7 @@ async function runStepWithRetry(
 
   while (true) {
     try {
-      return await runStep(step, ctx, backends, waitForInput)
+      return await runStep(step, ctx, backends, waitForInput, events)
     } catch (err) {
       if (attempt >= maxAttempts || !isRetryableError(err)) {
         throw err
@@ -414,11 +416,62 @@ async function finalizeStoredRun<TRun extends Run>(
   }
 }
 
+function collectDeclaredPermissionDimensions(
+  permissions: AgentPermissions | undefined,
+  mcpServers: readonly unknown[] | undefined,
+): ReadonlySet<PermissionDimension> {
+  const declared = new Set<PermissionDimension>()
+  if (permissions?.allowedTools !== undefined || permissions?.deniedTools !== undefined)
+    declared.add('tool')
+  if (permissions?.allowedExecutables !== undefined) declared.add('executable')
+  if (permissions?.allowedMcpServers !== undefined || (mcpServers?.length ?? 0) > 0)
+    declared.add('mcp')
+  if (permissions?.allowedSkills !== undefined) declared.add('skill')
+  if (permissions?.networkEgress !== undefined) declared.add('network')
+  if (permissions?.fsRead !== undefined) declared.add('fs.read')
+  if (permissions?.fsWrite !== undefined) declared.add('fs.write')
+  return declared
+}
+
+function assertBackendSupportsPermissions(
+  stepId: string,
+  backend: SkelmBackend,
+  declared: ReadonlySet<PermissionDimension>,
+): void {
+  const unresolved = new Set(declared)
+  if (backend.capabilities.mcp) {
+    unresolved.delete('mcp')
+  }
+  if (unresolved.size === 0) return
+
+  if (backend.capabilities.toolPermissions === 'unsupported') {
+    throw new BackendCapabilityError(
+      `backend ${backend.id} cannot enforce declared permissions for step "${stepId}"`,
+      backend.id,
+      'toolPermissions',
+    )
+  }
+
+  if (backend.capabilities.toolPermissions !== 'wrapped') return
+
+  const unsupported = [...unresolved].filter(
+    (dimension) => !['tool', 'executable'].includes(dimension),
+  )
+  if (unsupported.length === 0) return
+
+  throw new BackendCapabilityError(
+    `backend ${backend.id} cannot enforce ${unsupported.join(', ')} permissions in wrapped mode for step "${stepId}"`,
+    backend.id,
+    'toolPermissions',
+  )
+}
+
 async function runStep(
   step: Step,
   ctx: Context,
   backends: BackendRegistry | undefined,
   waitForInput?: RunOptions['waitForInput'],
+  events?: EventBus,
 ): Promise<unknown> {
   switch (step.kind) {
     case 'code':
@@ -495,6 +548,11 @@ async function runStep(
           'mcp',
         )
       }
+      const declaredPermissionDimensions = collectDeclaredPermissionDimensions(
+        step.permissions,
+        mcpServers,
+      )
+      assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions)
       const req: AgentRequest = {
         prompt: promptText,
         ...(systemText !== undefined && { system: systemText }),
@@ -507,12 +565,18 @@ async function runStep(
         mcpServers !== undefined &&
         mcpServers.length > 0 &&
         backend.capabilities.toolPermissions === 'wrapped'
-          ? await createMcpHost(mcpServers)
+          ? await createMcpHost(mcpServers, {
+              ...(policy !== undefined && { enforcer: new TrustEnforcer(policy) }),
+              ...(events !== undefined && { events }),
+              runId: ctx.run.runId,
+              stepId: step.id,
+            })
           : undefined
       try {
         // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
         const response = await backend.run!(req, {
           signal: ctx.signal,
+          ...(policy !== undefined && { permissions: policy }),
           ...(mcpHost !== undefined && { mcpHost }),
         })
         if (step.outputSchema !== undefined) {
@@ -529,17 +593,17 @@ async function runStep(
       }
     }
     case 'parallel':
-      return await runParallel(step, ctx, backends, waitForInput)
+      return await runParallel(step, ctx, backends, waitForInput, events)
     case 'forEach':
-      return await runForEach(step, ctx, backends, waitForInput)
+      return await runForEach(step, ctx, backends, waitForInput, events)
     case 'branch':
-      return await runBranch(step, ctx, backends, waitForInput)
+      return await runBranch(step, ctx, backends, waitForInput, events)
     case 'loop':
-      return await runLoop(step, ctx, backends, waitForInput)
+      return await runLoop(step, ctx, backends, waitForInput, events)
     case 'wait':
       return await runWait(step, ctx, waitForInput)
     case 'pipelineStep':
-      return await runPipelineStep(step, ctx, backends, waitForInput)
+      return await runPipelineStep(step, ctx, backends, waitForInput, events)
     default: {
       const exhaustive: never = step
       throw new Error(`unknown step kind: ${(exhaustive as { kind: string }).kind}`)
@@ -552,10 +616,11 @@ async function runParallel(
   ctx: Context,
   backends: BackendRegistry | undefined,
   waitForInput: RunOptions['waitForInput'],
+  events?: EventBus,
 ): Promise<Record<string, unknown>> {
   const onError = step.onError ?? 'fail'
   const settled = await Promise.allSettled(
-    step.steps.map((child) => runStep(child, ctx, backends, waitForInput)),
+    step.steps.map((child) => runStep(child, ctx, backends, waitForInput, events)),
   )
   const out: Record<string, unknown> = {}
   for (let i = 0; i < step.steps.length; i++) {
@@ -580,6 +645,7 @@ async function runForEach(
   ctx: Context,
   backends: BackendRegistry | undefined,
   waitForInput: RunOptions['waitForInput'],
+  events?: EventBus,
 ): Promise<unknown[]> {
   const items = step.items(ctx)
   const concurrency = step.concurrency ?? 1
@@ -591,7 +657,7 @@ async function runForEach(
       const i = cursor++
       const item = items[i]
       const child = step.step(item, i)
-      results[i] = await runStep(child, ctx, backends, waitForInput)
+      results[i] = await runStep(child, ctx, backends, waitForInput, events)
     }
   }
   const lanes = Math.min(concurrency, items.length || 1)
@@ -607,13 +673,14 @@ async function runBranch(
   ctx: Context,
   backends: BackendRegistry | undefined,
   waitForInput: RunOptions['waitForInput'],
+  events?: EventBus,
 ): Promise<unknown> {
   const key = step.on(ctx)
   const chosen = step.cases[key] ?? step.default
   if (chosen === undefined) {
     throw new Error(`branch(${step.id}): no case matched "${key}" and no default was provided`)
   }
-  return await runStep(chosen, ctx, backends, waitForInput)
+  return await runStep(chosen, ctx, backends, waitForInput, events)
 }
 
 async function runLoop(
@@ -621,12 +688,13 @@ async function runLoop(
   ctx: Context,
   backends: BackendRegistry | undefined,
   waitForInput: RunOptions['waitForInput'],
+  events?: EventBus,
 ): Promise<{ iterations: unknown[]; last: unknown }> {
   const iterations: unknown[] = []
   let last: unknown
   for (let i = 0; i < step.maxIterations; i++) {
     if (!(await step.while(ctx))) break
-    last = await runStep(step.step, ctx, backends, waitForInput)
+    last = await runStep(step.step, ctx, backends, waitForInput, events)
     iterations.push(last)
   }
   return { iterations, last }
@@ -663,6 +731,7 @@ async function runPipelineStep(
   ctx: Context,
   backends: BackendRegistry | undefined,
   waitForInput: RunOptions['waitForInput'],
+  events?: EventBus,
 ): Promise<unknown> {
   const nestedInput =
     step.input === undefined
@@ -672,6 +741,7 @@ async function runPipelineStep(
         : step.input
   const nestedRun = await runPipeline(step.pipeline, nestedInput, {
     signal: ctx.signal,
+    ...(events !== undefined && { events }),
     ...(backends !== undefined && { backends }),
     ...(waitForInput !== undefined && { waitForInput }),
   })

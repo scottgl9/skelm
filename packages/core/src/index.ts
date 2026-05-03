@@ -46,7 +46,13 @@ export {
   pipelineStep,
   wait,
 } from './builders.js'
-export { RunCancelledError, StepError, WaitTimeoutError, serializeError } from './errors.js'
+export {
+  PermissionDeniedError,
+  RunCancelledError,
+  StepError,
+  WaitTimeoutError,
+  serializeError,
+} from './errors.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
 export * from './mcp/index.js'
