@@ -2,8 +2,9 @@
  * Plugin system for skelm
  * 
  * Supports two plugin types:
- * 1. Provider plugins - coding agent backends (opencode, pi, anthropic, etc.)
- * 2. Workflow plugins - integrations (slack, matrix, discord, etc.)
+ * 1. Model plugins - LLM endpoints (openai, anthropic, vllm, sglang, ollama, etc.)
+ * 2. Agent plugins - coding agent SDKs (acp, opencode, pi, github-copilot, etc.)
+ * 3. Workflow plugins - integrations (slack, matrix, discord, etc.)
  */
 
 import type { SkelmBackend } from './backend.js'
@@ -52,19 +53,26 @@ export interface SkelmPlugin {
 /**
  * Plugin types
  */
-export type PluginType = 'provider' | 'workflow' | 'utility'
+export type PluginType = 'model' | 'agent' | 'workflow' | 'utility'
 
 /**
- * Provider plugin - implements a coding agent backend
+ * Model plugin - implements an LLM provider
  */
-export interface ProviderPlugin extends SkelmPlugin {
-  readonly type: 'provider'
+export interface ModelPlugin extends SkelmPlugin {
+  readonly type: 'model'
   
-  /** Create a backend instance */
-  createBackend(config?: Record<string, unknown>): Promise<SkelmBackend>
+  /** Get the model provider instance */
+  getModelProvider(): import('./model-provider.js').ModelProvider
+}
+
+/**
+ * Agent plugin - implements a coding agent SDK
+ */
+export interface AgentPlugin extends SkelmPlugin {
+  readonly type: 'agent'
   
-  /** List available models/providers */
-  listModels?(config?: Record<string, unknown>): Promise<ProviderModel[]>
+  /** Get the agent provider instance */
+  getAgentProvider(): import('./agent-provider.js').AgentProvider
 }
 
 /**
@@ -145,7 +153,8 @@ export interface ProviderModel {
  */
 export class PluginRegistry {
   private readonly plugins = new Map<string, SkelmPlugin>()
-  private readonly providers = new Map<string, ProviderPlugin>()
+  private readonly models = new Map<string, ModelPlugin>()
+  private readonly agents = new Map<string, AgentPlugin>()
   private readonly workflows = new Map<string, WorkflowPlugin>()
   private initialized = false
 
@@ -159,8 +168,10 @@ export class PluginRegistry {
 
     this.plugins.set(plugin.id, plugin)
 
-    if (plugin.type === 'provider') {
-      this.providers.set(plugin.id, plugin as ProviderPlugin)
+    if (plugin.type === 'model') {
+      this.models.set(plugin.id, plugin as ModelPlugin)
+    } else if (plugin.type === 'agent') {
+      this.agents.set(plugin.id, plugin as AgentPlugin)
     } else if (plugin.type === 'workflow') {
       this.workflows.set(plugin.id, plugin as WorkflowPlugin)
     }
@@ -184,8 +195,10 @@ export class PluginRegistry {
     await plugin.stop()
     this.plugins.delete(pluginId)
 
-    if (plugin.type === 'provider') {
-      this.providers.delete(pluginId)
+    if (plugin.type === 'model') {
+      this.models.delete(pluginId)
+    } else if (plugin.type === 'agent') {
+      this.agents.delete(pluginId)
     } else if (plugin.type === 'workflow') {
       this.workflows.delete(pluginId)
     }
@@ -199,10 +212,17 @@ export class PluginRegistry {
   }
 
   /**
-   * Get a provider plugin
+   * Get a model plugin
    */
-  getProvider(providerId: string): ProviderPlugin | undefined {
-    return this.providers.get(providerId)
+  getModel(modelId: string): ModelPlugin | undefined {
+    return this.models.get(modelId)
+  }
+
+  /**
+   * Get an agent plugin
+   */
+  getAgent(agentId: string): AgentPlugin | undefined {
+    return this.agents.get(agentId)
   }
 
   /**
@@ -220,10 +240,17 @@ export class PluginRegistry {
   }
 
   /**
-   * List all provider plugins
+   * List all model plugins
    */
-  listProviders(): readonly ProviderPlugin[] {
-    return [...this.providers.values()]
+  listModels(): readonly ModelPlugin[] {
+    return [...this.models.values()]
+  }
+
+  /**
+   * List all agent plugins
+   */
+  listAgents(): readonly AgentPlugin[] {
+    return [...this.agents.values()]
   }
 
   /**
@@ -301,7 +328,8 @@ export class PluginRegistry {
   async dispose(): Promise<void> {
     await this.stopAll()
     this.plugins.clear()
-    this.providers.clear()
+    this.models.clear()
+    this.agents.clear()
     this.workflows.clear()
     this.initialized = false
   }
