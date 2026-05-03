@@ -49,6 +49,7 @@ export { RunCancelledError, StepError, WaitTimeoutError, serializeError } from '
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
 export * from './mcp/index.js'
+export * from './openai/index.js'
 export {
   resolvePermissions,
   TrustEnforcer,

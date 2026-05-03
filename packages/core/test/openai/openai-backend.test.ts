@@ -1,0 +1,126 @@
+import { createServer } from 'node:http'
+import { afterEach, describe, expect, it } from 'vitest'
+import { z } from 'zod'
+import { createOpenAIBackend } from '../../src/openai/backend.js'
+
+describe('OpenAI backend', () => {
+  afterEach(() => {
+    process.env.OPENAI_API_KEY = undefined
+  })
+
+  it('maps infer() to chat completions text responses', async () => {
+    const requests: unknown[] = []
+    const server = await startServer(async (req) => {
+      requests.push(req)
+      return {
+        choices: [{ message: { content: 'hello from openai' } }],
+        usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16 },
+      }
+    })
+    try {
+      const backend = createOpenAIBackend({
+        apiKey: 'test-key',
+        baseUrl: server.baseUrl,
+      })
+      const response = await backend.infer?.(
+        {
+          system: 'be terse',
+          messages: [{ role: 'user', content: 'say hi' }],
+        },
+        { signal: AbortSignal.timeout(5_000) },
+      )
+
+      expect(response.text).toBe('hello from openai')
+      expect(response.usage).toEqual({
+        inputTokens: 12,
+        outputTokens: 4,
+        extras: { totalTokens: 16 },
+      })
+      expect(requests).toEqual([
+        expect.objectContaining({
+          model: 'gpt-4.1-mini',
+          messages: [
+            { role: 'system', content: 'be terse' },
+            { role: 'user', content: 'say hi' },
+          ],
+        }),
+      ])
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('parses structured responses when outputSchema is requested', async () => {
+    const server = await startServer(async () => ({
+      choices: [{ message: { content: '{"greeting":"hello"}' } }],
+    }))
+    try {
+      const backend = createOpenAIBackend({
+        apiKey: 'test-key',
+        baseUrl: server.baseUrl,
+      })
+      const response = await backend.infer?.(
+        {
+          messages: [{ role: 'user', content: 'greet me' }],
+          outputSchema: z.object({ greeting: z.string() }),
+        },
+        { signal: AbortSignal.timeout(5_000) },
+      )
+
+      expect(response.structured).toEqual({ greeting: 'hello' })
+      expect(response.text).toBe('{"greeting":"hello"}')
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('falls back to OPENAI_API_KEY when apiKey is omitted', async () => {
+    process.env.OPENAI_API_KEY = 'from-env'
+    const server = await startServer(async () => ({
+      choices: [{ message: { content: 'env works' } }],
+    }))
+    try {
+      const backend = createOpenAIBackend({ baseUrl: server.baseUrl })
+      const response = await backend.infer?.(
+        {
+          messages: [{ role: 'user', content: 'ping' }],
+        },
+        { signal: AbortSignal.timeout(5_000) },
+      )
+      expect(response.text).toBe('env works')
+    } finally {
+      await server.close()
+    }
+  })
+})
+
+async function startServer(
+  respond: (body: unknown) => Promise<unknown> | unknown,
+): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+    }
+    const raw = Buffer.concat(chunks).toString('utf8')
+    const parsed = raw.length === 0 ? undefined : JSON.parse(raw)
+    const body = await respond(parsed)
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(body))
+  })
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  const address = server.address()
+  if (!address || typeof address === 'string') {
+    throw new Error('expected TCP server address')
+  }
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    close: async () => {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()))
+      })
+    },
+  }
+}
