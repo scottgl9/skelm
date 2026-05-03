@@ -34,10 +34,10 @@ export class SlackIntegration extends IntegrationBase {
       throw new Error('Slack credentials missing: botToken and signingSecret required')
     }
 
-    this.botToken = botToken
+    this.botToken = String(botToken)
 
     // Validate token format
-    if (!botToken.startsWith('xoxb-')) {
+    if (!this.botToken.startsWith('xoxb-')) {
       throw new Error('Invalid Slack bot token format')
     }
   }

@@ -21,7 +21,7 @@ export interface IntegrationConfig {
   /** Whether the integration is enabled */
   enabled: boolean
   /** Authentication credentials (encrypted at rest) */
-  credentials: Record<string, string>
+  credentials: Record<string, string | number | boolean>
   /** Optional webhook configuration */
   webhook?: WebhookConfig
   /** Optional rate limiting config */
