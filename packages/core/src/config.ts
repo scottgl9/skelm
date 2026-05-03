@@ -62,9 +62,7 @@ export function defineConfig(config: SkelmConfig): SkelmConfig {
 
 /** Default configuration used when no skelm.config.ts is found. */
 export const DEFAULT_CONFIG: SkelmConfig = Object.freeze({
-  backend: 'openai',
   backends: {
-    default: 'openai' as const,
     llm: 'openai' as const,
     openai: {},
   },
