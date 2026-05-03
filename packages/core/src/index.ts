@@ -19,7 +19,7 @@ export type {
   ToolPermissionEnforcement,
   Usage,
 } from './backend.js'
-export { code, llm, pipeline } from './builders.js'
+export { branch, code, forEach, llm, loop, parallel, pipeline } from './builders.js'
 export { RunCancelledError, StepError, serializeError } from './errors.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
@@ -42,9 +42,15 @@ export type { RunOptions } from './runner.js'
 export { runPipeline, SchemaValidationError } from './runner.js'
 export type { SkelmSchema } from './schema.js'
 export type {
+  BranchStep,
   CodeStep,
   Context,
+  ForEachStep,
   LlmStep,
+  LoopStep,
+  ParallelOnError,
+  ParallelStep,
+  ParallelWaitFor,
   Pipeline,
   Run,
   RunId,

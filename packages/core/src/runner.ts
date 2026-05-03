@@ -246,11 +246,98 @@ async function runStep(
       }
       return { text: response.text ?? '', usage: response.usage }
     }
+    case 'parallel':
+      return await runParallel(step, ctx, backends)
+    case 'forEach':
+      return await runForEach(step, ctx, backends)
+    case 'branch':
+      return await runBranch(step, ctx, backends)
+    case 'loop':
+      return await runLoop(step, ctx, backends)
     default: {
       const exhaustive: never = step
       throw new Error(`unknown step kind: ${(exhaustive as { kind: string }).kind}`)
     }
   }
+}
+
+async function runParallel(
+  step: Extract<Step, { kind: 'parallel' }>,
+  ctx: Context,
+  backends: BackendRegistry | undefined,
+): Promise<Record<string, unknown>> {
+  const onError = step.onError ?? 'fail'
+  const settled = await Promise.allSettled(step.steps.map((child) => runStep(child, ctx, backends)))
+  const out: Record<string, unknown> = {}
+  for (let i = 0; i < step.steps.length; i++) {
+    const child = step.steps[i]
+    const r = settled[i]
+    if (child === undefined || r === undefined) continue
+    if (r.status === 'fulfilled') {
+      out[child.id] = r.value
+    } else {
+      if (onError === 'fail') {
+        throw r.reason
+      }
+      // continue / partial: record the error shape; the run does not abort.
+      out[child.id] = { error: serializeError(r.reason) }
+    }
+  }
+  return out
+}
+
+async function runForEach(
+  step: Extract<Step, { kind: 'forEach' }>,
+  ctx: Context,
+  backends: BackendRegistry | undefined,
+): Promise<unknown[]> {
+  const items = step.items(ctx)
+  const concurrency = step.concurrency ?? 1
+  const results = new Array<unknown>(items.length)
+  let cursor = 0
+  const workers: Promise<void>[] = []
+  const launch = async (): Promise<void> => {
+    while (cursor < items.length) {
+      const i = cursor++
+      const item = items[i]
+      const child = step.step(item, i)
+      results[i] = await runStep(child, ctx, backends)
+    }
+  }
+  const lanes = Math.min(concurrency, items.length || 1)
+  for (let n = 0; n < lanes; n++) {
+    workers.push(launch())
+  }
+  await Promise.all(workers)
+  return results
+}
+
+async function runBranch(
+  step: Extract<Step, { kind: 'branch' }>,
+  ctx: Context,
+  backends: BackendRegistry | undefined,
+): Promise<unknown> {
+  const key = step.on(ctx)
+  const chosen = step.cases[key] ?? step.default
+  if (chosen === undefined) {
+    throw new Error(`branch(${step.id}): no case matched "${key}" and no default was provided`)
+  }
+  return await runStep(chosen, ctx, backends)
+}
+
+async function runLoop(
+  step: Extract<Step, { kind: 'loop' }>,
+  ctx: Context,
+  backends: BackendRegistry | undefined,
+): Promise<{ iterations: unknown[]; last: unknown }> {
+  const iterations: unknown[] = []
+  let last: unknown
+  for (let i = 0; i < step.maxIterations; i++) {
+    if (!(await step.while(ctx))) break
+    last = await runStep(step.step, ctx, backends)
+    iterations.push(last)
+  }
+  return { iterations, last }
 }
 
 function freezeContext<TInput>(ctx: Context<TInput>): Context<TInput> {

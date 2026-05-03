@@ -1,5 +1,18 @@
 import type { SkelmSchema } from './schema.js'
-import type { CodeStep, Context, LlmStep, Pipeline, Step, StepId } from './types.js'
+import type {
+  BranchStep,
+  CodeStep,
+  Context,
+  ForEachStep,
+  LlmStep,
+  LoopStep,
+  ParallelOnError,
+  ParallelStep,
+  ParallelWaitFor,
+  Pipeline,
+  Step,
+  StepId,
+} from './types.js'
 
 /**
  * Author a pipeline. The result is a plain immutable value carrying its
@@ -90,6 +103,108 @@ export function llm<TOutput>(def: {
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.temperature !== undefined && { temperature: def.temperature }),
     ...(def.maxTokens !== undefined && { maxTokens: def.maxTokens }),
+  })
+}
+
+/** Run a set of named child steps concurrently. The result is keyed by child id. */
+export function parallel(def: {
+  id: StepId
+  steps: readonly Step[]
+  waitFor?: ParallelWaitFor
+  onError?: ParallelOnError
+}): ParallelStep {
+  if (!def.id) throw new Error('parallel(): id is required')
+  if (!def.steps || def.steps.length === 0) {
+    throw new Error(`parallel(${def.id}): steps must contain at least one step`)
+  }
+  // Sibling ids must be unique within a parallel block (they become the keys
+  // of the parallel output object). We do not require global uniqueness across
+  // the whole pipeline tree — that is the runtime's job to track per-scope.
+  const seen = new Set<string>()
+  for (const s of def.steps) {
+    if (seen.has(s.id)) {
+      throw new Error(`parallel(${def.id}): duplicate child step id "${s.id}"`)
+    }
+    seen.add(s.id)
+  }
+  return Object.freeze({
+    kind: 'parallel',
+    id: def.id,
+    steps: Object.freeze([...def.steps]),
+    ...(def.waitFor !== undefined && { waitFor: def.waitFor }),
+    ...(def.onError !== undefined && { onError: def.onError }),
+  })
+}
+
+/** Map a step factory over a collection; outputs collected as an array. */
+export function forEach(def: {
+  id: StepId
+  items: (ctx: Context) => readonly unknown[]
+  concurrency?: number
+  step: (item: unknown, index: number) => Step
+}): ForEachStep {
+  if (!def.id) throw new Error('forEach(): id is required')
+  if (typeof def.items !== 'function') {
+    throw new Error(`forEach(${def.id}): items must be a function`)
+  }
+  if (typeof def.step !== 'function') {
+    throw new Error(`forEach(${def.id}): step must be a factory function`)
+  }
+  if (def.concurrency !== undefined && def.concurrency < 1) {
+    throw new Error(`forEach(${def.id}): concurrency must be >= 1`)
+  }
+  return Object.freeze({
+    kind: 'forEach',
+    id: def.id,
+    items: def.items,
+    step: def.step,
+    ...(def.concurrency !== undefined && { concurrency: def.concurrency }),
+  })
+}
+
+/** Route to one of `cases` based on a discriminator key, with optional default. */
+export function branch(def: {
+  id: StepId
+  on: (ctx: Context) => string
+  cases: Readonly<Record<string, Step>>
+  default?: Step
+}): BranchStep {
+  if (!def.id) throw new Error('branch(): id is required')
+  if (typeof def.on !== 'function') {
+    throw new Error(`branch(${def.id}): on must be a function`)
+  }
+  if (!def.cases || Object.keys(def.cases).length === 0) {
+    throw new Error(`branch(${def.id}): cases must have at least one entry`)
+  }
+  return Object.freeze({
+    kind: 'branch',
+    id: def.id,
+    on: def.on,
+    cases: Object.freeze({ ...def.cases }),
+    ...(def.default !== undefined && { default: def.default }),
+  })
+}
+
+/** Iterate a step while a predicate holds, bounded by maxIterations. */
+export function loop(def: {
+  id: StepId
+  while: (ctx: Context) => boolean | Promise<boolean>
+  maxIterations: number
+  step: Step
+}): LoopStep {
+  if (!def.id) throw new Error('loop(): id is required')
+  if (typeof def.while !== 'function') {
+    throw new Error(`loop(${def.id}): while must be a function`)
+  }
+  if (def.maxIterations < 1) {
+    throw new Error(`loop(${def.id}): maxIterations must be >= 1`)
+  }
+  return Object.freeze({
+    kind: 'loop',
+    id: def.id,
+    while: def.while,
+    maxIterations: def.maxIterations,
+    step: def.step,
   })
 }
 
