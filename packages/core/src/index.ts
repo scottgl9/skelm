@@ -42,8 +42,9 @@ export {
   parallel,
   pipeline,
   pipelineStep,
+  wait,
 } from './builders.js'
-export { RunCancelledError, StepError, serializeError } from './errors.js'
+export { RunCancelledError, StepError, WaitTimeoutError, serializeError } from './errors.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
 export {
@@ -61,8 +62,8 @@ export type {
   ResolvedToolMatcher,
   ToolMatcher,
 } from './permissions.js'
-export type { RunOptions } from './runner.js'
-export { runPipeline, SchemaValidationError } from './runner.js'
+export type { RunHandle, RunOptions, WaitRequest } from './runner.js'
+export { runPipeline, Runner, SchemaValidationError } from './runner.js'
 export type { SkelmSchema } from './schema.js'
 export type {
   AgentStep,
@@ -87,4 +88,5 @@ export type {
   StepKind,
   StepResult,
   StepStatus,
+  WaitStep,
 } from './types.js'

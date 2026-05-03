@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { EventBus, SchemaValidationError, runPipeline } from '@skelm/core'
+import { EventBus, Runner, SchemaValidationError, WaitTimeoutError } from '@skelm/core'
 import type { Run } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { CliError, loadWorkflowFromFile } from './load-workflow.js'
@@ -86,7 +86,7 @@ export async function runCommand(
     })
   }
 
-  const run = await runPipeline(workflow, input, { events: bus })
+  const run = await new Runner({ events: bus }).start(workflow, input).wait()
 
   if (run.status === 'completed') {
     const json = `${JSON.stringify(run.output)}\n`
@@ -109,6 +109,9 @@ export async function runCommand(
   }
   if (run.error?.name === SchemaValidationError.name) {
     return { exitCode: EXIT.SCHEMA_VALIDATION, run }
+  }
+  if (run.error?.name === WaitTimeoutError.name) {
+    return { exitCode: EXIT.WAIT_TIMEOUT, run }
   }
   return { exitCode: EXIT.RUN_FAILED, run }
 }

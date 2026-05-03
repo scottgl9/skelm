@@ -15,6 +15,7 @@ import type {
   PipelineStep,
   Step,
   StepId,
+  WaitStep,
 } from './types.js'
 
 /**
@@ -241,6 +242,26 @@ export function loop(def: {
     while: def.while,
     maxIterations: def.maxIterations,
     step: def.step,
+  })
+}
+
+/** Suspend execution until a caller resumes the run with input. */
+export function wait<TOutput>(def: {
+  id: StepId
+  message?: string | ((ctx: Context) => string)
+  timeoutMs?: number
+  output?: SkelmSchema<TOutput>
+}): WaitStep<TOutput> {
+  if (!def.id) throw new Error('wait(): id is required')
+  if (def.timeoutMs !== undefined && def.timeoutMs < 1) {
+    throw new Error(`wait(${def.id}): timeoutMs must be >= 1`)
+  }
+  return Object.freeze({
+    kind: 'wait',
+    id: def.id,
+    ...(def.message !== undefined && { message: def.message }),
+    ...(def.timeoutMs !== undefined && { timeoutMs: def.timeoutMs }),
+    ...(def.output !== undefined && { outputSchema: def.output }),
   })
 }
 

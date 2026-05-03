@@ -31,6 +31,14 @@ export type RunEvent =
       error: SerializedError
       at: number
     }
+  | {
+      type: 'run.waiting'
+      runId: RunId
+      stepId: StepId
+      message?: string
+      timeoutMs?: number
+      at: number
+    }
   | { type: 'run.completed'; runId: RunId; output: unknown; durationMs: number; at: number }
   | { type: 'run.failed'; runId: RunId; error: SerializedError; at: number }
   | { type: 'run.cancelled'; runId: RunId; at: number }

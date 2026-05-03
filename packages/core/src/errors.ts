@@ -22,6 +22,14 @@ export class RunCancelledError extends Error {
   }
 }
 
+/** Thrown when a wait() step does not receive resume input before its timeout. */
+export class WaitTimeoutError extends Error {
+  override readonly name = 'WaitTimeoutError'
+  constructor(message = 'wait step timed out') {
+    super(message)
+  }
+}
+
 /** Convert any thrown value to the serializable error shape we record. */
 export function serializeError(err: unknown): SerializedError {
   if (err instanceof Error) {

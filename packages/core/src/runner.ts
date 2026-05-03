@@ -1,5 +1,5 @@
 import { type AgentRequest, BackendNotFoundError, type BackendRegistry } from './backend.js'
-import { RunCancelledError, serializeError } from './errors.js'
+import { RunCancelledError, WaitTimeoutError, serializeError } from './errors.js'
 import { EventBus } from './events.js'
 import { resolvePermissions } from './permissions.js'
 import { SchemaValidationError, validate } from './schema.js'
@@ -14,6 +14,122 @@ export interface RunOptions {
   events?: EventBus
   /** Optional backend registry; required if any step references a backend. */
   backends?: BackendRegistry
+  /** Optional hook used by wait() steps to suspend until external input arrives. */
+  waitForInput?: (request: WaitRequest) => Promise<unknown>
+}
+
+export interface WaitRequest {
+  readonly runId: string
+  readonly pipelineId: string
+  readonly stepId: StepId
+  readonly signal: AbortSignal
+  readonly message?: string
+  readonly timeoutMs?: number
+}
+
+export interface RunHandle<TInput = unknown, TOutput = unknown> {
+  readonly runId: string
+  wait(): Promise<Run<TInput, TOutput>>
+}
+
+export class Runner {
+  readonly events: EventBus
+  private readonly pendingWaits = new Map<
+    string,
+    { resolve: (value: unknown) => void; reject: (error: Error) => void; timer?: NodeJS.Timeout }
+  >()
+
+  constructor(private readonly options: Pick<RunOptions, 'backends'> & { events?: EventBus } = {}) {
+    this.events = options.events ?? new EventBus()
+  }
+
+  start<TInput, TOutput>(
+    pipeline: Pipeline<TInput, TOutput>,
+    input: TInput,
+    options: Omit<RunOptions, 'events' | 'backends' | 'waitForInput'> = {},
+  ): RunHandle<TInput, TOutput> {
+    const runId = options.runId ?? crypto.randomUUID()
+    const promise = runPipeline(pipeline, input, {
+      ...options,
+      runId,
+      events: this.events,
+      ...(this.options.backends !== undefined && { backends: this.options.backends }),
+      waitForInput: (request) => this.awaitResume(request),
+    })
+    return {
+      runId,
+      wait: () => promise,
+    }
+  }
+
+  async resume(runId: string, value: unknown): Promise<void> {
+    const pending = this.pendingWaits.get(runId)
+    if (!pending) {
+      throw new Error(`run ${runId} is not waiting`)
+    }
+    this.pendingWaits.delete(runId)
+    if (pending.timer !== undefined) {
+      clearTimeout(pending.timer)
+    }
+    pending.resolve(value)
+  }
+
+  private awaitResume(request: WaitRequest): Promise<unknown> {
+    if (this.pendingWaits.has(request.runId)) {
+      throw new Error(`run ${request.runId} is already waiting`)
+    }
+    this.events.publish({
+      type: 'run.waiting',
+      runId: request.runId,
+      stepId: request.stepId,
+      ...(request.message !== undefined && { message: request.message }),
+      ...(request.timeoutMs !== undefined && { timeoutMs: request.timeoutMs }),
+      at: Date.now(),
+    })
+    return new Promise<unknown>((resolve, reject) => {
+      const pending: {
+        resolve: (value: unknown) => void
+        reject: (error: Error) => void
+        timer?: NodeJS.Timeout
+      } = {
+        resolve,
+        reject,
+      }
+      this.pendingWaits.set(request.runId, pending)
+
+      const onAbort = () => {
+        cleanup()
+        reject(new RunCancelledError())
+      }
+      request.signal.addEventListener('abort', onAbort, { once: true })
+
+      const cleanup = () => {
+        request.signal.removeEventListener('abort', onAbort)
+        if (pending.timer !== undefined) {
+          clearTimeout(pending.timer)
+        }
+        this.pendingWaits.delete(request.runId)
+      }
+
+      pending.resolve = (value) => {
+        cleanup()
+        resolve(value)
+      }
+      pending.reject = (error) => {
+        cleanup()
+        reject(error)
+      }
+
+      if (request.timeoutMs !== undefined) {
+        pending.timer = setTimeout(() => {
+          pending.reject(
+            new WaitTimeoutError(`wait(${request.stepId}) timed out after ${request.timeoutMs}ms`),
+          )
+        }, request.timeoutMs)
+        pending.timer.unref?.()
+      }
+    })
+  }
 }
 
 /**
@@ -105,7 +221,7 @@ export async function runPipeline<TInput, TOutput>(
         run: runMeta,
         signal: controller.signal,
       })
-      const output = await runStep(step, ctx, options.backends)
+      const output = await runStep(step, ctx, options.backends, options.waitForInput)
       const completedAt = Date.now()
       stepOutputs[step.id] = output
       stepResults.push({
@@ -213,6 +329,7 @@ async function runStep(
   step: Step,
   ctx: Context,
   backends: BackendRegistry | undefined,
+  waitForInput?: RunOptions['waitForInput'],
 ): Promise<unknown> {
   switch (step.kind) {
     case 'code':
@@ -282,15 +399,17 @@ async function runStep(
       }
     }
     case 'parallel':
-      return await runParallel(step, ctx, backends)
+      return await runParallel(step, ctx, backends, waitForInput)
     case 'forEach':
-      return await runForEach(step, ctx, backends)
+      return await runForEach(step, ctx, backends, waitForInput)
     case 'branch':
-      return await runBranch(step, ctx, backends)
+      return await runBranch(step, ctx, backends, waitForInput)
     case 'loop':
-      return await runLoop(step, ctx, backends)
+      return await runLoop(step, ctx, backends, waitForInput)
+    case 'wait':
+      return await runWait(step, ctx, waitForInput)
     case 'pipelineStep':
-      return await runPipelineStep(step, ctx, backends)
+      return await runPipelineStep(step, ctx, backends, waitForInput)
     default: {
       const exhaustive: never = step
       throw new Error(`unknown step kind: ${(exhaustive as { kind: string }).kind}`)
@@ -302,9 +421,12 @@ async function runParallel(
   step: Extract<Step, { kind: 'parallel' }>,
   ctx: Context,
   backends: BackendRegistry | undefined,
+  waitForInput: RunOptions['waitForInput'],
 ): Promise<Record<string, unknown>> {
   const onError = step.onError ?? 'fail'
-  const settled = await Promise.allSettled(step.steps.map((child) => runStep(child, ctx, backends)))
+  const settled = await Promise.allSettled(
+    step.steps.map((child) => runStep(child, ctx, backends, waitForInput)),
+  )
   const out: Record<string, unknown> = {}
   for (let i = 0; i < step.steps.length; i++) {
     const child = step.steps[i]
@@ -327,6 +449,7 @@ async function runForEach(
   step: Extract<Step, { kind: 'forEach' }>,
   ctx: Context,
   backends: BackendRegistry | undefined,
+  waitForInput: RunOptions['waitForInput'],
 ): Promise<unknown[]> {
   const items = step.items(ctx)
   const concurrency = step.concurrency ?? 1
@@ -338,7 +461,7 @@ async function runForEach(
       const i = cursor++
       const item = items[i]
       const child = step.step(item, i)
-      results[i] = await runStep(child, ctx, backends)
+      results[i] = await runStep(child, ctx, backends, waitForInput)
     }
   }
   const lanes = Math.min(concurrency, items.length || 1)
@@ -353,34 +476,63 @@ async function runBranch(
   step: Extract<Step, { kind: 'branch' }>,
   ctx: Context,
   backends: BackendRegistry | undefined,
+  waitForInput: RunOptions['waitForInput'],
 ): Promise<unknown> {
   const key = step.on(ctx)
   const chosen = step.cases[key] ?? step.default
   if (chosen === undefined) {
     throw new Error(`branch(${step.id}): no case matched "${key}" and no default was provided`)
   }
-  return await runStep(chosen, ctx, backends)
+  return await runStep(chosen, ctx, backends, waitForInput)
 }
 
 async function runLoop(
   step: Extract<Step, { kind: 'loop' }>,
   ctx: Context,
   backends: BackendRegistry | undefined,
+  waitForInput: RunOptions['waitForInput'],
 ): Promise<{ iterations: unknown[]; last: unknown }> {
   const iterations: unknown[] = []
   let last: unknown
   for (let i = 0; i < step.maxIterations; i++) {
     if (!(await step.while(ctx))) break
-    last = await runStep(step.step, ctx, backends)
+    last = await runStep(step.step, ctx, backends, waitForInput)
     iterations.push(last)
   }
   return { iterations, last }
+}
+
+async function runWait(
+  step: Extract<Step, { kind: 'wait' }>,
+  ctx: Context,
+  waitForInput: RunOptions['waitForInput'],
+): Promise<unknown> {
+  if (!waitForInput) {
+    throw new Error(
+      `wait(${step.id}): no wait handler configured; use Runner.start() or pass waitForInput to runPipeline()`,
+    )
+  }
+  const resumed = await waitForInput({
+    runId: ctx.run.runId,
+    pipelineId: ctx.run.pipelineId,
+    stepId: step.id,
+    signal: ctx.signal,
+    ...(step.message !== undefined && {
+      message: typeof step.message === 'function' ? step.message(ctx) : step.message,
+    }),
+    ...(step.timeoutMs !== undefined && { timeoutMs: step.timeoutMs }),
+  })
+  if (step.outputSchema !== undefined) {
+    return await validate(step.outputSchema, resumed, 'output')
+  }
+  return resumed
 }
 
 async function runPipelineStep(
   step: Extract<Step, { kind: 'pipelineStep' }>,
   ctx: Context,
   backends: BackendRegistry | undefined,
+  waitForInput: RunOptions['waitForInput'],
 ): Promise<unknown> {
   const nestedInput =
     step.input === undefined
@@ -391,6 +543,7 @@ async function runPipelineStep(
   const nestedRun = await runPipeline(step.pipeline, nestedInput, {
     signal: ctx.signal,
     ...(backends !== undefined && { backends }),
+    ...(waitForInput !== undefined && { waitForInput }),
   })
   if (nestedRun.status === 'completed') {
     return nestedRun.output

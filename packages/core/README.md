@@ -5,7 +5,7 @@ Runtime, types, and builders for [skelm](https://github.com/scottgl9/skelm).
 This is the package every skelm workflow imports from (transitively, via the [`skelm`](../skelm/README.md) meta package). It contains:
 
 - The public type surface — `Pipeline`, `Step`, `Context`, `Run`, `RunMetadata`, `StepResult`, `RunStatus`, etc.
-- Builders — `pipeline()`, `code()`, `llm()`, `agent()`, `parallel()`, `forEach()`, `branch()`, `loop()`, `pipelineStep()`.
+- Builders — `pipeline()`, `code()`, `llm()`, `agent()`, `parallel()`, `forEach()`, `branch()`, `loop()`, `wait()`, `pipelineStep()`.
 - The sequential `runPipeline()` runner with `AbortSignal` cancellation, finalize / last-step-adoption output resolution, and structured error capture.
 - Standard-schema bridge for input/output validation. Zod is the documented default; any standard-schema-compatible validator works.
 - The default-deny `AgentPermissions` model + `TrustEnforcer` for agent step gating (used in upcoming agent-step milestones).
@@ -55,9 +55,9 @@ console.log(run.output) // { sum: 5 }
 ```ts
 export {
   // builders
-  pipeline, code, llm, agent, parallel, forEach, branch, loop, pipelineStep,
+  pipeline, code, llm, agent, parallel, forEach, branch, loop, wait, pipelineStep,
   // runtime
-  runPipeline, type RunOptions,
+  runPipeline, Runner, type RunOptions,
   // types
   type Pipeline, type Step, type CodeStep,
   type Context, type Run, type RunMetadata, type StepResult,
@@ -73,7 +73,7 @@ export {
   type ToolMatcher, type NetworkPolicy, type ApprovalPolicy,
   type PermissionDimension, type PermissionDenialReason, type EnforceDecision,
   // errors
-  StepError, RunCancelledError, serializeError,
+  StepError, RunCancelledError, WaitTimeoutError, serializeError,
 }
 ```
 

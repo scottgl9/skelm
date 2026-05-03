@@ -25,6 +25,7 @@ export type StepKind =
   | 'forEach'
   | 'branch'
   | 'loop'
+  | 'wait'
   | 'pipelineStep'
 
 /** Metadata about the current run, available on `ctx.run`. */
@@ -135,6 +136,15 @@ export interface LoopStep {
   readonly step: Step
 }
 
+/** A `wait()` step: pause until a caller resumes the run with input. */
+export interface WaitStep<TOutput = unknown> {
+  readonly kind: 'wait'
+  readonly id: StepId
+  readonly message?: string | ((ctx: Context) => string)
+  readonly timeoutMs?: number
+  readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
+}
+
 /** A `pipelineStep()` step: run a nested pipeline and adopt its output. */
 export interface PipelineStep<TInput = unknown, TOutput = unknown> {
   readonly kind: 'pipelineStep'
@@ -152,6 +162,7 @@ export type Step =
   | ForEachStep
   | BranchStep
   | LoopStep
+  | WaitStep
   | PipelineStep
 
 /** A pipeline value produced by `pipeline()`. */

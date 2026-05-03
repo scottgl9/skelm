@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { branch, code, forEach, loop, parallel, pipeline, pipelineStep } from './builders.js'
-import { runPipeline } from './runner.js'
+import { z } from 'zod'
+import { branch, code, forEach, loop, parallel, pipeline, pipelineStep, wait } from './builders.js'
+import { Runner, runPipeline } from './runner.js'
 
 describe('parallel()', () => {
   it('runs siblings concurrently and keys output by child id', async () => {
@@ -313,3 +314,73 @@ describe('pipelineStep()', () => {
     ).toThrow(/pipeline is required/)
   })
 })
+
+describe('wait()', () => {
+  it('resumes with external input via Runner.resume()', async () => {
+    const wf = pipeline<unknown, { approved: boolean }>({
+      id: 'approval',
+      steps: [wait({ id: 'gate', output: z.object({ approved: z.boolean() }) })],
+    })
+
+    const runner = new Runner()
+    const runId = 'wait-resume'
+    const waiting = waitForRunWaiting(runner, runId)
+    const handle = runner.start(wf, undefined, { runId })
+    await waiting
+    await runner.resume(handle.runId, { approved: true })
+
+    const run = await handle.wait()
+    expect(run.status).toBe('completed')
+    expect(run.output).toEqual({ approved: true })
+  })
+
+  it('fails with WaitTimeoutError when the wait step times out', async () => {
+    const wf = pipeline({
+      id: 'wait-timeout',
+      steps: [wait({ id: 'gate', timeoutMs: 10 })],
+    })
+
+    const run = await new Runner().start(wf, undefined).wait()
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('WaitTimeoutError')
+  })
+
+  it('publishes run.waiting with step metadata while suspended', async () => {
+    const runner = new Runner()
+    const seen: Array<{ runId: string; stepId: string; message?: string }> = []
+    runner.events.subscribe((event) => {
+      if (event.type === 'run.waiting') {
+        seen.push({ runId: event.runId, stepId: event.stepId, message: event.message })
+      }
+    })
+
+    const wf = pipeline({
+      id: 'wait-events',
+      steps: [wait({ id: 'pause', message: () => 'approval required' })],
+    })
+
+    const runId = 'wait-events'
+    const waiting = waitForRunWaiting(runner, runId)
+    const handle = runner.start(wf, undefined, { runId })
+    await waiting
+    await runner.resume(handle.runId, { ok: true })
+    await handle.wait()
+
+    expect(seen).toEqual([{ runId: handle.runId, stepId: 'pause', message: 'approval required' }])
+  })
+
+  it('rejects wait() with an invalid timeout', () => {
+    expect(() => wait({ id: 'bad', timeoutMs: 0 })).toThrow(/timeoutMs must be >= 1/)
+  })
+})
+
+async function waitForRunWaiting(runner: Runner, runId: string): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const unsubscribe = runner.events.forRun(runId, (event) => {
+      if (event.type === 'run.waiting') {
+        unsubscribe()
+        resolve()
+      }
+    })
+  })
+}
