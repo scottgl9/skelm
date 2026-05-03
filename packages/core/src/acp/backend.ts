@@ -18,9 +18,11 @@ import type {
   AgentResponse,
   BackendCapabilities,
   BackendContext,
+  McpServerConfig,
   SkelmBackend,
 } from '../backend.js'
 import { AcpClient } from './client.js'
+import type { McpServerSpec } from './protocol.js'
 
 export interface AcpBackendOptions {
   /** Backend id. Defaults to 'acp' when only one ACP backend is registered. */
@@ -66,7 +68,12 @@ export function createAcpBackend(opts: AcpBackendOptions): SkelmBackend {
           ...(opts.cwd !== undefined && { cwd: opts.cwd }),
           ...(opts.env !== undefined && { env: opts.env }),
         })
-        await client.newSession({ cwd: req.cwd ?? opts.cwd ?? process.cwd() })
+        await client.newSession({
+          cwd: req.cwd ?? opts.cwd ?? process.cwd(),
+          ...(req.mcpServers !== undefined && {
+            mcpServers: req.mcpServers.map(toAcpMcpServerSpec),
+          }),
+        })
         const result = await client.prompt({ text: buildPrompt(req) })
         return {
           text: result.text,
@@ -87,4 +94,37 @@ export function createAcpBackend(opts: AcpBackendOptions): SkelmBackend {
 function buildPrompt(req: AgentRequest): string {
   if (req.system === undefined) return req.prompt
   return `${req.system}\n\n---\n\n${req.prompt}`
+}
+
+function toAcpMcpServerSpec(server: McpServerConfig): McpServerSpec {
+  switch (server.transport) {
+    case 'stdio':
+      return {
+        type: 'stdio',
+        name: server.id,
+        command: server.command,
+        ...(server.args !== undefined && { args: server.args }),
+        ...(server.env !== undefined && {
+          env: Object.entries(server.env).map(([name, value]) => ({ name, value })),
+        }),
+      }
+    case 'http':
+      return {
+        type: 'http',
+        name: server.id,
+        url: server.url,
+        ...(server.headers !== undefined && {
+          headers: Object.entries(server.headers).map(([name, value]) => ({ name, value })),
+        }),
+      }
+    case 'sse':
+      return {
+        type: 'sse',
+        name: server.id,
+        url: server.url,
+        ...(server.headers !== undefined && {
+          headers: Object.entries(server.headers).map(([name, value]) => ({ name, value })),
+        }),
+      }
+  }
 }

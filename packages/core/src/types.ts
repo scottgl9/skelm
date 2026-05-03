@@ -101,6 +101,9 @@ export interface AgentStep<TOutput = unknown> {
   readonly backend?: string
   readonly prompt: string | ((ctx: Context) => string)
   readonly system?: string | ((ctx: Context) => string)
+  readonly mcp?:
+    | readonly import('./backend.js').McpServerConfig[]
+    | ((ctx: Context) => readonly import('./backend.js').McpServerConfig[])
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   readonly permissions?: import('./permissions.js').AgentPermissions
   readonly maxTurns?: number

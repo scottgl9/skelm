@@ -87,4 +87,60 @@ describe('agent() step + ACP backend', () => {
     expect(run.status).toBe('completed')
     expect((run.output as { text: string }).text).toBe('echo:hi world')
   })
+
+  it('passes configured MCP servers through to the ACP session', async () => {
+    const reg = new BackendRegistry()
+    reg.register(
+      createAcpBackend({
+        id: 'acp-mock',
+        command: 'node',
+        args: ['--import', 'tsx/esm', MOCK_AGENT],
+      }),
+    )
+
+    const wf = pipeline({
+      id: 'agent-mcp',
+      steps: [
+        agent({
+          id: 'work',
+          backend: 'acp-mock',
+          mcp: [{ id: 'gh', transport: 'stdio', command: 'mcp-github', args: ['--readonly'] }],
+          permissions: { allowedMcpServers: ['gh'] },
+          prompt: 'hello mcp',
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined, { backends: reg })
+    expect(run.status).toBe('completed')
+    expect((run.output as { text: string }).text).toBe('echo:hello mcp')
+  })
+
+  it('fails closed when the step attaches an MCP server outside allowedMcpServers', async () => {
+    const reg = new BackendRegistry()
+    reg.register(
+      createAcpBackend({
+        id: 'acp-mock',
+        command: 'node',
+        args: ['--import', 'tsx/esm', MOCK_AGENT],
+      }),
+    )
+
+    const wf = pipeline({
+      id: 'agent-mcp-denied',
+      steps: [
+        agent({
+          id: 'work',
+          backend: 'acp-mock',
+          mcp: [{ id: 'gh', transport: 'stdio', command: 'mcp-github' }],
+          permissions: { allowedMcpServers: [] },
+          prompt: 'should fail',
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined, { backends: reg })
+    expect(run.status).toBe('failed')
+    expect(run.error?.message).toMatch(/not allowed to attach MCP server "gh"/)
+  })
 })

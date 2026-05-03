@@ -52,6 +52,33 @@ function handle(message: Json): void {
       replyError(id, -32602, 'Invalid params', { mcpServers: 'expected array' })
       return
     }
+    for (const server of params.mcpServers) {
+      if (typeof server !== 'object' || server === null) {
+        replyError(id, -32602, 'Invalid params', { mcpServers: 'expected object entries' })
+        return
+      }
+      const record = server as Record<string, unknown>
+      if (typeof record.name !== 'string' || typeof record.type !== 'string') {
+        replyError(id, -32602, 'Invalid params', { mcpServers: 'expected name/type strings' })
+        return
+      }
+      if (record.type === 'stdio') {
+        if (typeof record.command !== 'string') {
+          replyError(id, -32602, 'Invalid params', { mcpServers: 'stdio requires command' })
+          return
+        }
+      } else if (record.type === 'http' || record.type === 'sse') {
+        if (typeof record.url !== 'string') {
+          replyError(id, -32602, 'Invalid params', { mcpServers: `${record.type} requires url` })
+          return
+        }
+      } else {
+        replyError(id, -32602, 'Invalid params', {
+          mcpServers: `unsupported type: ${String(record.type)}`,
+        })
+        return
+      }
+    }
     const sid = `session-${nextSessionId++}`
     reply(id, { sessionId: sid })
     return
