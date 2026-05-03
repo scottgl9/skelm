@@ -6,7 +6,8 @@ export const VERSION = '0.0.0'
 export { code, pipeline } from './builders.js'
 export { RunCancelledError, StepError, serializeError } from './errors.js'
 export type { RunOptions } from './runner.js'
-export { runPipeline } from './runner.js'
+export { runPipeline, SchemaValidationError } from './runner.js'
+export type { SkelmSchema } from './schema.js'
 export type {
   CodeStep,
   Context,

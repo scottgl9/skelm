@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { runPipeline } from '@skelm/core'
+import { SchemaValidationError, runPipeline } from '@skelm/core'
 import type { Run } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { CliError, loadWorkflowFromFile } from './load-workflow.js'
@@ -77,6 +77,9 @@ export async function runCommand(
   }
 
   io.stderr.write(`> failed (runId=${run.runId}): ${run.error?.message ?? 'unknown'}\n`)
+  if (run.error?.name === SchemaValidationError.name) {
+    return { exitCode: EXIT.SCHEMA_VALIDATION, run }
+  }
   return { exitCode: EXIT.RUN_FAILED, run }
 }
 

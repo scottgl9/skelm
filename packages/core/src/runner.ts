@@ -1,4 +1,5 @@
 import { RunCancelledError, serializeError } from './errors.js'
+import { SchemaValidationError, validate } from './schema.js'
 import type { Context, Pipeline, Run, RunMetadata, Step, StepId, StepResult } from './types.js'
 
 export interface RunOptions {
@@ -47,6 +48,27 @@ export async function runPipeline<TInput, TOutput>(
   let runStatus: Run['status'] = 'running'
   let runError: Run['error'] = undefined
   let finalOutput: TOutput | undefined
+  let resolvedInput = input
+
+  if (pipeline.inputSchema !== undefined) {
+    try {
+      resolvedInput = await validate(pipeline.inputSchema, input, 'input')
+    } catch (err) {
+      runStatus = 'failed'
+      runError = serializeError(err)
+      return Object.freeze({
+        runId,
+        pipelineId: pipeline.id,
+        status: runStatus,
+        input,
+        steps: Object.freeze(stepResults),
+        output: undefined,
+        error: runError,
+        startedAt,
+        completedAt: Date.now(),
+      })
+    }
+  }
 
   for (const step of pipeline.steps) {
     if (controller.signal.aborted) {
@@ -58,7 +80,7 @@ export async function runPipeline<TInput, TOutput>(
     const stepStart = Date.now()
     try {
       const ctx: Context<TInput> = freezeContext({
-        input,
+        input: resolvedInput,
         steps: { ...stepOutputs },
         run: runMeta,
         signal: controller.signal,
@@ -95,7 +117,7 @@ export async function runPipeline<TInput, TOutput>(
   if (runStatus === 'running') {
     try {
       const ctx: Context<TInput> = freezeContext({
-        input,
+        input: resolvedInput,
         steps: { ...stepOutputs },
         run: runMeta,
         signal: controller.signal,
@@ -104,6 +126,9 @@ export async function runPipeline<TInput, TOutput>(
         finalOutput = await pipeline.finalize(ctx)
       } else {
         finalOutput = adoptLastStepOutput<TOutput>(stepResults)
+      }
+      if (pipeline.outputSchema !== undefined && finalOutput !== undefined) {
+        finalOutput = await validate(pipeline.outputSchema, finalOutput, 'output')
       }
       runStatus = 'completed'
     } catch (err) {
@@ -116,7 +141,7 @@ export async function runPipeline<TInput, TOutput>(
     runId,
     pipelineId: pipeline.id,
     status: runStatus,
-    input,
+    input: resolvedInput,
     steps: Object.freeze(stepResults),
     output: runStatus === 'completed' ? finalOutput : undefined,
     error: runError,
@@ -124,6 +149,8 @@ export async function runPipeline<TInput, TOutput>(
     completedAt: Date.now(),
   })
 }
+
+export { SchemaValidationError }
 
 async function runStep(step: Step, ctx: Context): Promise<unknown> {
   switch (step.kind) {
