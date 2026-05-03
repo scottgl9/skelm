@@ -1,8 +1,10 @@
-// JSON-RPC stdio transport with Content-Length framing.
+// JSON-RPC stdio transport for ACP agents.
 //
-// Reads/writes JSON-RPC messages over a Readable/Writable pair. Frames use
-// the LSP-style `Content-Length: <n>\r\n\r\n<payload>` header. The transport
-// is full-duplex and dispatches three event types:
+// Reads/writes JSON-RPC messages over a Readable/Writable pair. ACP servers
+// in the wild currently emit either LSP-style Content-Length frames or
+// newline-delimited JSON. Copilot expects newline-delimited JSON on stdin, so
+// writes use JSONL while reads accept both. The transport is full-duplex and
+// dispatches three event types:
 //   - 'request'      — peer sent a request (rare for us; we are the client).
 //   - 'notification' — peer sent a notification (e.g. session/update).
 //   - 'response'     — peer answered one of our requests.
@@ -28,32 +30,61 @@ export class JsonRpcStdioTransport extends EventEmitter {
 
   /** Send a JSON-RPC request, notification, or response. */
   send(message: AnyMessage): void {
-    const payload = JSON.stringify(message)
-    const body = Buffer.from(payload, 'utf8')
-    const header = Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii')
-    this.stdin.write(Buffer.concat([header, body]))
+    this.stdin.write(`${JSON.stringify(message)}\n`)
   }
 
   private onData(chunk: Buffer): void {
     this.buffer = Buffer.concat([this.buffer, chunk])
     while (this.buffer.length > 0) {
-      const headerEnd = this.buffer.indexOf('\r\n\r\n')
-      if (headerEnd === -1) return
-      const header = this.buffer.slice(0, headerEnd).toString('ascii')
-      const match = /Content-Length:\s*(\d+)/i.exec(header)
-      if (!match || !match[1]) {
-        // Drop malformed framing; we can't recover the stream alignment.
-        this.emit('error', new Error('ACP transport: missing Content-Length header'))
-        this.buffer = Buffer.alloc(0)
-        return
+      this.discardLeadingBlankLines()
+      if (this.buffer.length === 0) return
+      if (this.startsWithContentLengthHeader()) {
+        if (!this.consumeContentLengthFrame()) return
+        continue
       }
-      const length = Number.parseInt(match[1], 10)
-      const start = headerEnd + 4
-      if (this.buffer.length < start + length) return
-      const body = this.buffer.slice(start, start + length).toString('utf8')
-      this.buffer = this.buffer.slice(start + length)
-      this.dispatch(body)
+      if (!this.consumeJsonLine()) return
     }
+  }
+
+  private discardLeadingBlankLines(): void {
+    while (this.buffer.length > 0 && (this.buffer[0] === 0x0a || this.buffer[0] === 0x0d)) {
+      this.buffer = this.buffer.slice(1)
+    }
+  }
+
+  private startsWithContentLengthHeader(): boolean {
+    const prefix = this.buffer.subarray(0, Math.min(this.buffer.length, 32)).toString('ascii')
+    return /^content-length:/i.test(prefix)
+  }
+
+  private consumeContentLengthFrame(): boolean {
+    const headerEnd = this.buffer.indexOf('\r\n\r\n')
+    if (headerEnd === -1) return false
+    const header = this.buffer.slice(0, headerEnd).toString('ascii')
+    const match = /(?:^|\r\n)Content-Length:\s*(\d+)/i.exec(header)
+    if (!match || !match[1]) {
+      // Drop malformed framing; we can't recover the stream alignment.
+      this.emit('error', new Error('ACP transport: missing Content-Length header'))
+      this.buffer = Buffer.alloc(0)
+      return false
+    }
+    const length = Number.parseInt(match[1], 10)
+    const start = headerEnd + 4
+    if (this.buffer.length < start + length) return false
+    const body = this.buffer.slice(start, start + length).toString('utf8')
+    this.buffer = this.buffer.slice(start + length)
+    this.dispatch(body)
+    return true
+  }
+
+  private consumeJsonLine(): boolean {
+    const newline = this.buffer.indexOf('\n')
+    if (newline === -1) return false
+    const line = this.buffer.slice(0, newline).toString('utf8').replace(/\r$/, '').trim()
+    this.buffer = this.buffer.slice(newline + 1)
+    if (line.length === 0) return true
+    this.dispatch(line)
+    return true
   }
 
   private dispatch(payload: string): void {

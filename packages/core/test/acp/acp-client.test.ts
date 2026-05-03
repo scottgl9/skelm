@@ -42,6 +42,28 @@ describe('AcpClient — against a mock ACP agent', () => {
     }
   })
 
+  it('supports agents that emit newline-delimited JSON', async () => {
+    const client = new AcpClient()
+    try {
+      const init = await client.start({
+        command: 'node',
+        args: ['--import', 'tsx/esm', MOCK_AGENT],
+        env: { SKELM_ACP_MOCK_OUTPUT: 'jsonl' },
+      })
+      expect(init.protocolVersion).toBe(1)
+
+      const sid = await client.newSession({ cwd: process.cwd() })
+      expect(sid).toMatch(/^session-/)
+
+      const result = await client.prompt({ text: 'hello' })
+      expect(result.stopReason).toBe('end_turn')
+      expect(result.text).toBe('echo:hello')
+      expect(result.updates.length).toBe(2)
+    } finally {
+      await client.stop()
+    }
+  })
+
   it('throws when prompt is called before newSession', async () => {
     const client = new AcpClient()
     try {

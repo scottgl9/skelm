@@ -1,8 +1,9 @@
 // Agent Client Protocol — wire types.
 //
-// ACP is JSON-RPC 2.0 framed over stdio with Content-Length headers
-// (the same LSP-style framing). Skelm acts as the *client*; the agent
-// (claude-code, copilot --acp, etc.) is the server.
+// ACP is JSON-RPC 2.0 over stdio. Agents in the wild currently use either
+// Content-Length frames or newline-delimited JSON, and Copilot expects JSONL
+// requests on stdin. Skelm acts as the *client*; the agent (claude-code,
+// copilot --acp, etc.) is the server.
 //
 // We re-implement the protocol here; nothing is vendored. References are
 // limited to the public Agent Client Protocol specification.

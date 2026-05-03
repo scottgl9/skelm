@@ -88,7 +88,7 @@ export class AcpClient {
   }): Promise<string> {
     const params: SessionNewRequest = {
       cwd: opts.cwd,
-      ...(opts.mcpServers && { mcpServers: opts.mcpServers }),
+      mcpServers: opts.mcpServers ?? [],
     }
     const res = await this.request<SessionNewResponse>('session/new', params)
     this.sessionId = res.sessionId
