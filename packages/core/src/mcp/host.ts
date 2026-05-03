@@ -37,15 +37,26 @@ export async function createMcpHost(
 
   try {
     for (const server of servers) {
-      if (server.transport !== 'stdio') {
-        throw new Error(`MCP host supports stdio servers only in this stage (${server.id})`)
-      }
       const client = new McpClient()
-      await client.start({
-        command: server.command,
-        ...(server.args !== undefined && { args: server.args }),
-        ...(server.env !== undefined && { env: server.env }),
-      })
+      switch (server.transport) {
+        case 'stdio':
+          await client.start({
+            command: server.command,
+            ...(server.args !== undefined && { args: server.args }),
+            ...(server.env !== undefined && { env: server.env }),
+          })
+          break
+        case 'http':
+          await client.connectHttp({
+            url: server.url,
+            ...(server.headers !== undefined && { headers: server.headers }),
+          })
+          break
+        case 'sse':
+          throw new Error(
+            `MCP host supports stdio and http servers only in this stage (${server.id})`,
+          )
+      }
       clients.set(server.id, client)
     }
   } catch (err) {

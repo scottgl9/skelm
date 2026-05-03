@@ -17,6 +17,12 @@ export interface McpSpawnOptions {
   env?: NodeJS.ProcessEnv
 }
 
+export interface McpHttpOptions {
+  url: string
+  headers?: Readonly<Record<string, string>>
+  fetch?: typeof fetch
+}
+
 export class McpProtocolError extends Error {
   override readonly name = 'McpProtocolError'
 }
@@ -29,6 +35,7 @@ export class McpClient {
   >()
   private process: ChildProcess | null = null
   private transport: JsonRpcLineTransport | null = null
+  private http: McpHttpOptions | null = null
 
   async start(opts: McpSpawnOptions): Promise<InitializeResponse> {
     const proc = spawn(opts.command, opts.args ?? [], {
@@ -59,7 +66,21 @@ export class McpClient {
         version: '0.1.0',
       },
     } satisfies InitializeRequest)
-    this.notify('notifications/initialized')
+    await this.notify('notifications/initialized')
+    return init
+  }
+
+  async connectHttp(opts: McpHttpOptions): Promise<InitializeResponse> {
+    this.http = opts
+    const init = await this.request<InitializeResponse>('initialize', {
+      protocolVersion: MCP_PROTOCOL_VERSION,
+      capabilities: {},
+      clientInfo: {
+        name: 'skelm',
+        version: '0.1.0',
+      },
+    } satisfies InitializeRequest)
+    await this.notify('notifications/initialized')
     return init
   }
 
@@ -77,6 +98,11 @@ export class McpClient {
   }
 
   async stop(): Promise<void> {
+    if (this.http !== null) {
+      this.http = null
+      this.transport = null
+      return
+    }
     if (this.process === null) return
     try {
       await new Promise<void>((resolve) => {
@@ -97,6 +123,9 @@ export class McpClient {
   }
 
   private async request<T>(method: string, params?: unknown): Promise<T> {
+    if (this.http) {
+      return await this.requestHttp<T>(method, params)
+    }
     if (!this.transport) throw new McpProtocolError('transport not initialized')
     const id = this.nextId++
     const promise = new Promise<unknown>((resolve, reject) => {
@@ -106,7 +135,23 @@ export class McpClient {
     return (await promise) as T
   }
 
-  private notify(method: string, params?: unknown): void {
+  private async notify(method: string, params?: unknown): Promise<void> {
+    if (this.http) {
+      const response = await (this.http.fetch ?? fetch)(this.http.url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...this.http.headers,
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', method, params }),
+      })
+      if (!response.ok && response.status !== 204) {
+        throw new McpProtocolError(
+          `MCP HTTP notification failed (${response.status} ${response.statusText})`,
+        )
+      }
+      return
+    }
     if (!this.transport) throw new McpProtocolError('transport not initialized')
     this.transport.send({ jsonrpc: '2.0', method, params })
   }
@@ -125,5 +170,31 @@ export class McpClient {
   private rejectAll(err: Error): void {
     for (const handler of this.pending.values()) handler.reject(err)
     this.pending.clear()
+  }
+
+  private async requestHttp<T>(method: string, params?: unknown): Promise<T> {
+    const id = this.nextId++
+    const http = this.http
+    if (!http) {
+      throw new McpProtocolError('HTTP transport not initialized')
+    }
+    const response = await (http.fetch ?? fetch)(http.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...http.headers,
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+    })
+    if (!response.ok) {
+      throw new McpProtocolError(
+        `MCP HTTP request failed (${response.status} ${response.statusText})`,
+      )
+    }
+    const body = (await response.json()) as JsonRpcResponse<T>
+    if (body.error) {
+      throw new McpProtocolError(`${body.error.code}: ${body.error.message}`)
+    }
+    return body.result as T
   }
 }

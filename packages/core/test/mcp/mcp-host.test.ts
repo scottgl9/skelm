@@ -1,3 +1,4 @@
+import { createServer } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
@@ -35,6 +36,33 @@ describe('MCP host', () => {
       expect(result.content).toEqual([{ type: 'text', text: 'echo:hello' }])
     } finally {
       await host.dispose()
+    }
+  })
+
+  it('lists tools and invokes them over HTTP', async () => {
+    const server = await startHttpMcpServer()
+    const host = await createMcpHost([
+      {
+        id: 'remote',
+        transport: 'http',
+        url: server.url,
+      },
+    ])
+    try {
+      const tools = await host.listTools()
+      expect(tools).toEqual([
+        expect.objectContaining({
+          id: 'remote.echo',
+          serverId: 'remote',
+          name: 'echo',
+        }),
+      ])
+
+      const result = await host.invokeTool('remote.echo', { text: 'hello' })
+      expect(result.content).toEqual([{ type: 'text', text: 'http:hello' }])
+    } finally {
+      await host.dispose()
+      await server.close()
     }
   })
 
@@ -129,3 +157,99 @@ describe('MCP host', () => {
     expect(run.error?.message).toMatch(/does not support per-step MCP attachments/)
   })
 })
+
+async function startHttpMcpServer(): Promise<{ url: string; close: () => Promise<void> }> {
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+    }
+    const raw = Buffer.concat(chunks).toString('utf8')
+    const message = raw.length === 0 ? undefined : (JSON.parse(raw) as Record<string, unknown>)
+    const id = message?.id as number | string | undefined
+    const method = message?.method as string | undefined
+
+    if (method === 'notifications/initialized') {
+      res.writeHead(204)
+      res.end()
+      return
+    }
+
+    if (id === undefined) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'missing id' }))
+      return
+    }
+
+    if (method === 'initialize') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            protocolVersion: '2025-03-26',
+            capabilities: { tools: { listChanged: false } },
+            serverInfo: { name: 'mock-http-mcp', version: '0.1.0' },
+          },
+        }),
+      )
+      return
+    }
+
+    if (method === 'tools/list') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            tools: [
+              {
+                name: 'echo',
+                description: 'Echo text back over HTTP',
+              },
+            ],
+          },
+        }),
+      )
+      return
+    }
+
+    if (method === 'tools/call') {
+      const params = message?.params as { arguments?: { text?: string } } | undefined
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{ type: 'text', text: `http:${params?.arguments?.text ?? ''}` }],
+            isError: false,
+          },
+        }),
+      )
+      return
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(
+      JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32601, message: 'method not found' } }),
+    )
+  })
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  const address = server.address()
+  if (!address || typeof address === 'string') {
+    throw new Error('expected TCP server address')
+  }
+
+  return {
+    url: `http://127.0.0.1:${address.port}/mcp`,
+    close: async () => {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()))
+      })
+    },
+  }
+}
