@@ -32,20 +32,13 @@ export interface PiProviderConfig extends PluginConfig {
  * Pi provider implementation
  */
 export class PiProvider extends ProviderPluginBase {
-  private config: PiProviderConfig & {
+  protected override config: PiProviderConfig & {
     command: string
-    cwd: string | undefined
+    cwd?: string
     args: readonly string[]
     timeout: number
     maxRetries: number
     logLevel: 'debug' | 'info' | 'warn' | 'error'
-  } = {
-    command: 'pi',
-    cwd: undefined,
-    args: [],
-    timeout: 300000,
-    maxRetries: 3,
-    logLevel: 'info',
   }
 
   constructor(options?: { logLevel?: 'debug' | 'info' | 'warn' | 'error' }) {
@@ -54,14 +47,21 @@ export class PiProvider extends ProviderPluginBase {
       name: 'Pi Coding Agent',
       version: '1.0.0',
       description: 'Pi coding agent provider (https://pi.dev)',
-      logLevel: options?.logLevel,
+      logLevel: options?.logLevel ?? 'info',
     })
+    this.config = {
+      command: 'pi',
+      args: [],
+      timeout: 300000,
+      maxRetries: 3,
+      logLevel: 'info',
+    }
   }
 
   /**
    * Provider capabilities
    */
-  get capabilities(): ProviderCapabilities {
+  override get capabilities(): ProviderCapabilities {
     return {
       prompt: true,
       streaming: true,
@@ -85,8 +85,7 @@ export class PiProvider extends ProviderPluginBase {
       maxContextWindow: 200000,
       maxOutputTokens: 4096,
       pricing: {
-        inputPer1K: undefined, // Depends on configured model
-        outputPer1K: undefined,
+        // Omit pricing when undefined to satisfy exactOptionalPropertyTypes
       },
     }
   }
@@ -94,22 +93,27 @@ export class PiProvider extends ProviderPluginBase {
   /**
    * Initialize the provider
    */
-  async initialize(config: PiProviderConfig): Promise<void> {
+  override async initialize(config: PiProviderConfig): Promise<void> {
     this.config = {
       command: config.command ?? 'pi',
-      cwd: config.cwd ?? undefined,
       args: config.args ?? [],
       timeout: config.timeout ?? 300000,
       maxRetries: config.maxRetries ?? 3,
       logLevel: config.logLevel ?? 'info',
     }
+    
+    // Only set cwd if defined
+    if (config.cwd !== undefined) {
+      this.config.cwd = config.cwd
+    }
+    
     await super.initialize(config)
   }
 
   /**
    * Provider-specific initialization
    */
-  protected async doInitialize(config: PiProviderConfig): Promise<void> {
+  protected override async doInitialize(config: PiProviderConfig): Promise<void> {
     // Check if pi command is available
     try {
       const { execSync } = await import('child_process')
@@ -130,11 +134,16 @@ export class PiProvider extends ProviderPluginBase {
 
     const config: PiBackendOptions = {
       command: options?.command ?? this.config.command,
-      cwd: options?.cwd ?? this.config.cwd,
       args: options?.args ?? this.config.args,
       timeout: options?.timeout ?? this.config.timeout,
       maxRetries: options?.maxRetries ?? this.config.maxRetries,
       logLevel: options?.logLevel ?? this.config.logLevel,
+    }
+    
+    // Only set cwd if defined
+    const cwd = options?.cwd ?? this.config.cwd
+    if (cwd !== undefined) {
+      config.cwd = cwd
     }
 
     return createPiBackend(config)
@@ -143,7 +152,7 @@ export class PiProvider extends ProviderPluginBase {
   /**
    * List available models
    */
-  async listModels(): Promise<ProviderModel[]> {
+  override async listModels(): Promise<ProviderModel[]> {
     // Pi supports multiple providers, return common options
     return [
       {
@@ -188,7 +197,7 @@ export class PiProvider extends ProviderPluginBase {
   /**
    * Health check
    */
-  protected async doHealthCheck(): Promise<Partial<PluginHealthStatus>> {
+  protected override async doHealthCheck(): Promise<{ healthy: boolean; status: string; details?: Record<string, unknown> }> {
     // Check if pi command is available
     try {
       const { execSync } = await import('child_process')
@@ -202,7 +211,6 @@ export class PiProvider extends ProviderPluginBase {
       return {
         healthy: false,
         status: 'pi-not-found',
-        errors: ['Pi agent not found. Install with: npm install -g @mariozechner/pi-coding-agent'],
       }
     }
   }
@@ -210,7 +218,7 @@ export class PiProvider extends ProviderPluginBase {
   /**
    * Validate configuration
    */
-  protected validateConfig(config: PiProviderConfig): PiProviderConfig {
+  protected override validateConfig(config: PiProviderConfig): PiProviderConfig {
     // Pi doesn't require API keys (uses subscriptions or local models)
     return config
   }

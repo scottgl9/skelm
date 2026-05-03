@@ -5,7 +5,7 @@
  * Permission enforcement at the skelm layer maintains control over execution.
  */
 
-import type { SkelmBackend, BackendCapabilities, BackendContext, AgentRequest, AgentResponse, InferRequest, InferResponse } from '@skelm/core'
+import type { SkelmBackend, BackendCapabilities, BackendContext, AgentRequest, AgentResponse, InferRequest, InferResponse, ResolvedPolicy } from '@skelm/core'
 import type { PiBackendOptions } from './types.js'
 import { validatePermissions, buildPermissionAuditEntry } from './permission-mapper.js'
 
@@ -13,22 +13,25 @@ import { validatePermissions, buildPermissionAuditEntry } from './permission-map
  * Custom error types for Pi backend
  */
 export class PiBackendError extends Error {
-  override readonly name = 'PiBackendError'
-  constructor(message: string, public readonly cause?: unknown) {
+  override readonly name: string = 'PiBackendError'
+  public override readonly cause: unknown
+  
+  constructor(message: string, cause?: unknown) {
     super(message)
+    this.cause = cause
   }
 }
 
 export class PiBackendAuthenticationError extends PiBackendError {
-  readonly name = 'PiBackendAuthenticationError'
+  override readonly name: string = 'PiBackendAuthenticationError'
 }
 
 export class PiBackendRateLimitError extends PiBackendError {
-  readonly name = 'PiBackendRateLimitError'
+  override readonly name: string = 'PiBackendRateLimitError'
 }
 
 export class PiBackendTimeoutError extends PiBackendError {
-  readonly name = 'PiBackendTimeoutError'
+  override readonly name: string = 'PiBackendTimeoutError'
 }
 
 /**
@@ -48,13 +51,19 @@ const capabilities: BackendCapabilities = {
  * Create a Pi coding agent backend using subprocess/RPC mode
  */
 export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
-  const config = {
+  const config: Required<Pick<PiBackendOptions, 'command' | 'args' | 'timeout' | 'maxRetries' | 'logLevel'>> & {
+    cwd?: string
+  } = {
     command: options.command ?? 'pi',
-    cwd: options.cwd,
     args: options.args ?? [],
     timeout: options.timeout ?? 300000, // 5 min default
     maxRetries: options.maxRetries ?? 3,
     logLevel: options.logLevel ?? 'info',
+  }
+  
+  // Only set cwd if defined
+  if (options.cwd !== undefined) {
+    config.cwd = options.cwd
   }
 
   return {
@@ -65,14 +74,27 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
     async infer(request: InferRequest, context: BackendContext): Promise<InferResponse> {
       // Pi is primarily an agent runtime, not a single-shot inference backend
       // For now, we delegate to run() with maxTurns=1
+      const agentRequest: {
+        prompt: string
+        system?: string
+        maxTurns: number
+        permissions?: ResolvedPolicy
+      } = {
+        prompt: request.messages.map(m => m.content).join('\n'),
+        maxTurns: 1,
+      }
+      
+      if (request.system !== undefined) {
+        agentRequest.system = request.system
+      }
+      
+      if (context.permissions !== undefined) {
+        agentRequest.permissions = context.permissions
+      }
+      
       const agentResponse = await runPiSubprocess(
         config,
-        {
-          prompt: request.messages.map(m => m.content).join('\n'),
-          ...(request.system !== undefined && { system: request.system }),
-          maxTurns: 1,
-          permissions: context.permissions,
-        },
+        agentRequest,
         context
       )
       return {
@@ -130,10 +152,22 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
 }
 
 /**
+ * Pi backend config with defaults applied
+ */
+interface PiBackendConfig {
+  command: string
+  cwd?: string
+  args: readonly string[]
+  timeout: number
+  maxRetries: number
+  logLevel: 'debug' | 'info' | 'warn' | 'error'
+}
+
+/**
  * Run Pi agent as a subprocess using RPC mode
  */
 async function runPiSubprocess(
-  config: { command: string; cwd?: string; args: readonly string[]; timeout: number; maxRetries: number; logLevel: 'debug' | 'info' | 'warn' | 'error' },
+  config: PiBackendConfig,
   request: AgentRequest,
   context: BackendContext
 ): Promise<AgentResponse> {

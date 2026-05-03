@@ -27,10 +27,11 @@ export function validatePermissions(
     const hasWildcard = policy.allowedExecutables.has('*')
     if (!hasWildcard) {
       // Extract command from request
-      const command = requested.split(/\s+/)[0]
-      if (!policy.allowedExecutables.has(command)) {
+      const parts = requested.split(/\s+/)
+      const command = parts[0]
+      if (command !== undefined && !policy.allowedExecutables.has(command)) {
         denied.push(`executable: ${command}`)
-      } else {
+      } else if (command !== undefined) {
         allowed.push(`executable: ${command}`)
       }
     }
