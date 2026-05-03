@@ -161,9 +161,9 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         const limitFlag = parsed.flags.limit
         const result = await auditCommand(
           {
-            runId: parsed.flags.run,
-            actor: parsed.flags.actor,
-            action: parsed.flags.action,
+            runId: typeof parsed.flags.run === 'string' ? parsed.flags.run : undefined,
+            actor: typeof parsed.flags.actor === 'string' ? parsed.flags.actor : undefined,
+            action: typeof parsed.flags.action === 'string' ? parsed.flags.action : undefined,
             since: typeof sinceFlag === 'string' ? sinceFlag : undefined,
             until: typeof untilFlag === 'string' ? untilFlag : undefined,
             limit:
@@ -185,8 +185,8 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         const result = await secretsCommand(
           {
             command: subcommand as 'get' | 'set' | 'list',
-            name: parsed.positional[1],
-            value: parsed.flags.value,
+            name: typeof parsed.positional[1] === 'string' ? parsed.positional[1] : undefined,
+            value: typeof parsed.flags.value === 'string' ? parsed.flags.value : undefined,
             json: parsed.flags.json === true,
           },
           io,

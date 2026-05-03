@@ -1,25 +1,37 @@
 import type { MainIO, MainResult } from './main.js'
 import { EXIT } from './exit-codes.js'
-import Database from 'better-sqlite3'
 import { promises as fs } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { homedir } from 'node:os'
 
+// Local type for better-sqlite3 to avoid dependency on @types/better-sqlite3
+interface Database {
+  prepare(sql: string): { all(...params: unknown[]): unknown[]; get(...params: unknown[]): unknown }
+  all(...params: unknown[]): unknown[]
+  get(...params: unknown[]): unknown
+  run(...params: unknown[]): void
+  close(): void
+  exec(sql: string): void
+  pragma(sql: string): void
+}
+
+declare const DatabaseCtor: new (path: string) => Database
+
 export interface AuditQueryArgs {
-  runId?: string
-  actor?: string
-  action?: string
-  since?: string // ISO 8601
-  until?: string // ISO 8601
-  limit?: number
-  json?: boolean
+  runId?: string | undefined
+  actor?: string | undefined
+  action?: string | undefined
+  since?: string | undefined // ISO 8601
+  until?: string | undefined // ISO 8601
+  limit?: number | undefined
+  json?: boolean | undefined
 }
 
 export interface SecretsArgs {
   command: 'get' | 'set' | 'list'
-  name?: string
-  value?: string
-  json?: boolean
+  name?: string | undefined
+  value?: string | undefined
+  json?: boolean | undefined
 }
 
 const DEFAULT_DB_PATH = resolve(homedir(), '.skelm', 'runs.sqlite')
@@ -35,9 +47,11 @@ export async function auditCommand(args: AuditQueryArgs, io: MainIO): Promise<Ma
     return { exitCode: EXIT.CLI_ERROR }
   }
 
-  let db: Database.Database
+  let db: Database
   try {
-    db = new Database(dbPath)
+    // @ts-expect-error - better-sqlite3 runtime import
+    const Database = (await import('better-sqlite3')).default
+    db = new DatabaseCtor(dbPath)
   } catch (err) {
     io.stderr.write(`error: failed to open database: ${(err as Error).message}\n`)
     return { exitCode: EXIT.CLI_ERROR }
@@ -73,7 +87,15 @@ export async function auditCommand(args: AuditQueryArgs, io: MainIO): Promise<Ma
   }
 }
 
-function queryAudit(db: Database.Database, args: AuditQueryArgs): unknown[] {
+interface AuditRow {
+  run_id: string | null
+  actor: string
+  action: string
+  data_json: string
+  at: number
+}
+
+function queryAudit(db: Database, args: AuditQueryArgs): AuditRow[] {
   const clauses: string[] = []
   const params: unknown[] = []
   
@@ -109,7 +131,7 @@ function queryAudit(db: Database.Database, args: AuditQueryArgs): unknown[] {
   
   const rows = db
     .prepare(`SELECT run_id, actor, action, data_json, at FROM audit ${where} ORDER BY at DESC ${limit}`)
-    .all(...params) as Array<{ run_id: string | null; actor: string; action: string; data_json: string; at: number }>
+    .all(...params) as AuditRow[]
   
   return rows
 }
