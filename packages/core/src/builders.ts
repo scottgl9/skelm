@@ -127,6 +127,7 @@ export function llm<TOutput>(def: {
 export function agent<TOutput>(def: {
   id: StepId
   backend?: string
+  agentDef?: string
   prompt: string | ((ctx: Context) => string)
   system?: string | ((ctx: Context) => string)
   mcp?: readonly McpServerConfig[] | ((ctx: Context) => readonly McpServerConfig[])
@@ -147,6 +148,7 @@ export function agent<TOutput>(def: {
     id: def.id,
     prompt: def.prompt,
     ...(def.backend !== undefined && { backend: def.backend }),
+    ...(def.agentDef !== undefined && { agentDef: def.agentDef }),
     ...(def.system !== undefined && { system: def.system }),
     ...(def.mcp !== undefined && { mcp: def.mcp }),
     ...(def.output !== undefined && { outputSchema: def.output }),

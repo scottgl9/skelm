@@ -132,7 +132,7 @@ function createBackend(backendId: string, config: SkelmConfig) {
 }
 
 function configuredBackendIds(config: SkelmConfig): Set<string> {
-  const ids = new Set<string>()
+  const ids = new Set<string>(['openai', 'anthropic', 'copilot-acp'])
   const backends = config.backends ?? {}
   for (const [key, value] of Object.entries(backends)) {
     if (key === 'default' || key === 'llm' || key === 'agent') continue

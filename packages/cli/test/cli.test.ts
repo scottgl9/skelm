@@ -125,6 +125,52 @@ describe('main — integration', () => {
       await server.close()
     }
   })
+
+  it('loads AGENTS.md content into agent() system prompts', async () => {
+    const filePath = join(FIXTURES_DIR, 'agentdef.workflow.ts')
+
+    const seenSystems: string[] = []
+    const server = await startAnthropicServer(async (req) => {
+      if (typeof req === 'object' && req !== null && 'system' in req) {
+        const system = (req as { system?: unknown }).system
+        if (typeof system === 'string') {
+          seenSystems.push(system)
+        }
+      }
+      return {
+        content: [{ type: 'text', text: 'hello from greeter' }],
+        stop_reason: 'end_turn',
+      }
+    })
+
+    const prevApiKey = process.env.ANTHROPIC_API_KEY
+    const prevBaseUrl = process.env.ANTHROPIC_BASE_URL
+    process.env.ANTHROPIC_API_KEY = 'test-anthropic-key'
+    process.env.ANTHROPIC_BASE_URL = server.baseUrl
+
+    try {
+      const { stdout, exitCode } = await invoke(['run', filePath])
+      expect(exitCode).toBe(EXIT.OK)
+      expect(stdout.trim()).toBe('{"text":"hello from greeter","stopReason":"end_turn"}')
+      expect(seenSystems).toEqual([
+        expect.stringContaining(
+          'You are a warm but concise greeter. Produce one sentence of greeting.',
+        ),
+      ])
+    } finally {
+      if (prevApiKey === undefined) {
+        process.env.ANTHROPIC_API_KEY = undefined
+      } else {
+        process.env.ANTHROPIC_API_KEY = prevApiKey
+      }
+      if (prevBaseUrl === undefined) {
+        process.env.ANTHROPIC_BASE_URL = undefined
+      } else {
+        process.env.ANTHROPIC_BASE_URL = prevBaseUrl
+      }
+      await server.close()
+    }
+  })
 })
 
 interface InvocationResult {
@@ -183,6 +229,37 @@ async function startOpenAIServer(
 
   return {
     baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    close: async () => {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()))
+      })
+    },
+  }
+}
+
+async function startAnthropicServer(
+  respond: (body: unknown) => Promise<unknown> | unknown,
+): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+    }
+    const raw = Buffer.concat(chunks).toString('utf8')
+    const parsed = raw.length === 0 ? undefined : JSON.parse(raw)
+    const body = await respond(parsed)
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(body))
+  })
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  const address = server.address()
+  if (!address || typeof address === 'string') {
+    throw new Error('expected TCP server address')
+  }
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
     close: async () => {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()))

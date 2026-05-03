@@ -99,6 +99,7 @@ export interface AgentStep<TOutput = unknown> {
   readonly kind: 'agent'
   readonly id: StepId
   readonly backend?: string
+  readonly agentDef?: string
   readonly prompt: string | ((ctx: Context) => string)
   readonly system?: string | ((ctx: Context) => string)
   readonly mcp?:
