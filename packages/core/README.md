@@ -60,8 +60,9 @@ export {
   runPipeline, Runner, type RunOptions,
   // types
   type Pipeline, type Step, type CodeStep,
-  type Context, type Run, type RunMetadata, type StepResult,
-  type RunId, type StepId, type StepKind, type RunStatus, type StepStatus,
+   type Context, type Run, type RunMetadata, type StepResult,
+   type RunId, type StepId, type StepKind, type RunStatus, type StepStatus,
+   type RetryPolicy,
   type SerializedError,
   // schemas
   type SkelmSchema, SchemaValidationError,

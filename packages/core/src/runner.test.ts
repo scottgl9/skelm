@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { code, pipeline } from './builders.js'
+import { EventBus } from './events.js'
 import { runPipeline } from './runner.js'
 
 describe('runPipeline — sequential code steps', () => {
@@ -133,5 +134,69 @@ describe('builders — validation', () => {
       // biome-ignore lint/suspicious/noExplicitAny: deliberate misuse for the test
       code({ id: 'bad', run: undefined as any }),
     ).toThrow(/run must be a function/)
+  })
+
+  it('rejects an invalid retry policy', () => {
+    expect(() => code({ id: 'bad-retry', retry: { maxAttempts: 0 }, run: () => ({}) })).toThrow(
+      /retry\.maxAttempts must be >= 1/,
+    )
+  })
+})
+
+describe('retry policy', () => {
+  it('retries a step until it succeeds and emits step.retry events', async () => {
+    let attempts = 0
+    const events = new EventBus()
+    const retries: Array<{ attempt: number; delayMs?: number }> = []
+    events.subscribe((event) => {
+      if (event.type === 'step.retry') {
+        retries.push({ attempt: event.attempt, delayMs: event.delayMs })
+      }
+    })
+
+    const wf = pipeline({
+      id: 'retry-success',
+      steps: [
+        code({
+          id: 'flaky',
+          retry: { maxAttempts: 3, delayMs: 0 },
+          run: () => {
+            attempts += 1
+            if (attempts < 3) {
+              throw new Error('transient')
+            }
+            return { ok: true }
+          },
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined, { events })
+    expect(run.status).toBe('completed')
+    expect(run.output).toEqual({ ok: true })
+    expect(attempts).toBe(3)
+    expect(retries).toEqual([{ attempt: 1 }, { attempt: 2 }])
+  })
+
+  it('fails after exhausting retry attempts', async () => {
+    let attempts = 0
+    const wf = pipeline({
+      id: 'retry-fail',
+      steps: [
+        code({
+          id: 'still-flaky',
+          retry: { maxAttempts: 2 },
+          run: () => {
+            attempts += 1
+            throw new Error('still broken')
+          },
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined)
+    expect(run.status).toBe('failed')
+    expect(run.error?.message).toBe('still broken')
+    expect(attempts).toBe(2)
   })
 })

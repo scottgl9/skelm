@@ -78,6 +78,7 @@ export type {
   ParallelWaitFor,
   Pipeline,
   PipelineStep,
+  RetryPolicy,
   Run,
   RunId,
   RunMetadata,
