@@ -25,6 +25,7 @@ export type {
   BackendCapabilities,
   BackendContext,
   BackendId,
+  McpServerConfig,
   InferRequest,
   InferResponse,
   PromptMessage,

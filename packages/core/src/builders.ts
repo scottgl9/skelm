@@ -1,3 +1,4 @@
+import type { McpServerConfig } from './backend.js'
 import type { AgentPermissions } from './permissions.js'
 import type { SkelmSchema } from './schema.js'
 import type {
@@ -128,6 +129,7 @@ export function agent<TOutput>(def: {
   backend?: string
   prompt: string | ((ctx: Context) => string)
   system?: string | ((ctx: Context) => string)
+  mcp?: readonly McpServerConfig[] | ((ctx: Context) => readonly McpServerConfig[])
   output?: SkelmSchema<TOutput>
   permissions?: AgentPermissions
   maxTurns?: number
@@ -146,6 +148,7 @@ export function agent<TOutput>(def: {
     prompt: def.prompt,
     ...(def.backend !== undefined && { backend: def.backend }),
     ...(def.system !== undefined && { system: def.system }),
+    ...(def.mcp !== undefined && { mcp: def.mcp }),
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.permissions !== undefined && { permissions: def.permissions }),
     ...(def.maxTurns !== undefined && { maxTurns: def.maxTurns }),

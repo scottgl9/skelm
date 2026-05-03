@@ -1,7 +1,7 @@
 import { type AgentRequest, BackendNotFoundError, type BackendRegistry } from './backend.js'
 import { RunCancelledError, WaitTimeoutError, serializeError } from './errors.js'
 import { EventBus } from './events.js'
-import { resolvePermissions } from './permissions.js'
+import { TrustEnforcer, resolvePermissions } from './permissions.js'
 import { SchemaValidationError, validate } from './schema.js'
 import type { Context, Pipeline, Run, RunMetadata, Step, StepId, StepResult } from './types.js'
 
@@ -422,12 +422,33 @@ async function runStep(
           : typeof step.system === 'function'
             ? step.system(ctx)
             : step.system
-      const policy = step.permissions ? resolvePermissions(undefined, step.permissions) : undefined
+      const mcpServers =
+        step.mcp === undefined
+          ? undefined
+          : typeof step.mcp === 'function'
+            ? step.mcp(ctx)
+            : step.mcp
+      const policy =
+        step.permissions !== undefined || mcpServers !== undefined
+          ? resolvePermissions(undefined, step.permissions)
+          : undefined
+      if (policy !== undefined && mcpServers !== undefined) {
+        const enforcer = new TrustEnforcer(policy)
+        for (const server of mcpServers) {
+          const decision = enforcer.canAttachMcpServer(server.id)
+          if (!decision.allow) {
+            throw new Error(
+              `step "${step.id}" is not allowed to attach MCP server "${server.id}" (${decision.reason})`,
+            )
+          }
+        }
+      }
       const req: AgentRequest = {
         prompt: promptText,
         ...(systemText !== undefined && { system: systemText }),
         ...(step.maxTurns !== undefined && { maxTurns: step.maxTurns }),
         ...(policy !== undefined && { permissions: policy }),
+        ...(mcpServers !== undefined && { mcpServers }),
         ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
       }
       // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent

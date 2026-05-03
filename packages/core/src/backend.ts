@@ -11,6 +11,21 @@ import type { SkelmSchema } from './schema.js'
 
 export type BackendId = string
 
+export type McpServerConfig =
+  | {
+      id: string
+      transport: 'stdio'
+      command: string
+      args?: readonly string[]
+      env?: Readonly<Record<string, string>>
+    }
+  | {
+      id: string
+      transport: 'http' | 'sse'
+      url: string
+      headers?: Readonly<Record<string, string>>
+    }
+
 /** Discriminator describing how the backend handles permissions. */
 export type ToolPermissionEnforcement = 'native' | 'wrapped' | 'unsupported'
 
@@ -98,6 +113,8 @@ export interface AgentRequest {
    * fail at step start when the policy is non-empty.
    */
   permissions?: ResolvedPolicy
+  /** MCP servers to attach for this agent run. */
+  mcpServers?: readonly McpServerConfig[]
   /** When set, the runtime expects a structured value matching this schema. */
   outputSchema?: SkelmSchema
 }
