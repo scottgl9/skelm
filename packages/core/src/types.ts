@@ -17,7 +17,15 @@ export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancel
 export type StepStatus = 'completed' | 'failed' | 'skipped' | 'waiting'
 
 /** Discriminator for step kinds; the union grows in later stages. */
-export type StepKind = 'code' | 'llm' | 'agent' | 'parallel' | 'forEach' | 'branch' | 'loop'
+export type StepKind =
+  | 'code'
+  | 'llm'
+  | 'agent'
+  | 'parallel'
+  | 'forEach'
+  | 'branch'
+  | 'loop'
+  | 'pipelineStep'
 
 /** Metadata about the current run, available on `ctx.run`. */
 export interface RunMetadata {
@@ -127,6 +135,14 @@ export interface LoopStep {
   readonly step: Step
 }
 
+/** A `pipelineStep()` step: run a nested pipeline and adopt its output. */
+export interface PipelineStep<TInput = unknown, TOutput = unknown> {
+  readonly kind: 'pipelineStep'
+  readonly id: StepId
+  readonly pipeline: Pipeline<TInput, TOutput>
+  readonly input?: TInput | ((ctx: Context) => TInput)
+}
+
 /** Discriminated union of all step kinds. */
 export type Step =
   | CodeStep
@@ -136,6 +152,7 @@ export type Step =
   | ForEachStep
   | BranchStep
   | LoopStep
+  | PipelineStep
 
 /** A pipeline value produced by `pipeline()`. */
 export interface Pipeline<TInput = unknown, TOutput = unknown> {

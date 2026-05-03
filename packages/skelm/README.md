@@ -48,7 +48,7 @@ See the project [README](../../README.md) for the full pitch and the [docs](../.
 
 Everything from `@skelm/core`:
 
-- Builders — `pipeline()`, `code()`
+- Builders — `pipeline()`, `code()`, `llm()`, `agent()`, `parallel()`, `forEach()`, `branch()`, `loop()`, `pipelineStep()`
 - Runtime — `runPipeline()`, `RunOptions`
 - Types — `Pipeline`, `Step`, `Context`, `Run`, `StepResult`, `RunMetadata`, etc.
 - Schemas — `SkelmSchema`, `SchemaValidationError`

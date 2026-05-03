@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { branch, code, forEach, loop, parallel, pipeline } from './builders.js'
+import { branch, code, forEach, loop, parallel, pipeline, pipelineStep } from './builders.js'
 import { runPipeline } from './runner.js'
 
 describe('parallel()', () => {
@@ -228,5 +228,88 @@ describe('loop()', () => {
     expect(run.status).toBe('completed')
     const out = run.output as { iterations: unknown[] }
     expect(out.iterations).toHaveLength(2)
+  })
+})
+
+describe('pipelineStep()', () => {
+  it('runs a nested pipeline and records its output on the parent step', async () => {
+    const child = pipeline<{ value: number }, { doubled: number }>({
+      id: 'child',
+      steps: [
+        code({
+          id: 'double',
+          run: (ctx) => ({ doubled: (ctx.input as { value: number }).value * 2 }),
+        }),
+      ],
+    })
+
+    const parent = pipeline<{ value: number }, { nested: { doubled: number } }>({
+      id: 'parent',
+      steps: [
+        pipelineStep({
+          id: 'nested',
+          pipeline: child,
+          input: (ctx) => ({ value: (ctx.input as { value: number }).value }),
+        }),
+      ],
+      finalize: (ctx) => ({ nested: ctx.steps.nested as { doubled: number } }),
+    })
+
+    const run = await runPipeline(parent, { value: 21 })
+    expect(run.status).toBe('completed')
+    expect(run.output).toEqual({ nested: { doubled: 42 } })
+  })
+
+  it('defaults nested input to the parent ctx.input when no mapper is provided', async () => {
+    const child = pipeline<{ name: string }, { greeting: string }>({
+      id: 'child-default-input',
+      steps: [
+        code({
+          id: 'greet',
+          run: (ctx) => ({ greeting: `hello, ${(ctx.input as { name: string }).name}` }),
+        }),
+      ],
+    })
+
+    const parent = pipeline<{ name: string }, { greeting: string }>({
+      id: 'parent-default-input',
+      steps: [pipelineStep({ id: 'nested', pipeline: child })],
+    })
+
+    const run = await runPipeline(parent, { name: 'world' })
+    expect(run.status).toBe('completed')
+    expect(run.output).toEqual({ greeting: 'hello, world' })
+  })
+
+  it('fails the parent run when the nested pipeline fails', async () => {
+    const child = pipeline<unknown, unknown>({
+      id: 'child-fail',
+      steps: [
+        code({
+          id: 'boom',
+          run: () => {
+            throw new Error('nested boom')
+          },
+        }),
+      ],
+    })
+
+    const parent = pipeline({
+      id: 'parent-fail',
+      steps: [pipelineStep({ id: 'nested', pipeline: child })],
+    })
+
+    const run = await runPipeline(parent, undefined)
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('Error')
+    expect(run.error?.message).toBe('nested boom')
+    expect(run.steps[0]?.status).toBe('failed')
+  })
+
+  it('rejects a missing nested pipeline at build time', () => {
+    expect(() =>
+      // biome-ignore lint/suspicious/noExplicitAny: deliberate misuse for the test
+      pipelineStep({ id: 'bad', pipeline: undefined as any }),
+    ).toThrow(/pipeline is required/)
   })
 })

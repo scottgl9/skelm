@@ -289,6 +289,8 @@ async function runStep(
       return await runBranch(step, ctx, backends)
     case 'loop':
       return await runLoop(step, ctx, backends)
+    case 'pipelineStep':
+      return await runPipelineStep(step, ctx, backends)
     default: {
       const exhaustive: never = step
       throw new Error(`unknown step kind: ${(exhaustive as { kind: string }).kind}`)
@@ -375,6 +377,35 @@ async function runLoop(
   return { iterations, last }
 }
 
+async function runPipelineStep(
+  step: Extract<Step, { kind: 'pipelineStep' }>,
+  ctx: Context,
+  backends: BackendRegistry | undefined,
+): Promise<unknown> {
+  const nestedInput =
+    step.input === undefined
+      ? ctx.input
+      : typeof step.input === 'function'
+        ? step.input(ctx)
+        : step.input
+  const nestedRun = await runPipeline(step.pipeline, nestedInput, {
+    signal: ctx.signal,
+    ...(backends !== undefined && { backends }),
+  })
+  if (nestedRun.status === 'completed') {
+    return nestedRun.output
+  }
+  if (nestedRun.status === 'cancelled') {
+    throw new RunCancelledError(
+      `pipelineStep(${step.id}): nested pipeline "${step.pipeline.id}" was cancelled`,
+    )
+  }
+  throw restoreSerializedError(
+    nestedRun.error,
+    `pipelineStep(${step.id}): nested pipeline "${step.pipeline.id}" did not complete`,
+  )
+}
+
 function freezeContext<TInput>(ctx: Context<TInput>): Context<TInput> {
   Object.freeze(ctx.steps)
   return Object.freeze(ctx)
@@ -390,4 +421,13 @@ function adoptLastStepOutput<TOutput>(stepResults: readonly StepResult[]): TOutp
 function generateRunId(): string {
   // Node 19+ exposes globalThis.crypto.randomUUID().
   return crypto.randomUUID()
+}
+
+function restoreSerializedError(error: Run['error'], fallbackMessage: string): Error {
+  const restored = new Error(error?.message ?? fallbackMessage)
+  restored.name = error?.name ?? 'Error'
+  if (error?.stack !== undefined) {
+    restored.stack = error.stack
+  }
+  return restored
 }

@@ -32,7 +32,17 @@ export type {
   ToolPermissionEnforcement,
   Usage,
 } from './backend.js'
-export { agent, branch, code, forEach, llm, loop, parallel, pipeline } from './builders.js'
+export {
+  agent,
+  branch,
+  code,
+  forEach,
+  llm,
+  loop,
+  parallel,
+  pipeline,
+  pipelineStep,
+} from './builders.js'
 export { RunCancelledError, StepError, serializeError } from './errors.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
@@ -66,6 +76,7 @@ export type {
   ParallelStep,
   ParallelWaitFor,
   Pipeline,
+  PipelineStep,
   Run,
   RunId,
   RunMetadata,

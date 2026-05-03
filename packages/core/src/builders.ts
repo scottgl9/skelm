@@ -12,6 +12,7 @@ import type {
   ParallelStep,
   ParallelWaitFor,
   Pipeline,
+  PipelineStep,
   Step,
   StepId,
 } from './types.js'
@@ -240,6 +241,24 @@ export function loop(def: {
     while: def.while,
     maxIterations: def.maxIterations,
     step: def.step,
+  })
+}
+
+/** Run a nested pipeline and record its final output as this step's output. */
+export function pipelineStep<TInput, TOutput>(def: {
+  id: StepId
+  pipeline: Pipeline<TInput, TOutput>
+  input?: TInput | ((ctx: Context) => TInput)
+}): PipelineStep<TInput, TOutput> {
+  if (!def.id) throw new Error('pipelineStep(): id is required')
+  if (!def.pipeline) {
+    throw new Error(`pipelineStep(${def.id}): pipeline is required`)
+  }
+  return Object.freeze({
+    kind: 'pipelineStep',
+    id: def.id,
+    pipeline: def.pipeline,
+    ...(def.input !== undefined && { input: def.input }),
   })
 }
 
