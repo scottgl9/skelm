@@ -73,6 +73,10 @@ export interface Pipeline<TInput = unknown, TOutput = unknown> {
   readonly version?: string
   readonly steps: readonly Step[]
   readonly finalize?: (ctx: Context<TInput>) => TOutput | Promise<TOutput>
+  /** Optional input schema; validated at run start. */
+  readonly inputSchema?: import('./schema.js').SkelmSchema<TInput>
+  /** Optional output schema; validated after finalize before returning. */
+  readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   /** Phantom marker for the pipeline's input type; carried for inference. */
   readonly _input?: TInput
   /** Phantom marker for the pipeline's output type. */

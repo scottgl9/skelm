@@ -1,15 +1,18 @@
+import type { SkelmSchema } from './schema.js'
 import type { CodeStep, Context, Pipeline, Step, StepId } from './types.js'
 
 /**
  * Author a pipeline. The result is a plain immutable value carrying its
- * step list, optional finalizer, and metadata. The runtime walks `steps`
- * in order; `finalize` (if present) shapes the run output from accumulated
- * step outputs.
+ * step list, optional finalizer, optional input/output schemas, and
+ * metadata. The runtime walks `steps` in order; `finalize` (if present)
+ * shapes the run output from accumulated step outputs.
  */
 export function pipeline<TInput, TOutput>(def: {
   id: string
   description?: string
   version?: string
+  input?: SkelmSchema<TInput>
+  output?: SkelmSchema<TOutput>
   steps: readonly Step[]
   finalize?: (ctx: Context<TInput>) => TOutput | Promise<TOutput>
 }): Pipeline<TInput, TOutput> {
@@ -26,6 +29,8 @@ export function pipeline<TInput, TOutput>(def: {
     steps: Object.freeze([...def.steps]),
     ...(def.description !== undefined && { description: def.description }),
     ...(def.version !== undefined && { version: def.version }),
+    ...(def.input !== undefined && { inputSchema: def.input }),
+    ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.finalize !== undefined && { finalize: def.finalize }),
   }
   return Object.freeze(out)
