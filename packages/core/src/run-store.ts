@@ -14,6 +14,8 @@ import type {
 export interface RunSummary {
   readonly runId: RunId
   readonly pipelineId: string
+  /** Absolute path to the workflow file, when known. */
+  readonly workflowPath?: string
   readonly status: RunStatus
   readonly startedAt: number
   readonly completedAt?: number
@@ -222,10 +224,11 @@ export class SqliteRunStore implements RunStore {
     this.db
       .prepare(
         `INSERT INTO runs (
-          run_id, pipeline_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          run_id, pipeline_id, workflow_path, status, input_json, steps_json, output_json, error_json, started_at, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id) DO UPDATE SET
           pipeline_id = excluded.pipeline_id,
+          workflow_path = excluded.workflow_path,
           status = excluded.status,
           input_json = excluded.input_json,
           steps_json = excluded.steps_json,
@@ -237,6 +240,7 @@ export class SqliteRunStore implements RunStore {
       .run(
         run.runId,
         run.pipelineId,
+        run.workflowPath ?? null,
         run.status,
         encodeValue(run.input),
         encodeValue(run.steps),
@@ -256,13 +260,14 @@ export class SqliteRunStore implements RunStore {
   async getRun(runId: RunId): Promise<Run | null> {
     const row = this.db
       .prepare(
-        `SELECT run_id, pipeline_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at
+        `SELECT run_id, pipeline_id, workflow_path, status, input_json, steps_json, output_json, error_json, started_at, completed_at
          FROM runs WHERE run_id = ?`,
       )
       .get(runId) as
       | {
           run_id: string
           pipeline_id: string
+          workflow_path: string | null
           status: RunStatus
           input_json: string
           steps_json: string
@@ -276,6 +281,7 @@ export class SqliteRunStore implements RunStore {
     return {
       runId: row.run_id,
       pipelineId: row.pipeline_id,
+      ...(row.workflow_path !== null && { workflowPath: row.workflow_path }),
       status: row.status,
       input: decodeValue(row.input_json),
       steps: decodeValue(row.steps_json),
@@ -301,13 +307,14 @@ export class SqliteRunStore implements RunStore {
     const limit = filter.limit !== undefined ? `LIMIT ${filter.limit}` : ''
     const rows = this.db
       .prepare(
-        `SELECT run_id, pipeline_id, status, started_at, completed_at
+        `SELECT run_id, pipeline_id, workflow_path, status, started_at, completed_at
          FROM runs ${where}
          ORDER BY started_at DESC ${limit}`,
       )
       .all(...params) as Array<{
       run_id: string
       pipeline_id: string
+      workflow_path: string | null
       status: RunStatus
       started_at: number
       completed_at: number | null
@@ -316,6 +323,7 @@ export class SqliteRunStore implements RunStore {
       yield {
         runId: row.run_id,
         pipelineId: row.pipeline_id,
+        ...(row.workflow_path !== null && { workflowPath: row.workflow_path }),
         status: row.status,
         startedAt: row.started_at,
         ...(row.completed_at !== null && { completedAt: row.completed_at }),
@@ -488,6 +496,7 @@ export class SqliteRunStore implements RunStore {
       CREATE TABLE IF NOT EXISTS runs (
         run_id TEXT PRIMARY KEY,
         pipeline_id TEXT NOT NULL,
+        workflow_path TEXT,
         status TEXT NOT NULL,
         input_json TEXT NOT NULL,
         steps_json TEXT NOT NULL,
@@ -531,6 +540,11 @@ export class SqliteRunStore implements RunStore {
       CREATE INDEX IF NOT EXISTS state_journal_namespace_idx
         ON state_journal(namespace, stream, at, id);
     `)
+    // Migration: add workflow_path column if it doesn't exist (added in v1.1)
+    const cols = this.db.prepare('PRAGMA table_info(runs)').all() as Array<{ name: string }>
+    if (!cols.some((c) => c.name === 'workflow_path')) {
+      this.db.exec('ALTER TABLE runs ADD COLUMN workflow_path TEXT')
+    }
   }
 
   private pruneExpiredState(namespace: string, key?: string): void {

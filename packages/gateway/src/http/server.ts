@@ -228,6 +228,7 @@ export function createServer(
       return runs.map((r) => ({
         runId: r.runId,
         pipelineId: r.pipelineId,
+        ...(r.workflowPath !== undefined && { workflowPath: r.workflowPath }),
         status: r.status,
         startedAt: r.startedAt,
         completedAt: r.completedAt,

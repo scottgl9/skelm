@@ -1,18 +1,19 @@
 import { homedir } from 'node:os'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { MemoryRunStore, type SkelmConfig, SqliteRunStore, WorkspaceManager } from '@skelm/core'
 
 export type CliRunStore = MemoryRunStore | SqliteRunStore
+
+/** Default SQLite path — shared with the gateway so CLI runs appear in history. */
+const DEFAULT_DB_PATH = join(homedir(), '.skelm', 'runs.db')
 
 export function createRunStore(config: SkelmConfig): CliRunStore {
   const storage = config.storage
   if (storage?.runs?.driver === 'memory' || storage?.state?.driver === 'memory') {
     return new MemoryRunStore()
   }
-  const path = resolveStoragePath(storage?.state?.path ?? storage?.runs?.path)
-  return new SqliteRunStore({
-    ...(path !== undefined && { path }),
-  })
+  const path = resolveStoragePath(storage?.state?.path ?? storage?.runs?.path) ?? DEFAULT_DB_PATH
+  return new SqliteRunStore({ path })
 }
 
 export function createWorkspaceManager(config: SkelmConfig): WorkspaceManager {

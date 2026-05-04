@@ -43,6 +43,8 @@ export type WorkspaceConfig =
       readonly base?: string
       readonly gitRoot?: boolean
       readonly cleanup?: 'never' | 'on-success'
+      /** Seed files copied into the workspace before the step runs. */
+      readonly seed?: { readonly copy: readonly string[] }
     }
   | {
       readonly mode: 'ephemeral'
@@ -58,6 +60,8 @@ export type WorkspaceConfig =
   | {
       readonly mode: 'mounted'
       readonly path: string
+      /** Seed files copied into the workspace before the step runs. */
+      readonly seed?: { readonly copy: readonly string[] }
     }
 
 export interface WorkspaceHandle {
