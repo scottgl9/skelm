@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { ScriptTrigger, createScriptTrigger } from '../../src/triggers/script.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TriggerState } from '../../src/triggers/base.js'
+import { ScriptTrigger, createScriptTrigger } from '../../src/triggers/script.js'
 import type { TriggerConfig } from '../../src/triggers/types.js'
 
 describe('ScriptTrigger', () => {

@@ -1,14 +1,14 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http'
+import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'http'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createCronTrigger } from '../../src/triggers/cron.js'
-import { createWebhookTrigger } from '../../src/triggers/webhook.js'
-import { createSlackTrigger } from '../../src/triggers/slack.js'
-import { createGitHubTrigger } from '../../src/triggers/github.js'
 import { createDiscordTrigger } from '../../src/triggers/discord.js'
+import { createGitHubTrigger } from '../../src/triggers/github.js'
 import { createMatrixTrigger } from '../../src/triggers/matrix.js'
-import { WorkflowRegistry } from '../../src/workflows/registry.js'
-import { WorkflowExecutor } from '../../src/workflows/executor.js'
+import { createSlackTrigger } from '../../src/triggers/slack.js'
 import type { TriggerEvent } from '../../src/triggers/types.js'
+import { createWebhookTrigger } from '../../src/triggers/webhook.js'
+import { WorkflowExecutor } from '../../src/workflows/executor.js'
+import { WorkflowRegistry } from '../../src/workflows/registry.js'
 
 // Port counter for unique ports in tests
 let portCounter = 3300

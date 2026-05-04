@@ -4,10 +4,10 @@
  * Receives HTTP webhook events and emits them as trigger events
  */
 
-import { TriggerPluginBase } from './base.js'
-import type { TriggerConfig, TriggerType, TriggerEvent, TriggerHealthStatus } from './types.js'
-import { createServer, IncomingMessage, Server, ServerResponse } from 'http'
+import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'http'
 import { parse } from 'url'
+import { TriggerPluginBase } from './base.js'
+import type { TriggerConfig, TriggerEvent, TriggerHealthStatus, TriggerType } from './types.js'
 
 /**
  * Webhook trigger configuration

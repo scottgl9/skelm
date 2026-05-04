@@ -6,11 +6,11 @@
 
 import { ProviderPluginBase } from '@skelm/core'
 import type {
-  ProviderCapabilities,
-  ProviderSpecificCapabilities,
-  ProviderModel,
   PluginConfig,
   PluginHealthStatus,
+  ProviderCapabilities,
+  ProviderModel,
+  ProviderSpecificCapabilities,
 } from '@skelm/core'
 import { createOpencodeBackend } from './backend.js'
 import type { OpencodeBackendOptions } from './types.js'

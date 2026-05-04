@@ -33,7 +33,8 @@ export function describePipeline(pipeline: Pipeline): PipelineDescription {
     id: pipeline.id,
     steps: pipeline.steps.map(describeStep),
   }
-  if (pipeline.description !== undefined) (out as { description?: string }).description = pipeline.description
+  if (pipeline.description !== undefined)
+    (out as { description?: string }).description = pipeline.description
   if (pipeline.version !== undefined) (out as { version?: string }).version = pipeline.version
   return out
 }

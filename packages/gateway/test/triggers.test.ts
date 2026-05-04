@@ -182,10 +182,7 @@ describe('TriggerCoordinator', () => {
     const driver = new InMemoryQueueDriver()
     c.registerQueueDriver('memq', driver)
     // overlap: 'queue' so a burst of messages all fire even if onFire is async.
-    c.register(
-      { kind: 'queue', id: 't-q', workflowId: 'wf-q', driver: 'memq' },
-      'queue',
-    )
+    c.register({ kind: 'queue', id: 't-q', workflowId: 'wf-q', driver: 'memq' }, 'queue')
     driver.push()
     driver.push()
     driver.push()

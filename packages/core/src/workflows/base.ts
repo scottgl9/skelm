@@ -75,7 +75,7 @@ export abstract class WorkflowPluginBase {
   /** Plugin configuration */
   protected config: WorkflowConfig | null = null
   /** Whether the plugin is enabled */
-  protected enabled: boolean = true
+  protected enabled = true
   /** Logger */
   protected logger: Console = console
 

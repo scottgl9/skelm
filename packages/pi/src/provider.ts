@@ -7,11 +7,11 @@
 
 import { ProviderPluginBase } from '@skelm/core'
 import type {
-  ProviderCapabilities,
-  ProviderSpecificCapabilities,
-  ProviderModel,
   PluginConfig,
   PluginHealthStatus,
+  ProviderCapabilities,
+  ProviderModel,
+  ProviderSpecificCapabilities,
 } from '@skelm/core'
 import { createPiBackend } from './backend.js'
 import type { PiBackendOptions } from './types.js'

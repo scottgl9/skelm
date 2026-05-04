@@ -484,9 +484,7 @@ function scheduleTriggerToSpec(
   }
 }
 
-function registrationToSchedule(
-  reg: import('../triggers/types.js').TriggerRegistration,
-): {
+function registrationToSchedule(reg: import('../triggers/types.js').TriggerRegistration): {
   id: string
   workflowId: string
   trigger: Record<string, unknown>

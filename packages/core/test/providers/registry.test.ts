@@ -2,9 +2,9 @@
  * Unit tests for ProviderCapabilityRegistry
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
-import { ProviderCapabilityRegistry } from '../../src/providers/registry.js'
+import { beforeEach, describe, expect, it } from 'vitest'
 import type { ProviderCapabilities } from '../../src/providers/base.js'
+import { ProviderCapabilityRegistry } from '../../src/providers/registry.js'
 
 describe('ProviderCapabilityRegistry', () => {
   let registry: ProviderCapabilityRegistry

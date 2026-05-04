@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest'
-import { MatrixTrigger, createMatrixTrigger } from '../../src/triggers/matrix.js'
+import { describe, expect, it, vi } from 'vitest'
 import { TriggerState } from '../../src/triggers/base.js'
+import { MatrixTrigger, createMatrixTrigger } from '../../src/triggers/matrix.js'
 import type { TriggerConfig } from '../../src/triggers/types.js'
 
 describe('MatrixTrigger', () => {

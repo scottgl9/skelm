@@ -2,8 +2,8 @@
  * Unit tests for OpencodeProvider
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { OpencodeProvider, createOpencodeProvider } from '../src/provider.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { type OpencodeProvider, createOpencodeProvider } from '../src/provider.js'
 import type { OpencodeProviderConfig } from '../src/provider.js'
 
 // Mock fetch for health checks

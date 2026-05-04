@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { CronTrigger, createCronTrigger } from '../../src/triggers/cron.js'
-import { WebhookTrigger, createWebhookTrigger } from '../../src/triggers/webhook.js'
-import { TriggerRegistry } from '../../src/triggers/registry.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TriggerState } from '../../src/triggers/base.js'
+import { CronTrigger, createCronTrigger } from '../../src/triggers/cron.js'
+import { TriggerRegistry } from '../../src/triggers/registry.js'
 import type { TriggerEvent, WorkflowInvocation } from '../../src/triggers/types.js'
+import { WebhookTrigger, createWebhookTrigger } from '../../src/triggers/webhook.js'
 
 describe('Trigger → Workflow Integration', () => {
   let registry: TriggerRegistry
