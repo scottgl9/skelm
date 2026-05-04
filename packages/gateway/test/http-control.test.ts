@@ -547,6 +547,51 @@ describe('Gateway HTTP /pipelines', () => {
   })
 })
 
+describe('Gateway HTTP /metrics', () => {
+  it('404s when metrics are not enabled', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    })
+    await gw.start()
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/metrics`)
+      expect(res.status).toBe(404)
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('renders Prometheus metrics when enabled', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      enableMetrics: true,
+      httpPort: port,
+      config: {},
+    })
+    await gw.start()
+    try {
+      gw.metrics?.recordTriggerFire('cron-x')
+      const res = await fetch(`http://127.0.0.1:${port}/metrics`)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('content-type')).toContain('text/plain')
+      const body = await res.text()
+      expect(body).toContain('skelm_runs_started_total 0')
+      expect(body).toContain('skelm_trigger_fires_total{trigger="cron-x"} 1')
+      expect(body).toContain('skelm_approvals_pending 0')
+    } finally {
+      await gw.stop()
+    }
+  })
+})
+
 describe('Gateway runStore', () => {
   it('constructs a SqliteRunStore at <stateDir>/runs.sqlite by default', async () => {
     const gw = new Gateway({

@@ -68,6 +68,12 @@ export interface GatewayOptions {
    * Production wires this to tsImport(); tests can supply a fake.
    */
   loadWorkflow?: (registryId: string, absolutePath: string) => Promise<unknown>
+  /**
+   * Enable the Prometheus metrics collector and the GET /metrics endpoint.
+   * The collector subscribes to run-event buses passed via
+   * gateway.attachMetricsBus(); the route renders the current snapshot.
+   */
+  enableMetrics?: boolean
 }
 
 export interface GatewayEnforcement {
@@ -115,6 +121,8 @@ export class Gateway {
   private runStoreInternal: RunStore | null = null
   private httpServer: SkelmServer | null = null
   private readonly inFlightRuns = new Map<string, AbortController>()
+  private metricsInternal: import('@skelm/metrics').MetricsCollector | null = null
+  private metricsBus: import('@skelm/core').EventBus | null = null
 
   constructor(private readonly options: GatewayOptions = {}) {
     this.stateDir = options.stateDir ?? join(homedir(), '.skelm')
@@ -189,6 +197,26 @@ export class Gateway {
     return this.options.loadWorkflow
   }
 
+  /**
+   * The metrics collector wired to the gateway's run-event stream when
+   * GatewayOptions.enableMetrics is true. Returns null when metrics are
+   * disabled. The dispatcher feeds events into the bus this collector
+   * subscribes to via attachMetricsBus().
+   */
+  get metrics(): import('@skelm/metrics').MetricsCollector | null {
+    return this.metricsInternal
+  }
+
+  /**
+   * Subscribe an EventBus into the metrics collector. The dispatcher calls
+   * this with the per-run bus the Runner uses, so step events surface in
+   * /metrics. No-ops when metrics are disabled.
+   */
+  attachMetricsBus(bus: import('@skelm/core').EventBus): void {
+    if (this.metricsInternal === null) return
+    this.metricsInternal.attach(bus)
+  }
+
   cancel(runId: string, reason?: string): boolean {
     const controller = this.inFlightRuns.get(runId)
     if (controller === undefined) return false
@@ -223,6 +251,10 @@ export class Gateway {
       this.enforcementInternal = this.buildEnforcement()
       this.registriesInternal = await this.buildRegistries()
       this.managersInternal = await this.buildManagers()
+      if (this.options.enableMetrics) {
+        const { MetricsCollector } = await import('@skelm/metrics')
+        this.metricsInternal = new MetricsCollector()
+      }
       if (this.options.enableHttp) {
         await this.startHttp()
       }

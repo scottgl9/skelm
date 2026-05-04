@@ -55,6 +55,9 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         auditWriter: enforcement.auditWriter,
         store: opts.gateway.runStore,
       })
+      // Feed step events into the metrics collector if enabled.
+      opts.gateway.attachMetricsBus(runner.events)
+      opts.gateway.metrics?.recordTriggerFire(ctx.triggerId)
       const controller = new AbortController()
       runId = crypto.randomUUID()
       opts.gateway.registerRun(runId, controller)
