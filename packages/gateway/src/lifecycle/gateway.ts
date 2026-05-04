@@ -15,6 +15,7 @@ import {
 } from '@skelm/core'
 import { SuspendApprovalGate } from '../approvals/suspend-gate.js'
 import { ChainAuditWriter } from '../audit/chain.js'
+import { BreakpointRegistry } from '../debug/breakpoint-registry.js'
 import { type SkelmServer, createServer } from '../http/index.js'
 import { AcpSessionManager, defaultAcpSessionStorePath } from '../managers/acp-session-manager.js'
 import { CodingAgentManager } from '../managers/coding-agent-manager.js'
@@ -123,6 +124,7 @@ export class Gateway {
   private readonly inFlightRuns = new Map<string, AbortController>()
   private metricsInternal: import('@skelm/metrics').MetricsCollector | null = null
   private metricsBus: import('@skelm/core').EventBus | null = null
+  private readonly breakpointsInternal: import('../debug/breakpoint-registry.js').BreakpointRegistry
 
   constructor(private readonly options: GatewayOptions = {}) {
     this.stateDir = options.stateDir ?? join(homedir(), '.skelm')
@@ -130,6 +132,7 @@ export class Gateway {
     this.lockfilePath = join(this.stateDir, 'gateway.lock')
     this.discoveryPath = join(this.stateDir, 'gateway.json')
     this.config = options.config ?? DEFAULT_CONFIG
+    this.breakpointsInternal = new BreakpointRegistry()
   }
 
   getState(): GatewayState {
@@ -195,6 +198,15 @@ export class Gateway {
     | ((registryId: string, absolutePath: string) => Promise<unknown>)
     | undefined {
     return this.options.loadWorkflow
+  }
+
+  /**
+   * The breakpoint registry. Operators add step ids via the /debug HTTP
+   * routes; the dispatcher's beforeStep hook consults this registry to
+   * decide whether to pause a step until the operator releases the run.
+   */
+  get breakpoints(): BreakpointRegistry {
+    return this.breakpointsInternal
   }
 
   /**

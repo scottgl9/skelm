@@ -29,6 +29,7 @@ import type {
   RunStatus,
   Step,
   StepId,
+  StepKind,
   StepResult,
 } from './types.js'
 import { WorkspaceManager } from './workspace.js'
@@ -64,6 +65,17 @@ export interface RunOptions {
    * gateways inject SuspendApprovalGate here.
    */
   approvalGate?: ApprovalGate
+  /**
+   * Optional hook invoked just before each step's body runs (after the
+   * step.start event is published, before any retry/backend dispatch).
+   * The returned promise gates step execution: callers can pause runs at
+   * specific step ids for inspection by holding the promise. Throwing or
+   * resolving with rejection treats the step as failed.
+   *
+   * Used by the gateway's debug surface: a registered breakpoint resolves
+   * via this hook only after the operator releases the run.
+   */
+  beforeStep?: (info: { runId: string; stepId: StepId; kind: StepKind }) => Promise<void>
 }
 
 export class ApprovalDeniedError extends Error {
@@ -336,6 +348,9 @@ export async function runPipeline<TInput, TOutput>(
 
     const stepStart = Date.now()
     events.publish({ type: 'step.start', runId, stepId: step.id, kind: step.kind, at: stepStart })
+    if (options.beforeStep !== undefined) {
+      await options.beforeStep({ runId, stepId: step.id, kind: step.kind })
+    }
     try {
       const ctx: Context<TInput> = freezeContext({
         input: resolvedInput,
