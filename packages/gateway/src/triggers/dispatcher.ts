@@ -37,6 +37,7 @@ export interface CreateDispatcherOptions {
  */
 export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallback {
   return async (ctx: FireContext): Promise<void> => {
+    let runId: string | null = null
     try {
       const entry = opts.gateway.registries.workflows.get(ctx.workflowId)
       if (entry === undefined) {
@@ -54,14 +55,20 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         auditWriter: enforcement.auditWriter,
         store: opts.gateway.runStore,
       })
-      const handle = runner.start(pipeline as Parameters<Runner['start']>[0], {
-        triggerId: ctx.triggerId,
-        firedAt: ctx.firedAt,
-      })
+      const controller = new AbortController()
+      runId = crypto.randomUUID()
+      opts.gateway.registerRun(runId, controller)
+      const handle = runner.start(
+        pipeline as Parameters<Runner['start']>[0],
+        { triggerId: ctx.triggerId, firedAt: ctx.firedAt },
+        { runId, signal: controller.signal },
+      )
       await handle.wait()
     } catch (err) {
       opts.onError?.(err as Error, ctx)
       throw err
+    } finally {
+      if (runId !== null) opts.gateway.unregisterRun(runId)
     }
   }
 }

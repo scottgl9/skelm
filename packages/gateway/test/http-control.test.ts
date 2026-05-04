@@ -180,6 +180,45 @@ describe('Gateway HTTP /runs/:runId/events', () => {
   })
 })
 
+describe('Gateway HTTP DELETE /runs/:runId', () => {
+  it('aborts the run AbortController and 404s for unknown / completed runs', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    })
+    await gw.start()
+    const base = `http://127.0.0.1:${port}`
+    try {
+      const controller = new AbortController()
+      let aborted = false
+      let abortReason: unknown = undefined
+      controller.signal.addEventListener('abort', () => {
+        aborted = true
+        abortReason = controller.signal.reason
+      })
+      gw.registerRun('run-cancel', controller)
+
+      const res = await fetch(`${base}/runs/run-cancel`, { method: 'DELETE' })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ cancelled: true, runId: 'run-cancel' })
+      expect(aborted).toBe(true)
+      expect(abortReason).toBe('cancelled via HTTP DELETE')
+
+      const second = await fetch(`${base}/runs/run-cancel`, { method: 'DELETE' })
+      expect(second.status).toBe(404)
+
+      const unknown = await fetch(`${base}/runs/never-started`, { method: 'DELETE' })
+      expect(unknown.status).toBe(404)
+    } finally {
+      await gw.stop()
+    }
+  })
+})
+
 describe('Gateway runStore', () => {
   it('constructs a SqliteRunStore at <stateDir>/runs.sqlite by default', async () => {
     const gw = new Gateway({

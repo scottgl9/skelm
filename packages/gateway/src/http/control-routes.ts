@@ -110,6 +110,22 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
     }),
   )
 
+  router.delete(
+    '/runs/:runId',
+    eventHandler(async (event: H3Event) => {
+      const runId = event.context.params?.runId
+      if (!runId) throw createError({ statusCode: 400, message: 'runId required' })
+      const cancelled = gateway.cancel(runId, 'cancelled via HTTP DELETE')
+      if (!cancelled) {
+        throw createError({
+          statusCode: 404,
+          message: 'run not in flight (already completed, or unknown to this gateway)',
+        })
+      }
+      return { cancelled: true, runId }
+    }),
+  )
+
   router.get(
     '/runs/:runId/events',
     eventHandler(async (event: H3Event) => {
