@@ -13,6 +13,7 @@ import {
   createApp,
   createError,
   createEventStream,
+  createRouter,
   eventHandler,
   readBody,
   toNodeListener,
@@ -198,8 +199,11 @@ export function createServer(
     }),
   )
 
-  // GET /runs - list runs
-  app.use(
+  // Runs router — uses createRouter() for proper method+path matching
+  // (app.use() does prefix matching which causes /runs/:id to be caught by /runs)
+  const runsRouter = createRouter()
+
+  runsRouter.get(
     '/runs',
     eventHandler(async (event: H3Event) => {
       const url = event.node.req.url ?? ''
@@ -231,57 +235,35 @@ export function createServer(
     }),
   )
 
-  // GET /runs/:runId - get run detail
-  app.use(
+  runsRouter.get(
     '/runs/:runId',
     eventHandler(async (event: H3Event) => {
       const runId = event.context.params?.runId
-      if (!runId) {
-        throw createError({ statusCode: 400, message: 'Run ID required' })
-      }
-
+      if (!runId) throw createError({ statusCode: 400, message: 'Run ID required' })
       const state = await runStore.getRun(runId)
-      if (!state) {
-        throw createError({ statusCode: 404, message: 'Run not found' })
-      }
-
+      if (!state) throw createError({ statusCode: 404, message: 'Run not found' })
       return state
     }),
   )
 
-  // GET /runs/:runId/stream - SSE event stream
-  app.use(
+  runsRouter.get(
     '/runs/:runId/stream',
     eventHandler(async (event: H3Event) => {
       const runId = event.context.params?.runId
-      if (!runId) {
-        throw createError({ statusCode: 400, message: 'Run ID required' })
-      }
-
+      if (!runId) throw createError({ statusCode: 400, message: 'Run ID required' })
       const state = await runStore.getRun(runId)
-      if (!state) {
-        throw createError({ statusCode: 404, message: 'Run not found' })
-      }
+      if (!state) throw createError({ statusCode: 404, message: 'Run not found' })
 
       const eventStream = createEventStream(event)
-
-      // Subscribe to events for this run
       const unsubscribe = runner.events.subscribe((runEvent: RunEvent) => {
         if (runEvent.runId === runId) {
-          eventStream.push({
-            event: runEvent.type,
-            data: JSON.stringify(runEvent),
-          })
+          eventStream.push({ event: runEvent.type, data: JSON.stringify(runEvent) })
         }
       })
-
-      // Clean up on close
       eventStream.onClosed(() => {
         unsubscribe()
         eventStream.close()
       })
-
-      // Send existing run state first
       await eventStream.push({
         event: 'run.state',
         data: JSON.stringify({
@@ -295,8 +277,6 @@ export function createServer(
           error: state.error,
         }),
       })
-
-      // Keep stream open until run completes
       if (
         state.status === 'completed' ||
         state.status === 'failed' ||
@@ -304,23 +284,17 @@ export function createServer(
       ) {
         eventStream.close()
       }
-
       return eventStream.send()
     }),
   )
 
-  // POST /runs/:runId/resume - resume from wait
-  app.use(
+  runsRouter.post(
     '/runs/:runId/resume',
     eventHandler(async (event: H3Event) => {
       const runId = event.context.params?.runId
-      if (!runId) {
-        throw createError({ statusCode: 400, message: 'Run ID required' })
-      }
-
+      if (!runId) throw createError({ statusCode: 400, message: 'Run ID required' })
       const body = await readBody(event).catch(() => ({}))
       const output = (body as Record<string, unknown>)?.output ?? {}
-
       try {
         await runner.resume(runId, output)
         return { success: true }
@@ -329,6 +303,8 @@ export function createServer(
       }
     }),
   )
+
+  app.use(runsRouter)
 
   async function getSyncResponse(state: Run): Promise<SyncRunResponse> {
     if (state.status === 'completed') {
