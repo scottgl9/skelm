@@ -28,6 +28,7 @@ import {
 } from '../registries/index.js'
 import { FileSecretResolver } from '../secrets/file-driver.js'
 import { TriggerCoordinator } from '../triggers/coordinator.js'
+import { createTriggerDispatcher } from '../triggers/dispatcher.js'
 import { type DiscoveryRecord, removeDiscovery, writeDiscovery } from './discovery.js'
 import { type LockfileContents, acquireLockfile, releaseLockfile } from './lockfile.js'
 
@@ -289,6 +290,16 @@ export class Gateway {
       this.enforcementInternal = this.buildEnforcement()
       this.registriesInternal = await this.buildRegistries()
       this.managersInternal = await this.buildManagers()
+      // Wire the trigger dispatcher now that managers + registries exist.
+      // Without a loadWorkflow option the coordinator keeps its no-op
+      // onFire — fired triggers still record their accounting but do not
+      // start runs, which matches embedded/test gateways.
+      if (this.options.loadWorkflow !== undefined) {
+        const loadWorkflow = this.options.loadWorkflow
+        this.managersInternal.triggers.setOnFire(
+          createTriggerDispatcher({ gateway: this, loadWorkflow }),
+        )
+      }
       if (this.options.enableMetrics) {
         const { MetricsCollector } = await import('@skelm/metrics')
         this.metricsInternal = new MetricsCollector()
@@ -430,13 +441,11 @@ export class Gateway {
     const acpSessions = new AcpSessionManager({
       storePath: defaultAcpSessionStorePath(this.stateDir),
     })
-    const triggers = new TriggerCoordinator({
-      onFire: async (_ctx) => {
-        // Phase 11 leaves the workflow dispatcher as a no-op stub; the
-        // post-MVP iteration plugs in the registry → import → Runner.start
-        // pipeline once the runner can take a registry-backed loader.
-      },
-    })
+    // The coordinator starts with a no-op onFire. start() replaces it with
+    // a createTriggerDispatcher() callback when GatewayOptions.loadWorkflow
+    // is supplied — production wires this to tsx's tsImport(); tests can
+    // pass a fake loader.
+    const triggers = new TriggerCoordinator({ onFire: async () => {} })
     await mcp.startAll(this.config.registries?.mcpServers ?? [])
     await codingAgents.startAll(this.config.registries?.agents ?? [])
     await acpSessions.reconcile()

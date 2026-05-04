@@ -105,3 +105,60 @@ describe('createTriggerDispatcher', () => {
     await gw.stop()
   })
 })
+
+describe('Gateway — auto-wires the dispatcher when loadWorkflow is supplied', () => {
+  it('triggers registered via managers.triggers actually run pipelines', async () => {
+    const ran: string[] = []
+    const fakePipeline = pipeline({
+      id: 'auto-wired',
+      steps: [
+        code({
+          id: 'step',
+          run: () => {
+            ran.push('ran')
+            return {}
+          },
+        }),
+      ],
+    })
+
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+      loadWorkflow: async (id) => {
+        expect(id).toBe('workflows/hello.workflow.ts')
+        return { default: fakePipeline }
+      },
+    })
+    await gw.start()
+
+    gw.managers.triggers.register({
+      kind: 'manual',
+      id: 'wired',
+      workflowId: 'workflows/hello.workflow.ts',
+    })
+    await gw.managers.triggers.fire('wired')
+
+    expect(ran).toEqual(['ran'])
+    await gw.stop()
+  })
+
+  it('leaves onFire as a no-op when loadWorkflow is not supplied', async () => {
+    const gw = new Gateway({ stateDir, projectRoot, watchRegistries: false })
+    await gw.start()
+
+    gw.managers.triggers.register({
+      kind: 'manual',
+      id: 'unwired',
+      workflowId: 'workflows/hello.workflow.ts',
+    })
+    await gw.managers.triggers.fire('unwired')
+
+    // No-op: trigger fires accounting still happens, but no run is started.
+    expect(gw.managers.triggers.get('unwired')?.fired).toBe(1)
+    expect(gw.managers.triggers.get('unwired')?.lastError).toBeUndefined()
+    await gw.stop()
+  })
+})
