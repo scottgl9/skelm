@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish (e.g., 0.3.0)'
+        description: 'Version to publish (e.g., 0.3.2)'
         required: true
-        default: '0.3.0'
+        default: '0.3.2'
         type: string
       dry-run:
         description: 'Dry run (verify without publishing)'
@@ -39,6 +39,7 @@ jobs:
           node-version: 20
           cache: pnpm
           registry-url: 'https://npm.pkg.github.com'
+          scope: '@scottgl9'
 
       - name: Install dependencies
         run: pnpm install
@@ -49,180 +50,76 @@ jobs:
           if [ -n "${{ github.event.release.tag_name }}" ]; then
             TAG_VERSION="${{ github.event.release.tag_name }}"
             TAG_VERSION="${TAG_VERSION#v}"
-            echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
-            echo "Release tag detected: $TAG_VERSION"
           elif [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "tag_version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-            echo "Manual version input: ${{ github.event.inputs.version }}"
+            TAG_VERSION="${{ github.event.inputs.version }}"
           else
-            echo "tag_version=0.3.0" >> $GITHUB_OUTPUT
-            echo "Using default version: 0.3.0"
+            TAG_VERSION="0.3.2"
           fi
+          echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
+          echo "Resolved version: $TAG_VERSION"
 
-      - name: Update package versions (if release tag)
-        if: steps.version.outputs.tag_version != ''
+      - name: Update package versions
         run: |
           TAG_VERSION="${{ steps.version.outputs.tag_version }}"
-          echo "Updating all packages to version: $TAG_VERSION"
-          
-          # Update core
-          cd packages/core
-          npm version $TAG_VERSION --no-git-tag-version --force
-          cd ..
-          
-          # Update cli
-          cd packages/cli
-          npm version $TAG_VERSION --no-git-tag-version --force
-          cd ..
-          
-          # Update opencode
-          cd packages/opencode
-          npm version $TAG_VERSION --no-git-tag-version --force
-          cd ..
-          
-          # Update pi
-          cd packages/pi
-          npm version $TAG_VERSION --no-git-tag-version --force
-          cd ..
-          
-          # Update gateway
-          cd packages/gateway
-          npm version $TAG_VERSION --no-git-tag-version --force
-          cd ..
-          
-          # Update main skelm package
-          cd packages/skelm
-          npm version $TAG_VERSION --no-git-tag-version --force
-          cd ..
+          for pkg in core cli opencode pi gateway skelm; do
+            (cd packages/$pkg && npm version "$TAG_VERSION" --no-git-tag-version --allow-same-version)
+          done
+
+      - name: Rescope package names to @scottgl9
+        run: |
+          node <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          const pkgs = ['core','cli','opencode','pi','gateway','skelm'];
+          const renameMap = {
+            '@skelm/core': '@scottgl9/core',
+            '@skelm/cli': '@scottgl9/cli',
+            '@skelm/opencode': '@scottgl9/opencode',
+            '@skelm/pi': '@scottgl9/pi',
+            '@skelm/gateway': '@scottgl9/gateway',
+            'skelm': '@scottgl9/skelm',
+          };
+          for (const p of pkgs) {
+            const file = path.join('packages', p, 'package.json');
+            const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+            if (renameMap[json.name]) json.name = renameMap[json.name];
+            for (const depKey of ['dependencies','devDependencies','peerDependencies','optionalDependencies']) {
+              if (!json[depKey]) continue;
+              for (const [k, v] of Object.entries(json[depKey])) {
+                if (renameMap[k]) {
+                  json[depKey][renameMap[k]] = v;
+                  delete json[depKey][k];
+                }
+              }
+            }
+            if (json.publishConfig) json.publishConfig.registry = 'https://npm.pkg.github.com';
+            fs.writeFileSync(file, JSON.stringify(json, null, 2) + '\n');
+            console.log('rescoped', file, '->', json.name);
+          }
+          EOF
 
       - name: Build all packages
         run: pnpm build
 
-      - name: Run tests
-        run: pnpm test
-        continue-on-error: true
-          TAG_VERSION="${{ steps.version.outputs.tag_version }}"
-          echo "Updating all packages to version: $TAG_VERSION"
-          
-          # Update core
-          cd packages/core
-          npm version $TAG_VERSION --no-git-tag-version --force
-          cd ..
-          
-          # Update cli
-          cd packages/cli
-          npm version $TAG_VERSION --no-git-tag-version --force
-          cd ..
-          
-          # Update opencode
-          cd packages/opencode
-          npm version $TAG_VERSION --no-git-tag-version --force
-          cd ..
-          
-          # Update pi
-          cd packages/pi
-          npm version $TAG_VERSION --no-git-tag-version --force
-          cd ..
-          
-          # Update gateway
-          cd packages/gateway
-          npm version $TAG_VERSION --no-git-tag-version --force
-          cd ..
-          
-          # Update main skelm package
-          cd packages/skelm
-          npm version $TAG_VERSION --no-git-tag-version --force
-          cd ..
-
-      - name: Dry run - show what would be published
-        if: inputs.dry-run == true || steps.version.outputs.tag_version == ''
+      - name: Dry run summary
+        if: inputs.dry-run == 'true'
         run: |
-          echo "=== Dry Run Mode ==="
-          echo ""
-          echo "Packages to publish:"
-          echo "  - @skelm/core@$(cat packages/core/package.json | grep '"version"' | cut -d'"' -f4)"
-          echo "  - @skelm/cli@$(cat packages/cli/package.json | grep '"version"' | cut -d'"' -f4)"
-          echo "  - @skelm/opencode@$(cat packages/opencode/package.json | grep '"version"' | cut -d'"' -f4)"
-          echo "  - @skelm/pi@$(cat packages/pi/package.json | grep '"version"' | cut -d'"' -f4)"
-          echo "  - @skelm/gateway@$(cat packages/gateway/package.json | grep '"version"' | cut -d'"' -f4)"
-          echo "  - skelm@$(cat packages/skelm/package.json | grep '"version"' | cut -d'"' -f4)"
-          echo ""
-          echo "Registry: https://npm.pkg.github.com/scottgl9"
-          echo ""
-          echo "To actually publish, create a GitHub release with a version tag (e.g., v0.3.0)"
-          echo "The workflow will automatically publish all packages with that version."
+          for p in core cli opencode pi gateway skelm; do
+            echo "  $(node -p "require('./packages/$p/package.json').name")@$(node -p "require('./packages/$p/package.json').version")"
+          done
 
-      - name: Publish @skelm/core
+      - name: Publish all packages
         if: inputs.dry-run != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd packages/core
-          echo "Publishing @skelm/core@$(node -p "require('./package.json').version")"
-          npm publish --registry=https://npm.pkg.github.com/scottgl9 --access=public
-          cd ..
+          for p in core cli opencode pi gateway skelm; do
+            (cd packages/$p && \
+              echo "Publishing $(node -p "require('./package.json').name")@$(node -p "require('./package.json').version")" && \
+              npm publish --registry=https://npm.pkg.github.com --access=public)
+          done
 
-      - name: Publish @skelm/cli
-        if: inputs.dry-run != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cd packages/cli
-          echo "Publishing @skelm/cli@$(node -p "require('./package.json').version")"
-          npm publish --registry=https://npm.pkg.github.com/scottgl9 --access=public
-          cd ..
-
-      - name: Publish @skelm/opencode
-        if: inputs.dry-run != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cd packages/opencode
-          echo "Publishing @skelm/opencode@$(node -p "require('./package.json').version")"
-          npm publish --registry=https://npm.pkg.github.com/scottgl9 --access=public
-          cd ..
-
-      - name: Publish @skelm/pi
-        if: inputs.dry-run != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cd packages/pi
-          echo "Publishing @skelm/pi@$(node -p "require('./package.json').version")"
-          npm publish --registry=https://npm.pkg.github.com/scottgl9 --access=public
-          cd ..
-
-      - name: Publish @skelm/gateway
-        if: inputs.dry-run != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cd packages/gateway
-          echo "Publishing @skelm/gateway@$(node -p "require('./package.json').version")"
-          npm publish --registry=https://npm.pkg.github.com/scottgl9 --access=public
-          cd ..
-
-      - name: Publish skelm
-        if: inputs.dry-run != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cd packages/skelm
-          echo "Publishing skelm@$(node -p "require('./package.json').version")"
-          npm publish --registry=https://npm.pkg.github.com/scottgl9 --access=public
-          cd ..
-
-      - name: Publish success summary
+      - name: Success summary
         if: inputs.dry-run != 'true'
         run: |
-          echo "✅ Successfully published all packages to GitHub Packages!"
-          echo ""
-          echo "Packages available at:"
-          echo "  https://npm.pkg.github.com/scottgl9/@skelm/core"
-          echo "  https://npm.pkg.github.com/scottgl9/@skelm/cli"
-          echo "  https://npm.pkg.github.com/scottgl9/@skelm/opencode"
-          echo "  https://npm.pkg.github.com/scottgl9/@skelm/pi"
-          echo "  https://npm.pkg.github.com/scottgl9/@skelm/gateway"
-          echo "  https://npm.pkg.github.com/scottgl9/skelm"
-          echo ""
-          echo "Version: ${{ steps.version.outputs.tag_version }}"
+          echo "Published version ${{ steps.version.outputs.tag_version }} to https://npm.pkg.github.com under @scottgl9/*"
