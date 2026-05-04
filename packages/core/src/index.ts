@@ -191,6 +191,25 @@ export { runPipeline, Runner, SchemaValidationError } from './runner.js'
 export type { SkelmSchema } from './schema.js'
 export { parseSkill, SkillParseError } from './skills.js'
 export type { Skill } from './skills.js'
+
+// Enforcement seams owned by the gateway in production
+export {
+  AutoApproveGate,
+  AutoDenyGate,
+  EnvSecretResolver,
+  MissingSecretError,
+  NoopAuditWriter,
+  PermissionResolver,
+} from './enforcement/index.js'
+export type {
+  ApprovalDecision,
+  ApprovalGate,
+  ApprovalRequest,
+  AuditEvent,
+  AuditWriter,
+  PermissionResolverOptions,
+  SecretResolver,
+} from './enforcement/index.js'
 export type {
   AgentStep,
   BranchStep,

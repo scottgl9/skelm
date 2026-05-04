@@ -1,6 +1,16 @@
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { DEFAULT_CONFIG, type SkelmConfig } from '@skelm/core'
+import {
+  type ApprovalGate,
+  type AuditWriter,
+  AutoApproveGate,
+  DEFAULT_CONFIG,
+  EnvSecretResolver,
+  NoopAuditWriter,
+  PermissionResolver,
+  type SecretResolver,
+  type SkelmConfig,
+} from '@skelm/core'
 import {
   AgentRegistry,
   McpServerRegistry,
@@ -27,6 +37,19 @@ export interface GatewayOptions {
   installSignalHandlers?: boolean
   /** Enable FS watching on the workflow / skill registries. Defaults to true. */
   watchRegistries?: boolean
+  /** Override the canonical audit writer; defaults to NoopAuditWriter (Phase 5 wires the chain). */
+  auditWriter?: AuditWriter
+  /** Override the canonical secret resolver; defaults to env-backed (Phase 5 wires the file driver). */
+  secretResolver?: SecretResolver
+  /** Override the canonical approval gate; defaults to auto-approve (Phase 6 wires the suspend gate). */
+  approvalGate?: ApprovalGate
+}
+
+export interface GatewayEnforcement {
+  permissionResolver: PermissionResolver
+  auditWriter: AuditWriter
+  secretResolver: SecretResolver
+  approvalGate: ApprovalGate
 }
 
 export interface GatewayRegistries {
@@ -55,6 +78,7 @@ export class Gateway {
   private readonly handlers: Map<NodeJS.Signals, () => void> = new Map()
   private config: SkelmConfig
   private registriesInternal: GatewayRegistries | null = null
+  private enforcementInternal: GatewayEnforcement | null = null
 
   constructor(private readonly options: GatewayOptions = {}) {
     this.stateDir = options.stateDir ?? join(homedir(), '.skelm')
@@ -84,6 +108,14 @@ export class Gateway {
     return this.registriesInternal
   }
 
+  /** Trust-boundary instances the gateway hands to Runners it constructs. */
+  get enforcement(): GatewayEnforcement {
+    if (this.enforcementInternal === null) {
+      throw new Error('gateway enforcement is not available — start() the gateway first')
+    }
+    return this.enforcementInternal
+  }
+
   async start(): Promise<void> {
     if (this.state !== 'stopped') {
       throw new Error(`cannot start gateway in state ${this.state}`)
@@ -98,6 +130,7 @@ export class Gateway {
         startedAt: this.lockfile.startedAt,
       }
       await writeDiscovery(this.discoveryPath, this.discovery)
+      this.enforcementInternal = this.buildEnforcement()
       this.registriesInternal = await this.buildRegistries()
       if (this.options.installSignalHandlers) this.attachSignals()
       this.state = 'running'
@@ -106,6 +139,7 @@ export class Gateway {
       this.lockfile = null
       this.discovery = null
       this.registriesInternal = null
+      this.enforcementInternal = null
       throw err
     }
   }
@@ -135,6 +169,7 @@ export class Gateway {
     }
     if (nextConfig !== undefined) {
       this.config = nextConfig
+      this.enforcementInternal = this.buildEnforcement()
     }
     if (this.registriesInternal !== null) {
       const r = this.registriesInternal
@@ -169,6 +204,21 @@ export class Gateway {
       this.lockfile = null
       this.discovery = null
       this.registriesInternal = null
+      this.enforcementInternal = null
+    }
+  }
+
+  private buildEnforcement(): GatewayEnforcement {
+    const defaults = this.config.defaults?.permissions
+    const profiles = this.config.defaults?.permissionProfiles ?? {}
+    return {
+      permissionResolver: new PermissionResolver({
+        ...(defaults !== undefined && { defaults }),
+        profiles,
+      }),
+      auditWriter: this.options.auditWriter ?? new NoopAuditWriter(),
+      secretResolver: this.options.secretResolver ?? new EnvSecretResolver(),
+      approvalGate: this.options.approvalGate ?? new AutoApproveGate(),
     }
   }
 
