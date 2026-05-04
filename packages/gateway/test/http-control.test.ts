@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { code, parallel, pipeline } from '@skelm/core'
 import { z } from 'zod'
-import { Gateway, type SuspendApprovalGate } from '../src/index.js'
+import { Gateway, InMemoryQueueDriver, type SuspendApprovalGate } from '../src/index.js'
 
 let stateDir: string
 
@@ -312,7 +312,7 @@ describe('Gateway HTTP /schedules', () => {
     }
   })
 
-  it('POST /schedules with kind=queue returns 501', async () => {
+  it('POST /schedules with kind=queue registers when the driver is known', async () => {
     const port = await pickFreePort()
     const gw = new Gateway({
       stateDir,
@@ -323,16 +323,31 @@ describe('Gateway HTTP /schedules', () => {
     })
     await gw.start()
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/schedules`, {
+      const driver = new InMemoryQueueDriver()
+      gw.managers.triggers.registerQueueDriver('memq', driver)
+
+      const ok = await fetch(`http://127.0.0.1:${port}/schedules`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           id: 's-queue',
           workflowId: 'wf',
-          trigger: { kind: 'queue', driver: 'bull', config: {} },
+          trigger: { kind: 'queue', driver: 'memq' },
         }),
       })
-      expect(res.status).toBe(501)
+      expect(ok.status).toBe(200)
+
+      // Unknown driver surfaces as 400 with the coordinator's lastError.
+      const fail = await fetch(`http://127.0.0.1:${port}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-q2',
+          workflowId: 'wf',
+          trigger: { kind: 'queue', driver: 'no-such-driver' },
+        }),
+      })
+      expect(fail.status).toBe(400)
     } finally {
       await gw.stop()
     }

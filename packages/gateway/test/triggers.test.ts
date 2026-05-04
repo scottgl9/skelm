@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TriggerCoordinator } from '../src/index.js'
+import { InMemoryQueueDriver, TriggerCoordinator } from '../src/index.js'
 
 describe('TriggerCoordinator', () => {
   it('manual fire dispatches through onFire and increments counter', async () => {
@@ -173,6 +173,31 @@ describe('TriggerCoordinator', () => {
     counter = 2
     await new Promise((r) => setTimeout(r, 30))
     expect(fires).toHaveLength(2)
+    await c.stop()
+  })
+
+  it("'queue' kind fires when the bound driver delivers a message", async () => {
+    const fires: string[] = []
+    const c = new TriggerCoordinator({ onFire: async (ctx) => void fires.push(ctx.workflowId) })
+    const driver = new InMemoryQueueDriver()
+    c.registerQueueDriver('memq', driver)
+    // overlap: 'queue' so a burst of messages all fire even if onFire is async.
+    c.register(
+      { kind: 'queue', id: 't-q', workflowId: 'wf-q', driver: 'memq' },
+      'queue',
+    )
+    driver.push()
+    driver.push()
+    driver.push()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(fires).toHaveLength(3)
+    await c.stop()
+  })
+
+  it("'queue' records lastError when the named driver is not registered", async () => {
+    const c = new TriggerCoordinator({ onFire: async () => {} })
+    const reg = c.register({ kind: 'queue', id: 't', workflowId: 'wf', driver: 'missing' })
+    expect(reg.lastError).toContain('queue driver not registered')
     await c.stop()
   })
 

@@ -60,7 +60,13 @@ export { CodingAgentManager } from './managers/coding-agent-manager.js'
 
 // Trigger coordinator + dispatcher
 export { TriggerCoordinator } from './triggers/coordinator.js'
-export type { TriggerCoordinatorOptions } from './triggers/coordinator.js'
+export type {
+  PollDedupeKeyFn,
+  PollSourceFn,
+  TriggerCoordinatorOptions,
+} from './triggers/coordinator.js'
+export { InMemoryQueueDriver } from './triggers/queue-driver.js'
+export type { QueueDriver } from './triggers/queue-driver.js'
 export { createTriggerDispatcher } from './triggers/dispatcher.js'
 export type { CreateDispatcherOptions, WorkflowLoader } from './triggers/dispatcher.js'
 export type {
