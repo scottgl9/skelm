@@ -44,12 +44,12 @@ export function createOpencodeBackendFromConfig(
     )
   }
 
-  return createOpencodeBackend({
-    apiKey: resolvedApiKey,
-    ...(config.apiUrl !== undefined && { apiUrl: config.apiUrl }),
-    ...(config.agent !== undefined && { agent: config.agent }),
-    ...(config.timeout !== undefined && { timeout: config.timeout }),
-    ...(config.maxRetries !== undefined && { maxRetries: config.maxRetries }),
-    ...(config.logLevel !== undefined && { logLevel: config.logLevel }),
-  })
+  const result: Record<string, unknown> = { apiKey: resolvedApiKey }
+  if (config.apiUrl !== undefined) result.apiUrl = config.apiUrl
+  if (config.agent !== undefined) result.agent = config.agent
+  if (config.timeout !== undefined) result.timeout = config.timeout
+  if (config.maxRetries !== undefined) result.maxRetries = config.maxRetries
+  if (config.logLevel !== undefined) result.logLevel = config.logLevel
+
+  return createOpencodeBackend(result as OpencodeBackendOptions)
 }

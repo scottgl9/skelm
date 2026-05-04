@@ -27,12 +27,13 @@ export interface PiBackendConfig {
  * Create a pi backend from CLI configuration
  */
 export function createPiBackendFromConfig(config: PiBackendConfig): ReturnType<typeof createPiBackend> {
-  return createPiBackend({
-    ...(config.command !== undefined && { command: config.command }),
-    ...(config.cwd !== undefined && { cwd: config.cwd }),
-    ...(config.args !== undefined && { args: config.args }),
-    ...(config.timeout !== undefined && { timeout: config.timeout }),
-    ...(config.maxRetries !== undefined && { maxRetries: config.maxRetries }),
-    ...(config.logLevel !== undefined && { logLevel: config.logLevel }),
-  })
+  const result: Record<string, unknown> = {}
+  if (config.command !== undefined) result.command = config.command
+  if (config.cwd !== undefined) result.cwd = config.cwd
+  if (config.args !== undefined) result.args = config.args
+  if (config.timeout !== undefined) result.timeout = config.timeout
+  if (config.maxRetries !== undefined) result.maxRetries = config.maxRetries
+  if (config.logLevel !== undefined) result.logLevel = config.logLevel
+  
+  return createPiBackend(result as PiBackendOptions)
 }
