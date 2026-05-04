@@ -61,10 +61,19 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
       const controller = new AbortController()
       runId = crypto.randomUUID()
       opts.gateway.registerRun(runId, controller)
+      const breakpoints = opts.gateway.breakpoints
       const handle = runner.start(
         pipeline as Parameters<Runner['start']>[0],
         { triggerId: ctx.triggerId, firedAt: ctx.firedAt },
-        { runId, signal: controller.signal },
+        {
+          runId,
+          signal: controller.signal,
+          beforeStep: async (info) => {
+            if (breakpoints.has(info.stepId)) {
+              await breakpoints.pause({ runId: info.runId, stepId: info.stepId, kind: info.kind })
+            }
+          },
+        },
       )
       await handle.wait()
     } catch (err) {
