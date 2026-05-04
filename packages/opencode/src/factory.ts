@@ -28,7 +28,7 @@ export interface OpencodeBackendConfig {
  * Create an opencode backend from CLI configuration
  */
 export function createOpencodeBackendFromConfig(
-  config: OpencodeBackendConfig
+  config: OpencodeBackendConfig,
 ): ReturnType<typeof createOpencodeBackend> {
   const directApiKey = typeof config.apiKey === 'string' ? config.apiKey : undefined
   const secretApiKey =
@@ -40,7 +40,7 @@ export function createOpencodeBackendFromConfig(
 
   if (!resolvedApiKey) {
     throw new Error(
-      'Opencode API key not configured. Set opencode.apiKey in config or OPENCODE_API_KEY env var.'
+      'Opencode API key not configured. Set opencode.apiKey in config or OPENCODE_API_KEY env var.',
     )
   }
 

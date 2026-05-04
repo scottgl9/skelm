@@ -3,7 +3,7 @@ import type { GitHubConfig, GitHubWebhookEvent, GitHubIssueTrigger } from './typ
 
 /**
  * GitHub integration for skelm pipelines
- * 
+ *
  * Supports:
  * - Issue/PR triggers
  * - Webhook event handling
@@ -28,7 +28,7 @@ export class GitHubIntegration extends IntegrationBase {
 
   protected async validateCredentials(): Promise<void> {
     const { token, ownerId, repoName } = this.config.credentials
-    
+
     if (!token || !ownerId || !repoName) {
       throw new Error('GitHub credentials missing: token, ownerId, and repoName required')
     }
@@ -36,7 +36,11 @@ export class GitHubIntegration extends IntegrationBase {
     // In production, validate the token with GitHub API
     // For now, we just check it exists and has reasonable format
     const tokenStr = String(token)
-    if (!tokenStr.startsWith('ghp_') && !tokenStr.startsWith('gho_') && !tokenStr.startsWith('github_')) {
+    if (
+      !tokenStr.startsWith('ghp_') &&
+      !tokenStr.startsWith('gho_') &&
+      !tokenStr.startsWith('github_')
+    ) {
       // Warning only - might be a fine-grained token
       console.warn('GitHub token does not match expected patterns')
     }
@@ -125,11 +129,14 @@ export class GitHubIntegration extends IntegrationBase {
   /**
    * Send notification to GitHub (issue comment, PR comment, etc.)
    */
-  async sendNotification(message: string, options?: {
-    issueNumber?: number
-    prNumber?: number
-    commentOn?: 'issue' | 'pr'
-  }): Promise<void> {
+  async sendNotification(
+    message: string,
+    options?: {
+      issueNumber?: number
+      prNumber?: number
+      commentOn?: 'issue' | 'pr'
+    },
+  ): Promise<void> {
     // In production, use GitHub API to post comments
     console.log(`GitHub notification: ${message}`, options)
   }

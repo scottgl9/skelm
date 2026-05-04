@@ -1,6 +1,6 @@
 /**
  * @skelm/integrations - Third-party integration abstractions
- * 
+ *
  * Provides typed connectors for GitHub, Slack, Jira, IMAP, Telegram, etc.
  */
 

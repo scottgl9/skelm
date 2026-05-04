@@ -4,37 +4,37 @@
 export interface OpencodeBackendOptions {
   /** Backend id. Defaults to 'opencode' when only one opencode backend is registered. */
   id?: string
-  
+
   /** Human-readable label for diagnostics. */
   label?: string
-  
+
   /** Opencode API key (from OPENCODE_API_KEY env var if not specified) */
   apiKey?: string
-  
+
   /** Opencode API URL override (for self-hosted instances) */
   apiUrl?: string
-  
+
   /** Default agent to use (build, plan, or custom agent ID) */
   agent?: string
-  
+
   /** Permission defaults (can be overridden per pipeline step) */
   permissions?: OpencodePermissionConfig
-  
+
   /** Model override for this backend */
   model?: string
-  
+
   /** Temperature for responses */
   temperature?: number
-  
+
   /** Maximum steps before forcing text response */
   maxSteps?: number
-  
+
   /** Request timeout in milliseconds */
   timeout?: number
-  
+
   /** Maximum retry attempts */
   maxRetries?: number
-  
+
   /** Log level */
   logLevel?: 'debug' | 'info' | 'warn' | 'error' | 'off'
 }

@@ -12,12 +12,7 @@
   "bugs": {
     "url": "https://github.com/scottgl9/skelm/issues"
   },
-  "keywords": [
-    "skelm",
-    "opencode",
-    "agent",
-    "backend"
-  ],
+  "keywords": ["skelm", "opencode", "agent", "backend"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

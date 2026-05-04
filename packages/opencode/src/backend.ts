@@ -17,7 +17,7 @@ import type { OpencodeBackendOptions } from './types.js'
 
 /**
  * SkelmBackend implementation for opencode.ai with full permission enforcement
- * 
+ *
  * This backend enforces permissions at the skelm layer BEFORE forwarding
  * to opencode, ensuring we maintain complete control over:
  * - Command line execution (bash, executables)
@@ -44,16 +44,15 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
     async run(request: AgentRequest, context: BackendContext): Promise<AgentResponse> {
       // Validate permissions at skelm layer BEFORE forwarding to opencode
       const policy = context.permissions ?? request.permissions ?? createEmptyPolicy()
-      
-      const permissionResult = validatePermissions(
-        policy,
-        {
-          // We don't have direct access to requested tools in AgentRequest
-          // This would be determined during tool execution
-          executables: [],
-          ...(request.mcpServers !== undefined && { mcpServers: request.mcpServers.map(m => m.id) }),
-        }
-      )
+
+      const permissionResult = validatePermissions(policy, {
+        // We don't have direct access to requested tools in AgentRequest
+        // This would be determined during tool execution
+        executables: [],
+        ...(request.mcpServers !== undefined && {
+          mcpServers: request.mcpServers.map((m) => m.id),
+        }),
+      })
 
       if (!permissionResult.allowed) {
         // Log audit entry for denied permissions
@@ -61,16 +60,14 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
           'unknown', // runId not available in BackendContext
           'unknown', // stepId not available in AgentRequest
           policy,
-          permissionResult
+          permissionResult,
         )
-        
+
         // In production, this would be written to the audit log
         // For now, we log to console
         console.warn('Permission denied:', JSON.stringify(auditEntry, null, 2))
 
-        throw new Error(
-          `Permission denied: ${permissionResult.denied.join(', ')}`
-        )
+        throw new Error(`Permission denied: ${permissionResult.denied.join(', ')}`)
       }
 
       // Map skelm permissions to opencode permission config
@@ -95,19 +92,13 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
         // Map opencode SDK errors to skelm backend errors
         if (error instanceof Error) {
           if (error.message.includes('Authentication')) {
-            throw new BackendAuthenticationError(
-              `Opencode authentication failed: ${error.message}`
-            )
+            throw new BackendAuthenticationError(`Opencode authentication failed: ${error.message}`)
           }
           if (error.message.includes('Rate limit')) {
-            throw new BackendRateLimitError(
-              `Opencode rate limit exceeded: ${error.message}`
-            )
+            throw new BackendRateLimitError(`Opencode rate limit exceeded: ${error.message}`)
           }
           if (error.message.includes('Timeout')) {
-            throw new BackendTimeoutError(
-              `Opencode request timeout: ${error.message}`
-            )
+            throw new BackendTimeoutError(`Opencode request timeout: ${error.message}`)
           }
         }
         throw error
@@ -171,7 +162,7 @@ export class BackendTimeoutError extends Error {
 
 /**
  * Create an opencode backend with ACP compatibility mode
- * 
+ *
  * This runs opencode as a subprocess via ACP instead of using the SDK directly.
  * Useful for testing or when API access is restricted.
  */
@@ -207,7 +198,7 @@ export function createOpencodeAcpBackend(options: {
       // This is a placeholder - full ACP implementation would use the AcpClient
 
       throw new Error(
-        'ACP mode not yet implemented. Use SDK mode with createOpencodeBackend() instead.'
+        'ACP mode not yet implemented. Use SDK mode with createOpencodeBackend() instead.',
       )
     },
   }

@@ -1,4 +1,13 @@
-import type { SchedulerConfig, Trigger, TriggerRegistration, TriggerContext, CronTrigger, IntervalTrigger, PollTrigger, QueueTrigger } from './types.js'
+import type {
+  SchedulerConfig,
+  Trigger,
+  TriggerRegistration,
+  TriggerContext,
+  CronTrigger,
+  IntervalTrigger,
+  PollTrigger,
+  QueueTrigger,
+} from './types.js'
 
 /**
  * Scheduler manages long-running triggers for pipelines.
@@ -17,10 +26,13 @@ export class Scheduler {
   private readonly runStore: { putRun: (run: unknown) => Promise<void> }
   private readonly pipelineLoader: (pipelineId: string) => Promise<unknown>
 
-  constructor(config: SchedulerConfig, deps: {
-    runStore: { putRun: (run: unknown) => Promise<void> }
-    pipelineLoader: (pipelineId: string) => Promise<unknown>
-  }) {
+  constructor(
+    config: SchedulerConfig,
+    deps: {
+      runStore: { putRun: (run: unknown) => Promise<void> }
+      pipelineLoader: (pipelineId: string) => Promise<unknown>
+    },
+  ) {
     const cfg: SchedulerConfig = {
       webhookPort: config.webhookPort ?? 3001,
       webhookHost: config.webhookHost ?? '127.0.0.1',
@@ -140,7 +152,9 @@ export class Scheduler {
   async startWebhookServer(): Promise<void> {
     // Webhook server implementation would go here
     // Uses h3 or similar for HTTP handling
-    console.log(`Webhook server would start on ${this.config.webhookHost}:${this.config.webhookPort}`)
+    console.log(
+      `Webhook server would start on ${this.config.webhookHost}:${this.config.webhookPort}`,
+    )
   }
 
   /** Stop the webhook server */
@@ -203,7 +217,7 @@ export class Scheduler {
     // Simple cron implementation using setInterval
     // In production, use 'cron' package for proper cron expression parsing
     const intervalMs = this.parseCronToInterval(trigger.schedule)
-    
+
     const job = setInterval(async () => {
       if (trigger.enabled && this.triggers.get(trigger.id)?.status === 'active') {
         await this.executeTrigger(trigger)
@@ -362,7 +376,7 @@ export class Scheduler {
     if (!cron || typeof cron !== 'string') {
       return 5 * 60 * 1000 // Default to 5 minutes
     }
-    
+
     const parts = cron.split(' ')
     if (parts.length !== 5) {
       // Default to 5 minutes if invalid
@@ -370,7 +384,7 @@ export class Scheduler {
     }
 
     const [minute, hour, dayOfMonth, month, dayOfWeek] = parts
-    
+
     // Simple heuristic for common patterns
     if (minute === '*') return 60 * 1000 // Every minute
     if (hour === '*') return 60 * 60 * 1000 // Every hour

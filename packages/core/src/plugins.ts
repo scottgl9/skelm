@@ -1,6 +1,6 @@
 /**
  * Plugin system for skelm
- * 
+ *
  * Supports two plugin types:
  * 1. Model plugins - LLM endpoints (openai, anthropic, vllm, sglang, ollama, etc.)
  * 2. Agent plugins - coding agent SDKs (acp, opencode, pi, github-copilot, etc.)
@@ -13,7 +13,16 @@ import type { SkelmConfig } from './config.js'
 /**
  * Plugin lifecycle stages
  */
-export type PluginLifecycle = 'loading' | 'loaded' | 'initializing' | 'initialized' | 'starting' | 'active' | 'stopping' | 'stopped' | 'error'
+export type PluginLifecycle =
+  | 'loading'
+  | 'loaded'
+  | 'initializing'
+  | 'initialized'
+  | 'starting'
+  | 'active'
+  | 'stopping'
+  | 'stopped'
+  | 'error'
 
 /**
  * Base plugin interface - all plugins must implement this
@@ -21,31 +30,31 @@ export type PluginLifecycle = 'loading' | 'loaded' | 'initializing' | 'initializ
 export interface SkelmPlugin {
   /** Unique plugin identifier */
   readonly id: string
-  
+
   /** Human-readable name */
   readonly name: string
-  
+
   /** Plugin version */
   readonly version: string
-  
+
   /** Current lifecycle state */
   readonly state: PluginLifecycle
-  
+
   /** Plugin type */
   readonly type: PluginType
-  
+
   /** Initialize the plugin with configuration */
   initialize(config: PluginConfig): Promise<void>
-  
+
   /** Start the plugin (after initialization) */
   start(): Promise<void>
-  
+
   /** Stop the plugin gracefully */
   stop(): Promise<void>
-  
+
   /** Check if plugin is healthy */
   healthCheck(): Promise<PluginHealthStatus>
-  
+
   /** Get plugin metadata */
   getMetadata(): PluginMetadata
 }
@@ -60,7 +69,7 @@ export type PluginType = 'model' | 'agent' | 'workflow' | 'utility'
  */
 export interface ModelPlugin extends SkelmPlugin {
   readonly type: 'model'
-  
+
   /** Get the model provider instance */
   getModelProvider(): import('./model-provider.js').ModelProvider
 }
@@ -70,7 +79,7 @@ export interface ModelPlugin extends SkelmPlugin {
  */
 export interface AgentPlugin extends SkelmPlugin {
   readonly type: 'agent'
-  
+
   /** Get the agent provider instance */
   getAgentProvider(): import('./agent-provider.js').AgentProvider
 }
@@ -80,13 +89,13 @@ export interface AgentPlugin extends SkelmPlugin {
  */
 export interface WorkflowPlugin extends SkelmPlugin {
   readonly type: 'workflow'
-  
+
   /** Get plugin-specific services/clients */
   getService<T extends string>(serviceName: T): unknown
-  
+
   /** Register event handlers */
   on(event: string, handler: (...args: unknown[]) => void): void
-  
+
   /** Unregister event handlers */
   off(event: string, handler: (...args: unknown[]) => void): void
 }
@@ -97,7 +106,7 @@ export interface WorkflowPlugin extends SkelmPlugin {
 export interface PluginConfig {
   /** Plugin-specific settings */
   [key: string]: unknown
-  
+
   /** Optional secret references */
   secrets?: Record<string, { secret: string }>
 }
@@ -345,7 +354,7 @@ export class PluginLoader {
   async loadFromPackage(packageName: string): Promise<SkelmPlugin> {
     try {
       const module = await import(packageName)
-      
+
       // Look for default export that implements SkelmPlugin
       if (module.default && typeof module.default === 'object') {
         const plugin = module.default as unknown
@@ -371,7 +380,9 @@ export class PluginLoader {
 
       throw new Error(`Package ${packageName} does not export a valid SkelmPlugin`)
     } catch (error) {
-      throw new Error(`Failed to load plugin from ${packageName}: ${error instanceof Error ? error.message : error}`)
+      throw new Error(
+        `Failed to load plugin from ${packageName}: ${error instanceof Error ? error.message : error}`,
+      )
     }
   }
 

@@ -1,6 +1,6 @@
 /**
  * @skelm/opencode - Opencode.ai backend for skelm
- * 
+ *
  * Full integration with opencode.ai coding agent via the official SDK,
  * with granular permission enforcement and multi-agent support.
  */

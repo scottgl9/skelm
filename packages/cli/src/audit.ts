@@ -39,7 +39,7 @@ const DEFAULT_SECRETS_DIR = resolve(homedir(), '.skelm', 'secrets')
 
 export async function auditCommand(args: AuditQueryArgs, io: MainIO): Promise<MainResult> {
   const dbPath = process.env.SKELM_DB_PATH ?? DEFAULT_DB_PATH
-  
+
   try {
     await fs.access(dbPath)
   } catch {
@@ -59,7 +59,7 @@ export async function auditCommand(args: AuditQueryArgs, io: MainIO): Promise<Ma
 
   try {
     const entries = queryAudit(db, args)
-    
+
     if (args.json) {
       io.stdout.write(JSON.stringify(entries, null, 2) + '\n')
     } else {
@@ -69,7 +69,7 @@ export async function auditCommand(args: AuditQueryArgs, io: MainIO): Promise<Ma
         for (const entry of entries) {
           const runIdStr = entry.run_id ? `run:${entry.run_id.slice(0, 8)}... ` : ''
           io.stdout.write(
-            `[${new Date(entry.at).toISOString()}] ${runIdStr}${entry.actor} ${entry.action}\n`
+            `[${new Date(entry.at).toISOString()}] ${runIdStr}${entry.actor} ${entry.action}\n`,
           )
           if (entry.data_json) {
             io.stdout.write(`  ${entry.data_json}\n`)
@@ -77,7 +77,7 @@ export async function auditCommand(args: AuditQueryArgs, io: MainIO): Promise<Ma
         }
       }
     }
-    
+
     return { exitCode: EXIT.OK }
   } catch (err) {
     io.stderr.write(`error: ${(err as Error).message}\n`)
@@ -98,7 +98,7 @@ interface AuditRow {
 function queryAudit(db: Database, args: AuditQueryArgs): AuditRow[] {
   const clauses: string[] = []
   const params: unknown[] = []
-  
+
   if (args.runId) {
     clauses.push('run_id = ?')
     params.push(args.runId)
@@ -125,27 +125,29 @@ function queryAudit(db: Database, args: AuditQueryArgs): AuditRow[] {
       params.push(untilTs)
     }
   }
-  
+
   const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''
   const limit = args.limit !== undefined ? `LIMIT ${args.limit}` : ''
-  
+
   const rows = db
-    .prepare(`SELECT run_id, actor, action, data_json, at FROM audit ${where} ORDER BY at DESC ${limit}`)
+    .prepare(
+      `SELECT run_id, actor, action, data_json, at FROM audit ${where} ORDER BY at DESC ${limit}`,
+    )
     .all(...params) as AuditRow[]
-  
+
   return rows
 }
 
 export async function secretsCommand(args: SecretsArgs, io: MainIO): Promise<MainResult> {
   const secretsDir = process.env.SKELM_SECRETS_DIR ?? DEFAULT_SECRETS_DIR
-  
+
   switch (args.command) {
     case 'list': {
       try {
         await fs.mkdir(secretsDir, { recursive: true })
         const files = await fs.readdir(secretsDir)
-        const secrets = files.filter(f => f.endsWith('.json')).map(f => f.slice(0, -5))
-        
+        const secrets = files.filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5))
+
         if (args.json) {
           io.stdout.write(JSON.stringify(secrets, null, 2) + '\n')
         } else {
@@ -164,18 +166,18 @@ export async function secretsCommand(args: SecretsArgs, io: MainIO): Promise<Mai
         return { exitCode: EXIT.CLI_ERROR }
       }
     }
-    
+
     case 'get': {
       if (!args.name) {
         io.stderr.write('error: secrets get requires a name\n')
         return { exitCode: EXIT.CLI_ERROR }
       }
-      
+
       const secretPath = resolve(secretsDir, `${args.name}.json`)
       try {
         const content = await fs.readFile(secretPath, 'utf-8')
         const data = JSON.parse(content)
-        
+
         if (args.json) {
           io.stdout.write(JSON.stringify(data, null, 2) + '\n')
         } else {
@@ -195,7 +197,7 @@ export async function secretsCommand(args: SecretsArgs, io: MainIO): Promise<Mai
         return { exitCode: EXIT.CLI_ERROR }
       }
     }
-    
+
     case 'set': {
       if (!args.name) {
         io.stderr.write('error: secrets set requires a name\n')
@@ -205,7 +207,7 @@ export async function secretsCommand(args: SecretsArgs, io: MainIO): Promise<Mai
         io.stderr.write('error: secrets set requires a value\n')
         return { exitCode: EXIT.CLI_ERROR }
       }
-      
+
       const secretPath = resolve(secretsDir, `${args.name}.json`)
       try {
         await fs.mkdir(dirname(secretPath), { recursive: true })
@@ -216,7 +218,7 @@ export async function secretsCommand(args: SecretsArgs, io: MainIO): Promise<Mai
         return { exitCode: EXIT.CLI_ERROR }
       }
     }
-    
+
     default: {
       const exhaustive: never = args.command
       io.stderr.write(`internal: unknown command ${exhaustive}\n`)

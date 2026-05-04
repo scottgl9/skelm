@@ -1,6 +1,6 @@
 /**
  * Model Provider abstraction for LLM endpoints
- * 
+ *
  * Supports: OpenAI, Anthropic, vllm, sglang, ollama, gemini, etc.
  * Used for direct LLM() calls in workflows
  */
@@ -14,28 +14,28 @@ import type { RunMetadata } from './types.js'
 export interface ModelProviderConfig {
   /** Provider identifier (e.g., 'openai', 'anthropic', 'ollama') */
   provider: string
-  
+
   /** Model name (e.g., 'gpt-4o', 'claude-3.5-sonnet', 'llama3') */
   model: string
-  
+
   /** API endpoint (optional, for custom endpoints) */
   endpoint?: string
-  
+
   /** API key or token */
   apiKey?: string
-  
+
   /** Temperature for generation (0-2) */
   temperature?: number
-  
+
   /** Maximum tokens to generate */
   maxTokens?: number
-  
+
   /** Top P sampling */
   topP?: number
-  
+
   /** System prompt */
   systemPrompt?: string
-  
+
   /** Provider-specific options */
   [key: string]: unknown
 }
@@ -55,20 +55,20 @@ export interface ChatMessage {
 export interface LlmCompletion {
   /** Generated text */
   content: string
-  
+
   /** Model used */
   model: string
-  
+
   /** Token usage */
   usage?: {
     promptTokens: number
     completionTokens: number
     totalTokens: number
   }
-  
+
   /** Finish reason */
   finishReason?: string
-  
+
   /** Raw response (for debugging) */
   raw?: unknown
 }
@@ -79,31 +79,28 @@ export interface LlmCompletion {
 export interface ModelProvider {
   /** Provider identifier */
   readonly id: string
-  
+
   /** Provider name */
   readonly name: string
-  
+
   /** Initialize with configuration */
   initialize(config: ModelProviderConfig): Promise<void>
-  
+
   /** Generate completion */
-  complete(
-    messages: ChatMessage[],
-    options?: Partial<ModelProviderConfig>
-  ): Promise<LlmCompletion>
-  
+  complete(messages: ChatMessage[], options?: Partial<ModelProviderConfig>): Promise<LlmCompletion>
+
   /** Generate completion with streaming */
   completeStream?(
     messages: ChatMessage[],
-    options?: Partial<ModelProviderConfig>
+    options?: Partial<ModelProviderConfig>,
   ): AsyncIterable<string>
-  
+
   /** Check health */
   healthCheck(): Promise<{ healthy: boolean; status: string }>
-  
+
   /** List available models */
   listModels?(): Promise<string[]>
-  
+
   /** Get current configuration */
   getConfig(): ModelProviderConfig
 }
@@ -114,37 +111,37 @@ export interface ModelProvider {
 export abstract class ModelProviderBase implements ModelProvider {
   abstract readonly id: string
   abstract readonly name: string
-  
+
   protected config: ModelProviderConfig | null = null
   protected initialized = false
-  
+
   async initialize(config: ModelProviderConfig): Promise<void> {
     this.config = config
     this.initialized = true
     await this.doInitialize(config)
   }
-  
+
   abstract doInitialize(config: ModelProviderConfig): Promise<void>
-  
+
   async complete(
     messages: ChatMessage[],
-    options?: Partial<ModelProviderConfig>
+    options?: Partial<ModelProviderConfig>,
   ): Promise<LlmCompletion> {
     if (!this.initialized) {
       throw new Error(`Model provider not initialized: ${this.id}`)
     }
     return this.doComplete(messages, options)
   }
-  
+
   abstract doComplete(
     messages: ChatMessage[],
-    options?: Partial<ModelProviderConfig>
+    options?: Partial<ModelProviderConfig>,
   ): Promise<LlmCompletion>
-  
+
   async healthCheck(): Promise<{ healthy: boolean; status: string }> {
     return { healthy: this.initialized, status: this.initialized ? 'ready' : 'not-initialized' }
   }
-  
+
   getConfig(): ModelProviderConfig {
     if (!this.config) {
       throw new Error(`Model provider not initialized: ${this.id}`)
@@ -246,7 +243,7 @@ export class ModelRegistry {
 export async function executeLlmStep(
   step: LlmStep,
   ctx: Context,
-  registry: ModelRegistry
+  registry: ModelRegistry,
 ): Promise<LlmCompletion> {
   const providerId = step.backend || (registry.getDefault()?.id as string | undefined)
   if (!providerId) {
@@ -259,12 +256,12 @@ export async function executeLlmStep(
   }
 
   const messages: ChatMessage[] = []
-  
+
   if (step.system) {
     const systemPrompt = typeof step.system === 'function' ? step.system(ctx) : step.system
     messages.push({ role: 'system', content: systemPrompt })
   }
-  
+
   // Add current prompt
   const prompt = typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt
   messages.push({ role: 'user', content: prompt })
@@ -272,7 +269,7 @@ export async function executeLlmStep(
   const options: Partial<ModelProviderConfig> = {}
   if (step.temperature !== undefined) options.temperature = step.temperature
   if (step.maxTokens !== undefined) options.maxTokens = step.maxTokens
-  
+
   return provider.complete(messages, options)
 }
 

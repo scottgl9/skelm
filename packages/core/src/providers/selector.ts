@@ -1,6 +1,6 @@
 /**
  * Provider Selector
- * 
+ *
  * Auto-selects providers based on task requirements, capabilities,
  * cost, latency, and health status.
  */
@@ -52,7 +52,7 @@ export interface ProviderSelection {
  */
 export function selectProviderForTask(
   requirements: TaskRequirements,
-  registry: ProviderCapabilityRegistry = globalCapabilityRegistry
+  registry: ProviderCapabilityRegistry = globalCapabilityRegistry,
 ): ProviderSelection {
   // Build query with only defined values
   const query: ProviderQuery = {}
@@ -91,7 +91,7 @@ export function selectProviderForTask(
   if (!selectedId) {
     throw new ProviderSelectionError('No candidates available after sorting')
   }
-  
+
   const registration = registry.getProvider(selectedId)
   if (!registration) {
     throw new ProviderSelectionError(`Provider ${selectedId} not found in registry`)
@@ -114,11 +114,11 @@ export function selectProviderForTask(
     reason,
     alternatives,
   }
-  
+
   if (modelId !== undefined) {
     result.modelId = modelId
   }
-  
+
   return result
 }
 
@@ -127,7 +127,7 @@ export function selectProviderForTask(
  */
 function selectBestEffortProvider(
   requirements: TaskRequirements,
-  registry: ProviderCapabilityRegistry
+  registry: ProviderCapabilityRegistry,
 ): ProviderSelection {
   const allProviders = registry.getHealthyProviders()
 
@@ -138,11 +138,11 @@ function selectBestEffortProvider(
   // Sort by general capability score
   const sorted = sortCandidates(allProviders, requirements, registry)
   const selectedId = sorted[0]
-  
+
   if (!selectedId) {
     throw new ProviderSelectionError('No providers available after sorting')
   }
-  
+
   const registration = registry.getProvider(selectedId)
   if (!registration) {
     throw new ProviderSelectionError(`Provider ${selectedId} not found in registry`)
@@ -153,12 +153,12 @@ function selectBestEffortProvider(
     reason: 'Best effort selection - no exact match found',
     alternatives: sorted.slice(1, 4),
   }
-  
+
   const firstModel = registration.models[0]
   if (firstModel !== undefined) {
     result.modelId = firstModel.id
   }
-  
+
   return result
 }
 
@@ -168,7 +168,7 @@ function selectBestEffortProvider(
 function sortCandidates(
   candidates: string[],
   requirements: TaskRequirements,
-  registry: ProviderCapabilityRegistry
+  registry: ProviderCapabilityRegistry,
 ): string[] {
   return candidates.sort((a, b) => {
     const regA = registry.getProvider(a)!
@@ -214,7 +214,7 @@ function sortCandidates(
 function determineSelectionReason(
   providerId: string,
   requirements: TaskRequirements,
-  registration: ProviderRegistration
+  registration: ProviderRegistration,
 ): string {
   const reasons: string[] = []
 
@@ -243,10 +243,7 @@ function determineSelectionReason(
 /**
  * Select the best model from a provider's models
  */
-function selectBestModel(
-  models: ProviderModel[],
-  requirements: TaskRequirements
-): string {
+function selectBestModel(models: ProviderModel[], requirements: TaskRequirements): string {
   if (models.length === 0) {
     throw new ProviderSelectionError('No models available for provider')
   }
@@ -255,8 +252,8 @@ function selectBestModel(
   let candidates = [...models]
 
   if (requirements.minContextWindow) {
-    candidates = candidates.filter(m =>
-      m.contextWindow === undefined || m.contextWindow >= requirements.minContextWindow!
+    candidates = candidates.filter(
+      (m) => m.contextWindow === undefined || m.contextWindow >= requirements.minContextWindow!,
     )
   }
 
@@ -320,8 +317,6 @@ export class ProviderSelectionError extends Error {
 /**
  * Convenience function for selecting from global registry
  */
-export function selectProvider(
-  requirements: TaskRequirements
-): ProviderSelection {
+export function selectProvider(requirements: TaskRequirements): ProviderSelection {
   return selectProviderForTask(requirements, globalCapabilityRegistry)
 }

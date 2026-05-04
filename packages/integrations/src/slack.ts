@@ -3,7 +3,7 @@ import type { SlackConfig, SlackWebhookEvent } from './types.js'
 
 /**
  * Slack integration for skelm pipelines
- * 
+ *
  * Supports:
  * - Slash commands
  * - Block actions (interactive messages)
@@ -59,7 +59,9 @@ export class SlackIntegration extends IntegrationBase {
 
     // In production, register event subscription with Slack
     // This would use the Slack API to enable event subscriptions
-    console.log(`Slack event subscription would be configured for events: ${webhook.events.join(', ')}`)
+    console.log(
+      `Slack event subscription would be configured for events: ${webhook.events.join(', ')}`,
+    )
   }
 
   protected async cleanupWebhook(): Promise<void> {
@@ -74,7 +76,7 @@ export class SlackIntegration extends IntegrationBase {
     signingSecret: string,
     timestamp: string,
     body: string,
-    signature: string
+    signature: string,
   ): boolean {
     // In production, use crypto.createHmac('sha256', signingSecret)
     // For now, just return true (signature verification would happen in the webhook handler)
@@ -101,7 +103,7 @@ export class SlackIntegration extends IntegrationBase {
     // Handle event callbacks
     if (event.type === 'event_callback') {
       const slackEvent = event.event as { type: string; user?: string; text?: string }
-      
+
       // Handle message events
       if (slackEvent.type === 'message' && slackEvent.text) {
         return {
@@ -148,12 +150,15 @@ export class SlackIntegration extends IntegrationBase {
   /**
    * Send message to Slack channel
    */
-  async sendNotification(message: string, options?: {
-    channelId?: string
-    threadTs?: string
-    ephemeral?: boolean
-    userId?: string
-  }): Promise<void> {
+  async sendNotification(
+    message: string,
+    options?: {
+      channelId?: string
+      threadTs?: string
+      ephemeral?: boolean
+      userId?: string
+    },
+  ): Promise<void> {
     const channelId = options?.channelId || this.config.credentials.channelId
     if (!channelId && !options?.userId) {
       throw new Error('No channel or user specified for Slack notification')
@@ -174,10 +179,7 @@ export class SlackIntegration extends IntegrationBase {
   /**
    * Respond to a Slack action (with block kit)
    */
-  async respondWithBlocks(
-    triggerId: string,
-    blocks: unknown[]
-  ): Promise<void> {
+  async respondWithBlocks(triggerId: string, blocks: unknown[]): Promise<void> {
     // In production, call slack.chat.postMessage with trigger_id
     console.log(`Slack blocks response for trigger ${triggerId}`)
   }

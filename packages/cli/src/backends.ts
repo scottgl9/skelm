@@ -140,7 +140,7 @@ function createBackend(backendId: string, config: SkelmConfig) {
       const timeout = readNumber(entry.timeout)
       const maxRetries = readNumber(entry.maxRetries)
       const logLevel = readString(entry.logLevel) as 'debug' | 'info' | 'warn' | 'error' | undefined
-      
+
       return createOpencodeBackendFromConfig({
         ...(apiKey !== undefined && { apiKey }),
         ...(apiUrl !== undefined && { apiUrl }),
@@ -157,7 +157,7 @@ function createBackend(backendId: string, config: SkelmConfig) {
       const timeout = readNumber(entry.timeout)
       const maxRetries = readNumber(entry.maxRetries)
       const logLevel = readString(entry.logLevel) as 'debug' | 'info' | 'warn' | 'error' | undefined
-      
+
       return createPiBackendFromConfig({
         ...(cmd !== undefined && { command: cmd }),
         ...(cwd !== undefined && { cwd }),

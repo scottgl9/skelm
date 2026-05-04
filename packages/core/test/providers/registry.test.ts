@@ -252,7 +252,7 @@ describe('ProviderCapabilityRegistry', () => {
 
       const providers = registry.listProviders()
       expect(providers.length).toBe(2)
-      expect(providers.map(p => p.id)).toContain('provider-1', 'provider-2')
+      expect(providers.map((p) => p.id)).toContain('provider-1', 'provider-2')
     })
   })
 
@@ -480,7 +480,7 @@ describe('ProviderCapabilityRegistry', () => {
       }
 
       registry.registerProvider('test-provider', 'Test Provider', capabilities, [])
-      
+
       const newHealth = { healthy: false, status: 'error', errors: ['Test error'] }
       registry.updateHealth('test-provider', newHealth)
 

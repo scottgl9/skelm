@@ -102,7 +102,10 @@ export function createWebhookTrigger(
   id: string,
   pipelineId: string,
   path: string,
-  options: TriggerOptions & { secret?: string; transformPayload?: (payload: unknown) => unknown } = {},
+  options: TriggerOptions & {
+    secret?: string
+    transformPayload?: (payload: unknown) => unknown
+  } = {},
 ): WebhookTrigger {
   const result: WebhookTrigger = {
     id,

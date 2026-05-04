@@ -4,13 +4,17 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { ProviderCapabilityRegistry } from '../../src/providers/registry.js'
-import { selectProviderForTask, selectProvider, ProviderSelectionError } from '../../src/providers/selector.js'
+import {
+  selectProviderForTask,
+  selectProvider,
+  ProviderSelectionError,
+} from '../../src/providers/selector.js'
 import type { TaskRequirements, ProviderSelection } from '../../src/providers/selector.js'
 import type { ProviderCapabilities } from '../../src/providers/base.js'
 
 function createTestRegistry(): ProviderCapabilityRegistry {
   const registry = new ProviderCapabilityRegistry()
-  
+
   const capabilities: ProviderCapabilities = {
     prompt: true,
     streaming: true,
@@ -42,7 +46,12 @@ function createTestRegistry(): ProviderCapabilityRegistry {
   ])
 
   registry.registerProvider('provider-2', 'Provider 2', capabilities, [
-    { id: 'model-3', name: 'Model 3', provider: 'provider-2', capabilities: ['file-ops', 'reasoning'] },
+    {
+      id: 'model-3',
+      name: 'Model 3',
+      provider: 'provider-2',
+      capabilities: ['file-ops', 'reasoning'],
+    },
   ])
 
   return registry
@@ -123,7 +132,7 @@ describe('ProviderSelector', () => {
 
     it('should exclude unhealthy providers', () => {
       registry.updateHealth('provider-1', { healthy: false, status: 'unhealthy' })
-      
+
       const requirements: TaskRequirements = {}
       const result = selectProviderForTask(requirements, registry)
 
@@ -212,9 +221,19 @@ describe('ProviderSelector', () => {
       testRegistry.registerProvider('cheap-provider', 'Cheap Provider', cheapCapabilities, [
         { id: 'cheap-model', name: 'Cheap Model', provider: 'cheap', capabilities: [] },
       ])
-      testRegistry.registerProvider('expensive-provider', 'Expensive Provider', expensiveCapabilities, [
-        { id: 'expensive-model', name: 'Expensive Model', provider: 'expensive', capabilities: [] },
-      ])
+      testRegistry.registerProvider(
+        'expensive-provider',
+        'Expensive Provider',
+        expensiveCapabilities,
+        [
+          {
+            id: 'expensive-model',
+            name: 'Expensive Model',
+            provider: 'expensive',
+            capabilities: [],
+          },
+        ],
+      )
 
       const requirements: TaskRequirements = {
         costOptimized: true,
@@ -263,8 +282,20 @@ describe('ProviderSelector', () => {
 
       const testRegistry = new ProviderCapabilityRegistry()
       testRegistry.registerProvider('provider', 'Provider', capabilities, [
-        { id: 'small-model', name: 'Small Model', provider: 'test', contextWindow: 50000, capabilities: [] },
-        { id: 'large-model', name: 'Large Model', provider: 'test', contextWindow: 200000, capabilities: [] },
+        {
+          id: 'small-model',
+          name: 'Small Model',
+          provider: 'test',
+          contextWindow: 50000,
+          capabilities: [],
+        },
+        {
+          id: 'large-model',
+          name: 'Large Model',
+          provider: 'test',
+          contextWindow: 200000,
+          capabilities: [],
+        },
       ])
 
       const requirements: TaskRequirements = {
@@ -351,7 +382,7 @@ describe('ProviderSelector', () => {
       expect(result.providerId).toBeDefined()
     })
 
-    it('should handle provider that doesn\'t exist', () => {
+    it("should handle provider that doesn't exist", () => {
       const requirements: TaskRequirements = {
         provider: 'non-existent',
       }

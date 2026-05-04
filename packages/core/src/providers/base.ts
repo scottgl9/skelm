@@ -1,6 +1,6 @@
 /**
  * ProviderPluginBase - Abstract base class for all coding agent providers
- * 
+ *
  * Common functionality for provider plugins:
  * - Lifecycle management
  * - Health checks
@@ -10,7 +10,12 @@
  */
 
 import type { SkelmBackend, BackendCapabilities } from '../backend.js'
-import type { ProviderModel, PluginHealthStatus, PluginLifecycle, PluginConfig } from '../plugins.js'
+import type {
+  ProviderModel,
+  PluginHealthStatus,
+  PluginLifecycle,
+  PluginConfig,
+} from '../plugins.js'
 
 /**
  * Provider-specific capabilities beyond the base backend capabilities
@@ -63,11 +68,11 @@ export interface ProviderCapabilities extends BackendCapabilities {
 export abstract class ProviderPluginBase {
   readonly type = 'provider' as const
   state: PluginLifecycle = 'loading'
-  
+
   protected config: PluginConfig = {}
   protected initialized = false
   protected logger: ProviderLogger
-  
+
   /**
    * Create a provider plugin
    */
@@ -78,7 +83,7 @@ export abstract class ProviderPluginBase {
       version: string
       description?: string
       logLevel?: 'debug' | 'info' | 'warn' | 'error'
-    }
+    },
   ) {
     this.logger = new ProviderLogger(options.id, options.logLevel ?? 'info')
   }
@@ -116,7 +121,7 @@ export abstract class ProviderPluginBase {
    */
   async initialize(config: PluginConfig): Promise<void> {
     this.logger.info('Initializing provider', { id: this.id })
-    
+
     try {
       this.state = 'initializing'
       this.config = this.validateConfig(config)
@@ -302,7 +307,7 @@ export abstract class ProviderPluginBase {
       maxDelayMs?: number
       backoffFactor?: number
       retryable?: (error: unknown) => boolean
-    } = {}
+    } = {},
   ): Promise<T> {
     const {
       maxRetries = 3,
@@ -338,7 +343,7 @@ export abstract class ProviderPluginBase {
   }
 
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms))
+    return new Promise((resolve) => setTimeout(resolve, ms))
   }
 }
 
@@ -349,10 +354,7 @@ export class ProviderError extends Error {
   override readonly name: string = 'ProviderError'
   public override readonly cause: unknown
 
-  constructor(
-    message: string,
-    cause?: unknown
-  ) {
+  constructor(message: string, cause?: unknown) {
     super(message)
     this.cause = cause
   }
@@ -386,7 +388,7 @@ export class ProviderNotFoundError extends ProviderError {
 class ProviderLogger {
   constructor(
     private providerId: string,
-    private level: 'debug' | 'info' | 'warn' | 'error' = 'info'
+    private level: 'debug' | 'info' | 'warn' | 'error' = 'info',
   ) {}
 
   debug(message: string, data?: unknown): void {
@@ -422,7 +424,9 @@ class ProviderLogger {
     }
     const levelValue = levels[level]
     const currentLevelValue = levels[this.level]
-    return levelValue !== undefined && currentLevelValue !== undefined && levelValue >= currentLevelValue
+    return (
+      levelValue !== undefined && currentLevelValue !== undefined && levelValue >= currentLevelValue
+    )
   }
 }
 

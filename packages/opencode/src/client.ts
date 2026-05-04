@@ -13,7 +13,7 @@ export class OpencodeClientWrapper {
   constructor(options: OpencodeBackendOptions) {
     this.options = options
     const apiKey = options.apiKey ?? process.env.OPENCODE_API_KEY
-    
+
     if (!apiKey) {
       throw new Error('OPENCODE_API_KEY environment variable is required')
     }
@@ -34,7 +34,7 @@ export class OpencodeClientWrapper {
    */
   async prompt(
     request: AgentRequest,
-    _permissions: unknown // Permissions enforced at skelm layer, passed as metadata
+    _permissions: unknown, // Permissions enforced at skelm layer, passed as metadata
   ): Promise<AgentResponse> {
     // Create a new session if we don't have one
     if (!this.currentSessionId) {

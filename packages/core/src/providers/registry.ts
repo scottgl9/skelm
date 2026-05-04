@@ -1,6 +1,6 @@
 /**
  * Provider Capability Registry
- * 
+ *
  * Tracks provider capabilities, models, and health status.
  * Enables auto-selection of providers based on task requirements.
  */
@@ -61,7 +61,7 @@ export class ProviderCapabilityRegistry {
     providerId: string,
     name: string,
     capabilities: ProviderCapabilities,
-    models: ProviderModel[]
+    models: ProviderModel[],
   ): void {
     const registration: ProviderRegistration = {
       id: providerId,
@@ -140,52 +140,46 @@ export class ProviderCapabilityRegistry {
 
     // Filter by required capabilities
     if (query.requiredCapabilities && query.requiredCapabilities.length > 0) {
-      candidates = candidates.filter(p =>
-        query.requiredCapabilities!.every(cap =>
-          this.hasCapability(p.capabilities, cap)
-        )
+      candidates = candidates.filter((p) =>
+        query.requiredCapabilities!.every((cap) => this.hasCapability(p.capabilities, cap)),
       )
     }
 
     // Filter by provider preference
     if (query.preferredProviders && query.preferredProviders.length > 0) {
-      candidates = candidates.filter(p =>
-        query.preferredProviders!.includes(p.id)
-      )
+      candidates = candidates.filter((p) => query.preferredProviders!.includes(p.id))
     }
 
     // Filter by max cost
     if (query.maxCostPer1K !== undefined) {
-      candidates = candidates.filter(p =>
-        p.capabilities.pricing?.inputPer1K === undefined ||
-        p.capabilities.pricing.inputPer1K <= query.maxCostPer1K!
+      candidates = candidates.filter(
+        (p) =>
+          p.capabilities.pricing?.inputPer1K === undefined ||
+          p.capabilities.pricing.inputPer1K <= query.maxCostPer1K!,
       )
     }
 
     // Filter by min context window
     if (query.minContextWindow !== undefined) {
-      candidates = candidates.filter(p =>
-        p.capabilities.maxContextWindow === undefined ||
-        p.capabilities.maxContextWindow >= query.minContextWindow!
+      candidates = candidates.filter(
+        (p) =>
+          p.capabilities.maxContextWindow === undefined ||
+          p.capabilities.maxContextWindow >= query.minContextWindow!,
       )
     }
 
     // Filter by specific model
     if (query.model) {
-      candidates = candidates.filter(p =>
-        p.models.some(m => m.id === query.model)
-      )
+      candidates = candidates.filter((p) => p.models.some((m) => m.id === query.model))
     }
 
     // Filter by specific provider
     if (query.provider) {
-      candidates = candidates.filter(p => p.id === query.provider)
+      candidates = candidates.filter((p) => p.id === query.provider)
     }
 
     // Sort by health status and preference
-    return candidates
-      .filter(p => p.health.healthy)
-      .map(p => p.id)
+    return candidates.filter((p) => p.health.healthy).map((p) => p.id)
   }
 
   /**
@@ -221,7 +215,7 @@ export class ProviderCapabilityRegistry {
    */
   async checkProviderHealth(
     providerId: string,
-    healthCheckFn: () => Promise<PluginHealthStatus>
+    healthCheckFn: () => Promise<PluginHealthStatus>,
   ): Promise<PluginHealthStatus> {
     try {
       const health = await healthCheckFn()
@@ -243,7 +237,7 @@ export class ProviderCapabilityRegistry {
    * Check health for all providers
    */
   async checkAllProvidersHealth(
-    healthChecks: Map<string, () => Promise<PluginHealthStatus>>
+    healthChecks: Map<string, () => Promise<PluginHealthStatus>>,
   ): Promise<Record<string, PluginHealthStatus>> {
     const results: Record<string, PluginHealthStatus> = {}
 
@@ -267,9 +261,7 @@ export class ProviderCapabilityRegistry {
    * Get healthy providers
    */
   getHealthyProviders(): string[] {
-    return [...this.providers.values()]
-      .filter(p => p.health.healthy)
-      .map(p => p.id)
+    return [...this.providers.values()].filter((p) => p.health.healthy).map((p) => p.id)
   }
 
   /**
@@ -287,8 +279,13 @@ export class ProviderCapabilityRegistry {
   private indexCapabilities(providerId: string, capabilities: ProviderCapabilities): void {
     // Base capabilities from BackendCapabilities
     const baseCaps: readonly (keyof ProviderCapabilities)[] = [
-      'prompt', 'streaming', 'sessionLifecycle', 'mcp',
-      'skills', 'modelSelection', 'toolPermissions'
+      'prompt',
+      'streaming',
+      'sessionLifecycle',
+      'mcp',
+      'skills',
+      'modelSelection',
+      'toolPermissions',
     ]
 
     for (const cap of baseCaps) {
@@ -301,9 +298,16 @@ export class ProviderCapabilityRegistry {
     // Provider-specific capabilities
     if (capabilities.providerSpecific) {
       const providerCaps: readonly (keyof ProviderSpecificCapabilities)[] = [
-        'structuredOutput', 'vision', 'reasoning', 'toolCalling',
-        'functionCalling', 'systemPrompts', 'multiTurn',
-        'streaming', 'contextCaching', 'parallelToolCalls'
+        'structuredOutput',
+        'vision',
+        'reasoning',
+        'toolCalling',
+        'functionCalling',
+        'systemPrompts',
+        'multiTurn',
+        'streaming',
+        'contextCaching',
+        'parallelToolCalls',
       ]
 
       for (const cap of providerCaps) {
@@ -341,7 +345,9 @@ export class ProviderCapabilityRegistry {
     if (capability.startsWith('providerSpecific.')) {
       const specificCap = capability.slice('providerSpecific.'.length)
       if (capabilities.providerSpecific && specificCap in capabilities.providerSpecific) {
-        return capabilities.providerSpecific[specificCap as keyof ProviderSpecificCapabilities] === true
+        return (
+          capabilities.providerSpecific[specificCap as keyof ProviderSpecificCapabilities] === true
+        )
       }
     }
 

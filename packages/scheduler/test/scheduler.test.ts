@@ -20,18 +20,24 @@ describe('Scheduler', () => {
   })
 
   it('creates a scheduler with default config', () => {
-    const scheduler = new Scheduler({}, {
-      runStore: mockRunStore,
-      pipelineLoader: mockPipelineLoader,
-    })
+    const scheduler = new Scheduler(
+      {},
+      {
+        runStore: mockRunStore,
+        pipelineLoader: mockPipelineLoader,
+      },
+    )
     expect(scheduler).toBeDefined()
   })
 
   it('registers a cron trigger', async () => {
-    const scheduler = new Scheduler({}, {
-      runStore: mockRunStore,
-      pipelineLoader: mockPipelineLoader,
-    })
+    const scheduler = new Scheduler(
+      {},
+      {
+        runStore: mockRunStore,
+        pipelineLoader: mockPipelineLoader,
+      },
+    )
 
     const trigger = createCronTrigger('test-cron', 'pipeline-1', '0 * * * *')
     const registration = await scheduler.register(trigger)
@@ -42,10 +48,13 @@ describe('Scheduler', () => {
   })
 
   it('registers an interval trigger', async () => {
-    const scheduler = new Scheduler({}, {
-      runStore: mockRunStore,
-      pipelineLoader: mockPipelineLoader,
-    })
+    const scheduler = new Scheduler(
+      {},
+      {
+        runStore: mockRunStore,
+        pipelineLoader: mockPipelineLoader,
+      },
+    )
 
     const trigger = createIntervalTrigger('test-interval', 'pipeline-1', 60000)
     const registration = await scheduler.register(trigger)
@@ -55,10 +64,13 @@ describe('Scheduler', () => {
   })
 
   it('lists all triggers', async () => {
-    const scheduler = new Scheduler({}, {
-      runStore: mockRunStore,
-      pipelineLoader: mockPipelineLoader,
-    })
+    const scheduler = new Scheduler(
+      {},
+      {
+        runStore: mockRunStore,
+        pipelineLoader: mockPipelineLoader,
+      },
+    )
 
     const cronTrigger = createCronTrigger('cron-1', 'pipeline-1', '*/5 * * * *')
     const intervalTrigger = createIntervalTrigger('interval-1', 'pipeline-1', 300000)
@@ -71,10 +83,13 @@ describe('Scheduler', () => {
   })
 
   it('pauses and resumes a trigger', async () => {
-    const scheduler = new Scheduler({}, {
-      runStore: mockRunStore,
-      pipelineLoader: mockPipelineLoader,
-    })
+    const scheduler = new Scheduler(
+      {},
+      {
+        runStore: mockRunStore,
+        pipelineLoader: mockPipelineLoader,
+      },
+    )
 
     const trigger = createIntervalTrigger('test-pause', 'pipeline-1', 60000)
     await scheduler.register(trigger)
@@ -89,10 +104,13 @@ describe('Scheduler', () => {
   })
 
   it('unregisters a trigger', async () => {
-    const scheduler = new Scheduler({}, {
-      runStore: mockRunStore,
-      pipelineLoader: mockPipelineLoader,
-    })
+    const scheduler = new Scheduler(
+      {},
+      {
+        runStore: mockRunStore,
+        pipelineLoader: mockPipelineLoader,
+      },
+    )
 
     const trigger = createIntervalTrigger('test-unregister', 'pipeline-1', 60000)
     await scheduler.register(trigger)
@@ -103,10 +121,13 @@ describe('Scheduler', () => {
   })
 
   it('starts and stops all triggers', async () => {
-    const scheduler = new Scheduler({}, {
-      runStore: mockRunStore,
-      pipelineLoader: mockPipelineLoader,
-    })
+    const scheduler = new Scheduler(
+      {},
+      {
+        runStore: mockRunStore,
+        pipelineLoader: mockPipelineLoader,
+      },
+    )
 
     const trigger = createIntervalTrigger('test-startstop', 'pipeline-1', 60000)
     await scheduler.register(trigger)
@@ -159,11 +180,17 @@ describe('Trigger Builders', () => {
   })
 
   it('creates a poll trigger', () => {
-    const trigger = createPollTrigger('poll-1', 'pipeline-1', 'https://api.example.com/data', 300000, {
-      description: 'Poll every 5 minutes',
-      headers: { 'Authorization': 'Bearer token' },
-      overlap: 'wait',
-    })
+    const trigger = createPollTrigger(
+      'poll-1',
+      'pipeline-1',
+      'https://api.example.com/data',
+      300000,
+      {
+        description: 'Poll every 5 minutes',
+        headers: { Authorization: 'Bearer token' },
+        overlap: 'wait',
+      },
+    )
 
     expect(trigger.type).toBe('poll')
     expect(trigger.url).toBe('https://api.example.com/data')

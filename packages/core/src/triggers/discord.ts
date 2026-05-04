@@ -1,6 +1,6 @@
 /**
  * Discord trigger implementation
- * 
+ *
  * Receives Discord events via Discord API
  */
 
@@ -86,21 +86,21 @@ export interface DiscordTriggerConfig extends TriggerConfig {
 
 /**
  * Discord trigger plugin
- * 
+ *
  * Note: This is a simplified implementation. For production use,
  * consider using discord.js or discord.js-rest for full client functionality.
  */
 export class DiscordTrigger extends TriggerPluginBase {
   private isRunning: boolean = false
-  
+
   constructor(id: string, name: string, description?: string) {
     super(id, name, '1.0.0', description)
   }
-  
+
   override getTriggerType(): TriggerType {
     return 'discord'
   }
-  
+
   override async doInitialize(config: DiscordTriggerConfig): Promise<void> {
     // Validate required config
     if (!config.botToken) {
@@ -112,35 +112,35 @@ export class DiscordTrigger extends TriggerPluginBase {
     if (!config.channelIds || config.channelIds.length === 0) {
       throw new Error('Discord trigger requires at least one channelId')
     }
-    
+
     this.config = config
     this.logger.info(`Initialized Discord trigger for client ${config.clientId}`)
   }
-  
+
   override async doStart(): Promise<void> {
     const config = this.config as DiscordTriggerConfig | null
     if (!config) {
       throw new Error('Discord trigger not initialized')
     }
-    
+
     this.isRunning = true
     this.logger.info(`Discord trigger started, listening to ${config.channelIds.length} channels`)
-    
+
     // In a real implementation, this would:
     // 1. Create a Discord client
     // 2. Login with the bot token
     // 3. Set up event listeners for messages and interactions
     // 4. Filter events based on configuration
-    
+
     // For now, we just mark as running
     // The actual event processing would happen via processMessage() and processInteraction()
   }
-  
+
   override async doStop(): Promise<void> {
     this.isRunning = false
     this.logger.info('Discord trigger stopped')
   }
-  
+
   override async doHealthCheck(): Promise<TriggerHealthStatus> {
     const config = this.config as DiscordTriggerConfig | null
     return {
@@ -153,7 +153,7 @@ export class DiscordTrigger extends TriggerPluginBase {
       },
     }
   }
-  
+
   /**
    * Check if a channel is monitored
    */
@@ -161,7 +161,7 @@ export class DiscordTrigger extends TriggerPluginBase {
     const config = this.config as DiscordTriggerConfig | null
     return config?.channelIds.includes(channelId) ?? false
   }
-  
+
   /**
    * Process a Discord message
    */
@@ -170,19 +170,19 @@ export class DiscordTrigger extends TriggerPluginBase {
     if (!config) {
       throw new Error('Discord trigger not initialized')
     }
-    
+
     // Check if message is from a monitored channel
     if (!this.isMonitoredChannel(message.channel_id)) {
       this.logger.debug(`Ignoring message from unmonitored channel: ${message.channel_id}`)
       return
     }
-    
+
     // Skip bot messages
     if (message.author.bot) {
       this.logger.debug(`Ignoring bot message: ${message.id}`)
       return
     }
-    
+
     // Create trigger event
     const triggerEvent: TriggerEvent = {
       eventId: message.id,
@@ -203,13 +203,15 @@ export class DiscordTrigger extends TriggerPluginBase {
         ...(config.workflowId !== undefined && { workflowId: config.workflowId }),
       },
     }
-    
+
     // Emit trigger event
     await this.emitEvent(triggerEvent)
-    
-    this.logger.debug(`Discord message from ${message.author.username}: ${message.content.substring(0, 50)}...`)
+
+    this.logger.debug(
+      `Discord message from ${message.author.username}: ${message.content.substring(0, 50)}...`,
+    )
   }
-  
+
   /**
    * Process a Discord interaction
    */
@@ -218,20 +220,20 @@ export class DiscordTrigger extends TriggerPluginBase {
     if (!config) {
       throw new Error('Discord trigger not initialized')
     }
-    
+
     // Check if interaction is from a monitored channel
     if (!this.isMonitoredChannel(interaction.channel_id)) {
       this.logger.debug(`Ignoring interaction from unmonitored channel: ${interaction.channel_id}`)
       return
     }
-    
+
     // Get user info
     const user = interaction.user || interaction.member?.user
     if (!user) {
       this.logger.warn('Discord interaction without user')
       return
     }
-    
+
     // Create trigger event
     const triggerEvent: TriggerEvent = {
       eventId: interaction.id,
@@ -252,13 +254,13 @@ export class DiscordTrigger extends TriggerPluginBase {
         ...(config.workflowId !== undefined && { workflowId: config.workflowId }),
       },
     }
-    
+
     // Emit trigger event
     await this.emitEvent(triggerEvent)
-    
+
     this.logger.debug(`Discord interaction from ${user.username}`)
   }
-  
+
   /**
    * Get the configured channels
    */
@@ -271,6 +273,10 @@ export class DiscordTrigger extends TriggerPluginBase {
 /**
  * Create a Discord trigger
  */
-export function createDiscordTrigger(id: string, name: string, description?: string): DiscordTrigger {
+export function createDiscordTrigger(
+  id: string,
+  name: string,
+  description?: string,
+): DiscordTrigger {
   return new DiscordTrigger(id, name, description)
 }
