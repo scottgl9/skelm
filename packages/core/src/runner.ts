@@ -154,6 +154,31 @@ export class Runner {
       secretResolver: options.secretResolver ?? new EnvSecretResolver(),
       approvalGate: options.approvalGate ?? new AutoApproveGate(),
     }
+    // Translate permission.denied events into audit rows. The MCP host and
+    // any future enforcer publishes the event for observability; the audit
+    // writer is the durable record. Without this subscription, callers
+    // wiring SuspendApprovalGate + ChainAuditWriter would still see denial
+    // events but find nothing in the audit log — the M3 acceptance bullet
+    // demands "permission denial produces an audit row".
+    this.events.subscribe((event) => {
+      if (event.type === 'permission.denied') {
+        void this.enforcement.auditWriter
+          .write({
+            runId: event.runId,
+            actor: 'runtime',
+            action: 'permission.denied',
+            details: {
+              stepId: event.stepId,
+              dimension: event.dimension,
+              detail: event.detail,
+              at: event.at,
+            },
+          })
+          .catch(() => {
+            // audit writer failures must not poison the run.
+          })
+      }
+    })
   }
 
   start<TInput, TOutput>(
