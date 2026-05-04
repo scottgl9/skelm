@@ -1,5 +1,5 @@
 export { Gateway } from './gateway.js'
-export type { GatewayOptions, GatewayState } from './gateway.js'
+export type { GatewayOptions, GatewayRegistries, GatewayState } from './gateway.js'
 export {
   LockfileError,
   acquireLockfile,

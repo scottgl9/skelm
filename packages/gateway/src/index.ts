@@ -17,6 +17,7 @@ export {
   type DiscoveryRecord,
   Gateway,
   type GatewayOptions,
+  type GatewayRegistries,
   type GatewayState,
   type LockfileContents,
   LockfileError,
@@ -26,3 +27,25 @@ export {
   removeDiscovery,
   writeDiscovery,
 } from './lifecycle/index.js'
+
+// Registries
+export {
+  AgentRegistry,
+  type AgentEntry,
+  type AgentRegistryOptions,
+  BaseRegistry,
+  FsWatcher,
+  type FsWatchOptions,
+  McpServerRegistry,
+  type McpServerEntry,
+  type McpServerRegistryOptions,
+  type Registry,
+  type RegistryChange,
+  type RegistryListener,
+  SkillRegistry,
+  type SkillRegistryOptions,
+  WorkflowRegistry,
+  type WorkflowEntry,
+  type WorkflowRegistryOptions,
+  walkGlob,
+} from './registries/index.js'
