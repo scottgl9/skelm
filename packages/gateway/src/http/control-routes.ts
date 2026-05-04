@@ -176,19 +176,18 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
         })
       }
       const desc = describePipeline(pipeline)
-      // input/output JSON-Schema serialization is not implemented yet — it
-      // requires schema-library-specific converters (Zod's z.toJSONSchema,
-      // Valibot's toJsonSchema, etc.) and the gateway is intentionally not
-      // tied to any one library. Returns null until a vendor-aware helper
-      // lands.
+      const [inputSchema, outputSchema] = await Promise.all([
+        tryToJsonSchema((pipeline as { inputSchema?: unknown }).inputSchema),
+        tryToJsonSchema((pipeline as { outputSchema?: unknown }).outputSchema),
+      ])
       return {
         id: desc.id,
         file: entry.path,
         ...(desc.description !== undefined && { description: desc.description }),
         ...(desc.version !== undefined && { version: desc.version }),
         graph: { steps: desc.steps },
-        input: null,
-        output: null,
+        input: inputSchema,
+        output: outputSchema,
       }
     }),
   )
@@ -305,6 +304,35 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       return { ok: true, triggerId }
     }),
   )
+}
+
+/**
+ * Best-effort conversion of a standard-schema-compatible schema into a JSON
+ * Schema object. Detects the schema vendor via the `~standard.vendor` tag and
+ * dynamic-imports the converter so the gateway does not hard-depend on any
+ * one schema library.
+ *
+ * Currently understands Zod (via z.toJSONSchema, Zod 4+). Other vendors
+ * return null; callers receive null and can document the gap.
+ */
+async function tryToJsonSchema(schema: unknown): Promise<unknown | null> {
+  if (typeof schema !== 'object' || schema === null) return null
+  const standard = (schema as { '~standard'?: { vendor?: unknown } })['~standard']
+  const vendor = standard?.vendor
+  if (vendor === 'zod') {
+    try {
+      const z = (await import('zod')) as {
+        toJSONSchema?: (s: unknown) => unknown
+        default?: { toJSONSchema?: (s: unknown) => unknown }
+      }
+      const fn = z.toJSONSchema ?? z.default?.toJSONSchema
+      if (typeof fn !== 'function') return null
+      return fn(schema)
+    } catch {
+      return null
+    }
+  }
+  return null
 }
 
 function extractPipeline(mod: unknown): Pipeline | undefined {
