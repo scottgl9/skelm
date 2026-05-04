@@ -251,8 +251,17 @@ describe('main — integration', () => {
       const mermaid = await invokeInDir(['describe', 'graph-workflow', '--format', 'mermaid'], dir)
       expect(mermaid.exitCode).toBe(EXIT.OK)
       expect(mermaid.stdout).toContain('flowchart TD')
+      // Roadmap M2 acceptance: describe renders a graph including
+      // parallel/forEach/branch/loop. Pin every kind so a regression in
+      // describePipeline or the mermaid renderer fails this test.
       expect(mermaid.stdout).toContain('parallel: fanout')
       expect(mermaid.stdout).toContain('branch: route')
+      expect(mermaid.stdout).toContain('loop: repeat')
+      expect(mermaid.stdout).toContain('forEach: collect')
+      expect(mermaid.stdout).toContain('agent: review')
+      // Branch labels reach the rendered edges.
+      expect(mermaid.stdout).toMatch(/-->\|happy\|/)
+      expect(mermaid.stdout).toMatch(/-->\|default\|/)
     })
   })
 
