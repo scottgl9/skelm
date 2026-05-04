@@ -80,6 +80,13 @@ export interface SkelmConfig {
   /** Default backend id used by llm()/agent() steps that don't specify one. */
   backend?: string
   backends?: SkelmConfigBackends
+  /**
+   * Pre-built backend instances. Use this when the backends map's string-keyed
+   * config format is insufficient — e.g. a custom ACP backend with non-standard
+   * options. Instances are registered by their `id` field.
+   * Example: `instances: [createAcpBackend({ id: 'my-agent', command: 'my-cli' })]`
+   */
+  instances?: readonly import('./backend.js').SkelmBackend[]
   /** Project-level default permissions; per-step permissions intersect with these. */
   defaults?: {
     permissions?: AgentPermissions

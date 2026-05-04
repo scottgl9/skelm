@@ -26,12 +26,25 @@ export async function buildBackendRegistry(
   pipeline?: Pipeline<unknown, unknown>,
 ): Promise<BackendRegistry | undefined> {
   const backendIds = configuredBackendIds(config)
-  if (pipeline !== undefined) {
-    for (const id of backendIdsReferencedByPipeline(pipeline)) backendIds.add(id)
-  }
-  if (backendIds.size === 0) return undefined
 
+  // Pre-built instances — register directly, exclude their ids from string-keyed lookup.
   const registry = new BackendRegistry()
+  const instanceIds = new Set((config.instances ?? []).map((b) => b.id))
+  for (const instance of config.instances ?? []) {
+    registry.register(instance)
+    backendIds.delete(instance.id)
+  }
+
+  // Add pipeline-referenced backend ids that aren't already covered by instances.
+  if (pipeline !== undefined) {
+    for (const id of backendIdsReferencedByPipeline(pipeline)) {
+      if (!instanceIds.has(id)) backendIds.add(id)
+    }
+  }
+
+  if (backendIds.size === 0 && instanceIds.size === 0) return undefined
+  if (backendIds.size === 0) return registry
+
   for (const backendId of backendIds) {
     const backend = await Promise.resolve(createBackend(backendId, config))
     registry.register(backend)
@@ -136,6 +149,19 @@ function createBackend(backendId: string, config: SkelmConfig) {
         command: readString(entry.command) ?? 'copilot',
         args: readStringArray(entry.args) ?? ['--acp'],
         ...(cwd !== undefined && { cwd }),
+      })
+    }
+    case 'acp': {
+      // Generic ACP backend: backends: { 'my-agent': { kind: 'acp', command: 'my-cli', args: ['--acp'] } }
+      const cmd = readString(entry.command)
+      if (!cmd) throw new Error(`ACP backend '${backendId}' requires a 'command' field in config`)
+      const acpCwd = readString(entry.cwd)
+      const acpArgs = readStringArray(entry.args)
+      return createAcpBackend({
+        id: backendId,
+        command: cmd,
+        ...(acpArgs !== undefined && { args: acpArgs }),
+        ...(acpCwd !== undefined && { cwd: acpCwd }),
       })
     }
     case 'anthropic': {
