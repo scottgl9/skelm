@@ -9,6 +9,7 @@ Usage:
   skelm gateway <start|stop|pause|resume|reload|status|install|uninstall> [flags]
   skelm audit query [flags]
   skelm secrets <get|set|list> [args]
+  skelm debug <breakpoints|add|remove|runs|release> [args]
   skelm init [<dir>] [--force]
   skelm --version
   skelm --help
@@ -55,6 +56,13 @@ Secrets flags:
   skelm secrets list [--json]
   skelm secrets get <name> [--json]
   skelm secrets set <name> --value <value> [--json]
+
+Debug flags:
+  skelm debug breakpoints [--json]              List active step-id breakpoints
+  skelm debug add <stepId>                      Add a breakpoint at a step id
+  skelm debug remove <stepId>                   Remove a breakpoint
+  skelm debug runs [--json]                     List runs paused at a breakpoint
+  skelm debug release <runId>                   Release a paused run
 
 Init flags:
   --force                 Allow scaffolding into a non-empty directory

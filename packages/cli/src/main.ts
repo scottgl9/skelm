@@ -1,4 +1,5 @@
 import { approvalsCommand } from './approvals.js'
+import { debugCommand } from './debug.js'
 import { parseArgv } from './argv.js'
 import { auditCommand, secretsCommand } from './audit.js'
 import { describeCommand } from './describe.js'
@@ -177,6 +178,30 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
             ...(typeof parsed.flags.approver === 'string' && {
               approver: parsed.flags.approver,
             }),
+            ...(parsed.flags.json === true && { json: true }),
+          },
+          io,
+        )
+        return { exitCode: result.exitCode }
+      }
+      case 'debug': {
+        const sub = parsed.positional[0]
+        if (
+          sub !== 'breakpoints' &&
+          sub !== 'add' &&
+          sub !== 'remove' &&
+          sub !== 'runs' &&
+          sub !== 'release'
+        ) {
+          io.stderr.write(
+            'error: debug requires breakpoints | add <stepId> | remove <stepId> | runs | release <runId>\n',
+          )
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        const result = await debugCommand(
+          {
+            subcommand: sub,
+            ...(typeof parsed.positional[1] === 'string' && { arg: parsed.positional[1] }),
             ...(parsed.flags.json === true && { json: true }),
           },
           io,
