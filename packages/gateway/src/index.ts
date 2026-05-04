@@ -34,6 +34,10 @@ export { ChainAuditWriter } from './audit/chain.js'
 export type { ChainEntry } from './audit/chain.js'
 export { FileSecretResolver } from './secrets/file-driver.js'
 
+// Approval gate
+export { SuspendApprovalGate } from './approvals/suspend-gate.js'
+export type { PendingApproval, SuspendApprovalGateOptions } from './approvals/suspend-gate.js'
+
 // Registries
 export {
   AgentRegistry,
