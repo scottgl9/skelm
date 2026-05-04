@@ -41,7 +41,7 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile || pnpm install
+        run: pnpm install
 
       - name: Determine version from release tag or manual input
         id: version
