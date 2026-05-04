@@ -1,0 +1,43 @@
+{
+  "name": "@skelm/gateway",
+  "version": "0.2.0",
+  "description": "skelm gateway — long-running orchestrator owning config, registries, permissions, audit, agent lifecycle, and the HTTP surface",
+  "license": "MIT",
+  "author": "Scott Glover <scottgl@gmail.com>",
+  "homepage": "https://github.com/scottgl9/skelm#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scottgl9/skelm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/scottgl9/skelm/issues"
+  },
+  "keywords": ["skelm", "gateway", "orchestrator", "http", "agent", "workflow"],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com/scottgl9",
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@skelm/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  }
+}
