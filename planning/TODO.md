@@ -1,0 +1,74 @@
+# TODO
+
+Current main state:
+
+- M1 is landed.
+- The planned M2 feature slices are landed on `main` (`f2e1596`).
+- Session-tracked implementation todos are all complete.
+- **NEW:** GitHub Packages publishing infrastructure added (`.github/workflows/publish.yml`)
+- **NEW:** Workspace consolidation complete (vault/projects migrated to workspace-general)
+
+What remains is the unfinished acceptance work for M2, then the M3+ roadmap.
+
+## M2 follow-through
+
+- [x] Add the **Telegram coding agent fixture (UC1)** with a mocked Telegram MCP flow, persistent workspace usage, and idempotent repeat-message handling.
+  - Created: `packages/core/test/fixtures/telegram/`
+  - Files: `mocked-telegram-mcp.ts`, `telegram-coding-agent.pipeline.ts`, `telegram-coding-agent.test.ts`
+- [x] Add the **property-test coverage** called out in the roadmap for:
+  - event ordering
+  - `ctx.steps[id]` correctness across accepted step graphs
+  - Created: `packages/core/src/property-tests.test.ts`
+
+## M3 — finish v1
+
+- [x] Create `@skelm/server`.
+- [x] Add the HTTP + SSE run surface from `planning/08-server-mode.md`.
+- [x] Support sync runs, async runs, resume, and cancellation over HTTP.
+- [x] Add `Idempotency-Key` handling for server runs.
+- [x] Add server auth modes (`none` for loopback-only, `bearer`).
+- [x] Reject insecure `skelm serve --host 0.0.0.0 --auth none` startup.
+- [ ] Add audit logging for permission denials, approvals, secret resolutions, plugin loads, and CLI overrides.
+- [x] Add `skelm history --run <id> --events`.
+- [ ] Add `skelm audit query`.
+- [ ] Add `skelm secrets get/set/list` with a file driver.
+- [ ] Integrate approval flows via `permissions.approval` + `wait()`.
+- [ ] Add basic `skelm debug` breakpoints / pause-inspect support.
+- [ ] Add `@skelm/metrics` for Prometheus `/metrics`.
+- [ ] Cover the M3 acceptance cases from `planning/15-roadmap-and-milestones.md`.
+
+## M4 — post-v1 / v1.x+
+
+- [x] Add the long-running scheduler (`cron`, interval, webhook, poll, queue).
+- [x] Add trigger dedupe / overlap policies.
+- [x] Add `@skelm/integrations` with the initial curated set (GitHub, Slack, Jira, IMAP, Telegram).
+- [ ] Add `skelm connect` for OAuth flows.
+- [ ] Add the OpenAI-compatible HTTP surface (`/v1/chat/completions`, `/v1/responses`).
+- [ ] Add `skelm acp serve` — expose pipelines as ACP agents.
+- [x] **Agent Runtime Expansion:** Add `@skelm/opencode` backend with full permission enforcement.
+- [x] **Agent Runtime Expansion:** Add `@skelm/pi` backend for Pi coding-agent.
+- [ ] **Agent Runtime Expansion:** Research and add `@skelm/copilot-sdk` backend for GitHub Copilot with enhanced control.
+- [ ] Add routing and failover wrapper backends (marktoflow parity).
+- [ ] Add `skelm bundle` — single-file deployable artifact.
+- [ ] Add a Postgres `RunStore`.
+- [ ] Add Vault / cloud secret drivers.
+- [ ] Add compaction / session pruning helpers for long-running agents.
+- [ ] Cover the M4 acceptance cases from `planning/15-roadmap-and-milestones.md`.
+
+## Infrastructure & DevOps
+
+- [x] GitHub Packages publishing workflow (`.github/workflows/publish.yml`)
+- [x] Automated version updates from release tags
+- [x] CI/CD pipeline with build, typecheck, lint, test
+- [x] Workspace consolidation (vault/projects → workspace-general)
+- [ ] Add npm registry publishing (in addition to GitHub Packages)
+- [ ] Add release notes automation
+- [ ] Add package size tracking
+- [ ] Add performance regression detection
+
+## Suggested order
+
+1. Finish the two M2 acceptance gaps.
+2. Build M3 end-to-end; that is the remaining work required to cut v1.
+3. Treat M4 as the first post-v1 expansion wave unless roadmap priorities change.
+4. Infrastructure improvements can happen in parallel as needed.
