@@ -4,6 +4,24 @@ export type TriggerSpec =
   | { kind: 'cron'; id: string; workflowId: string; cron: string }
   | { kind: 'interval'; id: string; workflowId: string; everyMs: number }
   | { kind: 'manual'; id: string; workflowId: string }
+  | { kind: 'immediate'; id: string; workflowId: string }
+  | { kind: 'at'; id: string; workflowId: string; when: string }
+  | {
+      kind: 'webhook'
+      id: string
+      workflowId: string
+      path: string
+      method?: string
+      secret?: string
+    }
+  | {
+      kind: 'poll'
+      id: string
+      workflowId: string
+      everyMs: number
+      sourceFnId: string
+      dedupeKeyFnId?: string
+    }
 
 export type OverlapPolicy = 'skip' | 'queue' | 'cancel'
 
