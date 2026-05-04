@@ -18,6 +18,7 @@ export {
   Gateway,
   type GatewayOptions,
   type GatewayEnforcement,
+  type GatewayManagers,
   type GatewayRegistries,
   type GatewayState,
   type LockfileContents,

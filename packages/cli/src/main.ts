@@ -154,25 +154,37 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
       }
       case 'gateway': {
         const subcommand = parsed.positional[0]
-        if (
-          subcommand !== 'start' &&
-          subcommand !== 'stop' &&
-          subcommand !== 'pause' &&
-          subcommand !== 'resume' &&
-          subcommand !== 'reload' &&
-          subcommand !== 'status'
-        ) {
+        const valid = new Set([
+          'start',
+          'stop',
+          'pause',
+          'resume',
+          'reload',
+          'status',
+          'install',
+          'uninstall',
+        ])
+        if (subcommand === undefined || !valid.has(subcommand)) {
           io.stderr.write(
-            'error: gateway requires one of start, stop, pause, resume, reload, status\n',
+            'error: gateway requires one of start, stop, pause, resume, reload, status, install, uninstall\n',
           )
           return { exitCode: EXIT.CLI_ERROR }
         }
         const result = await gatewayCommand(
           {
-            subcommand,
+            subcommand: subcommand as
+              | 'start'
+              | 'stop'
+              | 'pause'
+              | 'resume'
+              | 'reload'
+              | 'status'
+              | 'install'
+              | 'uninstall',
             ...(parsed.flags.foreground === true && { foreground: true }),
             ...(parsed.flags.detach === true && { detach: true }),
             ...(parsed.flags.json === true && { json: true }),
+            ...(parsed.flags.systemd === true && { systemd: true }),
           },
           io,
         )
