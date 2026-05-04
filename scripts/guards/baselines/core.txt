@@ -19,8 +19,10 @@ value:MissingSecretError
 value:ModelProviderBase
 value:ModelRegistry
 value:NoopAuditWriter
+value:NotImplementedError
 value:PermissionDeniedError
 value:PermissionResolver
+value:PostgresRunStore
 value:ProviderAuthenticationError
 value:ProviderCapabilityRegistry
 value:ProviderError
@@ -148,6 +150,7 @@ type:PluginHealthStatus
 type:PluginLifecycle
 type:PluginMetadata
 type:PluginType
+type:PostgresRunStoreOptions
 type:PreparedWorkspace
 type:PromptMessage
 type:ProviderCapabilities
