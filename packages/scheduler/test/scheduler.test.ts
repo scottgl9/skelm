@@ -195,7 +195,7 @@ describe('Trigger Builders', () => {
     expect(trigger.type).toBe('poll')
     expect(trigger.url).toBe('https://api.example.com/data')
     expect(trigger.intervalMs).toBe(300000)
-    expect(trigger.headers?.['Authorization']).toBe('Bearer token')
+    expect(trigger.headers?.Authorization).toBe('Bearer token')
   })
 
   it('creates a queue trigger', () => {

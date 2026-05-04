@@ -1,4 +1,4 @@
-import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'http'
+import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createCronTrigger } from '../../src/triggers/cron.js'
 import { createDiscordTrigger } from '../../src/triggers/discord.js'

@@ -179,8 +179,8 @@ async function runPiSubprocess(
   request: AgentRequest,
   context: BackendContext,
 ): Promise<AgentResponse> {
-  const { spawn } = await import('child_process')
-  const { promisify } = await import('util')
+  const { spawn } = await import('node:child_process')
+  const { promisify } = await import('node:util')
   const setTimeoutPromise = promisify(setTimeout)
 
   return new Promise((resolve, reject) => {
@@ -254,7 +254,7 @@ async function runPiSubprocess(
         },
         id: 1,
       }
-      piProcess.stdin?.write(JSON.stringify(rpcRequest) + '\n')
+      piProcess.stdin?.write(`${JSON.stringify(rpcRequest)}\n`)
       piProcess.stdin?.end()
     } catch (error) {
       piProcess.kill()

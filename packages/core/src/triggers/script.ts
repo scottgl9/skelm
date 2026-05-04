@@ -5,7 +5,7 @@
  * Allows users to implement custom triggers without modifying the framework
  */
 
-import { spawn } from 'child_process'
+import { spawn } from 'node:child_process'
 import { TriggerError, TriggerPluginBase } from './base.js'
 import type { TriggerConfig, TriggerEvent, TriggerHealthStatus, TriggerType } from './types.js'
 

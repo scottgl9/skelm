@@ -4,8 +4,8 @@
  * Receives HTTP webhook events and emits them as trigger events
  */
 
-import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'http'
-import { parse } from 'url'
+import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http'
+import { parse } from 'node:url'
 import { TriggerPluginBase } from './base.js'
 import type { TriggerConfig, TriggerEvent, TriggerHealthStatus, TriggerType } from './types.js'
 

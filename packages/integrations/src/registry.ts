@@ -68,7 +68,7 @@ export class IntegrationRegistry {
     if (!this.eventHandlers.has(integrationId)) {
       this.eventHandlers.set(integrationId, [])
     }
-    this.eventHandlers.get(integrationId)!.push(handler)
+    this.eventHandlers.get(integrationId)?.push(handler)
   }
 
   /**
