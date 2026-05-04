@@ -122,6 +122,7 @@ export class Gateway {
   private runStoreInternal: RunStore | null = null
   private httpServer: SkelmServer | null = null
   private readonly inFlightRuns = new Map<string, AbortController>()
+  private readonly inFlightRunners = new Map<string, import('@skelm/core').Runner>()
   private metricsInternal: import('@skelm/metrics').MetricsCollector | null = null
   private metricsBus: import('@skelm/core').EventBus | null = null
   private readonly breakpointsInternal: import('../debug/breakpoint-registry.js').BreakpointRegistry
@@ -177,12 +178,27 @@ export class Gateway {
    * it starts a run and pairs it with `unregisterRun` once the run
    * settles.
    */
-  registerRun(runId: string, controller: AbortController): void {
+  registerRun(
+    runId: string,
+    controller: AbortController,
+    runner?: import('@skelm/core').Runner,
+  ): void {
     this.inFlightRuns.set(runId, controller)
+    if (runner !== undefined) this.inFlightRunners.set(runId, runner)
   }
 
   unregisterRun(runId: string): void {
     this.inFlightRuns.delete(runId)
+    this.inFlightRunners.delete(runId)
+  }
+
+  /**
+   * The Runner managing an in-flight run. Used by the HTTP layer to forward
+   * resume() calls (POST /runs/:runId/resume) to the right Runner instance.
+   * Returns undefined when the run is unknown or already completed.
+   */
+  getRunner(runId: string): import('@skelm/core').Runner | undefined {
+    return this.inFlightRunners.get(runId)
   }
 
   /**

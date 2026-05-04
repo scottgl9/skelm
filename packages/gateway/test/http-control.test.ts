@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { code, parallel, pipeline } from '@skelm/core'
+import { code, parallel, pipeline, wait } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { Gateway, InMemoryQueueDriver, type SuspendApprovalGate } from '../src/index.js'
@@ -500,6 +500,141 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
     } finally {
       await gw.stop()
       await rm(projectRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('POST /pipelines/:id/start returns immediately and the run completes asynchronously', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'skelm-pl-async-'))
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    await fs.writeFile(join(projectRoot, 'workflows/r.workflow.ts'), 'export default {}')
+
+    const wf = pipeline({
+      id: 'slow',
+      steps: [
+        code({
+          id: 'sleeper',
+          run: async () => {
+            await new Promise((r) => setTimeout(r, 30))
+            return { ok: true }
+          },
+        }),
+      ],
+    })
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      loadWorkflow: async () => wf,
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+    })
+    await gw.start()
+    try {
+      const url = `http://127.0.0.1:${port}/pipelines/${encodeURIComponent('workflows/r.workflow.ts')}/start`
+      const started = (await fetch(url, { method: 'POST' }).then((r) => r.json())) as {
+        runId: string
+        status: string
+      }
+      expect(started.status).toBe('running')
+      expect(started.runId).toMatch(/[a-f0-9-]{36}/)
+      // Poll until completion.
+      let final: { status: string } | null = null
+      for (let i = 0; i < 50; i++) {
+        const state = await gw.runStore.getRun(started.runId)
+        if (state !== null && (state.status === 'completed' || state.status === 'failed')) {
+          final = state
+          break
+        }
+        await new Promise((r) => setTimeout(r, 10))
+      }
+      expect(final?.status).toBe('completed')
+    } finally {
+      await gw.stop()
+      await rm(projectRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('POST /runs/:runId/resume completes a wait()-suspended run', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'skelm-pl-wait-'))
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    await fs.writeFile(join(projectRoot, 'workflows/r.workflow.ts'), 'export default {}')
+
+    const wf = pipeline({
+      id: 'wait-pipe',
+      steps: [
+        wait({ id: 'pause-here' }),
+        code({
+          id: 'after-resume',
+          run: (ctx) => ({ resumedWith: ctx.steps['pause-here'] }),
+        }),
+      ],
+    })
+
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      loadWorkflow: async () => wf,
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+    })
+    await gw.start()
+    try {
+      const url = `http://127.0.0.1:${port}/pipelines/${encodeURIComponent('workflows/r.workflow.ts')}/start`
+      const started = (await fetch(url, { method: 'POST' }).then((r) => r.json())) as {
+        runId: string
+      }
+      // Wait until the runner has registered the wait().
+      await new Promise((r) => setTimeout(r, 30))
+
+      const resumeRes = await fetch(`http://127.0.0.1:${port}/runs/${started.runId}/resume`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ output: { signal: 'go' } }),
+      })
+      expect(resumeRes.status).toBe(200)
+      expect(await resumeRes.json()).toEqual({ resumed: true, runId: started.runId })
+
+      // Poll for completion.
+      let final: { status: string; output: unknown } | null = null
+      for (let i = 0; i < 50; i++) {
+        const state = await gw.runStore.getRun(started.runId)
+        if (state !== null && state.status === 'completed') {
+          final = state
+          break
+        }
+        await new Promise((r) => setTimeout(r, 10))
+      }
+      expect(final?.status).toBe('completed')
+      expect(final?.output).toMatchObject({ resumedWith: { signal: 'go' } })
+    } finally {
+      await gw.stop()
+      await rm(projectRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('POST /runs/:runId/resume 404s for unknown runId', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    })
+    await gw.start()
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/runs/missing/resume`, {
+        method: 'POST',
+        body: '{}',
+      })
+      expect(res.status).toBe(404)
+    } finally {
+      await gw.stop()
     }
   })
 

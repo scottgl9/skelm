@@ -265,7 +265,7 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       gateway.attachMetricsBus(runner.events)
       const controller = new AbortController()
       const runId = crypto.randomUUID()
-      gateway.registerRun(runId, controller)
+      gateway.registerRun(runId, controller, runner)
       try {
         const handle = runner.start(
           pipeline as Parameters<Runner['start']>[0],
@@ -282,6 +282,99 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
         }
       } finally {
         gateway.unregisterRun(runId)
+      }
+    }),
+  )
+
+  router.post(
+    '/pipelines/:id/start',
+    eventHandler(async (event: H3Event) => {
+      const id = decodeMaybe(event.context.params?.id)
+      if (!id) throw createError({ statusCode: 400, message: 'pipeline id required' })
+      const entry = gateway.registries.workflows.get(id)
+      if (entry === undefined) {
+        throw createError({ statusCode: 404, message: 'pipeline not found' })
+      }
+      const loader = gateway.getWorkflowLoader()
+      if (loader === undefined) {
+        throw createError({ statusCode: 501, message: 'gateway has no workflow loader' })
+      }
+      const idemKey = event.headers.get('idempotency-key')
+      if (idemKey !== null) {
+        const cached = idempotency.get(`${id}:${idemKey}`)
+        if (cached !== undefined) {
+          return { runId: cached, status: 'running' as const }
+        }
+      }
+      const rawBody = await readBody(event).catch(() => undefined)
+      const body =
+        rawBody !== null && typeof rawBody === 'object'
+          ? (rawBody as { input?: unknown })
+          : {}
+      const input = body.input ?? {}
+      let mod: unknown
+      try {
+        mod = await loader(id, entry.path)
+      } catch (err) {
+        throw createError({
+          statusCode: 500,
+          message: `failed to load workflow: ${(err as Error).message}`,
+        })
+      }
+      const pipeline = extractPipeline(mod)
+      if (pipeline === undefined) {
+        throw createError({ statusCode: 422, message: 'workflow module did not export a default pipeline' })
+      }
+      const enforcement = gateway.enforcement
+      const runner = new Runner({
+        approvalGate: enforcement.approvalGate,
+        secretResolver: enforcement.secretResolver,
+        auditWriter: enforcement.auditWriter,
+        store: gateway.runStore,
+      })
+      gateway.attachMetricsBus(runner.events)
+      const controller = new AbortController()
+      const runId = crypto.randomUUID()
+      gateway.registerRun(runId, controller, runner)
+      const handle = runner.start(
+        pipeline as Parameters<Runner['start']>[0],
+        input as never,
+        { runId, signal: controller.signal },
+      )
+      // Fire and forget; cleanup on settle. Errors are still recorded by the
+      // runner into the runStore, so callers polling GET /runs/:runId see
+      // failed/cancelled status.
+      void handle
+        .wait()
+        .catch(() => {})
+        .finally(() => gateway.unregisterRun(runId))
+      if (idemKey !== null) idempotency.set(`${id}:${idemKey}`, runId)
+      return { runId, status: 'running' as const }
+    }),
+  )
+
+  router.post(
+    '/runs/:runId/resume',
+    eventHandler(async (event: H3Event) => {
+      const runId = event.context.params?.runId
+      if (!runId) throw createError({ statusCode: 400, message: 'runId required' })
+      const runner = gateway.getRunner(runId)
+      if (runner === undefined) {
+        throw createError({
+          statusCode: 404,
+          message: 'no in-flight runner for runId (already completed, or unknown to this gateway)',
+        })
+      }
+      const rawBody = await readBody(event).catch(() => undefined)
+      const body =
+        rawBody !== null && typeof rawBody === 'object'
+          ? (rawBody as { output?: unknown })
+          : {}
+      try {
+        await runner.resume(runId, body.output ?? {})
+        return { resumed: true, runId }
+      } catch (err) {
+        throw createError({ statusCode: 400, message: (err as Error).message })
       }
     }),
   )
