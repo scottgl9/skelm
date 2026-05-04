@@ -60,6 +60,7 @@ value:createCustomTrigger
 value:createDiscordTrigger
 value:createGitHubTrigger
 value:createMatrixTrigger
+value:createPolicyFetch
 value:createRoutingBackend
 value:createScriptTrigger
 value:createSlackTrigger
