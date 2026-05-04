@@ -1,3 +1,4 @@
+import { type ParsedCron, nextFireTime, parseCron } from './cron-parser.js'
 import type { QueueDriver } from './queue-driver.js'
 import type {
   FireContext,
@@ -59,6 +60,28 @@ export class TriggerCoordinator {
     if (dedupeKeyFn !== undefined) this.pollDedupeKeyFns.set(id, dedupeKeyFn)
   }
 
+  /**
+   * Compute the next cron fire and schedule it via setTimeout. After the fire
+   * resolves, schedules itself again. Stops chaining when the trigger is
+   * unregistered (cronTimers no longer holds an entry for it) or the
+   * coordinator is stopping.
+   */
+  private scheduleNextCron(triggerId: string, parsed: ParsedCron): void {
+    if (this.stopping) return
+    if (!this.registrations.has(triggerId)) return
+    const next = nextFireTime(parsed, new Date())
+    if (next === null) return
+    const delay = Math.max(0, next.getTime() - Date.now())
+    const t = setTimeout(() => {
+      void (async () => {
+        await this.fire(triggerId, next)
+        this.scheduleNextCron(triggerId, parsed)
+      })()
+    }, delay)
+    t.unref?.()
+    this.cronTimers.set(triggerId, t)
+  }
+
   /** Returns the trigger id bound to this webhook path+method, if any. */
   resolveWebhook(path: string, method?: string): string | undefined {
     const m = (method ?? 'POST').toUpperCase()
@@ -111,18 +134,12 @@ export class TriggerCoordinator {
         break
       }
       case 'cron': {
-        // Phase 10 ships a 60s tick parser stub: only `*/N * * * *` (every N
-        // minutes) is recognised. Full cron parsing lands when needed.
-        const everyMs = parseSimpleCron(spec.cron)
-        if (everyMs !== null) {
-          const t = setInterval(() => {
-            void this.fire(spec.id)
-          }, everyMs)
-          t.unref?.()
-          this.cronTimers.set(spec.id, t)
-        } else {
+        const parsed = parseCron(spec.cron)
+        if (parsed === null) {
           reg.lastError = `unsupported cron expression: ${spec.cron}`
+          break
         }
+        this.scheduleNextCron(spec.id, parsed)
         break
       }
       case 'immediate':
@@ -241,7 +258,7 @@ export class TriggerCoordinator {
       this.intervalTimers.delete(id)
     }
     if (t2 !== undefined) {
-      clearInterval(t2)
+      clearTimeout(t2)
       this.cronTimers.delete(id)
     }
     if (t3 !== undefined) {
@@ -318,7 +335,7 @@ export class TriggerCoordinator {
   async stop(): Promise<void> {
     this.stopping = true
     for (const t of this.intervalTimers.values()) clearInterval(t)
-    for (const t of this.cronTimers.values()) clearInterval(t)
+    for (const t of this.cronTimers.values()) clearTimeout(t)
     for (const t of this.atTimers.values()) clearTimeout(t)
     for (const t of this.pollTimers.values()) clearInterval(t)
     for (const driver of this.queueDrivers.values()) {
@@ -342,10 +359,3 @@ function defaultDedupeKey(value: unknown): string {
   }
 }
 
-function parseSimpleCron(expr: string): number | null {
-  const m = expr.trim().match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/)
-  if (m === null) return null
-  const minutes = Number.parseInt(m[1] as string, 10)
-  if (!Number.isFinite(minutes) || minutes <= 0) return null
-  return minutes * 60_000
-}
