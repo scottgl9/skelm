@@ -56,6 +56,17 @@ export type {
   CreateSessionOptions,
 } from './managers/acp-session-manager.js'
 export { CodingAgentManager } from './managers/coding-agent-manager.js'
+
+// Trigger coordinator
+export { TriggerCoordinator } from './triggers/coordinator.js'
+export type { TriggerCoordinatorOptions } from './triggers/coordinator.js'
+export type {
+  FireContext,
+  OverlapPolicy,
+  RunCallback,
+  TriggerRegistration as GatewayTriggerRegistration,
+  TriggerSpec,
+} from './triggers/types.js'
 export type {
   CodingAgentHandle,
   CodingAgentManagerOptions,
