@@ -10,7 +10,6 @@ import { initCommand } from './init.js'
 import { listCommand } from './list.js'
 import { CliError } from './load-workflow.js'
 import { runCommand } from './run.js'
-import { serveCommand } from './serve.js'
 import { workspaceCommand } from './workspace.js'
 
 export interface MainIO {
@@ -124,32 +123,6 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
           },
           io,
         )
-        return { exitCode: result.exitCode }
-      }
-      case 'serve': {
-        const portFlag = parsed.flags.port
-        const port = typeof portFlag === 'string' ? Number.parseInt(portFlag, 10) : undefined
-        const hostFlag = parsed.flags.host
-        const authFlag = parsed.flags.auth
-        const tokenFlag = parsed.flags.token
-        const configFlag = parsed.flags.config
-        const authValue: 'none' | 'bearer' =
-          typeof authFlag === 'string' && (authFlag === 'none' || authFlag === 'bearer')
-            ? authFlag
-            : 'none'
-        const serveArgs: {
-          port?: number
-          host?: string
-          auth?: 'none' | 'bearer'
-          token?: string
-          configPath?: string
-        } = {}
-        if (port !== undefined) serveArgs.port = port
-        if (typeof hostFlag === 'string') serveArgs.host = hostFlag
-        serveArgs.auth = authValue
-        if (typeof tokenFlag === 'string') serveArgs.token = tokenFlag
-        if (typeof configFlag === 'string') serveArgs.configPath = configFlag
-        const result = await serveCommand(serveArgs, io)
         return { exitCode: result.exitCode }
       }
       case 'gateway': {

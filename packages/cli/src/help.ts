@@ -6,7 +6,6 @@ Usage:
   skelm describe <workflow> [--json | --format mermaid]
   skelm history [--workflow <id>] [--last <n>] [--run <id>] [--events] [--json]
   skelm workspace <list|show|clean> [args]
-  skelm serve [flags]
   skelm gateway <start|stop|pause|resume|reload|status|install|uninstall> [flags]
   skelm audit query [flags]
   skelm secrets <get|set|list> [args]
@@ -38,13 +37,6 @@ Workspace flags:
   skelm workspace list [--json]
   skelm workspace show <workflow-id> <name> [--json]
   skelm workspace clean <workflow-id> <name> --force
-
-Serve flags:
-  --port <n>            Port to bind (default: 3000)
-  --host <addr>         Host to bind (default: 127.0.0.1)
-  --auth <mode>         none (loopback only) | bearer (requires token)
-  --token <value>       Bearer token (or set SKELM_TOKEN env var)
-  --config <path>       Config file path (default: skelm.config.ts)
 
 Gateway flags:
   skelm gateway start --foreground         Run the gateway in this process
