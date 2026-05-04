@@ -28,6 +28,26 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
   const router = createRouter()
 
   router.get(
+    '/metrics',
+    eventHandler(async (event: H3Event) => {
+      const collector = gateway.metrics
+      if (collector === null) {
+        throw createError({
+          statusCode: 404,
+          message: 'metrics are not enabled (start the gateway with enableMetrics: true)',
+        })
+      }
+      // Reflect live gateway gauges on each scrape.
+      const gate = gateway.enforcement.approvalGate as { list?: () => unknown[] }
+      if (typeof gate.list === 'function') {
+        collector.setApprovalsPending(gate.list().length)
+      }
+      event.node.res.setHeader('content-type', 'text/plain; version=0.0.4')
+      return collector.render()
+    }),
+  )
+
+  router.get(
     '/health',
     eventHandler(async () => ({
       status: 'ok',
