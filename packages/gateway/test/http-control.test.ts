@@ -394,6 +394,84 @@ describe('Gateway HTTP /schedules', () => {
   })
 })
 
+describe('Gateway HTTP POST /pipelines/:id/run', () => {
+  it('runs a pipeline synchronously and returns the final state', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'skelm-pl-run-'))
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    await fs.writeFile(join(projectRoot, 'workflows/r.workflow.ts'), 'export default {}')
+
+    const wf = pipeline({
+      id: 'echo',
+      input: z.object({ msg: z.string() }),
+      steps: [
+        code({
+          id: 'echo-step',
+          run: (ctx) => ({ echoed: (ctx.input as { msg: string }).msg.toUpperCase() }),
+        }),
+      ],
+    })
+
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      loadWorkflow: async () => wf,
+      config: {
+        registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } },
+      },
+    })
+    await gw.start()
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:${port}/pipelines/${encodeURIComponent('workflows/r.workflow.ts')}/run`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ input: { msg: 'hello' } }),
+        },
+      )
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { runId: string; status: string; output: unknown }
+      expect(body.runId).toMatch(/[a-f0-9-]{36}/)
+      expect(body.status).toBe('completed')
+      expect(body.output).toEqual({ echoed: 'HELLO' })
+    } finally {
+      await gw.stop()
+      await rm(projectRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('returns 501 when no workflow loader is configured', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'skelm-pl-run-'))
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    await fs.writeFile(join(projectRoot, 'workflows/r.workflow.ts'), 'export default {}')
+
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+    })
+    await gw.start()
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:${port}/pipelines/${encodeURIComponent('workflows/r.workflow.ts')}/run`,
+        { method: 'POST' },
+      )
+      expect(res.status).toBe(501)
+    } finally {
+      await gw.stop()
+      await rm(projectRoot, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('Gateway HTTP /pipelines', () => {
   it('GET /pipelines lists registry entries', async () => {
     // Project with a workflow file the registry can discover.

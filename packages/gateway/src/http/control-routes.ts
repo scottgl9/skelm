@@ -1,4 +1,4 @@
-import { type Pipeline, type RunEvent, describePipeline } from '@skelm/core'
+import { type Pipeline, type RunEvent, Runner, describePipeline } from '@skelm/core'
 import {
   type App,
   type H3Event,
@@ -197,6 +197,70 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
     eventHandler(async () =>
       gateway.registries.workflows.list().map((entry) => ({ id: entry.id, file: entry.path })),
     ),
+  )
+
+  router.post(
+    '/pipelines/:id/run',
+    eventHandler(async (event: H3Event) => {
+      const id = decodeMaybe(event.context.params?.id)
+      if (!id) throw createError({ statusCode: 400, message: 'pipeline id required' })
+      const entry = gateway.registries.workflows.get(id)
+      if (entry === undefined) {
+        throw createError({ statusCode: 404, message: 'pipeline not found' })
+      }
+      const loader = gateway.getWorkflowLoader()
+      if (loader === undefined) {
+        throw createError({
+          statusCode: 501,
+          message: 'gateway has no workflow loader (cannot import workflow modules)',
+        })
+      }
+      const body = (await readBody(event).catch(() => ({}))) as { input?: unknown }
+      const input = body.input ?? {}
+      let mod: unknown
+      try {
+        mod = await loader(id, entry.path)
+      } catch (err) {
+        throw createError({
+          statusCode: 500,
+          message: `failed to load workflow: ${(err as Error).message}`,
+        })
+      }
+      const pipeline = extractPipeline(mod)
+      if (pipeline === undefined) {
+        throw createError({
+          statusCode: 422,
+          message: 'workflow module did not export a default pipeline',
+        })
+      }
+      const enforcement = gateway.enforcement
+      const runner = new Runner({
+        approvalGate: enforcement.approvalGate,
+        secretResolver: enforcement.secretResolver,
+        auditWriter: enforcement.auditWriter,
+        store: gateway.runStore,
+      })
+      gateway.attachMetricsBus(runner.events)
+      const controller = new AbortController()
+      const runId = crypto.randomUUID()
+      gateway.registerRun(runId, controller)
+      try {
+        const handle = runner.start(
+          pipeline as Parameters<Runner['start']>[0],
+          input as never,
+          { runId, signal: controller.signal },
+        )
+        const finalState = await handle.wait()
+        return {
+          runId: finalState.runId,
+          status: finalState.status,
+          output: finalState.output,
+          ...(finalState.error !== undefined && { error: finalState.error }),
+        }
+      } finally {
+        gateway.unregisterRun(runId)
+      }
+    }),
   )
 
   router.get(
