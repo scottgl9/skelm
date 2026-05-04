@@ -118,6 +118,7 @@ export async function runCommand(
         events: bus,
         store,
         stateStore: store,
+        workflowPath: resolve(process.cwd(), workflowPath),
         ...(config.defaults?.permissions !== undefined && {
           defaultPermissions: config.defaults.permissions,
         }),

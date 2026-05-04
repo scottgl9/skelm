@@ -36,6 +36,10 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
     toolPermissions: 'native',
   }
 
+  // Single client instance per backend — server started on first call and
+  // kept alive for subsequent calls (one session per prompt call).
+  const client = new OpencodeClientWrapper(options)
+
   const backend: SkelmBackend = {
     id: options.id ?? 'opencode',
     capabilities,
@@ -70,17 +74,11 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
         throw new Error(`Permission denied: ${permissionResult.denied.join(', ')}`)
       }
 
-      // Create client and start the opencode serve process
-      const client = new OpencodeClientWrapper({
-        ...options,
-        agent: options.agent ?? 'build',
-      })
-
+      // Use the shared client (server started on first call, kept alive)
       const onAbort = () => client.cancel()
       context.signal.addEventListener('abort', onAbort, { once: true })
 
       try {
-        await client.start()
         const result = await client.prompt(request, {})
         return result
       } catch (error) {
@@ -98,7 +96,7 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
         throw error
       } finally {
         context.signal.removeEventListener('abort', onAbort)
-        await client.dispose()
+        // Do NOT dispose — server stays alive for subsequent calls
       }
     },
   }

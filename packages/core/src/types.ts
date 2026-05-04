@@ -296,6 +296,12 @@ export interface Pipeline<TInput = unknown, TOutput = unknown> {
 export interface Run<TInput = unknown, TOutput = unknown> {
   readonly runId: RunId
   readonly pipelineId: string
+  /**
+   * Absolute path to the workflow file that produced this run, when known.
+   * Populated by the gateway dispatcher from the workflow registry; absent
+   * for runs started directly via `runPipeline()` or the CLI.
+   */
+  readonly workflowPath?: string
   readonly status: RunStatus
   readonly input: TInput
   readonly steps: readonly StepResult[]

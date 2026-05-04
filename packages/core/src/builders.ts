@@ -340,6 +340,12 @@ export function pipelineStep<TInput, TOutput>(def: {
 }
 
 export function idempotent<TOutput>(def: {
+  /**
+   * Step id for the idempotent wrapper. When omitted, the inner step's id is
+   * used (backward-compatible). Setting an explicit id lets callers access
+   * the result as `ctx.steps[id]` independently of the inner step's id.
+   */
+  id?: string
   key: string | ((ctx: Context) => string)
   step: Step
   ttlMs?: number
@@ -349,9 +355,11 @@ export function idempotent<TOutput>(def: {
   if (!def.step) {
     throw new Error('idempotent(): step is required')
   }
+  const id = def.id ?? def.step.id
+  if (!id) throw new Error('idempotent(): id is required (or provide a step with an id)')
   return Object.freeze({
     kind: 'idempotent',
-    id: def.step.id,
+    id,
     key: def.key,
     step: def.step,
     ...(def.ttlMs !== undefined && { ttlMs: def.ttlMs }),

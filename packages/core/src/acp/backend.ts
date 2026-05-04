@@ -39,6 +39,12 @@ export interface AcpBackendOptions {
   cwd?: string
   /** Optional environment overlay for the agent process. */
   env?: NodeJS.ProcessEnv
+  /**
+   * Maximum number of concurrent agent processes. Defaults to 4. When the
+   * limit is reached, additional calls queue until a slot is available.
+   * Set to 0 for unlimited (not recommended for production).
+   */
+  maxConcurrent?: number
 }
 
 /**
@@ -57,10 +63,33 @@ export function createAcpBackend(opts: AcpBackendOptions): SkelmBackend {
     toolPermissions: 'native',
   }
 
+  // Concurrency semaphore — limits simultaneous agent processes
+  const maxConcurrent = opts.maxConcurrent ?? 4
+  let active = 0
+  const queue: Array<() => void> = []
+
+  const acquire = (): Promise<void> => {
+    if (maxConcurrent === 0 || active < maxConcurrent) {
+      active++
+      return Promise.resolve()
+    }
+    return new Promise<void>((resolve) => queue.push(resolve))
+  }
+
+  const release = () => {
+    const next = queue.shift()
+    if (next) {
+      next()
+    } else {
+      active--
+    }
+  }
+
   const backend: SkelmBackend = {
     id: opts.id ?? 'acp',
     capabilities,
     async run(req: AgentRequest, ctx: BackendContext): Promise<AgentResponse> {
+      await acquire()
       const client = new AcpClient()
       const onAbort = () => client.cancel()
       ctx.signal.addEventListener('abort', onAbort, { once: true })
@@ -90,6 +119,7 @@ export function createAcpBackend(opts: AcpBackendOptions): SkelmBackend {
       } finally {
         ctx.signal.removeEventListener('abort', onAbort)
         await client.stop()
+        release()
       }
     },
   }

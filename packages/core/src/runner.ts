@@ -81,6 +81,12 @@ export interface RunOptions {
    * via this hook only after the operator releases the run.
    */
   beforeStep?: (info: { runId: string; stepId: StepId; kind: StepKind }) => Promise<void>
+  /**
+   * Optional absolute path to the workflow file. Stored on the Run record
+   * so consumers can correlate runs back to their source file without
+   * having to re-scan the registry.
+   */
+  workflowPath?: string
 }
 
 export class ApprovalDeniedError extends Error {
@@ -515,6 +521,7 @@ export async function runPipeline<TInput, TOutput>(
     Object.freeze({
       runId,
       pipelineId: pipeline.id,
+      ...(options.workflowPath !== undefined && { workflowPath: options.workflowPath }),
       status: runStatus,
       input: resolvedInput,
       steps: Object.freeze(stepResults),
