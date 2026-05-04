@@ -52,6 +52,7 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         approvalGate: enforcement.approvalGate,
         secretResolver: enforcement.secretResolver,
         auditWriter: enforcement.auditWriter,
+        store: opts.gateway.runStore,
       })
       const handle = runner.start(pipeline as Parameters<Runner['start']>[0], {
         triggerId: ctx.triggerId,

@@ -50,7 +50,10 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     )
     return { exitCode: EXIT.CLI_ERROR }
   }
-  const gateway = new Gateway({ installSignalHandlers: true })
+  const gateway = new Gateway({
+    installSignalHandlers: true,
+    enableHttp: true,
+  })
   try {
     await gateway.start()
   } catch (err) {

@@ -1,3 +1,5 @@
+import { promises as fs } from 'node:fs'
+import { dirname } from 'node:path'
 import type { ApprovalDecision, ApprovalGate, ApprovalRequest } from '@skelm/core'
 
 export interface PendingApproval {
@@ -9,6 +11,13 @@ export interface PendingApproval {
 export interface SuspendApprovalGateOptions {
   /** Optional max wait per approval in milliseconds. Default: indefinite. */
   timeoutMs?: number
+  /**
+   * Optional path to write a JSON snapshot of the pending queue to on every
+   * change. Lets the CLI's `skelm approvals list` reflect live state without
+   * touching the gateway HTTP surface. The snapshot is request-only (no
+   * promise resolvers); resuming requires the running gateway.
+   */
+  persistPath?: string
 }
 
 /**
@@ -66,6 +75,7 @@ export class SuspendApprovalGate implements ApprovalGate {
         entry.timer.unref?.()
       }
       this.pending.set(id, entry)
+      void this.persist()
     })
   }
 
@@ -90,6 +100,7 @@ export class SuspendApprovalGate implements ApprovalGate {
     if (entry === undefined) return false
     if (entry.timer !== undefined) clearTimeout(entry.timer)
     this.pending.delete(id)
+    void this.persist()
     entry.resolve(decision)
     return true
   }
@@ -101,5 +112,23 @@ export class SuspendApprovalGate implements ApprovalGate {
       entry.reject(new Error(`approval ${id} cancelled: ${reason}`))
     }
     this.pending.clear()
+    void this.persist()
+  }
+
+  private async persist(): Promise<void> {
+    if (this.opts.persistPath === undefined) return
+    try {
+      await fs.mkdir(dirname(this.opts.persistPath), { recursive: true })
+      const snapshot = this.list().map((p) => ({
+        id: p.id,
+        runId: p.request.runId,
+        stepId: p.request.stepId,
+        action: p.request.action,
+        createdAt: p.createdAt,
+      }))
+      await fs.writeFile(this.opts.persistPath, JSON.stringify(snapshot, null, 2))
+    } catch {
+      // Best-effort — chain audit captures the request itself.
+    }
   }
 }

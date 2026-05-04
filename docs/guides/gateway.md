@@ -49,6 +49,41 @@ When started with signal handlers attached (the default for `skelm gateway start
 | `SIGTERM`, `SIGINT` | Graceful stop with default drain timeout. |
 | `SIGHUP` | Reload config and registries; in-flight runs continue. |
 
+## HTTP control surface
+
+When started with `skelm gateway start --foreground` the gateway also binds an HTTP server (`server.host` / `server.port` from `skelm.config.ts`, default `127.0.0.1:4000`). Auth defaults to loopback-only (`auth.mode: 'none'`); set `auth.mode: 'bearer'` and `SKELM_TOKEN` for remote use.
+
+Routes:
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/health` | GET | Cheap probe — `{ status, pid, state, stateDir }`. |
+| `/gateway/pause` | POST | Block new triggers; in-flight runs continue. |
+| `/gateway/resume` | POST | Opposite of pause. |
+| `/gateway/reload` | POST | Re-scan FS-backed registries (same as `SIGHUP`). |
+| `/approvals` | GET | List pending approval requests. |
+| `/runs/:runId/approve` | POST | Body: `{ stepId, approver?, reason? }`. |
+| `/runs/:runId/deny` | POST | Same body shape. |
+| `/sessions` | GET | List ACP sessions. |
+| `/sessions/:id/resume` | POST | Resume a paused session. |
+| `/sessions/:id` | DELETE | Terminate a session. |
+| `/triggers` | GET | List registered triggers. |
+| `/triggers/:id/fire` | POST | Manually fire one trigger. |
+
+Plus the existing pre-gateway routes (`/pipelines`, `/runs`, `/runs/:id/stream`, etc).
+
+## Persistence
+
+| File | Owner | Notes |
+|------|-------|-------|
+| `<stateDir>/gateway.lock` | lifecycle | Single-writer lock, doubles as audit-writer claim. |
+| `<stateDir>/gateway.json` | lifecycle | Discovery — pid, url, token, startedAt. |
+| `<stateDir>/audit.jsonl` | audit | Hash-chained append-only log; `skelm audit verify` walks it. |
+| `<stateDir>/secrets.json` | secrets | Mode 0600. Only when `secrets.driver: 'file'`. |
+| `<stateDir>/approvals.json` | approval gate | JSON snapshot of the pending queue, written on every change. |
+| `<stateDir>/acp-sessions.json` | ACP session manager | All resident-agent sessions; `reconcile()` re-reads at start. |
+| `<stateDir>/runs.sqlite` | RunStore | SqliteRunStore by default; configurable via `storage.runs`. |
+
 ## Phase status
 
-Phase 2 of the gateway-centric refactor. The lifecycle shell, lockfile, discovery file, and the foreground `start` / `status` CLI verbs are landed. Subsequent phases add: registries (Phase 3), trust-boundary instances (Phase 4), audit + secrets (Phase 5), approvals (Phase 6), MCP supervision (Phase 7), coding-agent + ACP supervision (Phases 8–9), trigger wiring (Phase 10), and the remaining CLI verbs and `--remote` polish (Phase 11).
+Phases 0–13 of the gateway-centric refactor are landed. Phase 13 closes the loop by binding the HTTP control surface to `skelm gateway start`, persisting the approval queue, and wiring the gateway-managed `RunStore` into trigger-dispatched runs.

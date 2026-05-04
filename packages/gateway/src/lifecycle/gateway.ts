@@ -5,13 +5,17 @@ import {
   type AuditWriter,
   DEFAULT_CONFIG,
   EnvSecretResolver,
+  MemoryRunStore,
   NoopAuditWriter,
   PermissionResolver,
+  type RunStore,
   type SecretResolver,
   type SkelmConfig,
+  SqliteRunStore,
 } from '@skelm/core'
 import { SuspendApprovalGate } from '../approvals/suspend-gate.js'
 import { ChainAuditWriter } from '../audit/chain.js'
+import { type SkelmServer, createServer } from '../http/index.js'
 import { AcpSessionManager, defaultAcpSessionStorePath } from '../managers/acp-session-manager.js'
 import { CodingAgentManager } from '../managers/coding-agent-manager.js'
 import { McpServerManager } from '../managers/mcp-server-manager.js'
@@ -49,6 +53,15 @@ export interface GatewayOptions {
   secretResolver?: SecretResolver
   /** Override the canonical approval gate; defaults to auto-approve (Phase 6 wires the suspend gate). */
   approvalGate?: ApprovalGate
+  /**
+   * When true, start the HTTP control surface alongside the rest of the
+   * lifecycle. Defaults to false so unit tests don't bind a port; the CLI
+   * sets this to true on `skelm gateway start --foreground`.
+   */
+  enableHttp?: boolean
+  /** Bound URL the HTTP server should advertise; defaults to http://127.0.0.1:4000. */
+  httpHost?: string
+  httpPort?: number
 }
 
 export interface GatewayEnforcement {
@@ -93,6 +106,8 @@ export class Gateway {
   private registriesInternal: GatewayRegistries | null = null
   private enforcementInternal: GatewayEnforcement | null = null
   private managersInternal: GatewayManagers | null = null
+  private runStoreInternal: RunStore | null = null
+  private httpServer: SkelmServer | null = null
 
   constructor(private readonly options: GatewayOptions = {}) {
     this.stateDir = options.stateDir ?? join(homedir(), '.skelm')
@@ -130,6 +145,14 @@ export class Gateway {
     return this.enforcementInternal
   }
 
+  /** The durable RunStore; constructed at start() per the storage config. */
+  get runStore(): RunStore {
+    if (this.runStoreInternal === null) {
+      throw new Error('gateway runStore is not available — start() the gateway first')
+    }
+    return this.runStoreInternal
+  }
+
   /** Process / session supervisors hosted by the gateway. */
   get managers(): GatewayManagers {
     if (this.managersInternal === null) {
@@ -152,9 +175,13 @@ export class Gateway {
         startedAt: this.lockfile.startedAt,
       }
       await writeDiscovery(this.discoveryPath, this.discovery)
+      this.runStoreInternal = this.buildRunStore()
       this.enforcementInternal = this.buildEnforcement()
       this.registriesInternal = await this.buildRegistries()
       this.managersInternal = await this.buildManagers()
+      if (this.options.enableHttp) {
+        await this.startHttp()
+      }
       if (this.options.installSignalHandlers) this.attachSignals()
       this.state = 'running'
     } catch (err) {
@@ -164,6 +191,7 @@ export class Gateway {
       this.registriesInternal = null
       this.enforcementInternal = null
       this.managersInternal = null
+      this.runStoreInternal = null
       throw err
     }
   }
@@ -213,6 +241,10 @@ export class Gateway {
     this.state = 'stopping'
     try {
       this.detachSignals()
+      if (this.httpServer !== null) {
+        await this.httpServer.stop()
+        this.httpServer = null
+      }
       if (this.managersInternal !== null) {
         await this.managersInternal.triggers.stop()
         await this.managersInternal.mcp.stopAll()
@@ -238,7 +270,43 @@ export class Gateway {
       this.registriesInternal = null
       this.enforcementInternal = null
       this.managersInternal = null
+      this.runStoreInternal = null
     }
+  }
+
+  private async startHttp(): Promise<void> {
+    if (this.runStoreInternal === null) throw new Error('runStore must be built before HTTP starts')
+    const port = this.options.httpPort ?? this.config.server?.port ?? 4000
+    const host = this.options.httpHost ?? this.config.server?.host ?? '127.0.0.1'
+    const auth = this.config.server?.auth?.mode === 'bearer' ? 'bearer' : 'none'
+    this.httpServer = createServer(
+      {
+        port,
+        host,
+        auth,
+        ...(this.options.token !== undefined && { token: this.options.token }),
+      },
+      {
+        pipelines: [],
+        runStore: this.runStoreInternal,
+        runner: undefined as never, // gateway-routed runs go through the dispatcher; the server's own /pipelines/:id/run is unused here
+        gateway: this,
+      },
+    )
+    await this.httpServer.start()
+    if (this.discovery !== null) {
+      this.discovery = { ...this.discovery, url: `http://${host}:${port}` }
+      await writeDiscovery(this.discoveryPath, this.discovery)
+    }
+  }
+
+  private buildRunStore(): RunStore {
+    const cfg = this.config.storage?.runs
+    if (cfg === undefined || cfg.driver === 'sqlite') {
+      const dbPath = expandHome(cfg?.path ?? join(this.stateDir, 'runs.sqlite'))
+      return new SqliteRunStore({ path: dbPath })
+    }
+    return new MemoryRunStore()
   }
 
   private async buildManagers(): Promise<GatewayManagers> {
@@ -287,7 +355,9 @@ export class Gateway {
 
     // Default to the suspend gate so production runs actually wait for
     // an approver. AutoApproveGate is an explicit opt-in for tests.
-    const approvalGate = this.options.approvalGate ?? new SuspendApprovalGate()
+    const approvalGate =
+      this.options.approvalGate ??
+      new SuspendApprovalGate({ persistPath: join(this.stateDir, 'approvals.json') })
 
     return {
       permissionResolver: new PermissionResolver({
@@ -350,4 +420,9 @@ export class Gateway {
     this.handlers.clear()
     this.signalsAttached = false
   }
+}
+
+function expandHome(p: string): string {
+  if (p.startsWith('~/')) return join(homedir(), p.slice(2))
+  return p
 }
