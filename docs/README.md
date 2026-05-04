@@ -10,17 +10,17 @@ If you are reading this on GitHub, the rendered site lives at the project's docu
 
 ## Concepts
 
-- [Workflows](./concepts/workflows.md) — what a workflow is and how it composes
-- [Steps](./concepts/steps.md) — the step kinds and when to use each
-- [Context](./concepts/context.md) — the typed state that flows through a workflow
-- [Agents](./concepts/agents.md) — the `agent()` step and agent definitions
-- [Skills](./concepts/skills.md) — packaged capability units (`SKILL.md`)
-- [Workspaces](./concepts/workspaces.md) — per-agent filesystem roots
+- [Workflows](./concepts/workflows.md) <!-- @planned --> — what a workflow is and how it composes
+- [Steps](./concepts/steps.md) <!-- @planned --> — the step kinds and when to use each
+- [Context](./concepts/context.md) <!-- @planned --> — the typed state that flows through a workflow
+- [Agents](./concepts/agents.md) <!-- @planned --> — the `agent()` step and agent definitions
+- [Skills](./concepts/skills.md) <!-- @planned --> — packaged capability units (`SKILL.md`)
+- [Workspaces](./concepts/workspaces.md) <!-- @planned --> — per-agent filesystem roots
 - [Permissions](./concepts/permissions.md) — default-deny security model
-- [State](./concepts/state.md) — KV state, journals, idempotency
-- [Schedules](./concepts/schedules.md) — scheduler-native execution
-- [Runs](./concepts/runs.md) — lifecycle, events, history
-- [Observability](./concepts/observability.md) — events, metrics, audit, OpenTelemetry
+- [State](./concepts/state.md) <!-- @planned --> — KV state, journals, idempotency
+- [Schedules](./concepts/schedules.md) <!-- @planned --> — scheduler-native execution
+- [Runs](./concepts/runs.md) <!-- @planned --> — lifecycle, events, history
+- [Observability](./concepts/observability.md) <!-- @planned --> — events, metrics, audit, OpenTelemetry
 
 ## Recipes
 
@@ -33,16 +33,16 @@ Complete, runnable workflows for the patterns customers ship most often:
 
 ## Reference
 
-- [API](./reference/api.md) — `@skelm/core` public surface
-- [CLI](./reference/cli.md) — every command, flag, exit code
-- [HTTP](./reference/http.md) — endpoints, auth, errors, SSE
-- [Configuration](./reference/config.md) — `skelm.config.ts` schema
+- [API](./reference/api.md) <!-- @planned --> — `@skelm/core` public surface
+- [CLI](./reference/cli.md) <!-- @planned --> — every command, flag, exit code
+- [HTTP](./reference/http.md) <!-- @planned --> — endpoints, auth, errors, SSE
+- [Configuration](./reference/config.md) <!-- @planned --> — `skelm.config.ts` schema
 - [Providers](./backends/README.md) — ModelProvider and AgentProvider architecture
-- [Agent definitions](./reference/agent-definitions.md) — `AGENTS.md` / `SOUL.md` / `MEMORY.md` / `EXAMPLES.md`
-- [Event schema](./reference/events.md)
-- [Audit categories](./reference/audit.md)
-- [Exit codes](./reference/exit-codes.md)
-- [Glossary](./reference/glossary.md)
+- [Agent definitions](./reference/agent-definitions.md) <!-- @planned --> — `AGENTS.md` / `SOUL.md` / `MEMORY.md` / `EXAMPLES.md`
+- [Event schema](./reference/events.md) <!-- @planned -->
+- [Audit categories](./reference/audit.md) <!-- @planned -->
+- [Exit codes](./reference/exit-codes.md) <!-- @planned -->
+- [Glossary](./reference/glossary.md) <!-- @planned -->
 
 ## Guides
 
@@ -55,18 +55,18 @@ Complete, runnable workflows for the patterns customers ship most often:
 
 ## Deployment
 
-- [systemd](./deployment/systemd.md) — install the gateway as a user unit
-- [Reverse proxy](./deployment/reverse-proxy.md) — TLS and auth in front of the gateway
-- [Postgres](./deployment/postgres.md) — production storage backend (M4)
-- [Secrets](./deployment/secrets.md) — env, file, vault drivers
-- [Monitoring](./deployment/monitoring.md) — Prometheus rules, OTel
-- [Backup](./deployment/backup.md)
+- [systemd](./deployment/systemd.md) <!-- @planned --> — install the gateway as a user unit
+- [Reverse proxy](./deployment/reverse-proxy.md) <!-- @planned --> — TLS and auth in front of the gateway
+- [Postgres](./deployment/postgres.md) <!-- @planned M4 --> — production storage backend (M4)
+- [Secrets](./deployment/secrets.md) <!-- @planned --> — env, file, vault drivers
+- [Monitoring](./deployment/monitoring.md) <!-- @planned --> — Prometheus rules, OTel
+- [Backup](./deployment/backup.md) <!-- @planned -->
 
 ## About
 
-- [Tenets](./about/tenets.md) — security, maintenance, robustness
-- [Roadmap](./about/roadmap.md)
-- [Changelog](./about/changelog.md) — generated
+- [Tenets](./about/tenets.md) <!-- @planned --> — security, maintenance, robustness
+- [Roadmap](./about/roadmap.md) <!-- @planned -->
+- [Changelog](./about/changelog.md) <!-- @planned --> — generated
 - [License](../LICENSE)
 
 ## Status

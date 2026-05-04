@@ -134,7 +134,9 @@ skelm run workflows/hello.workflow.ts --input '{"name":"world"}'
 
 Notice: `permissions` is **explicit and default-deny**. The agent has no tools, no executables, no filesystem access, no network outside the backend's own. If the agent tries to do anything privileged, the run fails with a permission denial — by design.
 
-## 6. Schedule it
+## 6. Schedule it <!-- @planned M3 -->
+
+> **Note:** `skelm schedule` is not yet implemented. The commands below document the intended interface; they will be available in M3. Until then, triggers are defined in `skelm.config.ts` (see [Triggers guide](../guides/triggers.md)).
 
 Run every five minutes:
 
@@ -202,11 +204,11 @@ curl http://127.0.0.1:4000/runs/<runId>
 
 ## What's next
 
-- [Concepts → Workflows](../concepts/workflows.md) — how steps compose, what the typed context gives you.
+- [Concepts → Workflows](../concepts/workflows.md) — how steps compose, what the typed context gives you. <!-- @planned -->
 - [Concepts → Permissions](../concepts/permissions.md) — the default-deny model, how to widen safely with profiles.
-- [Concepts → Agents](../concepts/agents.md) — agent definitions in markdown.
+- [Concepts → Agents](../concepts/agents.md) — agent definitions in markdown. <!-- @planned -->
 - [Recipes](../recipes/) — complete examples of long-running and HTTP-triggered patterns.
-- [CLI reference](../reference/cli.md) and [HTTP reference](../reference/http.md).
+- [CLI reference](../reference/cli.md) <!-- @planned --> and [HTTP reference](../reference/http.md). <!-- @planned -->
 
 ## Common gotchas
 
