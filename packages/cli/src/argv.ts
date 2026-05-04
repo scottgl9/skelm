@@ -13,6 +13,7 @@ export interface ParsedArgv {
     | 'history'
     | 'workspace'
     | 'serve'
+    | 'gateway'
     | 'audit'
     | 'secrets'
     | 'version'
@@ -57,6 +58,9 @@ export function parseArgv(argv: readonly string[]): ParsedArgv {
   if (first === 'serve') {
     return parseSubcommand('serve', argv.slice(1))
   }
+  if (first === 'gateway') {
+    return parseSubcommand('gateway', argv.slice(1))
+  }
   if (first === 'audit') {
     return parseSubcommand('audit', argv.slice(1))
   }
@@ -75,6 +79,7 @@ function parseSubcommand(
     | 'history'
     | 'workspace'
     | 'serve'
+    | 'gateway'
     | 'audit'
     | 'secrets',
   rest: readonly string[],
