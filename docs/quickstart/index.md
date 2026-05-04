@@ -134,9 +134,7 @@ skelm run workflows/hello.workflow.ts --input '{"name":"world"}'
 
 Notice: `permissions` is **explicit and default-deny**. The agent has no tools, no executables, no filesystem access, no network outside the backend's own. If the agent tries to do anything privileged, the run fails with a permission denial — by design.
 
-## 6. Schedule it <!-- @planned M3 -->
-
-> **Note:** `skelm schedule` is not yet implemented. The commands below document the intended interface; they will be available in M3. Until then, triggers are defined in `skelm.config.ts` (see [Triggers guide](../guides/triggers.md)).
+## 6. Schedule it
 
 Run every five minutes:
 
