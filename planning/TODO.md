@@ -6,7 +6,6 @@ Current main state:
 - The planned M2 feature slices are landed on `main` (`f2e1596`).
 - Session-tracked implementation todos are all complete.
 - **NEW:** GitHub Packages publishing infrastructure added (`.github/workflows/publish.yml`)
-- **NEW:** Workspace consolidation complete (vault/projects migrated to workspace-general)
 
 What remains is the unfinished acceptance work for M2, then the M3+ roadmap.
 
@@ -60,7 +59,6 @@ What remains is the unfinished acceptance work for M2, then the M3+ roadmap.
 - [x] GitHub Packages publishing workflow (`.github/workflows/publish.yml`)
 - [x] Automated version updates from release tags
 - [x] CI/CD pipeline with build, typecheck, lint, test
-- [x] Workspace consolidation (vault/projects → workspace-general)
 - [ ] Add npm registry publishing (in addition to GitHub Packages)
 - [ ] Add release notes automation
 - [ ] Add package size tracking
