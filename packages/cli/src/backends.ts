@@ -21,13 +21,16 @@ export function applyConfiguredBackends<TInput, TOutput>(
   return patchPipeline(pipeline, defaultLlmBackend, defaultAgentBackend)
 }
 
-export function buildBackendRegistry(config: SkelmConfig): BackendRegistry | undefined {
+export async function buildBackendRegistry(
+  config: SkelmConfig,
+): Promise<BackendRegistry | undefined> {
   const backendIds = configuredBackendIds(config)
   if (backendIds.size === 0) return undefined
 
   const registry = new BackendRegistry()
   for (const backendId of backendIds) {
-    registry.register(createBackend(backendId, config))
+    const backend = await Promise.resolve(createBackend(backendId, config))
+    registry.register(backend)
   }
   return registry
 }

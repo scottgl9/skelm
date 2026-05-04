@@ -54,6 +54,27 @@ export interface RunOptions {
   workspaceManager?: WorkspaceManager
   /** Optional hook used by wait() steps to suspend until external input arrives. */
   waitForInput?: (request: WaitRequest) => Promise<unknown>
+  /**
+   * Optional approval gate consulted at the start of every agent step whose
+   * resolved policy declares `permissions.approval`. The runtime suspends
+   * the step until the gate resolves and fails the step with
+   * ApprovalDeniedError if the decision is `approved: false`.
+   *
+   * Defaults to AutoApproveGate when omitted (test-friendly). Production
+   * gateways inject SuspendApprovalGate here.
+   */
+  approvalGate?: ApprovalGate
+}
+
+export class ApprovalDeniedError extends Error {
+  constructor(
+    readonly stepId: string,
+    readonly approver?: string,
+    readonly reason?: string,
+  ) {
+    super(`approval denied for step "${stepId}"${reason ? `: ${reason}` : ''}`)
+    this.name = 'ApprovalDeniedError'
+  }
 }
 
 export interface WaitRequest {
@@ -79,6 +100,7 @@ interface ExecutionRuntime {
   readonly store?: RunStore
   readonly defaultPermissions?: AgentPermissions
   readonly permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+  readonly approvalGate?: ApprovalGate
   readonly currentWorkspace: Context['workspace']
   setCurrentWorkspace(workspace: Context['workspace']): void
   deferRunWorkspaceFinalizer(finalizer: (status: RunStatus) => Promise<void>): void
@@ -144,6 +166,7 @@ export class Runner {
       ...(this.options.workspaceManager !== undefined && {
         workspaceManager: this.options.workspaceManager,
       }),
+      approvalGate: this.enforcement.approvalGate,
       waitForInput: (request) => this.awaitResume(request),
     })
     return {
@@ -341,6 +364,7 @@ export async function runPipeline<TInput, TOutput>(
           ...(options.permissionProfiles !== undefined && {
             permissionProfiles: options.permissionProfiles,
           }),
+          ...(options.approvalGate !== undefined && { approvalGate: options.approvalGate }),
           currentWorkspace,
           ...(store !== undefined && { store }),
           setCurrentWorkspace: (workspace) => {
@@ -682,6 +706,20 @@ async function runStep(
         }
         const declaredPermissionDimensions = collectResolvedPermissionDimensions(policy, mcpServers)
         assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions)
+        if (policy?.approval && runtime?.approvalGate !== undefined) {
+          const decision = await runtime.approvalGate.request({
+            runId: ctx.run.runId,
+            stepId: step.id,
+            action: 'agent.start',
+            context: Object.freeze({
+              dimensions: Array.from(policy.approval.on),
+              mcpServers: mcpServers?.map((m) => m.id) ?? [],
+            }),
+          })
+          if (!decision.approved) {
+            throw new ApprovalDeniedError(step.id, decision.approver, decision.reason)
+          }
+        }
         const req: AgentRequest = {
           prompt: resolvedPromptText,
           ...(resolvedSystemText !== undefined && { system: resolvedSystemText }),

@@ -44,4 +44,4 @@ In production the **gateway** owns the canonical instances and hands them to eve
 | `SecretResolver` (env) | 4 | Wired. |
 | `SecretResolver` (file driver) | 5 | Pending. |
 | `ApprovalGate` (auto-approve / auto-deny) | 4 | Wired (test-friendly). |
-| `ApprovalGate` (suspend + resume) | 6 | Pending. |
+| `ApprovalGate` (suspend + resume) | 6 | Wired. The runtime calls `runtime.approvalGate.request(...)` at the start of every agent step whose resolved policy declares `permissions.approval`. A denial fails the step with `ApprovalDeniedError`. |

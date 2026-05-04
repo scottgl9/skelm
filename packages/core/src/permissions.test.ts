@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { BackendRegistry, type SkelmBackend } from './backend.js'
 import { agent, pipeline } from './builders.js'
+import {
+  type ApprovalDecision,
+  type ApprovalGate,
+  type ApprovalRequest,
+  AutoApproveGate,
+} from './enforcement/index.js'
 import { TrustEnforcer, resolvePermissions } from './permissions.js'
 import { runPipeline } from './runner.js'
 
@@ -188,5 +194,113 @@ describe('runPipeline — permission profiles', () => {
 
     expect(run.status).toBe('completed')
     expect(seenExecutables).toEqual(new Set(['rg']))
+  })
+})
+
+describe('runPipeline — approval gate', () => {
+  function fakeBackend(): SkelmBackend {
+    return {
+      id: 'gated-backend',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'wrapped',
+      },
+      async run() {
+        return { text: 'ok' }
+      },
+    }
+  }
+
+  function pipelineWithApproval() {
+    return pipeline({
+      id: 'gated',
+      steps: [
+        agent({
+          id: 'work',
+          backend: 'gated-backend',
+          prompt: 'hi',
+          permissions: {
+            allowedExecutables: ['echo'],
+            approval: { on: ['executable'] },
+          },
+        }),
+      ],
+    })
+  }
+
+  it('invokes the approval gate at agent step start when policy.approval is set', async () => {
+    const registry = new BackendRegistry()
+    registry.register(fakeBackend())
+    const requests: ApprovalRequest[] = []
+    const gate: ApprovalGate = {
+      async request(req) {
+        requests.push(req)
+        return { approved: true, approver: 'auto' }
+      },
+    }
+    const run = await runPipeline(pipelineWithApproval(), undefined, {
+      backends: registry,
+      approvalGate: gate,
+    })
+    expect(run.status).toBe('completed')
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.action).toBe('agent.start')
+    expect(requests[0]?.context).toMatchObject({ dimensions: ['executable'] })
+  })
+
+  it('fails the step when the gate denies', async () => {
+    const registry = new BackendRegistry()
+    registry.register(fakeBackend())
+    const gate: ApprovalGate = {
+      async request(): Promise<ApprovalDecision> {
+        return { approved: false, approver: 'auto', reason: 'blocked' }
+      },
+    }
+    const run = await runPipeline(pipelineWithApproval(), undefined, {
+      backends: registry,
+      approvalGate: gate,
+    })
+    expect(run.status).toBe('failed')
+    expect(run.steps[0]?.error?.message).toMatch(/approval denied/)
+  })
+
+  it('does not invoke the gate when policy.approval is omitted', async () => {
+    const registry = new BackendRegistry()
+    registry.register(fakeBackend())
+    let count = 0
+    const gate: ApprovalGate = {
+      async request() {
+        count++
+        return { approved: true }
+      },
+    }
+    const wf = pipeline({
+      id: 'no-approval',
+      steps: [
+        agent({
+          id: 'work',
+          backend: 'gated-backend',
+          prompt: 'hi',
+          permissions: { allowedExecutables: ['echo'] },
+        }),
+      ],
+    })
+    await runPipeline(wf, undefined, { backends: registry, approvalGate: gate })
+    expect(count).toBe(0)
+  })
+
+  it('AutoApproveGate (the default) approves transparently', async () => {
+    const registry = new BackendRegistry()
+    registry.register(fakeBackend())
+    const run = await runPipeline(pipelineWithApproval(), undefined, {
+      backends: registry,
+      approvalGate: new AutoApproveGate(),
+    })
+    expect(run.status).toBe('completed')
   })
 })

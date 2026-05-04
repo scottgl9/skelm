@@ -43,6 +43,11 @@ const coordinator = new TriggerCoordinator({
 coordinator.register({ kind: 'interval', id: 'every-5m', workflowId: 'workflows/poll.workflow.ts', everyMs: 5 * 60_000 })
 ```
 
+The CLI's `skelm gateway start --foreground` wires this loop internally via
+`createTriggerDispatcher({ gateway, loadWorkflow })`, where `loadWorkflow`
+uses `tsx` to import the registered workflow file. Custom embeddings can do
+the same with their own loader.
+
 In Phase 11 the gateway wires this loop internally and exposes:
 
 ```bash
