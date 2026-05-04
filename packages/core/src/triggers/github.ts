@@ -4,8 +4,8 @@
  * Receives GitHub webhook events
  */
 
-import { createHmac } from 'crypto'
-import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'http'
+import { createHmac } from 'node:crypto'
+import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http'
 import { TriggerPluginBase } from './base.js'
 import type { TriggerConfig, TriggerEvent, TriggerHealthStatus, TriggerType } from './types.js'
 

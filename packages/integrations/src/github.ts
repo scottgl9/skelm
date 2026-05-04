@@ -22,10 +22,6 @@ export class GitHubIntegration extends IntegrationBase {
   private apiBaseUrl = 'https://api.github.com'
   private octokit: unknown | null = null // Would use @octokit/rest in production
 
-  constructor(config: GitHubConfig) {
-    super(config)
-  }
-
   protected async validateCredentials(): Promise<void> {
     const { token, ownerId, repoName } = this.config.credentials
 

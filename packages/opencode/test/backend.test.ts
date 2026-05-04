@@ -62,7 +62,7 @@ describe('OpencodeBackend', () => {
         signal: new AbortController().signal,
       }
 
-      await expect(backend.run!(request, context)).rejects.toThrow(
+      await expect(backend.run?.(request, context)).rejects.toThrow(
         expect.objectContaining({
           message: expect.stringContaining('Permission denied'),
         }),
@@ -96,7 +96,7 @@ describe('OpencodeBackend', () => {
 
       // This will fail at SDK level (no real API key), but permission check should pass
       // The SDK will fail when trying to make network requests
-      await expect(backend.run!(request, context)).rejects.toThrow()
+      await expect(backend.run?.(request, context)).rejects.toThrow()
     })
   })
 
@@ -127,7 +127,7 @@ describe('OpencodeBackend', () => {
       }
 
       // Will fail when trying to create session with invalid API key
-      await expect(backend.run!(request, context)).rejects.toThrow()
+      await expect(backend.run?.(request, context)).rejects.toThrow()
     })
   })
 })

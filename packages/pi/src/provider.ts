@@ -122,7 +122,7 @@ export class PiProvider extends ProviderPluginBase {
   protected override async doInitialize(config: PiProviderConfig): Promise<void> {
     // Check if pi command is available
     try {
-      const { execSync } = await import('child_process')
+      const { execSync } = await import('node:child_process')
       execSync('pi --version', { stdio: 'ignore' })
       this.logger.info('Pi agent found')
     } catch {
@@ -212,7 +212,7 @@ export class PiProvider extends ProviderPluginBase {
   }> {
     // Check if pi command is available
     try {
-      const { execSync } = await import('child_process')
+      const { execSync } = await import('node:child_process')
       const version = execSync('pi --version', {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],

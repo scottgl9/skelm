@@ -141,13 +141,13 @@ export class ProviderCapabilityRegistry {
     // Filter by required capabilities
     if (query.requiredCapabilities && query.requiredCapabilities.length > 0) {
       candidates = candidates.filter((p) =>
-        query.requiredCapabilities!.every((cap) => this.hasCapability(p.capabilities, cap)),
+        query.requiredCapabilities?.every((cap) => this.hasCapability(p.capabilities, cap)),
       )
     }
 
     // Filter by provider preference
     if (query.preferredProviders && query.preferredProviders.length > 0) {
-      candidates = candidates.filter((p) => query.preferredProviders!.includes(p.id))
+      candidates = candidates.filter((p) => query.preferredProviders?.includes(p.id))
     }
 
     // Filter by max cost

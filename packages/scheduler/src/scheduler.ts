@@ -317,7 +317,6 @@ export class Scheduler {
             case 'run-concurrent':
               // Allow concurrent runs
               break
-            case 'wait':
             default:
               console.log(`Trigger ${trigger.id} waiting for previous run to complete`)
               return
