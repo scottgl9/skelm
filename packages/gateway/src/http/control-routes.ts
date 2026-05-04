@@ -26,6 +26,9 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
   // paths still win over the legacy server.ts /runs and /pipelines prefix
   // handlers because the router is mounted before them.
   const router = createRouter()
+  // Per-(pipeline, idempotency-key) → runId map for /pipelines/:id/run.
+  // Replays of the same key return the cached runId without re-running.
+  const idempotency = new Map<string, string>()
 
   router.get(
     '/metrics',
@@ -215,7 +218,26 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
           message: 'gateway has no workflow loader (cannot import workflow modules)',
         })
       }
-      const body = (await readBody(event).catch(() => ({}))) as { input?: unknown }
+      const idemKey = event.headers.get('idempotency-key')
+      if (idemKey !== null) {
+        const cached = idempotency.get(`${id}:${idemKey}`)
+        if (cached !== undefined) {
+          const state = await gateway.runStore.getRun(cached)
+          if (state !== null) {
+            return {
+              runId: state.runId,
+              status: state.status,
+              output: state.output,
+              ...(state.error !== undefined && { error: state.error }),
+            }
+          }
+        }
+      }
+      const rawBody = await readBody(event).catch(() => undefined)
+      const body =
+        rawBody !== null && typeof rawBody === 'object'
+          ? (rawBody as { input?: unknown })
+          : {}
       const input = body.input ?? {}
       let mod: unknown
       try {
@@ -251,6 +273,7 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
           { runId, signal: controller.signal },
         )
         const finalState = await handle.wait()
+        if (idemKey !== null) idempotency.set(`${id}:${idemKey}`, finalState.runId)
         return {
           runId: finalState.runId,
           status: finalState.status,
