@@ -201,6 +201,9 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
             subcommand,
             ...(typeof parsed.positional[1] === 'string' && { id: parsed.positional[1] }),
             ...(typeof parsed.flags.reason === 'string' && { reason: parsed.flags.reason }),
+            ...(typeof parsed.flags.approver === 'string' && {
+              approver: parsed.flags.approver,
+            }),
             ...(parsed.flags.json === true && { json: true }),
           },
           io,

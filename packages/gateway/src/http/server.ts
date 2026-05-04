@@ -12,6 +12,7 @@ import {
 } from 'h3'
 import type { AuthMode, ServerConfig } from './config.js'
 import { validateServerConfig } from './config.js'
+import { mountControlRoutes } from './control-routes.js'
 import type {
   AsyncStartResponse,
   PipelineInfo,
@@ -38,6 +39,8 @@ export function createServer(
     pipelines: Pipeline[]
     runStore: RunStore
     runner: Runner
+    /** When supplied, mounts the gateway control surface (auth-gated). */
+    gateway?: import('../lifecycle/gateway.js').Gateway
   },
 ): SkelmServer {
   validateServerConfig(config)
@@ -77,6 +80,14 @@ export function createServer(
       }
     }),
   )
+
+  // Mount the gateway control surface BEFORE the existing /runs and
+  // /pipelines routes so the more-specific control paths
+  // (/runs/:runId/approve, /runs/:runId/deny) win over the catch-all
+  // prefix-match handlers below.
+  if (options.gateway !== undefined) {
+    mountControlRoutes(app, options.gateway)
+  }
 
   // GET /pipelines - list all pipelines
   app.use(
