@@ -45,6 +45,16 @@ export type {
   McpServerManagerOptions,
   McpServerStatus,
 } from './managers/mcp-server-manager.js'
+export {
+  AcpSessionManager,
+  defaultAcpSessionStorePath,
+} from './managers/acp-session-manager.js'
+export type {
+  AcpSession,
+  AcpSessionManagerOptions,
+  AcpSessionState,
+  CreateSessionOptions,
+} from './managers/acp-session-manager.js'
 export { CodingAgentManager } from './managers/coding-agent-manager.js'
 export type {
   CodingAgentHandle,
