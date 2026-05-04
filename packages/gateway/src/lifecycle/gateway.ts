@@ -11,12 +11,14 @@ import {
   type SecretResolver,
   type SkelmConfig,
 } from '@skelm/core'
+import { ChainAuditWriter } from '../audit/chain.js'
 import {
   AgentRegistry,
   McpServerRegistry,
   SkillRegistry,
   WorkflowRegistry,
 } from '../registries/index.js'
+import { FileSecretResolver } from '../secrets/file-driver.js'
 import { type DiscoveryRecord, removeDiscovery, writeDiscovery } from './discovery.js'
 import { type LockfileContents, acquireLockfile, releaseLockfile } from './lockfile.js'
 
@@ -211,13 +213,35 @@ export class Gateway {
   private buildEnforcement(): GatewayEnforcement {
     const defaults = this.config.defaults?.permissions
     const profiles = this.config.defaults?.permissionProfiles ?? {}
+
+    // Default to the chain-backed audit writer at <stateDir>/audit.jsonl
+    // when the caller did not inject one.
+    const auditWriter =
+      this.options.auditWriter ??
+      (this.options.stateDir !== undefined || this.stateDir !== ''
+        ? new ChainAuditWriter(join(this.stateDir, 'audit.jsonl'))
+        : new NoopAuditWriter())
+
+    // Default to the file-backed secret driver when the config asks for it
+    // or the user supplied a path; otherwise read from process.env.
+    const secretsCfg = this.config.secrets
+    let secretResolver = this.options.secretResolver
+    if (secretResolver === undefined) {
+      if (secretsCfg?.driver === 'file') {
+        const path = secretsCfg.file ?? join(this.stateDir, 'secrets.json')
+        secretResolver = new FileSecretResolver(path)
+      } else {
+        secretResolver = new EnvSecretResolver()
+      }
+    }
+
     return {
       permissionResolver: new PermissionResolver({
         ...(defaults !== undefined && { defaults }),
         profiles,
       }),
-      auditWriter: this.options.auditWriter ?? new NoopAuditWriter(),
-      secretResolver: this.options.secretResolver ?? new EnvSecretResolver(),
+      auditWriter,
+      secretResolver,
       approvalGate: this.options.approvalGate ?? new AutoApproveGate(),
     }
   }

@@ -1,30 +1,21 @@
-import type { MainIO, MainResult } from './main.js'
-import { EXIT } from './exit-codes.js'
-import { promises as fs } from 'node:fs'
-import { resolve, dirname } from 'node:path'
 import { homedir } from 'node:os'
-
-// Local type for better-sqlite3 to avoid dependency on @types/better-sqlite3
-interface Database {
-  prepare(sql: string): { all(...params: unknown[]): unknown[]; get(...params: unknown[]): unknown }
-  all(...params: unknown[]): unknown[]
-  get(...params: unknown[]): unknown
-  run(...params: unknown[]): void
-  close(): void
-  exec(sql: string): void
-  pragma(sql: string): void
-}
-
-declare const DatabaseCtor: new (path: string) => Database
+import { join, resolve } from 'node:path'
+import { ChainAuditWriter, FileSecretResolver } from '@skelm/gateway'
+import { EXIT } from './exit-codes.js'
+import type { MainIO, MainResult } from './main.js'
 
 export interface AuditQueryArgs {
   runId?: string | undefined
   actor?: string | undefined
   action?: string | undefined
-  since?: string | undefined // ISO 8601
-  until?: string | undefined // ISO 8601
+  since?: string | undefined
+  until?: string | undefined
   limit?: number | undefined
   json?: boolean | undefined
+  /** Override the audit chain path (defaults to $SKELM_STATE_DIR or ~/.skelm). */
+  path?: string | undefined
+  /** Run integrity verification only and report the first break (or success). */
+  verify?: boolean | undefined
 }
 
 export interface SecretsArgs {
@@ -32,197 +23,101 @@ export interface SecretsArgs {
   name?: string | undefined
   value?: string | undefined
   json?: boolean | undefined
+  path?: string | undefined
 }
 
-const DEFAULT_DB_PATH = resolve(homedir(), '.skelm', 'runs.sqlite')
-const DEFAULT_SECRETS_DIR = resolve(homedir(), '.skelm', 'secrets')
+function defaultStateDir(): string {
+  return process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm')
+}
 
 export async function auditCommand(args: AuditQueryArgs, io: MainIO): Promise<MainResult> {
-  const dbPath = process.env.SKELM_DB_PATH ?? DEFAULT_DB_PATH
+  const auditPath = args.path ?? join(defaultStateDir(), 'audit.jsonl')
+  const writer = new ChainAuditWriter(auditPath)
 
-  try {
-    await fs.access(dbPath)
-  } catch {
-    io.stderr.write(`error: run store not found at ${dbPath}\n`)
-    return { exitCode: EXIT.CLI_ERROR }
-  }
-
-  let db: Database
-  try {
-    // @ts-expect-error - better-sqlite3 runtime import
-    const Database = (await import('better-sqlite3')).default
-    db = new DatabaseCtor(dbPath)
-  } catch (err) {
-    io.stderr.write(`error: failed to open database: ${(err as Error).message}\n`)
-    return { exitCode: EXIT.CLI_ERROR }
-  }
-
-  try {
-    const entries = queryAudit(db, args)
-
-    if (args.json) {
-      io.stdout.write(JSON.stringify(entries, null, 2) + '\n')
-    } else {
-      if (entries.length === 0) {
-        io.stdout.write('No audit entries found\n')
-      } else {
-        for (const entry of entries) {
-          const runIdStr = entry.run_id ? `run:${entry.run_id.slice(0, 8)}... ` : ''
-          io.stdout.write(
-            `[${new Date(entry.at).toISOString()}] ${runIdStr}${entry.actor} ${entry.action}\n`,
-          )
-          if (entry.data_json) {
-            io.stdout.write(`  ${entry.data_json}\n`)
-          }
-        }
-      }
+  if (args.verify) {
+    const breach = await writer.verify()
+    if (breach === null) {
+      io.stdout.write(`audit chain ok (${auditPath})\n`)
+      return { exitCode: EXIT.OK }
     }
+    io.stderr.write(`audit chain broken at seq ${breach.seq}: ${breach.reason}\n`)
+    return { exitCode: EXIT.CLI_ERROR }
+  }
 
+  const all = await writer.readAll()
+  const sinceTs = args.since ? Date.parse(args.since) : null
+  const untilTs = args.until ? Date.parse(args.until) : null
+  const filtered = all.filter((e) => {
+    if (args.runId && e.runId !== args.runId) return false
+    if (args.actor && e.actor !== args.actor) return false
+    if (args.action && e.action !== args.action) return false
+    const ts = Date.parse(e.timestamp)
+    if (sinceTs !== null && ts < sinceTs) return false
+    if (untilTs !== null && ts > untilTs) return false
+    return true
+  })
+  const limited = args.limit !== undefined ? filtered.slice(-args.limit) : filtered
+
+  if (args.json) {
+    io.stdout.write(`${JSON.stringify(limited, null, 2)}\n`)
     return { exitCode: EXIT.OK }
-  } catch (err) {
-    io.stderr.write(`error: ${(err as Error).message}\n`)
-    return { exitCode: EXIT.CLI_ERROR }
-  } finally {
-    db.close()
   }
-}
 
-interface AuditRow {
-  run_id: string | null
-  actor: string
-  action: string
-  data_json: string
-  at: number
-}
-
-function queryAudit(db: Database, args: AuditQueryArgs): AuditRow[] {
-  const clauses: string[] = []
-  const params: unknown[] = []
-
-  if (args.runId) {
-    clauses.push('run_id = ?')
-    params.push(args.runId)
+  if (limited.length === 0) {
+    io.stdout.write('no audit entries\n')
+    return { exitCode: EXIT.OK }
   }
-  if (args.actor) {
-    clauses.push('actor = ?')
-    params.push(args.actor)
-  }
-  if (args.action) {
-    clauses.push('action = ?')
-    params.push(args.action)
-  }
-  if (args.since) {
-    const sinceTs = Date.parse(args.since)
-    if (!isNaN(sinceTs)) {
-      clauses.push('at >= ?')
-      params.push(sinceTs)
+  for (const e of limited) {
+    const runStr = e.runId ? ` run:${e.runId.slice(0, 8)}` : ''
+    io.stdout.write(`#${e.seq} ${e.timestamp} ${e.actor} ${e.action}${runStr}\n`)
+    if (e.details !== undefined) {
+      io.stdout.write(`  ${JSON.stringify(e.details)}\n`)
     }
   }
-  if (args.until) {
-    const untilTs = Date.parse(args.until)
-    if (!isNaN(untilTs)) {
-      clauses.push('at <= ?')
-      params.push(untilTs)
-    }
-  }
-
-  const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''
-  const limit = args.limit !== undefined ? `LIMIT ${args.limit}` : ''
-
-  const rows = db
-    .prepare(
-      `SELECT run_id, actor, action, data_json, at FROM audit ${where} ORDER BY at DESC ${limit}`,
-    )
-    .all(...params) as AuditRow[]
-
-  return rows
+  return { exitCode: EXIT.OK }
 }
 
 export async function secretsCommand(args: SecretsArgs, io: MainIO): Promise<MainResult> {
-  const secretsDir = process.env.SKELM_SECRETS_DIR ?? DEFAULT_SECRETS_DIR
+  const path = args.path ?? join(defaultStateDir(), 'secrets.json')
+  const resolver = new FileSecretResolver(path)
 
   switch (args.command) {
     case 'list': {
-      try {
-        await fs.mkdir(secretsDir, { recursive: true })
-        const files = await fs.readdir(secretsDir)
-        const secrets = files.filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5))
-
-        if (args.json) {
-          io.stdout.write(JSON.stringify(secrets, null, 2) + '\n')
-        } else {
-          if (secrets.length === 0) {
-            io.stdout.write('No secrets found\n')
-          } else {
-            io.stdout.write('Secrets:\n')
-            for (const name of secrets) {
-              io.stdout.write(`  ${name}\n`)
-            }
-          }
-        }
-        return { exitCode: EXIT.OK }
-      } catch (err) {
-        io.stderr.write(`error: ${(err as Error).message}\n`)
-        return { exitCode: EXIT.CLI_ERROR }
+      const names = await resolver.list()
+      if (args.json) {
+        io.stdout.write(`${JSON.stringify(names, null, 2)}\n`)
+      } else if (names.length === 0) {
+        io.stdout.write('no secrets configured\n')
+      } else {
+        for (const n of names) io.stdout.write(`${n}\n`)
       }
+      return { exitCode: EXIT.OK }
     }
-
     case 'get': {
-      if (!args.name) {
+      if (args.name === undefined) {
         io.stderr.write('error: secrets get requires a name\n')
         return { exitCode: EXIT.CLI_ERROR }
       }
-
-      const secretPath = resolve(secretsDir, `${args.name}.json`)
-      try {
-        const content = await fs.readFile(secretPath, 'utf-8')
-        const data = JSON.parse(content)
-
-        if (args.json) {
-          io.stdout.write(JSON.stringify(data, null, 2) + '\n')
-        } else {
-          if (typeof data === 'string') {
-            io.stdout.write(`${data}\n`)
-          } else {
-            io.stdout.write(`${JSON.stringify(data)}\n`)
-          }
-        }
-        return { exitCode: EXIT.OK }
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-          io.stderr.write(`error: secret not found: ${args.name}\n`)
-        } else {
-          io.stderr.write(`error: ${(err as Error).message}\n`)
-        }
+      const value = await resolver.resolve(args.name)
+      if (value === undefined) {
+        io.stderr.write(`error: secret not found: ${args.name}\n`)
         return { exitCode: EXIT.CLI_ERROR }
       }
+      io.stdout.write(`${value}\n`)
+      return { exitCode: EXIT.OK }
     }
-
     case 'set': {
-      if (!args.name) {
+      if (args.name === undefined) {
         io.stderr.write('error: secrets set requires a name\n')
         return { exitCode: EXIT.CLI_ERROR }
       }
       if (args.value === undefined) {
-        io.stderr.write('error: secrets set requires a value\n')
+        io.stderr.write('error: secrets set requires --value <value>\n')
         return { exitCode: EXIT.CLI_ERROR }
       }
-
-      const secretPath = resolve(secretsDir, `${args.name}.json`)
-      try {
-        await fs.mkdir(dirname(secretPath), { recursive: true })
-        await fs.writeFile(secretPath, JSON.stringify(args.value, null, 2), 'utf-8')
-        return { exitCode: EXIT.OK }
-      } catch (err) {
-        io.stderr.write(`error: ${(err as Error).message}\n`)
-        return { exitCode: EXIT.CLI_ERROR }
-      }
-    }
-
-    default: {
-      const exhaustive: never = args.command
-      io.stderr.write(`internal: unknown command ${exhaustive}\n`)
-      return { exitCode: EXIT.CLI_ERROR }
+      await resolver.set(args.name, args.value)
+      io.stdout.write(`secret stored: ${args.name} (${resolve(path)})\n`)
+      return { exitCode: EXIT.OK }
     }
   }
 }

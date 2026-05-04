@@ -10,7 +10,7 @@ import {
   Runner,
 } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Gateway } from '../src/index.js'
+import { ChainAuditWriter, Gateway } from '../src/index.js'
 
 let stateDir: string
 
@@ -77,7 +77,7 @@ describe('Gateway.enforcement', () => {
     await gw.start()
     const e = gw.enforcement
     expect(e.permissionResolver).toBeInstanceOf(PermissionResolver)
-    expect(e.auditWriter).toBeInstanceOf(NoopAuditWriter)
+    expect(e.auditWriter).toBeInstanceOf(ChainAuditWriter)
     expect(e.secretResolver).toBeInstanceOf(EnvSecretResolver)
     expect(e.approvalGate).toBeInstanceOf(AutoApproveGate)
     await gw.stop()

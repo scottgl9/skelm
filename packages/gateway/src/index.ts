@@ -29,6 +29,11 @@ export {
   writeDiscovery,
 } from './lifecycle/index.js'
 
+// Audit + secrets
+export { ChainAuditWriter } from './audit/chain.js'
+export type { ChainEntry } from './audit/chain.js'
+export { FileSecretResolver } from './secrets/file-driver.js'
+
 // Registries
 export {
   AgentRegistry,
