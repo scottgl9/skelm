@@ -140,6 +140,14 @@ export interface BackendContext {
   permissions?: ResolvedPolicy
   /** Optional MCP host available to wrapped-tool backends. */
   mcpHost?: McpHost
+  /**
+   * Policy-enforcing fetch wrapper. When a network policy is set on the
+   * step, backends should use this instead of globalThis.fetch so outbound
+   * requests are checked against the allowedHosts / deny policy. Falls back
+   * to globalThis.fetch when not supplied (e.g. backends called without a
+   * policy, or via the contract test harness).
+   */
+  fetch?: typeof globalThis.fetch
 }
 
 /**

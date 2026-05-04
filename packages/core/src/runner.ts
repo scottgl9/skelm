@@ -22,7 +22,7 @@ import {
 import { EventBus } from './events.js'
 import { createMcpHost } from './mcp/host.js'
 import type { AgentPermissions, PermissionDimension } from './permissions.js'
-import { TrustEnforcer, resolvePermissions } from './permissions.js'
+import { TrustEnforcer, createPolicyFetch, resolvePermissions } from './permissions.js'
 import { MemoryRunStore, type RunStore } from './run-store.js'
 import { SchemaValidationError, validate } from './schema.js'
 import { createStateHandle } from './state.js'
@@ -793,11 +793,28 @@ async function runStep(
               })
             : undefined
         try {
+          // Policy-enforcing fetch wrapper: if the step declares a network
+          // policy, wrap globalThis.fetch so outbound requests are checked
+          // against the allowedHosts / deny setting before they go out.
+          const policyFetch =
+            policy !== undefined
+              ? createPolicyFetch(
+                  new TrustEnforcer(policy),
+                  events !== undefined
+                    ? {
+                        publish: (ev) => events.publish(ev),
+                        runId: ctx.run.runId,
+                        stepId: step.id,
+                      }
+                    : undefined,
+                )
+              : undefined
           // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
           const response = await backend.run!(req, {
             signal: ctx.signal,
             ...(policy !== undefined && { permissions: policy }),
             ...(mcpHost !== undefined && { mcpHost }),
+            ...(policyFetch !== undefined && { fetch: policyFetch }),
           })
           const candidate =
             step.outputSchema !== undefined ? (response.structured ?? response.text) : undefined
