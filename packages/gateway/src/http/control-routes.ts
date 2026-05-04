@@ -1,4 +1,13 @@
-import { type App, type H3Event, createError, createRouter, eventHandler, readBody } from 'h3'
+import type { RunEvent } from '@skelm/core'
+import {
+  type App,
+  type H3Event,
+  createError,
+  createRouter,
+  eventHandler,
+  getQuery,
+  readBody,
+} from 'h3'
 import type { Gateway } from '../lifecycle/gateway.js'
 
 /**
@@ -98,6 +107,35 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       const ok = await gateway.managers.acpSessions.terminate(id)
       if (!ok) throw createError({ statusCode: 404, message: 'session not found' })
       return { ok: true }
+    }),
+  )
+
+  router.get(
+    '/runs/:runId/events',
+    eventHandler(async (event: H3Event) => {
+      const runId = event.context.params?.runId
+      if (!runId) throw createError({ statusCode: 400, message: 'runId required' })
+      const state = await gateway.runStore.getRun(runId)
+      if (state === null) throw createError({ statusCode: 404, message: 'Run not found' })
+
+      const query = getQuery(event)
+      const opts: { since?: number; limit?: number } = {}
+      const sinceRaw = query.since
+      const limitRaw = query.limit
+      if (typeof sinceRaw === 'string') {
+        const since = Number.parseInt(sinceRaw, 10)
+        if (!Number.isNaN(since)) opts.since = since
+      }
+      if (typeof limitRaw === 'string') {
+        const limit = Number.parseInt(limitRaw, 10)
+        if (!Number.isNaN(limit)) opts.limit = limit
+      }
+
+      const events: RunEvent[] = []
+      for await (const e of gateway.runStore.listEvents(runId, opts)) {
+        events.push(e)
+      }
+      return { runId, events }
     }),
   )
 

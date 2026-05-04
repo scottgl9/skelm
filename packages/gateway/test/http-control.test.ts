@@ -104,6 +104,82 @@ describe('Gateway HTTP control surface', () => {
   })
 })
 
+describe('Gateway HTTP /runs/:runId/events', () => {
+  it('returns persisted run events from the run store', async () => {
+    const port = await pickFreePort()
+    // config: {} keeps the runStore at <stateDir>/runs.sqlite; otherwise the
+    // gateway falls through to DEFAULT_CONFIG.storage.runs.path which is
+    // ~/.skelm/runs.db and bleeds across tests.
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    })
+    await gw.start()
+    const base = `http://127.0.0.1:${port}`
+    try {
+      await gw.runStore.putRun({
+        runId: 'r-events',
+        pipelineId: 'p',
+        status: 'completed',
+        input: {},
+        steps: [],
+        output: undefined,
+        error: undefined,
+        startedAt: 1,
+        completedAt: 2,
+      })
+      await gw.runStore.appendEvent({
+        type: 'run.created',
+        runId: 'r-events',
+        pipelineId: 'p',
+        input: {},
+        at: 1,
+      })
+      await gw.runStore.appendEvent({ type: 'run.started', runId: 'r-events', at: 2 })
+
+      const res = (await fetch(`${base}/runs/r-events/events`).then((r) => r.json())) as {
+        runId: string
+        events: Array<{ type: string }>
+      }
+      expect(res.runId).toBe('r-events')
+      expect(res.events.map((e) => e.type)).toEqual(['run.created', 'run.started'])
+
+      const limited = (await fetch(`${base}/runs/r-events/events?limit=1`).then((r) =>
+        r.json(),
+      )) as { events: Array<{ type: string }> }
+      expect(limited.events).toHaveLength(1)
+
+      const since = (await fetch(`${base}/runs/r-events/events?since=2`).then((r) =>
+        r.json(),
+      )) as { events: Array<{ type: string }> }
+      expect(since.events.map((e) => e.type)).toEqual(['run.started'])
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('returns 404 when the run does not exist', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    })
+    await gw.start()
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/runs/missing/events`)
+      expect(res.status).toBe(404)
+    } finally {
+      await gw.stop()
+    }
+  })
+})
+
 describe('Gateway runStore', () => {
   it('constructs a SqliteRunStore at <stateDir>/runs.sqlite by default', async () => {
     const gw = new Gateway({
