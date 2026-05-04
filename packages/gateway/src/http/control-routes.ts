@@ -1,4 +1,4 @@
-import type { RunEvent } from '@skelm/core'
+import { type Pipeline, type RunEvent, describePipeline } from '@skelm/core'
 import {
   type App,
   type H3Event,
@@ -131,6 +131,69 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
   )
 
   router.get(
+    '/pipelines',
+    eventHandler(async () =>
+      gateway.registries.workflows.list().map((entry) => ({ id: entry.id, file: entry.path })),
+    ),
+  )
+
+  router.get(
+    '/pipelines/:id',
+    eventHandler(async (event: H3Event) => {
+      const raw = event.context.params?.id
+      if (!raw) throw createError({ statusCode: 400, message: 'pipeline id required' })
+      // Workflow ids contain slashes (e.g. workflows/foo.workflow.ts), which
+      // callers URL-encode to fit a single path segment. Decode here.
+      let id: string
+      try {
+        id = decodeURIComponent(raw)
+      } catch {
+        id = raw
+      }
+      const entry = gateway.registries.workflows.get(id)
+      if (entry === undefined) {
+        throw createError({ statusCode: 404, message: 'pipeline not found' })
+      }
+      const loader = gateway.getWorkflowLoader()
+      if (loader === undefined) {
+        // No loader configured: return registry metadata only, no graph.
+        return { id: entry.id, file: entry.path, graph: null, input: null, output: null }
+      }
+      let mod: unknown
+      try {
+        mod = await loader(id, entry.path)
+      } catch (err) {
+        throw createError({
+          statusCode: 500,
+          message: `failed to load workflow: ${(err as Error).message}`,
+        })
+      }
+      const pipeline = extractPipeline(mod)
+      if (pipeline === undefined) {
+        throw createError({
+          statusCode: 422,
+          message: 'workflow module did not export a default pipeline',
+        })
+      }
+      const desc = describePipeline(pipeline)
+      // input/output JSON-Schema serialization is not implemented yet — it
+      // requires schema-library-specific converters (Zod's z.toJSONSchema,
+      // Valibot's toJsonSchema, etc.) and the gateway is intentionally not
+      // tied to any one library. Returns null until a vendor-aware helper
+      // lands.
+      return {
+        id: desc.id,
+        file: entry.path,
+        ...(desc.description !== undefined && { description: desc.description }),
+        ...(desc.version !== undefined && { version: desc.version }),
+        graph: { steps: desc.steps },
+        input: null,
+        output: null,
+      }
+    }),
+  )
+
+  router.get(
     '/runs/:runId/events',
     eventHandler(async (event: H3Event) => {
       const runId = event.context.params?.runId
@@ -242,6 +305,21 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       return { ok: true, triggerId }
     }),
   )
+}
+
+function extractPipeline(mod: unknown): Pipeline | undefined {
+  if (isPipelineish(mod)) return mod as Pipeline
+  if (typeof mod === 'object' && mod !== null) {
+    const m = mod as Record<string, unknown>
+    if (isPipelineish(m.default)) return m.default as Pipeline
+  }
+  return undefined
+}
+
+function isPipelineish(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  return Array.isArray(v.steps) && typeof v.id === 'string'
 }
 
 function scheduleTriggerToSpec(

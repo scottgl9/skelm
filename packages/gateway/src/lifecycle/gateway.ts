@@ -62,6 +62,12 @@ export interface GatewayOptions {
   /** Bound URL the HTTP server should advertise; defaults to http://127.0.0.1:4000. */
   httpHost?: string
   httpPort?: number
+  /**
+   * Optional loader the HTTP /pipelines/:id route uses to import a workflow
+   * module from its registered path so its graph can be serialized.
+   * Production wires this to tsImport(); tests can supply a fake.
+   */
+  loadWorkflow?: (registryId: string, absolutePath: string) => Promise<unknown>
 }
 
 export interface GatewayEnforcement {
@@ -173,6 +179,16 @@ export class Gateway {
    * Returns false if the runId is not in flight (already completed,
    * never started, or unknown to the gateway).
    */
+  /**
+   * Returns the loader the HTTP /pipelines/:id route uses to import workflow
+   * modules. undefined when no loader was configured at construction time.
+   */
+  getWorkflowLoader():
+    | ((registryId: string, absolutePath: string) => Promise<unknown>)
+    | undefined {
+    return this.options.loadWorkflow
+  }
+
   cancel(runId: string, reason?: string): boolean {
     const controller = this.inFlightRuns.get(runId)
     if (controller === undefined) return false
