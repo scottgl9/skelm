@@ -5,6 +5,14 @@ import {
   type BackendRegistry,
   type SkelmBackend,
 } from './backend.js'
+import {
+  type ApprovalGate,
+  type AuditWriter,
+  AutoApproveGate,
+  EnvSecretResolver,
+  NoopAuditWriter,
+  type SecretResolver,
+} from './enforcement/index.js'
 import { RunCancelledError, WaitTimeoutError, serializeError } from './errors.js'
 import { EventBus } from './events.js'
 import { createMcpHost } from './mcp/host.js'
@@ -76,8 +84,20 @@ interface ExecutionRuntime {
   deferRunWorkspaceFinalizer(finalizer: (status: RunStatus) => Promise<void>): void
 }
 
+export interface RunnerEnforcement {
+  /** Audit writer; defaults to NoopAuditWriter (in-process tests / bare runPipeline). */
+  auditWriter?: AuditWriter
+  /** Secret resolver; defaults to EnvSecretResolver. */
+  secretResolver?: SecretResolver
+  /** Approval gate; defaults to AutoApproveGate. */
+  approvalGate?: ApprovalGate
+}
+
 export class Runner {
   readonly events: EventBus
+  /** Trust-boundary instances. The gateway supplies canonical writers in production; */
+  /** in-process callers get safe defaults so unit tests stay self-contained. */
+  readonly enforcement: Required<RunnerEnforcement>
   private readonly pendingWaits = new Map<
     string,
     { resolve: (value: unknown) => void; reject: (error: Error) => void; timer?: NodeJS.Timeout }
@@ -92,9 +112,14 @@ export class Runner {
       | 'defaultPermissions'
       | 'permissionProfiles'
       | 'workspaceManager'
-    > & { events?: EventBus } = {},
+    > & { events?: EventBus } & RunnerEnforcement = {},
   ) {
     this.events = options.events ?? new EventBus()
+    this.enforcement = {
+      auditWriter: options.auditWriter ?? new NoopAuditWriter(),
+      secretResolver: options.secretResolver ?? new EnvSecretResolver(),
+      approvalGate: options.approvalGate ?? new AutoApproveGate(),
+    }
   }
 
   start<TInput, TOutput>(
