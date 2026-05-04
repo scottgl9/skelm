@@ -1,4 +1,4 @@
-import type { AgentPermissions, Step, ToolMatcher } from '@skelm/core'
+import { type DescribedStep, type PipelineDescription, describePipeline } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { resolveWorkflowReference } from './workflows.js'
 
@@ -18,20 +18,8 @@ export interface DescribeCommandResult {
   exitCode: ExitCode
 }
 
-interface DescribedStep {
-  readonly id: string
-  readonly kind: Step['kind']
-  readonly permissions?: string[]
-  readonly children?: readonly DescribedStep[]
-  readonly branches?: readonly { label: string; step: DescribedStep }[]
-}
-
-interface WorkflowDescription {
-  readonly id: string
+interface CliWorkflowDescription extends PipelineDescription {
   readonly file: string
-  readonly description?: string
-  readonly version?: string
-  readonly steps: readonly DescribedStep[]
 }
 
 export async function describeCommand(
@@ -39,12 +27,13 @@ export async function describeCommand(
   io: DescribeCommandIO,
 ): Promise<DescribeCommandResult> {
   const workflow = await resolveWorkflowReference(args.workflow, args.fromDir)
-  const described: WorkflowDescription = {
+  const baseDescription = describePipeline(workflow.pipeline)
+  const described: CliWorkflowDescription = {
+    ...baseDescription,
     id: workflow.id,
     file: workflow.file,
     ...(workflow.description !== undefined && { description: workflow.description }),
     ...(workflow.version !== undefined && { version: workflow.version }),
-    steps: workflow.pipeline.steps.map(describeStep),
   }
 
   const format = args.json ? 'json' : (args.format ?? 'human')
@@ -61,93 +50,7 @@ export async function describeCommand(
   return { exitCode: EXIT.OK }
 }
 
-function describeStep(step: Step): DescribedStep {
-  switch (step.kind) {
-    case 'parallel':
-      return {
-        id: step.id,
-        kind: step.kind,
-        children: step.steps.map(describeStep),
-      }
-    case 'branch':
-      return {
-        id: step.id,
-        kind: step.kind,
-        branches: [
-          ...Object.entries(step.cases).map(([label, branchStep]) => ({
-            label,
-            step: describeStep(branchStep),
-          })),
-          ...(step.default === undefined
-            ? []
-            : [{ label: 'default', step: describeStep(step.default) }]),
-        ],
-      }
-    case 'loop':
-      return {
-        id: step.id,
-        kind: step.kind,
-        children: [describeStep(step.step)],
-      }
-    case 'pipelineStep':
-      return {
-        id: step.id,
-        kind: step.kind,
-        children: step.pipeline.steps.map(describeStep),
-      }
-    case 'idempotent':
-      return {
-        id: step.id,
-        kind: step.kind,
-        children: [describeStep(step.step)],
-      }
-    case 'agent':
-      return {
-        id: step.id,
-        kind: step.kind,
-        ...(step.permissions !== undefined && {
-          permissions: summarizePermissions(step.permissions),
-        }),
-      }
-    default:
-      return { id: step.id, kind: step.kind }
-  }
-}
-
-function summarizePermissions(permissions: AgentPermissions): string[] {
-  const parts: string[] = []
-  const tools = formatToolMatcher(permissions.allowedTools)
-  if (tools !== undefined) {
-    parts.push(`tools=${tools}`)
-  }
-  if (permissions.allowedExecutables?.length) {
-    parts.push(`exec=${permissions.allowedExecutables.join(',')}`)
-  }
-  if (permissions.allowedMcpServers?.length) {
-    parts.push(`mcp=${permissions.allowedMcpServers.join(',')}`)
-  }
-  if (permissions.allowedSkills?.length) {
-    parts.push(`skills=${permissions.allowedSkills.join(',')}`)
-  }
-  return parts
-}
-
-function formatToolMatcher(matcher: ToolMatcher | undefined): string | undefined {
-  if (matcher === undefined) return undefined
-  if (isToolMatcherArray(matcher)) return matcher.join(',')
-  const parts = [
-    ...(matcher.exact ?? []),
-    ...(matcher.prefixes ?? []).map((prefix: string) => `${prefix}*`),
-    ...(matcher.star ? ['*'] : []),
-  ]
-  return parts.length === 0 ? undefined : parts.join(',')
-}
-
-function isToolMatcherArray(matcher: ToolMatcher): matcher is readonly string[] {
-  return Array.isArray(matcher)
-}
-
-function renderHumanDescription(description: WorkflowDescription): string {
+function renderHumanDescription(description: CliWorkflowDescription): string {
   const lines = [
     `workflow: ${description.id}`,
     `file: ${description.file}`,
@@ -174,7 +77,7 @@ function renderHumanStep(step: DescribedStep, depth: number): string[] {
   return [header, ...permissionLine, ...childLines, ...branchLines]
 }
 
-function renderMermaid(description: WorkflowDescription): string {
+function renderMermaid(description: CliWorkflowDescription): string {
   const lines = ['flowchart TD']
   let counter = 0
 
