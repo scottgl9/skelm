@@ -15,6 +15,8 @@ value:McpServerRegistry
 value:SkillRegistry
 value:SuspendApprovalGate
 value:TriggerCoordinator
+value:VaultNotImplementedError
+value:VaultSecretResolver
 value:WorkflowRegistry
 value:acquireLockfile
 value:createServer
@@ -71,6 +73,7 @@ type:SkillRegistryOptions
 type:SuspendApprovalGateOptions
 type:TriggerCoordinatorOptions
 type:TriggerSpec
+type:VaultSecretResolverOptions
 type:WorkflowEntry
 type:WorkflowLoader
 type:WorkflowRegistryOptions
