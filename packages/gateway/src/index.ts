@@ -17,6 +17,7 @@ export {
   type DiscoveryRecord,
   Gateway,
   type GatewayOptions,
+  type GatewayEnforcement,
   type GatewayRegistries,
   type GatewayState,
   type LockfileContents,

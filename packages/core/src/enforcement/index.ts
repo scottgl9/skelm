@@ -1,0 +1,8 @@
+export type { AuditEvent, AuditWriter } from './audit-writer.js'
+export { NoopAuditWriter } from './audit-writer.js'
+export type { SecretResolver } from './secret-resolver.js'
+export { EnvSecretResolver, MissingSecretError } from './secret-resolver.js'
+export type { ApprovalDecision, ApprovalGate, ApprovalRequest } from './approval-gate.js'
+export { AutoApproveGate, AutoDenyGate } from './approval-gate.js'
+export { PermissionResolver } from './permission-resolver.js'
+export type { PermissionResolverOptions } from './permission-resolver.js'
