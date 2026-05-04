@@ -33,7 +33,7 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
     mcp: true,
     skills: true,
     modelSelection: options.model !== undefined,
-    toolPermissions: 'wrapped', // We enforce at skelm layer, wrap opencode
+    toolPermissions: 'native',
   }
 
   const backend: SkelmBackend = {
@@ -70,26 +70,20 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
         throw new Error(`Permission denied: ${permissionResult.denied.join(', ')}`)
       }
 
-      // Map skelm permissions to opencode permission config
-      const opencodePerms = mapSkelmPermissionsToOpencode(policy)
-
-      // Create client with backend options
+      // Create client and start the opencode serve process
       const client = new OpencodeClientWrapper({
         ...options,
         agent: options.agent ?? 'build',
       })
 
-      // Set up abort handler
       const onAbort = () => client.cancel()
       context.signal.addEventListener('abort', onAbort, { once: true })
 
       try {
-        // Send prompt with permissions
-        const result = await client.prompt(request, opencodePerms)
-
+        await client.start()
+        const result = await client.prompt(request, {})
         return result
       } catch (error) {
-        // Map opencode SDK errors to skelm backend errors
         if (error instanceof Error) {
           if (error.message.includes('Authentication')) {
             throw new BackendAuthenticationError(`Opencode authentication failed: ${error.message}`)
@@ -104,6 +98,7 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
         throw error
       } finally {
         context.signal.removeEventListener('abort', onAbort)
+        await client.dispose()
       }
     },
   }

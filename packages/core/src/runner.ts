@@ -962,9 +962,10 @@ async function runForEach(
       const i = cursor++
       const item = items[i]
       const child = step.step(item, i)
+      const itemCtx = freezeContext({ ...ctx, item })
       results[i] = await runStep(
         child,
-        ctx,
+        itemCtx,
         backends,
         waitForInput,
         events,
@@ -1006,12 +1007,23 @@ async function runLoop(
 ): Promise<{ iterations: unknown[]; last: unknown }> {
   const iterations: unknown[] = []
   let last: unknown
+  // Rebuild ctx each iteration so step.while and the child step can read
+  // ctx.steps[step.id] = the accumulated output so far.
+  let iterCtx = ctx
   for (let i = 0; i < step.maxIterations; i++) {
-    if (!(await step.while(ctx))) break
-    last = await runStep(step.step, ctx, backends, waitForInput, events, runtime)
+    if (!(await step.while(iterCtx))) break
+    last = await runStep(step.step, iterCtx, backends, waitForInput, events, runtime)
     iterations.push(last)
+    // Inject the running loop result so subsequent iterations see updated state.
+    iterCtx = freezeContext({
+      ...iterCtx,
+      steps: {
+        ...iterCtx.steps,
+        [step.id]: { iterations, last, ...((last as Record<string, unknown>) ?? {}) },
+      },
+    })
   }
-  return { iterations, last }
+  return { iterations, last, ...(last !== null && typeof last === 'object' ? last : {}) }
 }
 
 async function runWait(
