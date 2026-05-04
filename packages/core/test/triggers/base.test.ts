@@ -219,8 +219,8 @@ describe('TriggerPluginBase', () => {
       const failingTrigger = new MockTrigger('failing', 'Failing Trigger')
       
       // Override doInitialize to throw
-      const originalDoInitialize = failingTrigger['doInitialize'].bind(failingTrigger)
-      failingTrigger['doInitialize'] = async () => {
+      const originalDoInitialize = failingTrigger.doInitialize.bind(failingTrigger)
+      failingTrigger.doInitialize = async () => {
         throw new Error('Initialization failed')
       }
       
@@ -247,7 +247,7 @@ describe('TriggerPluginBase', () => {
       await failingTrigger.initialize(config)
       
       // Override doStart to throw
-      failingTrigger['doStart'] = async () => {
+      failingTrigger.doStart = async () => {
         throw new Error('Start failed')
       }
       

@@ -47,7 +47,7 @@ describe('Permission Mapper', () => {
       expect(result.edit).toBe('allow')
       expect(result.bash).toBe('ask')
       expect(result.read).toBe('allow')
-      expect(result.external?.['mcp_github']).toBe('allow')
+      expect(result.external?.mcp_github).toBe('allow')
     })
 
     it('maps restricted executable permissions', () => {
@@ -105,8 +105,8 @@ describe('Permission Mapper', () => {
       const result = mapSkelmPermissionsToOpencode(skelmPerms)
 
       expect(result.external).toBeDefined()
-      expect(result.external?.['mcp_github']).toBe('allow')
-      expect(result.external?.['mcp_slack']).toBe('allow')
+      expect(result.external?.mcp_github).toBe('allow')
+      expect(result.external?.mcp_slack).toBe('allow')
     })
   })
 

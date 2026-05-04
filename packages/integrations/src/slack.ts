@@ -23,10 +23,6 @@ export class SlackIntegration extends IntegrationBase {
   private slackApiBaseUrl = 'https://slack.com/api'
   private botToken: string | null = null
 
-  constructor(config: SlackConfig) {
-    super(config)
-  }
-
   protected async validateCredentials(): Promise<void> {
     const { botToken, signingSecret } = this.config.credentials
 

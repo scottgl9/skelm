@@ -235,9 +235,7 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       }
       const rawBody = await readBody(event).catch(() => undefined)
       const body =
-        rawBody !== null && typeof rawBody === 'object'
-          ? (rawBody as { input?: unknown })
-          : {}
+        rawBody !== null && typeof rawBody === 'object' ? (rawBody as { input?: unknown }) : {}
       const input = body.input ?? {}
       let mod: unknown
       try {
@@ -267,11 +265,10 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       const runId = crypto.randomUUID()
       gateway.registerRun(runId, controller, runner)
       try {
-        const handle = runner.start(
-          pipeline as Parameters<Runner['start']>[0],
-          input as never,
-          { runId, signal: controller.signal },
-        )
+        const handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
+          runId,
+          signal: controller.signal,
+        })
         const finalState = await handle.wait()
         if (idemKey !== null) idempotency.set(`${id}:${idemKey}`, finalState.runId)
         return {
@@ -308,9 +305,7 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       }
       const rawBody = await readBody(event).catch(() => undefined)
       const body =
-        rawBody !== null && typeof rawBody === 'object'
-          ? (rawBody as { input?: unknown })
-          : {}
+        rawBody !== null && typeof rawBody === 'object' ? (rawBody as { input?: unknown }) : {}
       const input = body.input ?? {}
       let mod: unknown
       try {
@@ -323,7 +318,10 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       }
       const pipeline = extractPipeline(mod)
       if (pipeline === undefined) {
-        throw createError({ statusCode: 422, message: 'workflow module did not export a default pipeline' })
+        throw createError({
+          statusCode: 422,
+          message: 'workflow module did not export a default pipeline',
+        })
       }
       const enforcement = gateway.enforcement
       const runner = new Runner({
@@ -336,11 +334,10 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       const controller = new AbortController()
       const runId = crypto.randomUUID()
       gateway.registerRun(runId, controller, runner)
-      const handle = runner.start(
-        pipeline as Parameters<Runner['start']>[0],
-        input as never,
-        { runId, signal: controller.signal },
-      )
+      const handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
+        runId,
+        signal: controller.signal,
+      })
       // Fire and forget; cleanup on settle. Errors are still recorded by the
       // runner into the runStore, so callers polling GET /runs/:runId see
       // failed/cancelled status.
@@ -367,9 +364,7 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       }
       const rawBody = await readBody(event).catch(() => undefined)
       const body =
-        rawBody !== null && typeof rawBody === 'object'
-          ? (rawBody as { output?: unknown })
-          : {}
+        rawBody !== null && typeof rawBody === 'object' ? (rawBody as { output?: unknown }) : {}
       try {
         await runner.resume(runId, body.output ?? {})
         return { resumed: true, runId }

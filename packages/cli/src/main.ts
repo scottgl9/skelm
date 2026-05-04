@@ -1,7 +1,7 @@
 import { approvalsCommand } from './approvals.js'
-import { debugCommand } from './debug.js'
 import { parseArgv } from './argv.js'
 import { auditCommand, secretsCommand } from './audit.js'
+import { debugCommand } from './debug.js'
 import { describeCommand } from './describe.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { gatewayCommand } from './gateway.js'

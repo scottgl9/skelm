@@ -240,7 +240,7 @@ describe('ProviderPluginBase', () => {
 
     it('should return error status if in error state', async () => {
       provider.state = 'error'
-      provider['initialized'] = true // Ensure initialized is true so error state is checked
+      provider.initialized = true // Ensure initialized is true so error state is checked
       const status = await provider.healthCheck()
       expect(status.healthy).toBe(false)
       expect(status.status).toBe('error')
@@ -287,13 +287,13 @@ describe('ProviderPluginBase', () => {
 
   describe('withRetry', () => {
     it('should succeed on first attempt', async () => {
-      const result = await provider['withRetry'](async () => 'success')
+      const result = await provider.withRetry(async () => 'success')
       expect(result).toBe('success')
     })
 
     it('should retry on failure', async () => {
       let attempts = 0
-      const result = await provider['withRetry'](
+      const result = await provider.withRetry(
         async () => {
           attempts++
           if (attempts < 3) throw new Error('Transient error')
@@ -309,7 +309,7 @@ describe('ProviderPluginBase', () => {
     it('should stop retrying when max retries exceeded', async () => {
       let attempts = 0
       await expect(
-        provider['withRetry'](
+        provider.withRetry(
           async () => {
             attempts++
             throw new Error('Permanent error')
@@ -324,7 +324,7 @@ describe('ProviderPluginBase', () => {
     it('should respect retryable predicate', async () => {
       let attempts = 0
       await expect(
-        provider['withRetry'](
+        provider.withRetry(
           async () => {
             attempts++
             throw new Error('Non-retryable error')
@@ -338,7 +338,7 @@ describe('ProviderPluginBase', () => {
 
     it('should apply exponential backoff', async () => {
       const times: number[] = []
-      await provider['withRetry'](
+      await provider.withRetry(
         async () => {
           times.push(Date.now())
           if (times.length < 3) throw new Error('Error')

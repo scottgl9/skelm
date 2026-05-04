@@ -15,7 +15,7 @@ vi.mock('child_process', async (importOriginal) => {
   }
 })
 
-const { execSync } = await import('child_process')
+const { execSync } = await import('node:child_process')
 
 describe('PiProvider', () => {
   let provider: PiProvider
