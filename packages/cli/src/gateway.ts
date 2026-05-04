@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { Gateway, createTriggerDispatcher, readDiscovery, readLockfile } from '@skelm/gateway'
 import { tsImport } from 'tsx/esm/api'
 import { EXIT } from './exit-codes.js'
+import { loadSkelmConfig } from './load-config.js'
 import type { MainIO, MainResult } from './main.js'
 
 export interface GatewayArgs {
@@ -50,9 +51,18 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     )
     return { exitCode: EXIT.CLI_ERROR }
   }
+
+  // Load skelm.config.ts from cwd (walking up). Config drives port, host,
+  // registry globs, and default permissions.
+  const { config } = await loadSkelmConfig({ fromDir: process.cwd() })
+  const serverCfg = config.server ?? {}
+
   const gateway = new Gateway({
     installSignalHandlers: true,
     enableHttp: true,
+    ...(serverCfg.port !== undefined && { httpPort: serverCfg.port }),
+    ...(serverCfg.host !== undefined && { httpHost: serverCfg.host }),
+    config,
   })
   try {
     await gateway.start()
@@ -61,13 +71,23 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     return { exitCode: EXIT.CLI_ERROR }
   }
 
-  // Replace the trigger coordinator's onFire with the real dispatcher: workflows
-  // resolved via the registry, imported with tsx, and run through a Runner that
-  // shares the gateway's enforcement instances.
+  // Build a backend registry from config.instances so triggered
+  // workflows can use agent() steps with pre-built backends.
+  const { BackendRegistry } = await import('@skelm/core')
+  const backendRegistry = new BackendRegistry()
+  for (const instance of config.instances ?? []) {
+    backendRegistry.register(instance)
+  }
+
+  // Replace the trigger coordinator's onFire with the real dispatcher.
   const dispatcher = createTriggerDispatcher({
     gateway,
     loadWorkflow: async (_id, absolutePath) =>
       tsImport(pathToFileURL(absolutePath).href, import.meta.url),
+    ...(config.instances !== undefined &&
+      config.instances.length > 0 && {
+        backends: backendRegistry,
+      }),
   })
   gateway.managers.triggers.setOnFire(dispatcher)
 
