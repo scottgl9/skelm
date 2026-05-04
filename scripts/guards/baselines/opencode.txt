@@ -1,0 +1,16 @@
+value:OpencodeClientWrapper
+value:OpencodeProvider
+value:buildPermissionAuditEntry
+value:createOpencodeAcpBackend
+value:createOpencodeBackend
+value:createOpencodeBackendFromConfig
+value:createOpencodeProvider
+value:mapOpencodePermissionsToSkelm
+value:mapSkelmPermissionsToOpencode
+value:validatePermissions
+type:BackendAuthenticationError
+type:BackendRateLimitError
+type:BackendTimeoutError
+type:MappedPermissions
+type:OpencodeBackendOptions
+type:OpencodePermissionConfig

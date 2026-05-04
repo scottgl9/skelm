@@ -17,7 +17,8 @@
     "format": "biome format --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm test",
+    "guards": "tsx scripts/guards/default-deny-permissions.ts && tsx scripts/guards/public-export-baseline.ts",
+    "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm guards && pnpm test",
     "clean": "pnpm -r clean && rm -rf node_modules"
   },
   "devDependencies": {
