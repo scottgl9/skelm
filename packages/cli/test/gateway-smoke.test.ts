@@ -1,0 +1,154 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { createServer as createNetServer } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Readable, Writable } from 'node:stream'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { EXIT } from '../src/exit-codes.js'
+import { main } from '../src/main.js'
+
+/**
+ * In-process smoke tests for the `skelm gateway` subcommand. We invoke the
+ * CLI's main() with argv arrays directly (no subprocess needed) and a temp
+ * SKELM_STATE_DIR so the tests don't collide with a developer's running
+ * gateway.
+ */
+let stateDir: string
+let priorStateDir: string | undefined
+
+beforeEach(async () => {
+  stateDir = await mkdtemp(join(tmpdir(), 'skelm-cli-gw-'))
+  priorStateDir = process.env.SKELM_STATE_DIR
+  process.env.SKELM_STATE_DIR = stateDir
+})
+
+afterEach(async () => {
+  if (priorStateDir === undefined) process.env.SKELM_STATE_DIR = undefined
+  else process.env.SKELM_STATE_DIR = priorStateDir
+  await rm(stateDir, { recursive: true, force: true })
+})
+
+describe('skelm gateway — CLI smoke', () => {
+  it('status reports "not running" on a clean state dir', async () => {
+    const { stdout, exitCode } = await invoke(['gateway', 'status'])
+    expect(exitCode).toBe(EXIT.OK)
+    expect(stdout).toContain('not running')
+  })
+
+  it('status --json returns running:false on a clean state dir', async () => {
+    const { stdout, exitCode } = await invoke(['gateway', 'status', '--json'])
+    expect(exitCode).toBe(EXIT.OK)
+    expect(JSON.parse(stdout)).toMatchObject({ running: false, pid: null })
+  })
+
+  it('reports an error for an unknown subcommand', async () => {
+    const { stderr, exitCode } = await invoke(['gateway', 'frobnicate'])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+    expect(stderr).toContain('gateway requires one of')
+  })
+
+  it('rejects --detach with a helpful pointer', async () => {
+    const { stderr, exitCode } = await invoke(['gateway', 'start', '--detach'])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+    expect(stderr).toContain('--detach')
+  })
+
+  it('stop fails cleanly when the gateway is not running', async () => {
+    const { stderr, exitCode } = await invoke(['gateway', 'stop'])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+    expect(stderr).toContain('not running')
+  })
+
+  it('approvals list returns empty on a clean state dir', async () => {
+    const { stdout, exitCode } = await invoke(['approvals', 'list'])
+    expect(exitCode).toBe(EXIT.OK)
+    expect(stdout).toContain('no pending approvals')
+  })
+
+  it('approvals approve fails cleanly when no gateway is running', async () => {
+    const { stderr, exitCode } = await invoke([
+      'approvals',
+      'approve',
+      'run-x:step-y',
+      '--approver',
+      'alice',
+    ])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+    expect(stderr).toContain('not running')
+  })
+
+  it('audit query returns "no audit entries" on a clean state dir', async () => {
+    const { stdout, exitCode } = await invoke(['audit', 'query'])
+    expect(exitCode).toBe(EXIT.OK)
+    expect(stdout).toContain('no audit entries')
+  })
+
+  it('secrets list returns empty on a clean state dir', async () => {
+    const { stdout, exitCode } = await invoke(['secrets', 'list'])
+    expect(exitCode).toBe(EXIT.OK)
+    expect(stdout).toContain('no secrets configured')
+  })
+
+  it('secrets set then get round-trips a value', async () => {
+    const setRes = await invoke(['secrets', 'set', 'TEST_KEY', '--value', 's3cret'])
+    expect(setRes.exitCode).toBe(EXIT.OK)
+
+    const getRes = await invoke(['secrets', 'get', 'TEST_KEY'])
+    expect(getRes.exitCode).toBe(EXIT.OK)
+    expect(getRes.stdout.trim()).toBe('s3cret')
+
+    const listRes = await invoke(['secrets', 'list'])
+    expect(listRes.stdout).toContain('TEST_KEY')
+  })
+})
+
+interface InvokeResult {
+  stdout: string
+  stderr: string
+  exitCode: number
+}
+
+async function invoke(argv: readonly string[]): Promise<InvokeResult> {
+  let stdout = ''
+  let stderr = ''
+  const result = await main(argv, {
+    stdout: makeWritable((s) => {
+      stdout += s
+    }),
+    stderr: makeWritable((s) => {
+      stderr += s
+    }),
+    stdin: Readable.from([]),
+  })
+  return { stdout, stderr, exitCode: result.exitCode }
+}
+
+function makeWritable(append: (s: string) => void): Writable {
+  return new Writable({
+    write(chunk, _enc, cb) {
+      append(chunk.toString())
+      cb()
+    },
+  })
+}
+
+// Acquire a free port for tests that need one (currently unused but kept
+// for the next round of integration-style CLI tests).
+async function _pickFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createNetServer()
+    srv.unref()
+    srv.once('error', reject)
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address()
+      if (addr === null || typeof addr === 'string') {
+        srv.close()
+        reject(new Error('port pick failed'))
+        return
+      }
+      const port = addr.port
+      srv.close(() => resolve(port))
+    })
+  })
+}
+void _pickFreePort
