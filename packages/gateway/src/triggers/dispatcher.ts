@@ -74,6 +74,7 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         {
           runId,
           signal: controller.signal,
+          workflowPath: entry.path,
           beforeStep: async (info) => {
             if (breakpoints.has(info.stepId)) {
               await breakpoints.pause({ runId: info.runId, stepId: info.stepId, kind: info.kind })

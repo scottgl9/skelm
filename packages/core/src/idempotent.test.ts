@@ -62,4 +62,46 @@ describe('idempotent()', () => {
     expect(second.output).toBe('run-1')
     expect(executions).toBe(1)
   })
+
+  it('explicit id: outer id used for ctx.steps access', async () => {
+    const wf = pipeline<{ x: number }, { result: number }>({
+      id: 'idempotent-explicit-id',
+      steps: [
+        idempotent<{ doubled: number }>({
+          id: 'outer-id',
+          key: (ctx) => `key-${ctx.input.x}`,
+          step: code({
+            id: 'inner-id',
+            run: (ctx) => ({ doubled: ctx.input.x * 2 }),
+          }),
+        }),
+        code({
+          id: 'read',
+          run: (ctx) =>
+            // Result accessible under outer id, not inner id
+            ({ result: (ctx.steps['outer-id'] as { doubled: number }).doubled }),
+        }),
+      ],
+    })
+    const r = await runPipeline(wf, { x: 7 })
+    expect(r.output?.result).toBe(14)
+    // inner-id should NOT be in ctx.steps at the collect step
+    // (only outer-id is, because that is what the pipeline stores)
+    expect((r.steps ?? []).map((s) => s.id)).not.toContain('inner-id')
+    expect((r.steps ?? []).map((s) => s.id)).toContain('outer-id')
+  })
+
+  it('backward-compat: omitting id falls back to inner step id', async () => {
+    const wf = pipeline<{ x: number }, number>({
+      id: 'idempotent-compat',
+      steps: [
+        idempotent<number>({
+          key: () => 'k',
+          step: code({ id: 'the-step', run: (ctx) => ctx.input.x as number }),
+        }),
+      ],
+    })
+    const result = await runPipeline(wf, { x: 42 })
+    expect(result.output).toBe(42)
+  })
 })

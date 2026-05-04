@@ -235,7 +235,7 @@ export function createServer(
   app.use(
     '/runs/:runId',
     eventHandler(async (event: H3Event) => {
-      const runId = event.context.params?.id
+      const runId = event.context.params?.runId
       if (!runId) {
         throw createError({ statusCode: 400, message: 'Run ID required' })
       }
@@ -253,7 +253,7 @@ export function createServer(
   app.use(
     '/runs/:runId/stream',
     eventHandler(async (event: H3Event) => {
-      const runId = event.context.params?.id
+      const runId = event.context.params?.runId
       if (!runId) {
         throw createError({ statusCode: 400, message: 'Run ID required' })
       }
@@ -313,7 +313,7 @@ export function createServer(
   app.use(
     '/runs/:runId/resume',
     eventHandler(async (event: H3Event) => {
-      const runId = event.context.params?.id
+      const runId = event.context.params?.runId
       if (!runId) {
         throw createError({ statusCode: 400, message: 'Run ID required' })
       }

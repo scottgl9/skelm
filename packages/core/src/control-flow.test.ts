@@ -122,6 +122,28 @@ describe('forEach()', () => {
     expect(run.status).toBe('completed')
     expect(run.output).toEqual([1, 4, 9, 16])
   })
+
+  it('ctx.item is set correctly in concurrent forEach', async () => {
+    const wf = pipeline({
+      id: 'fe-item-concurrent',
+      steps: [
+        forEach({
+          id: 'each',
+          items: () => [{ n: 1 }, { n: 2 }, { n: 3 }],
+          concurrency: 3,
+          step: () =>
+            code({
+              id: 'use-item',
+              run: (ctx) => ({ value: (ctx.item as { n: number }).n * 10 }),
+            }),
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, undefined)
+    expect(run.status).toBe('completed')
+    // Order is preserved despite concurrent execution
+    expect(run.output).toEqual([{ value: 10 }, { value: 20 }, { value: 30 }])
+  })
 })
 
 describe('branch()', () => {

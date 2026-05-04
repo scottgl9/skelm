@@ -1,8 +1,7 @@
-// Opencode HTTP client — spawns `opencode serve --port 0`, connects via
-// @opencode-ai/sdk, and uses the synchronous session.prompt response.
-//
-// session.prompt() returns the full AssistantMessage synchronously once the
-// model finishes — no SSE needed for response collection.
+// Opencode HTTP client — spawns `opencode serve --port 0` once per backend
+// instance and reuses the process across multiple prompt() calls (session
+// per call, server kept alive). Disposed via dispose() when the backend
+// is done.
 
 import { type ChildProcess, spawn } from 'node:child_process' // @subprocess-ok: spawns opencode serve for HTTP backend
 import { createOpencodeClient } from '@opencode-ai/sdk'
@@ -16,6 +15,7 @@ export class OpencodeClientWrapper {
   private client: SdkClient | null = null
   private baseUrl: string | null = null
   private currentSessionId: string | null = null
+  private startPromise: Promise<void> | null = null
   private _cancelled = false
   private readonly options: OpencodeBackendOptions
 
@@ -23,8 +23,18 @@ export class OpencodeClientWrapper {
     this.options = options
   }
 
-  /** Spawn `opencode serve --port 0` and wait until it logs its listening URL. */
-  async start(): Promise<void> {
+  /**
+   * Ensure the opencode server is running. Safe to call concurrently —
+   * subsequent callers await the same start promise.
+   */
+  async ensureStarted(): Promise<void> {
+    if (this.client !== null) return
+    if (this.startPromise) return this.startPromise
+    this.startPromise = this._start()
+    await this.startPromise
+  }
+
+  private async _start(): Promise<void> {
     const command = this.options.command ?? 'opencode'
 
     return new Promise<void>((resolve, reject) => {
@@ -54,9 +64,11 @@ export class OpencodeClientWrapper {
       proc.stderr?.on('data', tryParse)
       proc.once('error', (err) => {
         if (!resolved) reject(err)
+        else this._handleExit()
       })
-      proc.once('exit', (code) => {
-        if (!resolved) reject(new Error(`opencode serve exited with code ${code}`))
+      proc.once('exit', () => {
+        if (!resolved) reject(new Error('opencode serve exited before becoming ready'))
+        else this._handleExit()
       })
       setTimeout(() => {
         if (!resolved) reject(new Error('opencode serve: timed out waiting for port'))
@@ -64,12 +76,25 @@ export class OpencodeClientWrapper {
     })
   }
 
+  private _handleExit(): void {
+    // Server died unexpectedly — reset so next call restarts it
+    this.proc = null
+    this.client = null
+    this.startPromise = null
+  }
+
+  /** For backward-compat with backend.ts which calls start() explicitly. */
+  async start(): Promise<void> {
+    return this.ensureStarted()
+  }
+
   async prompt(request: AgentRequest, _permissions: unknown): Promise<AgentResponse> {
-    if (!this.client) throw new Error('not started — call start() first')
+    await this.ensureStarted()
+    if (!this.client) throw new Error('opencode serve not ready')
 
     const cwd = request.cwd ?? process.cwd()
 
-    // Create a session, passing model if configured
+    // Create a new session for this call (sessions are per-conversation)
     const sessResult = await this.client.session.create({ query: { directory: cwd } })
     if (!sessResult.data) {
       throw new Error(`session.create failed: ${JSON.stringify(sessResult.error)}`)
@@ -77,7 +102,7 @@ export class OpencodeClientWrapper {
     this.currentSessionId = sessResult.data.id
     const sessionId = this.currentSessionId
 
-    // Build model spec: split "providerID/modelID" or use as-is
+    // Build model spec: split "providerID/modelID"
     let modelBody: { model?: { providerID: string; modelID: string } } = {}
     if (this.options.model) {
       const slashIdx = this.options.model.indexOf('/')
@@ -91,8 +116,7 @@ export class OpencodeClientWrapper {
       }
     }
 
-    // session.prompt() is synchronous — returns the full assistant message once done.
-    // The response includes `parts: Part[]`; collect text parts for the final text.
+    // session.prompt() returns the full AssistantMessage synchronously
     const result = await this.client.session.prompt({
       path: { id: sessionId },
       body: {
@@ -105,7 +129,7 @@ export class OpencodeClientWrapper {
       throw new Error(`session.prompt failed: ${JSON.stringify(result.error)}`)
     }
 
-    // Extract text from response parts (skip synthetic/tool parts)
+    // Extract text parts (skip synthetic/tool parts)
     let text = ''
     for (const part of result.data.parts as Array<{
       type: string
@@ -131,11 +155,13 @@ export class OpencodeClientWrapper {
     }
   }
 
+  /** Stop the opencode server and clean up. Called when the backend is no longer needed. */
   async dispose(): Promise<void> {
     this._cancelled = true
     this.proc?.kill('SIGTERM')
     this.proc = null
     this.client = null
+    this.startPromise = null
     this.currentSessionId = null
   }
 
