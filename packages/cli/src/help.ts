@@ -11,6 +11,7 @@ Usage:
   skelm secrets <get|set|list> [args]
   skelm debug <breakpoints|add|remove|runs|release> [args]
   skelm sessions <list|prune> [--expired] [--older-than-ms <ms>] [--json]
+  skelm acp serve
   skelm init [<dir>] [--force]
   skelm --version
   skelm --help
@@ -69,6 +70,9 @@ Sessions flags:
   skelm sessions list [--json]                  List ACP sessions tracked by the gateway
   skelm sessions prune [--expired] [--older-than-ms <ms>] [--json]
                                                 Drop sessions matching either filter
+
+Acp flags:
+  skelm acp serve                               Not yet implemented (reserved for M4)
 
 Init flags:
   --force                 Allow scaffolding into a non-empty directory

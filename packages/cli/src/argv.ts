@@ -18,6 +18,7 @@ export interface ParsedArgv {
     | 'secrets'
     | 'debug'
     | 'sessions'
+    | 'acp'
     | 'version'
     | 'help'
     | 'unknown'
@@ -75,6 +76,9 @@ export function parseArgv(argv: readonly string[]): ParsedArgv {
   if (first === 'sessions') {
     return parseSubcommand('sessions', argv.slice(1))
   }
+  if (first === 'acp') {
+    return parseSubcommand('acp', argv.slice(1))
+  }
   return { command: 'unknown', positional: [first], flags: {} }
 }
 
@@ -91,7 +95,8 @@ function parseSubcommand(
     | 'audit'
     | 'secrets'
     | 'debug'
-    | 'sessions',
+    | 'sessions'
+    | 'acp',
   rest: readonly string[],
 ): ParsedArgv {
   const positional: string[] = []

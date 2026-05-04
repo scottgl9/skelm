@@ -58,6 +58,18 @@ describe('skelm run examples/* — smoke', () => {
     ])
     expect(exitCode).toBe(EXIT.SCHEMA_VALIDATION)
   })
+
+  it('acp serve exits 1 with not-yet-implemented message (P5.2 seam)', async () => {
+    const { stderr, exitCode } = await invoke(['acp', 'serve'])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+    expect(stderr).toMatch(/not yet implemented/)
+  })
+
+  it('acp with no subcommand exits 1 with usage hint', async () => {
+    const { stderr, exitCode } = await invoke(['acp'])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+    expect(stderr).toMatch(/acp requires serve/)
+  })
 })
 
 interface InvocationResult {
