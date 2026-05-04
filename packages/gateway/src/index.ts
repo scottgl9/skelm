@@ -34,6 +34,8 @@ export {
 export { ChainAuditWriter } from './audit/chain.js'
 export type { ChainEntry } from './audit/chain.js'
 export { FileSecretResolver } from './secrets/file-driver.js'
+export { VaultNotImplementedError, VaultSecretResolver } from './secrets/vault-driver.js'
+export type { VaultSecretResolverOptions } from './secrets/vault-driver.js'
 
 // Approval gate
 export { SuspendApprovalGate } from './approvals/suspend-gate.js'
