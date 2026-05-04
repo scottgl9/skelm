@@ -203,6 +203,77 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
   )
 
   router.post(
+    '/v1/chat/completions',
+    eventHandler(async (event: H3Event) => {
+      const rawBody = await readBody(event).catch(() => undefined)
+      const body =
+        rawBody !== null && typeof rawBody === 'object'
+          ? (rawBody as { model?: unknown; messages?: unknown })
+          : {}
+      if (typeof body.model !== 'string' || body.model === '') {
+        throw createError({ statusCode: 400, message: 'model required' })
+      }
+      if (!Array.isArray(body.messages)) {
+        throw createError({ statusCode: 400, message: 'messages must be an array' })
+      }
+      const final = await runPipelineSync(gateway, body.model, { messages: body.messages })
+      const content = openaiContentFor(final.output)
+      return {
+        id: `chatcmpl-${final.runId}`,
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        model: body.model,
+        choices: [
+          {
+            index: 0,
+            message: { role: 'assistant', content },
+            finish_reason: final.status === 'completed' ? 'stop' : 'error',
+          },
+        ],
+        ...(final.error !== undefined && {
+          error: { message: final.error.message ?? String(final.error), type: 'pipeline_error' },
+        }),
+      }
+    }),
+  )
+
+  router.post(
+    '/v1/responses',
+    eventHandler(async (event: H3Event) => {
+      const rawBody = await readBody(event).catch(() => undefined)
+      const body =
+        rawBody !== null && typeof rawBody === 'object'
+          ? (rawBody as { model?: unknown; input?: unknown })
+          : {}
+      if (typeof body.model !== 'string' || body.model === '') {
+        throw createError({ statusCode: 400, message: 'model required' })
+      }
+      const input = body.input
+      const pipelineInput =
+        typeof input === 'string'
+          ? { messages: [{ role: 'user', content: input }] }
+          : Array.isArray(input)
+            ? { messages: input }
+            : input !== undefined && typeof input === 'object'
+              ? (input as Record<string, unknown>)
+              : {}
+      const final = await runPipelineSync(gateway, body.model, pipelineInput)
+      const content = openaiContentFor(final.output)
+      return {
+        id: `resp-${final.runId}`,
+        object: 'response',
+        created_at: Math.floor(Date.now() / 1000),
+        model: body.model,
+        status: final.status === 'completed' ? 'completed' : 'failed',
+        output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: content }] }],
+        ...(final.error !== undefined && {
+          error: { message: final.error.message ?? String(final.error) },
+        }),
+      }
+    }),
+  )
+
+  router.post(
     '/pipelines/:id/run',
     eventHandler(async (event: H3Event) => {
       const id = decodeMaybe(event.context.params?.id)
@@ -564,6 +635,93 @@ async function tryToJsonSchema(schema: unknown): Promise<unknown | null> {
     }
   }
   return null
+}
+
+/**
+ * Run a pipeline synchronously through the gateway runner stack.
+ * Used by both /pipelines/:id/run and the /v1/* OpenAI-compat routes
+ * to share the load-and-run pipeline. Throws createError(...) on
+ * non-2xx conditions so h3 surfaces the right HTTP status.
+ */
+async function runPipelineSync(
+  gateway: Gateway,
+  pipelineId: string,
+  input: unknown,
+): Promise<{
+  runId: string
+  status: string
+  output: unknown
+  error?: { name?: string; message?: string }
+}> {
+  const entry = gateway.registries.workflows.get(pipelineId)
+  if (entry === undefined) {
+    throw createError({ statusCode: 404, message: `pipeline not found: ${pipelineId}` })
+  }
+  const loader = gateway.getWorkflowLoader()
+  if (loader === undefined) {
+    throw createError({ statusCode: 501, message: 'gateway has no workflow loader' })
+  }
+  let mod: unknown
+  try {
+    mod = await loader(pipelineId, entry.path)
+  } catch (err) {
+    throw createError({
+      statusCode: 500,
+      message: `failed to load workflow: ${(err as Error).message}`,
+    })
+  }
+  const pipeline = extractPipeline(mod)
+  if (pipeline === undefined) {
+    throw createError({ statusCode: 422, message: 'workflow module did not export a default pipeline' })
+  }
+  const enforcement = gateway.enforcement
+  const runner = new Runner({
+    approvalGate: enforcement.approvalGate,
+    secretResolver: enforcement.secretResolver,
+    auditWriter: enforcement.auditWriter,
+    store: gateway.runStore,
+  })
+  gateway.attachMetricsBus(runner.events)
+  const controller = new AbortController()
+  const runId = crypto.randomUUID()
+  gateway.registerRun(runId, controller, runner)
+  try {
+    const handle = runner.start(
+      pipeline as Parameters<Runner['start']>[0],
+      input as never,
+      { runId, signal: controller.signal },
+    )
+    const final = await handle.wait()
+    return {
+      runId: final.runId,
+      status: final.status,
+      output: final.output,
+      ...(final.error !== undefined && { error: final.error }),
+    }
+  } finally {
+    gateway.unregisterRun(runId)
+  }
+}
+
+/**
+ * Coerce a pipeline output into a string for OpenAI-shape responses.
+ * - { content: string } → content
+ * - { text: string } → text
+ * - string → as-is
+ * - anything else → JSON.stringify
+ */
+function openaiContentFor(output: unknown): string {
+  if (typeof output === 'string') return output
+  if (output !== null && typeof output === 'object') {
+    const o = output as Record<string, unknown>
+    if (typeof o.content === 'string') return o.content
+    if (typeof o.text === 'string') return o.text
+  }
+  try {
+    return JSON.stringify(output)
+  } catch {
+    return String(output)
+  }
 }
 
 function decodeMaybe(raw: string | undefined): string | undefined {
