@@ -14,6 +14,16 @@ export interface TriggerCoordinatorOptions {
 }
 
 /**
+ * Source function for poll triggers. Returns the latest payload (any value)
+ * each tick. The coordinator only fires the trigger when the dedupe key
+ * differs from the previous tick — by default the dedupe key is a JSON
+ * representation of the value, but callers can register an explicit
+ * dedupeKeyFn alongside the source for custom equality.
+ */
+export type PollSourceFn = () => Promise<unknown> | unknown
+export type PollDedupeKeyFn = (value: unknown) => string
+
+/**
  * Drives the configured triggers and routes fires through `onFire`.
  *
  * Intentionally narrow in Phase 10: cron + interval + manual. The richer
@@ -25,10 +35,32 @@ export class TriggerCoordinator {
   private registrations: Map<string, TriggerRegistration> = new Map()
   private intervalTimers: Map<string, NodeJS.Timeout> = new Map()
   private cronTimers: Map<string, NodeJS.Timeout> = new Map()
+  private atTimers: Map<string, NodeJS.Timeout> = new Map()
+  private pollTimers: Map<string, NodeJS.Timeout> = new Map()
+  private webhookRoutes: Map<string, string> = new Map() // path:method → triggerId
+  private pollSources: Map<string, PollSourceFn> = new Map()
+  private pollDedupeKeyFns: Map<string, PollDedupeKeyFn> = new Map()
+  private pollLastKey: Map<string, string> = new Map()
   private queues: Map<string, FireContext[]> = new Map()
   private stopping = false
 
   constructor(private opts: TriggerCoordinatorOptions) {}
+
+  /**
+   * Register a source function that poll triggers reference by `sourceFnId`.
+   * Must be called before registering a poll trigger that names this id, or
+   * the trigger registers but records lastError.
+   */
+  registerPollSource(id: string, fn: PollSourceFn, dedupeKeyFn?: PollDedupeKeyFn): void {
+    this.pollSources.set(id, fn)
+    if (dedupeKeyFn !== undefined) this.pollDedupeKeyFns.set(id, dedupeKeyFn)
+  }
+
+  /** Returns the trigger id bound to this webhook path+method, if any. */
+  resolveWebhook(path: string, method?: string): string | undefined {
+    const m = (method ?? 'POST').toUpperCase()
+    return this.webhookRoutes.get(`${m} ${path}`)
+  }
 
   /** Replace the onFire callback after construction. Used by the gateway to */
   /** wire the real workflow dispatcher once registries are loaded. */
@@ -52,25 +84,108 @@ export class TriggerCoordinator {
       inflight: false,
     }
     this.registrations.set(spec.id, reg)
-    if (spec.kind === 'interval') {
-      const t = setInterval(() => {
-        void this.fire(spec.id)
-      }, spec.everyMs)
-      t.unref?.()
-      this.intervalTimers.set(spec.id, t)
-    } else if (spec.kind === 'cron') {
-      // Phase 10 ships a 60s tick parser stub: only `*/N * * * *` (every N
-      // minutes) is recognised. Full cron parsing lands when needed.
-      const everyMs = parseSimpleCron(spec.cron)
-      if (everyMs !== null) {
+    switch (spec.kind) {
+      case 'interval': {
         const t = setInterval(() => {
           void this.fire(spec.id)
-        }, everyMs)
+        }, spec.everyMs)
         t.unref?.()
-        this.cronTimers.set(spec.id, t)
-      } else {
-        reg.lastError = `unsupported cron expression: ${spec.cron}`
+        this.intervalTimers.set(spec.id, t)
+        break
       }
+      case 'cron': {
+        // Phase 10 ships a 60s tick parser stub: only `*/N * * * *` (every N
+        // minutes) is recognised. Full cron parsing lands when needed.
+        const everyMs = parseSimpleCron(spec.cron)
+        if (everyMs !== null) {
+          const t = setInterval(() => {
+            void this.fire(spec.id)
+          }, everyMs)
+          t.unref?.()
+          this.cronTimers.set(spec.id, t)
+        } else {
+          reg.lastError = `unsupported cron expression: ${spec.cron}`
+        }
+        break
+      }
+      case 'immediate':
+        // Fire on the next tick so register() can return before dispatch.
+        setImmediate(() => {
+          void this.fire(spec.id)
+        }).unref?.()
+        break
+      case 'at': {
+        const ts = Date.parse(spec.when)
+        if (Number.isNaN(ts)) {
+          reg.lastError = `invalid 'at' timestamp: ${spec.when}`
+          break
+        }
+        const delay = ts - Date.now()
+        if (delay <= 0) {
+          setImmediate(() => {
+            void this.fire(spec.id)
+          }).unref?.()
+        } else {
+          const t = setTimeout(() => {
+            void this.fire(spec.id)
+          }, delay)
+          t.unref?.()
+          this.atTimers.set(spec.id, t)
+        }
+        break
+      }
+      case 'webhook': {
+        const method = (spec.method ?? 'POST').toUpperCase()
+        const key = `${method} ${spec.path}`
+        const existing = this.webhookRoutes.get(key)
+        if (existing !== undefined && existing !== spec.id) {
+          reg.lastError = `webhook ${key} already bound to trigger ${existing}`
+          break
+        }
+        this.webhookRoutes.set(key, spec.id)
+        break
+      }
+      case 'poll': {
+        const source = this.pollSources.get(spec.sourceFnId)
+        if (source === undefined) {
+          reg.lastError = `poll source not registered: ${spec.sourceFnId}`
+          break
+        }
+        const dedupeFn =
+          spec.dedupeKeyFnId !== undefined
+            ? (this.pollDedupeKeyFns.get(spec.dedupeKeyFnId) ?? defaultDedupeKey)
+            : defaultDedupeKey
+        const tick = async () => {
+          if (this.stopping) return
+          try {
+            const value = await source()
+            const key = dedupeFn(value)
+            const last = this.pollLastKey.get(spec.id)
+            if (key !== last) {
+              this.pollLastKey.set(spec.id, key)
+              if (last !== undefined) {
+                // Skip the very first observation so polling doesn't fire on
+                // initial state. Callers that want fire-on-startup can pair
+                // an `immediate` trigger with the same workflowId.
+                await this.fire(spec.id)
+              }
+            }
+          } catch (err) {
+            reg.lastError = (err as Error).message
+          }
+        }
+        // First tick records baseline; subsequent ticks fire on change.
+        void tick()
+        const t = setInterval(() => {
+          void tick()
+        }, spec.everyMs)
+        t.unref?.()
+        this.pollTimers.set(spec.id, t)
+        break
+      }
+      case 'manual':
+        // Manual triggers fire only via fire(id).
+        break
     }
     return reg
   }
@@ -78,6 +193,8 @@ export class TriggerCoordinator {
   unregister(id: string): void {
     const t1 = this.intervalTimers.get(id)
     const t2 = this.cronTimers.get(id)
+    const t3 = this.atTimers.get(id)
+    const t4 = this.pollTimers.get(id)
     if (t1 !== undefined) {
       clearInterval(t1)
       this.intervalTimers.delete(id)
@@ -86,6 +203,19 @@ export class TriggerCoordinator {
       clearInterval(t2)
       this.cronTimers.delete(id)
     }
+    if (t3 !== undefined) {
+      clearTimeout(t3)
+      this.atTimers.delete(id)
+    }
+    if (t4 !== undefined) {
+      clearInterval(t4)
+      this.pollTimers.delete(id)
+    }
+    // Remove webhook route if any.
+    for (const [key, triggerId] of this.webhookRoutes.entries()) {
+      if (triggerId === id) this.webhookRoutes.delete(key)
+    }
+    this.pollLastKey.delete(id)
     this.registrations.delete(id)
     this.queues.delete(id)
   }
@@ -138,8 +268,21 @@ export class TriggerCoordinator {
     this.stopping = true
     for (const t of this.intervalTimers.values()) clearInterval(t)
     for (const t of this.cronTimers.values()) clearInterval(t)
+    for (const t of this.atTimers.values()) clearTimeout(t)
+    for (const t of this.pollTimers.values()) clearInterval(t)
     this.intervalTimers.clear()
     this.cronTimers.clear()
+    this.atTimers.clear()
+    this.pollTimers.clear()
+    this.webhookRoutes.clear()
+  }
+}
+
+function defaultDedupeKey(value: unknown): string {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
   }
 }
 

@@ -71,4 +71,121 @@ describe('TriggerCoordinator', () => {
     expect(c.get('t')?.lastError).toBe('boom')
     await c.stop()
   })
+
+  it("'immediate' kind fires once on register", async () => {
+    const fires: string[] = []
+    const c = new TriggerCoordinator({ onFire: async (ctx) => void fires.push(ctx.workflowId) })
+    c.register({ kind: 'immediate', id: 't-imm', workflowId: 'wf' })
+    await new Promise((r) => setImmediate(r))
+    await new Promise((r) => setImmediate(r))
+    expect(fires).toEqual(['wf'])
+    expect(c.get('t-imm')?.fired).toBe(1)
+    await c.stop()
+  })
+
+  it("'at' kind fires at the given time (or immediately when in the past)", async () => {
+    const fires: number[] = []
+    const c = new TriggerCoordinator({
+      onFire: async () => void fires.push(Date.now()),
+    })
+    // Past timestamp — should fire on next tick.
+    c.register({
+      kind: 'at',
+      id: 't-past',
+      workflowId: 'wf',
+      when: new Date(Date.now() - 1000).toISOString(),
+    })
+    // Future timestamp ~50ms.
+    const future = new Date(Date.now() + 50).toISOString()
+    c.register({ kind: 'at', id: 't-fut', workflowId: 'wf', when: future })
+    await new Promise((r) => setTimeout(r, 120))
+    expect(fires).toHaveLength(2)
+    expect(c.get('t-past')?.fired).toBe(1)
+    expect(c.get('t-fut')?.fired).toBe(1)
+    await c.stop()
+  })
+
+  it("'at' kind records lastError on an unparseable timestamp", async () => {
+    const c = new TriggerCoordinator({ onFire: async () => {} })
+    const reg = c.register({
+      kind: 'at',
+      id: 't-bad',
+      workflowId: 'wf',
+      when: 'not a date',
+    })
+    expect(reg.lastError).toContain("invalid 'at' timestamp")
+    await c.stop()
+  })
+
+  it("'webhook' kind binds to path+method and resolves them", async () => {
+    const c = new TriggerCoordinator({ onFire: async () => {} })
+    c.register({
+      kind: 'webhook',
+      id: 't-hook',
+      workflowId: 'wf',
+      path: '/hooks/github',
+      method: 'POST',
+    })
+    expect(c.resolveWebhook('/hooks/github', 'POST')).toBe('t-hook')
+    expect(c.resolveWebhook('/hooks/github', 'GET')).toBeUndefined()
+    expect(c.resolveWebhook('/missing', 'POST')).toBeUndefined()
+
+    // Re-registering the same path on a different trigger reports collision.
+    const reg = c.register({
+      kind: 'webhook',
+      id: 't-other',
+      workflowId: 'wf',
+      path: '/hooks/github',
+    })
+    expect(reg.lastError).toContain('already bound')
+    await c.stop()
+  })
+
+  it("'webhook' route is removed on unregister", async () => {
+    const c = new TriggerCoordinator({ onFire: async () => {} })
+    c.register({ kind: 'webhook', id: 't', workflowId: 'wf', path: '/x' })
+    expect(c.resolveWebhook('/x', 'POST')).toBe('t')
+    c.unregister('t')
+    expect(c.resolveWebhook('/x', 'POST')).toBeUndefined()
+  })
+
+  it("'poll' kind fires when the source's dedupe key changes", async () => {
+    const fires: string[] = []
+    const c = new TriggerCoordinator({ onFire: async (ctx) => void fires.push(ctx.firedAt) })
+    let counter = 0
+    c.registerPollSource('counter-src', () => counter)
+    c.register({
+      kind: 'poll',
+      id: 't-poll',
+      workflowId: 'wf',
+      everyMs: 20,
+      sourceFnId: 'counter-src',
+    })
+    // First tick records baseline (counter=0) without firing.
+    await new Promise((r) => setTimeout(r, 30))
+    expect(fires).toHaveLength(0)
+    counter = 1
+    await new Promise((r) => setTimeout(r, 30))
+    expect(fires).toHaveLength(1)
+    // No change → no fire.
+    await new Promise((r) => setTimeout(r, 30))
+    expect(fires).toHaveLength(1)
+    counter = 2
+    await new Promise((r) => setTimeout(r, 30))
+    expect(fires).toHaveLength(2)
+    await c.stop()
+  })
+
+  it("'poll' records lastError when the source is not registered", async () => {
+    const c = new TriggerCoordinator({ onFire: async () => {} })
+    const reg = c.register({
+      kind: 'poll',
+      id: 't',
+      workflowId: 'wf',
+      everyMs: 50,
+      sourceFnId: 'missing',
+    })
+    expect(reg.lastError).toContain('poll source not registered')
+    await c.stop()
+  })
 })

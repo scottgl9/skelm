@@ -219,6 +219,58 @@ describe('Gateway HTTP DELETE /runs/:runId', () => {
   })
 })
 
+describe('Gateway HTTP webhook trigger dispatch', () => {
+  it('forwards POST to a registered webhook path to the trigger coordinator', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    })
+    await gw.start()
+    const base = `http://127.0.0.1:${port}`
+    try {
+      const fired: string[] = []
+      gw.managers.triggers.setOnFire(async (ctx) => {
+        fired.push(ctx.triggerId)
+      })
+      gw.managers.triggers.register({
+        kind: 'webhook',
+        id: 'gh-push',
+        workflowId: 'wf',
+        path: '/hooks/github',
+        method: 'POST',
+        secret: 'shh',
+      })
+
+      // Wrong secret → 401.
+      const denied = await fetch(`${base}/hooks/github`, {
+        method: 'POST',
+        headers: { 'x-webhook-secret': 'nope' },
+      })
+      expect(denied.status).toBe(401)
+      expect(fired).toEqual([])
+
+      // Correct secret → fires.
+      const ok = await fetch(`${base}/hooks/github`, {
+        method: 'POST',
+        headers: { 'x-webhook-secret': 'shh' },
+      })
+      expect(ok.status).toBe(200)
+      expect(await ok.json()).toEqual({ ok: true, triggerId: 'gh-push' })
+      expect(fired).toEqual(['gh-push'])
+
+      // Unknown path → falls through (no webhook handler matches).
+      const missing = await fetch(`${base}/hooks/unknown`, { method: 'POST' })
+      expect(missing.status).toBe(404)
+    } finally {
+      await gw.stop()
+    }
+  })
+})
+
 describe('Gateway runStore', () => {
   it('constructs a SqliteRunStore at <stateDir>/runs.sqlite by default', async () => {
     const gw = new Gateway({
