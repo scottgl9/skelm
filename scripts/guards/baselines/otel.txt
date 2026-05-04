@@ -1,0 +1,3 @@
+value:attachOpenTelemetry
+type:OpenTelemetryAttachment
+type:OpenTelemetryOptions
