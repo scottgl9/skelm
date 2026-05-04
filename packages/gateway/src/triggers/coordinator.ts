@@ -1,3 +1,4 @@
+import type { QueueDriver } from './queue-driver.js'
 import type {
   FireContext,
   OverlapPolicy,
@@ -41,6 +42,8 @@ export class TriggerCoordinator {
   private pollSources: Map<string, PollSourceFn> = new Map()
   private pollDedupeKeyFns: Map<string, PollDedupeKeyFn> = new Map()
   private pollLastKey: Map<string, string> = new Map()
+  private queueDrivers: Map<string, QueueDriver> = new Map()
+  private queueDriverBindings: Map<string, string> = new Map() // triggerId → driverId
   private queues: Map<string, FireContext[]> = new Map()
   private stopping = false
 
@@ -60,6 +63,20 @@ export class TriggerCoordinator {
   resolveWebhook(path: string, method?: string): string | undefined {
     const m = (method ?? 'POST').toUpperCase()
     return this.webhookRoutes.get(`${m} ${path}`)
+  }
+
+  /**
+   * Register a queue driver under an id. Queue triggers reference the driver
+   * by this id via spec.driver. Must be called before registering a queue
+   * trigger that names this driver.
+   */
+  registerQueueDriver(id: string, driver: QueueDriver): void {
+    this.queueDrivers.set(id, driver)
+  }
+
+  /** Look up a registered queue driver. Used by tests and operators. */
+  getQueueDriver(id: string): QueueDriver | undefined {
+    return this.queueDrivers.get(id)
   }
 
   /** Replace the onFire callback after construction. Used by the gateway to */
@@ -183,6 +200,30 @@ export class TriggerCoordinator {
         this.pollTimers.set(spec.id, t)
         break
       }
+      case 'queue': {
+        const driver = this.queueDrivers.get(spec.driver)
+        if (driver === undefined) {
+          reg.lastError = `queue driver not registered: ${spec.driver}`
+          break
+        }
+        try {
+          const startResult = driver.start({
+            ...(spec.config !== undefined && { config: spec.config }),
+            onMessage: async () => {
+              await this.fire(spec.id)
+            },
+          })
+          if (startResult instanceof Promise) {
+            void startResult.catch((err: Error) => {
+              reg.lastError = `queue driver start failed: ${err.message}`
+            })
+          }
+          this.queueDriverBindings.set(spec.id, spec.driver)
+        } catch (err) {
+          reg.lastError = `queue driver start failed: ${(err as Error).message}`
+        }
+        break
+      }
       case 'manual':
         // Manual triggers fire only via fire(id).
         break
@@ -214,6 +255,16 @@ export class TriggerCoordinator {
     // Remove webhook route if any.
     for (const [key, triggerId] of this.webhookRoutes.entries()) {
       if (triggerId === id) this.webhookRoutes.delete(key)
+    }
+    // Stop the queue driver bound to this trigger, if any.
+    const driverId = this.queueDriverBindings.get(id)
+    if (driverId !== undefined) {
+      const driver = this.queueDrivers.get(driverId)
+      if (driver !== undefined) {
+        const r = driver.stop()
+        if (r instanceof Promise) void r.catch(() => {})
+      }
+      this.queueDriverBindings.delete(id)
     }
     this.pollLastKey.delete(id)
     this.registrations.delete(id)
@@ -270,11 +321,16 @@ export class TriggerCoordinator {
     for (const t of this.cronTimers.values()) clearInterval(t)
     for (const t of this.atTimers.values()) clearTimeout(t)
     for (const t of this.pollTimers.values()) clearInterval(t)
+    for (const driver of this.queueDrivers.values()) {
+      const r = driver.stop()
+      if (r instanceof Promise) await r.catch(() => {})
+    }
     this.intervalTimers.clear()
     this.cronTimers.clear()
     this.atTimers.clear()
     this.pollTimers.clear()
     this.webhookRoutes.clear()
+    this.queueDriverBindings.clear()
   }
 }
 
