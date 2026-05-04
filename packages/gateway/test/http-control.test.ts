@@ -2,8 +2,8 @@ import { promises as fs } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { code, parallel, pipeline } from '@skelm/core'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { Gateway, InMemoryQueueDriver, type SuspendApprovalGate } from '../src/index.js'
 
@@ -154,9 +154,9 @@ describe('Gateway HTTP /runs/:runId/events', () => {
       )) as { events: Array<{ type: string }> }
       expect(limited.events).toHaveLength(1)
 
-      const since = (await fetch(`${base}/runs/r-events/events?since=2`).then((r) =>
-        r.json(),
-      )) as { events: Array<{ type: string }> }
+      const since = (await fetch(`${base}/runs/r-events/events?since=2`).then((r) => r.json())) as {
+        events: Array<{ type: string }>
+      }
       expect(since.events.map((e) => e.type)).toEqual(['run.started'])
     } finally {
       await gw.stop()
@@ -417,7 +417,9 @@ describe('Gateway HTTP /pipelines', () => {
     })
     await gw.start()
     try {
-      const list = (await fetch(`http://127.0.0.1:${port}/pipelines`).then((r) => r.json())) as Array<{
+      const list = (await fetch(`http://127.0.0.1:${port}/pipelines`).then((r) =>
+        r.json(),
+      )) as Array<{
         id: string
       }>
       expect(list.map((p) => p.id)).toEqual(['workflows/hello.workflow.ts'])
@@ -441,10 +443,7 @@ describe('Gateway HTTP /pipelines', () => {
         code({ id: 'first', run: () => ({}) }),
         parallel({
           id: 'fan-out',
-          steps: [
-            code({ id: 'a', run: () => ({}) }),
-            code({ id: 'b', run: () => ({}) }),
-          ],
+          steps: [code({ id: 'a', run: () => ({}) }), code({ id: 'b', run: () => ({}) })],
         }),
       ],
     })

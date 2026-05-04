@@ -5,9 +5,9 @@
  * Allows users to implement custom triggers without modifying the framework
  */
 
-import { TriggerPluginBase, TriggerError } from './base.js'
-import type { TriggerConfig, TriggerType, TriggerEvent, TriggerHealthStatus } from './types.js'
 import { spawn } from 'child_process'
+import { TriggerError, TriggerPluginBase } from './base.js'
+import type { TriggerConfig, TriggerEvent, TriggerHealthStatus, TriggerType } from './types.js'
 
 /**
  * Script trigger configuration
@@ -49,7 +49,7 @@ interface ScriptResult {
  */
 export class ScriptTrigger extends TriggerPluginBase {
   private intervalId: NodeJS.Timeout | null = null
-  private isRunning: boolean = false
+  private isRunning = false
 
   constructor(id: string, name: string, description?: string) {
     super(id, name, '1.0.0', description)

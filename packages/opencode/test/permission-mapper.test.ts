@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest'
-import {
-  mapSkelmPermissionsToOpencode,
-  mapOpencodePermissionsToSkelm,
-  validatePermissions,
-  buildPermissionAuditEntry,
-} from '../src/permission-mapper.js'
 import type { ResolvedPolicy } from '@skelm/core'
+import { describe, expect, it } from 'vitest'
+import {
+  buildPermissionAuditEntry,
+  mapOpencodePermissionsToSkelm,
+  mapSkelmPermissionsToOpencode,
+  validatePermissions,
+} from '../src/permission-mapper.js'
 
 describe('Permission Mapper', () => {
   describe('mapSkelmPermissionsToOpencode', () => {

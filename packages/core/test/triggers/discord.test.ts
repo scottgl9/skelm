@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest'
-import { DiscordTrigger, createDiscordTrigger } from '../../src/triggers/discord.js'
+import { describe, expect, it, vi } from 'vitest'
 import { TriggerState } from '../../src/triggers/base.js'
+import { DiscordTrigger, createDiscordTrigger } from '../../src/triggers/discord.js'
 import type { TriggerConfig } from '../../src/triggers/types.js'
 
 describe('DiscordTrigger', () => {

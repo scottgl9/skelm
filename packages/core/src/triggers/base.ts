@@ -11,10 +11,10 @@
 
 import type {
   TriggerConfig,
-  TriggerType,
   TriggerEvent,
   TriggerEventHandler,
   TriggerHealthStatus,
+  TriggerType,
 } from './types.js'
 
 /**
@@ -88,7 +88,7 @@ export abstract class TriggerPluginBase {
   protected state: TriggerState = TriggerState.IDLE
 
   /** Whether the trigger is enabled */
-  enabled: boolean = true
+  enabled = true
 
   /** Log level */
   protected logLevel: 'debug' | 'info' | 'warn' | 'error' = 'info'
@@ -114,7 +114,7 @@ export abstract class TriggerPluginBase {
     ) => Promise<import('../workflows/types.js').WorkflowExecutionResult>
   }
 
-  constructor(id: string, name: string, version: string = '1.0.0', description?: string) {
+  constructor(id: string, name: string, version = '1.0.0', description?: string) {
     this.id = id
     this.name = name
     this.version = version

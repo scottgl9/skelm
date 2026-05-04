@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createOpencodeBackend } from '../src/backend.js'
 import type { AgentRequest, BackendContext } from '@skelm/core'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createOpencodeBackend } from '../src/backend.js'
 
 describe('OpencodeBackend', () => {
   describe('createOpencodeBackend', () => {

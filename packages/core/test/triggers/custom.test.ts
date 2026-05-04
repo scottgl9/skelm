@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { CustomTrigger, createCustomTrigger } from '../../src/triggers/custom.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TriggerState } from '../../src/triggers/base.js'
+import { CustomTrigger, createCustomTrigger } from '../../src/triggers/custom.js'
 import type { TriggerConfig, TriggerHealthStatus } from '../../src/triggers/types.js'
 
 describe('CustomTrigger', () => {

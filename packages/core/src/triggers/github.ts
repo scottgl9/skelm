@@ -4,10 +4,10 @@
  * Receives GitHub webhook events
  */
 
-import { TriggerPluginBase } from './base.js'
-import type { TriggerConfig, TriggerType, TriggerEvent, TriggerHealthStatus } from './types.js'
-import { createServer, IncomingMessage, ServerResponse, Server } from 'http'
 import { createHmac } from 'crypto'
+import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'http'
+import { TriggerPluginBase } from './base.js'
+import type { TriggerConfig, TriggerEvent, TriggerHealthStatus, TriggerType } from './types.js'
 
 /**
  * GitHub webhook event structure

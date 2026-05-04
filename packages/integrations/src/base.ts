@@ -1,4 +1,4 @@
-import type { Integration, IntegrationConfig, IntegrationCapabilities } from './types.js'
+import type { Integration, IntegrationCapabilities, IntegrationConfig } from './types.js'
 
 /**
  * Base class for all integrations

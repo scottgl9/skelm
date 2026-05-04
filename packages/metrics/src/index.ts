@@ -146,7 +146,9 @@ export class MetricsCollector {
     let cumulative = 0
     for (let i = 0; i < this.stepDuration.buckets.length; i++) {
       cumulative += this.stepDuration.counts[i] ?? 0
-      lines.push(`skelm_step_duration_ms_bucket{le="${this.stepDuration.buckets[i]}"} ${cumulative}`)
+      lines.push(
+        `skelm_step_duration_ms_bucket{le="${this.stepDuration.buckets[i]}"} ${cumulative}`,
+      )
     }
     cumulative += this.stepDuration.counts[this.stepDuration.counts.length - 1] ?? 0
     lines.push(`skelm_step_duration_ms_bucket{le="+Inf"} ${cumulative}`)

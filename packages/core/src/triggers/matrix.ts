@@ -5,7 +5,7 @@
  */
 
 import { TriggerPluginBase } from './base.js'
-import type { TriggerConfig, TriggerType, TriggerEvent, TriggerHealthStatus } from './types.js'
+import type { TriggerConfig, TriggerEvent, TriggerHealthStatus, TriggerType } from './types.js'
 
 /**
  * Matrix event structure
@@ -61,7 +61,7 @@ export interface MatrixTriggerConfig extends TriggerConfig {
  * consider using matrix-js-sdk for full client functionality.
  */
 export class MatrixTrigger extends TriggerPluginBase {
-  private isRunning: boolean = false
+  private isRunning = false
 
   constructor(id: string, name: string, description?: string) {
     super(id, name, '1.0.0', description)

@@ -1,40 +1,44 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { createCronTrigger, CronTrigger, type CronTriggerConfig } from '../../src/triggers/cron.js'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
-  createWebhookTrigger,
-  WebhookTrigger,
-  type WebhookTriggerConfig,
-} from '../../src/triggers/webhook.js'
+  type CronTrigger,
+  type CronTriggerConfig,
+  createCronTrigger,
+} from '../../src/triggers/cron.js'
 import {
-  createSlackTrigger,
-  SlackTrigger,
-  type SlackTriggerConfig,
-} from '../../src/triggers/slack.js'
+  type CustomTrigger,
+  type CustomTriggerConfig,
+  createCustomTrigger,
+} from '../../src/triggers/custom.js'
 import {
-  createMatrixTrigger,
-  MatrixTrigger,
-  type MatrixTriggerConfig,
-} from '../../src/triggers/matrix.js'
-import {
-  createGitHubTrigger,
-  GitHubTrigger,
-  type GitHubTriggerConfig,
-} from '../../src/triggers/github.js'
-import {
-  createDiscordTrigger,
-  DiscordTrigger,
+  type DiscordTrigger,
   type DiscordTriggerConfig,
+  createDiscordTrigger,
 } from '../../src/triggers/discord.js'
 import {
-  createScriptTrigger,
-  ScriptTrigger,
+  type GitHubTrigger,
+  type GitHubTriggerConfig,
+  createGitHubTrigger,
+} from '../../src/triggers/github.js'
+import {
+  type MatrixTrigger,
+  type MatrixTriggerConfig,
+  createMatrixTrigger,
+} from '../../src/triggers/matrix.js'
+import {
+  type ScriptTrigger,
   type ScriptTriggerConfig,
+  createScriptTrigger,
 } from '../../src/triggers/script.js'
 import {
-  createCustomTrigger,
-  CustomTrigger,
-  type CustomTriggerConfig,
-} from '../../src/triggers/custom.js'
+  type SlackTrigger,
+  type SlackTriggerConfig,
+  createSlackTrigger,
+} from '../../src/triggers/slack.js'
+import {
+  type WebhookTrigger,
+  type WebhookTriggerConfig,
+  createWebhookTrigger,
+} from '../../src/triggers/webhook.js'
 
 /**
  * Schema validation tests for all trigger types

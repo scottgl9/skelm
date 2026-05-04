@@ -4,8 +4,8 @@
  * Simple executor that routes workflow invocations to registered workflows
  */
 
-import { WorkflowRegistry } from './registry.js'
-import type { WorkflowInvocation, WorkflowExecutionResult } from './types.js'
+import type { WorkflowRegistry } from './registry.js'
+import type { WorkflowExecutionResult, WorkflowInvocation } from './types.js'
 
 /**
  * Simple workflow executor

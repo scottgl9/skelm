@@ -1,4 +1,4 @@
-import { createOpencodeClient, OpencodeClient } from '@opencode-ai/sdk'
+import { type OpencodeClient, createOpencodeClient } from '@opencode-ai/sdk'
 import type { AgentRequest, AgentResponse } from '@skelm/core'
 import type { OpencodeBackendOptions } from './types.js'
 

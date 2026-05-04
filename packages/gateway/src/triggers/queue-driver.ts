@@ -12,7 +12,10 @@ export interface QueueDriver {
    * Errors thrown by onMessage propagate back; drivers may swallow or log
    * but should not retry indefinitely without an explicit policy.
    */
-  start(opts: { config?: Record<string, unknown>; onMessage: () => Promise<void> }): Promise<void> | void
+  start(opts: {
+    config?: Record<string, unknown>
+    onMessage: () => Promise<void>
+  }): Promise<void> | void
   /** Release any resources (timers, connections, file handles). */
   stop(): Promise<void> | void
 }

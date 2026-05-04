@@ -1,12 +1,12 @@
 import type {
-  SchedulerConfig,
-  Trigger,
-  TriggerRegistration,
-  TriggerContext,
   CronTrigger,
   IntervalTrigger,
   PollTrigger,
   QueueTrigger,
+  SchedulerConfig,
+  Trigger,
+  TriggerContext,
+  TriggerRegistration,
 } from './types.js'
 
 /**
