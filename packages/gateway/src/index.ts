@@ -39,6 +39,10 @@ export { FileSecretResolver } from './secrets/file-driver.js'
 export { SuspendApprovalGate } from './approvals/suspend-gate.js'
 export type { PendingApproval, SuspendApprovalGateOptions } from './approvals/suspend-gate.js'
 
+// Debug / breakpoints
+export { BreakpointRegistry } from './debug/breakpoint-registry.js'
+export type { PausedRun } from './debug/breakpoint-registry.js'
+
 // Process supervisors
 export { McpServerManager } from './managers/mcp-server-manager.js'
 export type {

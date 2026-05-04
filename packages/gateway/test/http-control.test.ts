@@ -592,6 +592,77 @@ describe('Gateway HTTP /metrics', () => {
   })
 })
 
+describe('Gateway HTTP /debug breakpoints', () => {
+  it('add, list, delete breakpoints; list and release paused runs', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    })
+    await gw.start()
+    const base = `http://127.0.0.1:${port}`
+    try {
+      let listed = (await fetch(`${base}/debug/breakpoints`).then((r) => r.json())) as {
+        breakpoints: string[]
+      }
+      expect(listed.breakpoints).toEqual([])
+
+      const added = await fetch(`${base}/debug/breakpoints`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ stepId: 'agent-1' }),
+      }).then((r) => r.json())
+      expect(added).toEqual({ added: 'agent-1' })
+
+      listed = (await fetch(`${base}/debug/breakpoints`).then((r) => r.json())) as {
+        breakpoints: string[]
+      }
+      expect(listed.breakpoints).toEqual(['agent-1'])
+
+      // Simulate a paused run by calling pause directly; release via HTTP.
+      const pausePromise = gw.breakpoints.pause({
+        runId: 'run-1',
+        stepId: 'agent-1',
+        kind: 'agent',
+      })
+      const paused = (await fetch(`${base}/debug/runs`).then((r) => r.json())) as {
+        paused: Array<{ runId: string; stepId: string }>
+      }
+      expect(paused.paused).toHaveLength(1)
+      expect(paused.paused[0]?.runId).toBe('run-1')
+
+      const released = await fetch(`${base}/debug/runs/run-1/release`, { method: 'POST' }).then(
+        (r) => r.json(),
+      )
+      expect(released).toEqual({ released: 'run-1' })
+      // Pause promise should now resolve.
+      await pausePromise
+
+      // Releasing again 404s.
+      const second = await fetch(`${base}/debug/runs/run-1/release`, { method: 'POST' })
+      expect(second.status).toBe(404)
+
+      // Removing a breakpoint.
+      const removed = await fetch(`${base}/debug/breakpoints/agent-1`, { method: 'DELETE' })
+      expect(removed.status).toBe(200)
+      expect(await removed.json()).toEqual({ removed: 'agent-1' })
+
+      // Removing again 404s.
+      const removed2 = await fetch(`${base}/debug/breakpoints/agent-1`, { method: 'DELETE' })
+      expect(removed2.status).toBe(404)
+
+      // POST without stepId is 400.
+      const bad = await fetch(`${base}/debug/breakpoints`, { method: 'POST', body: '{}' })
+      expect(bad.status).toBe(400)
+    } finally {
+      await gw.stop()
+    }
+  })
+})
+
 describe('Gateway runStore', () => {
   it('constructs a SqliteRunStore at <stateDir>/runs.sqlite by default', async () => {
     const gw = new Gateway({
