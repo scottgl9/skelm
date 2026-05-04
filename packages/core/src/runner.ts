@@ -817,7 +817,9 @@ async function runStep(
             ...(policyFetch !== undefined && { fetch: policyFetch }),
           })
           const candidate =
-            step.outputSchema !== undefined ? (response.structured ?? response.text) : undefined
+            step.outputSchema !== undefined
+              ? (response.structured ?? tryParseJson(response.text))
+              : undefined
           const result =
             step.outputSchema !== undefined
               ? await validate(step.outputSchema, candidate, 'output')
@@ -1237,4 +1239,21 @@ async function sleep(ms: number, signal: AbortSignal): Promise<void> {
     signal.addEventListener('abort', onAbort, { once: true })
     timer.unref?.()
   })
+}
+
+/**
+ * Try to parse a string as JSON. Returns the parsed value on success, or the
+ * original string when parsing fails. Used to extract structured output from
+ * agent text responses when the backend doesn't natively support structured
+ * output (i.e. `response.structured` is undefined).
+ */
+function tryParseJson(text: string | undefined): unknown {
+  if (text === undefined) return undefined
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return text
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return text
+  }
 }

@@ -32,6 +32,13 @@ export interface AcpBackendOptions {
   /** Command and args used to spawn the ACP agent. */
   command: string
   args?: readonly string[]
+  /**
+   * Model id to select after session start, sent as a `/model <id>` command.
+   * Useful for ACP agents (e.g. opencode) that support model switching via
+   * slash commands. When set, a `/model <id>` prompt is sent before the
+   * actual task prompt; the turn is a no-op from the caller's perspective.
+   */
+  model?: string
   /** Optional working directory for the spawned agent. */
   cwd?: string
   /** Optional environment overlay for the agent process. */
@@ -50,7 +57,7 @@ export function createAcpBackend(opts: AcpBackendOptions): SkelmBackend {
     sessionLifecycle: true,
     mcp: true,
     skills: false,
-    modelSelection: false,
+    modelSelection: opts.model !== undefined,
     toolPermissions: 'unsupported',
   }
 
@@ -74,6 +81,11 @@ export function createAcpBackend(opts: AcpBackendOptions): SkelmBackend {
             mcpServers: req.mcpServers.map(toAcpMcpServerSpec),
           }),
         })
+        // Select the model if specified. Sent as a slash command before the
+        // actual prompt; the turn produces no content and is discarded.
+        if (opts.model !== undefined) {
+          await client.prompt({ text: `/model ${opts.model}` })
+        }
         const result = await client.prompt({ text: buildPrompt(req) })
         return {
           text: result.text,
