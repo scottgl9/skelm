@@ -45,15 +45,15 @@ importers:
       '@skelm/core':
         specifier: workspace:*
         version: link:../core
+      '@skelm/gateway':
+        specifier: workspace:*
+        version: link:../gateway
       '@skelm/opencode':
         specifier: workspace:*
         version: link:../opencode
       '@skelm/pi':
         specifier: workspace:*
         version: link:../pi
-      '@skelm/server':
-        specifier: workspace:*
-        version: link:../server
       tsx:
         specifier: ^4.19.2
         version: 4.21.0
@@ -86,6 +86,9 @@ importers:
       '@skelm/core':
         specifier: workspace:*
         version: link:../core
+      h3:
+        specifier: ^1.15.0
+        version: 1.15.11
     devDependencies:
       '@types/node':
         specifier: ^22.9.0
@@ -171,25 +174,6 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.9
-        version: 2.1.9(@types/node@22.19.17)
-
-  packages/server:
-    dependencies:
-      '@skelm/core':
-        specifier: workspace:*
-        version: link:../core
-      h3:
-        specifier: ^1.15.0
-        version: 1.15.11
-    devDependencies:
-      '@types/node':
-        specifier: ^22.9.0
-        version: 22.19.17
-      typescript:
-        specifier: ^5.6.3
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.5
         version: 2.1.9(@types/node@22.19.17)
 
   packages/skelm:

@@ -56,7 +56,7 @@ Everything from `@skelm/core`:
 - Permissions — `AgentPermissions`, `TrustEnforcer`, `resolvePermissions`
 - Errors — `StepError`, `RunCancelledError`, `serializeError`
 
-The server surface (when added) is imported from `@skelm/server` explicitly so the meta package stays small for users who only need the authoring + runner surface.
+The gateway surface (HTTP + SSE + lifecycle) is imported from `@skelm/gateway` explicitly so the meta package stays small for users who only need the authoring + runner surface.
 
 ## Stability
 

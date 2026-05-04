@@ -33,7 +33,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@skelm/core": "workspace:*"
+    "@skelm/core": "workspace:*",
+    "h3": "^1.15.0"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
