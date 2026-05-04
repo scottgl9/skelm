@@ -178,6 +178,7 @@ export type {
   WorkspaceSummary,
 } from './workspace.js'
 export {
+  createPolicyFetch,
   resolvePermissions,
   TrustEnforcer,
 } from './permissions.js'

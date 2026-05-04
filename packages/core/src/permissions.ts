@@ -3,6 +3,8 @@
 // Authors declare what an agent step is allowed to do; the runtime resolves
 // the final policy (project defaults + profile + step-level + workspace
 // intersections) and enforces it through a single helper: TrustEnforcer.
+
+import { PermissionDeniedError } from './errors.js'
 //
 // Backends and tools never branch on policy themselves — they call the
 // helper, which returns a structured allow/deny decision and emits the
@@ -329,4 +331,62 @@ function lastDefined<T>(arr: ReadonlyArray<T | undefined>): T | undefined {
     if (arr[i] !== undefined) return arr[i]
   }
   return undefined
+}
+
+/**
+ * Returns a `fetch` wrapper that enforces the network egress policy from a
+ * resolved permission policy. Every outbound request is checked against the
+ * policy before the real `fetch` is called; denied requests throw
+ * `PermissionDeniedError`.
+ *
+ * Use this to build `BackendContext.fetch` when running an agent step that
+ * declares a network policy.
+ *
+ * @param policy  The resolved policy for the current step.
+ * @param events  Optional callback to emit `permission.denied` events.
+ * @param base    Base fetch implementation (defaults to `globalThis.fetch`).
+ */
+export function createPolicyFetch(
+  enforcer: TrustEnforcer,
+  events?: {
+    publish: (event: {
+      type: 'permission.denied'
+      runId: string
+      stepId: string
+      dimension: PermissionDimension
+      detail: string
+      at: number
+    }) => void
+    runId: string
+    stepId: string
+  },
+  base: typeof globalThis.fetch = globalThis.fetch,
+): typeof globalThis.fetch {
+  return async function policyFetch(input, init) {
+    const url =
+      typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url
+    let host: string
+    try {
+      host = new URL(url).hostname
+    } catch {
+      // Unparseable URL — deny to be safe.
+      throw new PermissionDeniedError(`network request denied: URL could not be parsed: ${url}`)
+    }
+    const decision = enforcer.canFetch(host)
+    if (!decision.allow) {
+      const detail = `network request to "${host}" denied (${decision.reason})`
+      if (events !== undefined) {
+        events.publish({
+          type: 'permission.denied',
+          runId: events.runId,
+          stepId: events.stepId,
+          dimension: 'network',
+          detail,
+          at: Date.now(),
+        })
+      }
+      throw new PermissionDeniedError(detail)
+    }
+    return base(input, init)
+  }
 }
