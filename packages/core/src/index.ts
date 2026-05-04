@@ -8,8 +8,11 @@ export * from './anthropic/index.js'
 export { DEFAULT_CONFIG, defineConfig } from './config.js'
 export type {
   SkelmConfig,
+  SkelmConfigAgentEntry,
   SkelmConfigBackendEntry,
   SkelmConfigBackends,
+  SkelmConfigMcpServerEntry,
+  SkelmConfigRegistries,
   SkelmConfigSecrets,
   SkelmConfigServer,
   SkelmConfigStorage,
@@ -186,6 +189,8 @@ export type {
 export type { RunHandle, RunOptions, WaitRequest } from './runner.js'
 export { runPipeline, Runner, SchemaValidationError } from './runner.js'
 export type { SkelmSchema } from './schema.js'
+export { parseSkill, SkillParseError } from './skills.js'
+export type { Skill } from './skills.js'
 export type {
   AgentStep,
   BranchStep,
