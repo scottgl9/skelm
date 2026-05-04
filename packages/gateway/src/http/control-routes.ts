@@ -21,7 +21,11 @@ import type { Gateway } from '../lifecycle/gateway.js'
  * would otherwise shadow our /runs/:runId/approve route.
  */
 export function mountControlRoutes(app: App, gateway: Gateway): void {
-  const router = createRouter({ preemptive: true })
+  // preemptive: false so unmatched paths fall through to the webhook
+  // dispatch handler below (and any further fallback). Registered control
+  // paths still win over the legacy server.ts /runs and /pipelines prefix
+  // handlers because the router is mounted before them.
+  const router = createRouter()
 
   router.get(
     '/health',
@@ -170,6 +174,29 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
   )
 
   app.use(router)
+
+  // Webhook trigger dispatch: handled outside the router so paths registered
+  // dynamically by webhook triggers can route through. Mounted after the
+  // control router so explicit control routes always win.
+  app.use(
+    eventHandler(async (event: H3Event) => {
+      const url = event.node.req.url ?? ''
+      const method = event.node.req.method ?? 'GET'
+      const path = url.split('?')[0] ?? ''
+      const triggerId = gateway.managers.triggers.resolveWebhook(path, method)
+      if (triggerId === undefined) return
+      const reg = gateway.managers.triggers.get(triggerId)
+      if (reg === undefined || reg.spec.kind !== 'webhook') return
+      if (reg.spec.secret !== undefined) {
+        const provided = event.headers.get('x-webhook-secret')
+        if (provided !== reg.spec.secret) {
+          throw createError({ statusCode: 401, message: 'webhook secret mismatch' })
+        }
+      }
+      await gateway.managers.triggers.fire(triggerId)
+      return { ok: true, triggerId }
+    }),
+  )
 }
 
 async function deliverApproval(
