@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { code, parallel, pipeline } from '@skelm/core'
+import { z } from 'zod'
 import { Gateway, type SuspendApprovalGate } from '../src/index.js'
 
 let stateDir: string
@@ -419,6 +420,8 @@ describe('Gateway HTTP /pipelines', () => {
     const wf = pipeline({
       id: 'demo',
       description: 'a demo pipeline',
+      input: z.object({ name: z.string() }),
+      output: z.object({ ok: z.boolean() }),
       steps: [
         code({ id: 'first', run: () => ({}) }),
         parallel({
@@ -458,9 +461,18 @@ describe('Gateway HTTP /pipelines', () => {
       expect(detail.description).toBe('a demo pipeline')
       expect(detail.graph.steps.map((s) => s.kind)).toEqual(['code', 'parallel'])
       expect(detail.graph.steps[1]?.children?.map((c) => c.id)).toEqual(['a', 'b'])
-      // JSON Schema serialization not yet implemented.
-      expect(detail.input).toBeNull()
-      expect(detail.output).toBeNull()
+      // Zod schemas are converted via z.toJSONSchema (Zod 4+).
+      const input = detail.input as {
+        type?: string
+        properties?: Record<string, unknown>
+        required?: string[]
+      }
+      expect(input.type).toBe('object')
+      expect(input.properties?.name).toBeDefined()
+      expect(input.required).toEqual(['name'])
+      const output = detail.output as { type?: string; properties?: Record<string, unknown> }
+      expect(output.type).toBe('object')
+      expect(output.properties?.ok).toBeDefined()
     } finally {
       await gw.stop()
       await rm(projectRoot, { recursive: true, force: true })
