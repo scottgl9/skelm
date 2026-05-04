@@ -108,9 +108,9 @@ describe('Gateway HTTP control surface', () => {
 describe('Gateway HTTP /runs/:runId/events', () => {
   it('returns persisted run events from the run store', async () => {
     const port = await pickFreePort()
-    // config: {} keeps the runStore at <stateDir>/runs.sqlite; otherwise the
-    // gateway falls through to DEFAULT_CONFIG.storage.runs.path which is
-    // ~/.skelm/runs.db and bleeds across tests.
+    // config: {} is no longer required for stateDir isolation since the
+    // DEFAULT_CONFIG storage path was removed; left here as an explicit
+    // marker that this test owns its storage scope.
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
