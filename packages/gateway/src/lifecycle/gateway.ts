@@ -108,6 +108,7 @@ export class Gateway {
   private managersInternal: GatewayManagers | null = null
   private runStoreInternal: RunStore | null = null
   private httpServer: SkelmServer | null = null
+  private readonly inFlightRuns = new Map<string, AbortController>()
 
   constructor(private readonly options: GatewayOptions = {}) {
     this.stateDir = options.stateDir ?? join(homedir(), '.skelm')
@@ -151,6 +152,33 @@ export class Gateway {
       throw new Error('gateway runStore is not available — start() the gateway first')
     }
     return this.runStoreInternal
+  }
+
+  /**
+   * Register an AbortController for an in-flight run so that
+   * `gateway.cancel(runId)` can abort it. The dispatcher calls this when
+   * it starts a run and pairs it with `unregisterRun` once the run
+   * settles.
+   */
+  registerRun(runId: string, controller: AbortController): void {
+    this.inFlightRuns.set(runId, controller)
+  }
+
+  unregisterRun(runId: string): void {
+    this.inFlightRuns.delete(runId)
+  }
+
+  /**
+   * Cancel a running run by aborting its registered AbortController.
+   * Returns false if the runId is not in flight (already completed,
+   * never started, or unknown to the gateway).
+   */
+  cancel(runId: string, reason?: string): boolean {
+    const controller = this.inFlightRuns.get(runId)
+    if (controller === undefined) return false
+    controller.abort(reason)
+    this.inFlightRuns.delete(runId)
+    return true
   }
 
   /** Process / session supervisors hosted by the gateway. */
