@@ -1,3 +1,4 @@
+import { approvalsCommand } from './approvals.js'
 import { parseArgv } from './argv.js'
 import { auditCommand, secretsCommand } from './audit.js'
 import { describeCommand } from './describe.js'
@@ -171,6 +172,23 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
             subcommand,
             ...(parsed.flags.foreground === true && { foreground: true }),
             ...(parsed.flags.detach === true && { detach: true }),
+            ...(parsed.flags.json === true && { json: true }),
+          },
+          io,
+        )
+        return { exitCode: result.exitCode }
+      }
+      case 'approvals': {
+        const subcommand = parsed.positional[0]
+        if (subcommand !== 'list' && subcommand !== 'approve' && subcommand !== 'deny') {
+          io.stderr.write('error: approvals requires list, approve, or deny\n')
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        const result = await approvalsCommand(
+          {
+            subcommand,
+            ...(typeof parsed.positional[1] === 'string' && { id: parsed.positional[1] }),
+            ...(typeof parsed.flags.reason === 'string' && { reason: parsed.flags.reason }),
             ...(parsed.flags.json === true && { json: true }),
           },
           io,
