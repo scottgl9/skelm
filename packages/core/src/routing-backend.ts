@@ -67,7 +67,9 @@ export function createRoutingBackend(opts: RoutingBackendOptions): SkelmBackend 
         opts.onFailover?.({ from: backend.id, to: next.id, error: err })
       }
     }
-    throw lastErr ?? new Error(`no backend in routing wrapper "${opts.id}" could service the request`)
+    throw (
+      lastErr ?? new Error(`no backend in routing wrapper "${opts.id}" could service the request`)
+    )
   }
 
   const primaryCaps = opts.primary.capabilities
