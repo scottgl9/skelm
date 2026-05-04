@@ -38,6 +38,14 @@ export { FileSecretResolver } from './secrets/file-driver.js'
 export { SuspendApprovalGate } from './approvals/suspend-gate.js'
 export type { PendingApproval, SuspendApprovalGateOptions } from './approvals/suspend-gate.js'
 
+// Process supervisors
+export { McpServerManager } from './managers/mcp-server-manager.js'
+export type {
+  McpServerHandle,
+  McpServerManagerOptions,
+  McpServerStatus,
+} from './managers/mcp-server-manager.js'
+
 // Registries
 export {
   AgentRegistry,
