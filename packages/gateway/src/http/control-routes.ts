@@ -600,6 +600,20 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
     }),
   )
 
+  router.delete(
+    '/schedules/:id',
+    eventHandler(async (event: H3Event) => {
+      const id = event.context.params?.id
+      if (!id) throw createError({ statusCode: 400, message: 'schedule id required' })
+      const existing = gateway.managers.triggers.get(id)
+      if (existing === undefined) {
+        throw createError({ statusCode: 404, message: `schedule not found: ${id}` })
+      }
+      gateway.managers.triggers.unregister(id)
+      return { ok: true, id }
+    }),
+  )
+
   app.use(router)
 
   // Webhook trigger dispatch: handled outside the router so paths registered

@@ -11,6 +11,7 @@ import { initCommand } from './init.js'
 import { listCommand } from './list.js'
 import { CliError } from './load-workflow.js'
 import { runCommand } from './run.js'
+import { scheduleCommand } from './schedule.js'
 import { sessionsCommand } from './sessions.js'
 import { workspaceCommand } from './workspace.js'
 
@@ -282,6 +283,61 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         const force = parsed.flags.force === true
         const result = await initCommand({ dir, force }, io)
         return { exitCode: result.exitCode }
+      }
+      case 'schedule': {
+        const sub = parsed.positional[0]
+        if (sub !== 'add' && sub !== 'list' && sub !== 'stop' && sub !== 'fire') {
+          io.stderr.write('error: schedule requires add | list | stop | fire\n')
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        if (sub === 'list') {
+          return scheduleCommand({ subcommand: 'list', json: parsed.flags.json === true }, io)
+        }
+        if (sub === 'stop' || sub === 'fire') {
+          const id = parsed.positional[1]
+          if (!id) {
+            io.stderr.write(`error: skelm schedule ${sub} requires a schedule id\n`)
+            return { exitCode: EXIT.CLI_ERROR }
+          }
+          return scheduleCommand({ subcommand: sub, id, json: parsed.flags.json === true }, io)
+        }
+        // add
+        const workflowId = parsed.positional[1]
+        if (!workflowId) {
+          io.stderr.write('error: skelm schedule add requires <workflow-id>\n')
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        const everyRaw = parsed.flags['every-ms']
+        const schedId = typeof parsed.flags.id === 'string' ? parsed.flags.id : undefined
+        const cron = typeof parsed.flags.cron === 'string' ? parsed.flags.cron : undefined
+        const everyMs =
+          typeof everyRaw === 'string' && /^\d+$/.test(everyRaw)
+            ? Number.parseInt(everyRaw, 10)
+            : undefined
+        const webhook = typeof parsed.flags.webhook === 'string' ? parsed.flags.webhook : undefined
+        const at = typeof parsed.flags.at === 'string' ? parsed.flags.at : undefined
+        const input = typeof parsed.flags.input === 'string' ? parsed.flags.input : undefined
+        const overlap =
+          parsed.flags.overlap === 'skip' ||
+          parsed.flags.overlap === 'queue' ||
+          parsed.flags.overlap === 'cancel'
+            ? parsed.flags.overlap
+            : undefined
+        return scheduleCommand(
+          {
+            subcommand: 'add',
+            workflowId,
+            ...(schedId !== undefined && { id: schedId }),
+            ...(cron !== undefined && { cron }),
+            ...(everyMs !== undefined && { everyMs }),
+            ...(webhook !== undefined && { webhook }),
+            ...(at !== undefined && { at }),
+            ...(input !== undefined && { input }),
+            ...(overlap !== undefined && { overlap }),
+            json: parsed.flags.json === true,
+          },
+          io,
+        )
       }
       case 'acp': {
         // P5.2 — ACP serve placeholder. Reserves the CLI flag namespace for
