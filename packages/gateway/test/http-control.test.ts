@@ -444,6 +444,65 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
     }
   })
 
+  it('Idempotency-Key header replays the cached runId', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'skelm-pl-idem-'))
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    await fs.writeFile(join(projectRoot, 'workflows/r.workflow.ts'), 'export default {}')
+
+    let calls = 0
+    const wf = pipeline({
+      id: 'idem',
+      steps: [
+        code({
+          id: 'count',
+          run: () => {
+            calls += 1
+            return { calls }
+          },
+        }),
+      ],
+    })
+
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      loadWorkflow: async () => wf,
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+    })
+    await gw.start()
+    try {
+      const url = `http://127.0.0.1:${port}/pipelines/${encodeURIComponent('workflows/r.workflow.ts')}/run`
+      const first = (await fetch(url, {
+        method: 'POST',
+        headers: { 'idempotency-key': 'k1' },
+      }).then((r) => r.json())) as { runId: string }
+      expect(calls).toBe(1)
+
+      const second = (await fetch(url, {
+        method: 'POST',
+        headers: { 'idempotency-key': 'k1' },
+      }).then((r) => r.json())) as { runId: string }
+      // Cached: same runId, no extra invocation.
+      expect(second.runId).toBe(first.runId)
+      expect(calls).toBe(1)
+
+      // A different key starts a new run.
+      const third = (await fetch(url, {
+        method: 'POST',
+        headers: { 'idempotency-key': 'k2' },
+      }).then((r) => r.json())) as { runId: string }
+      expect(third.runId).not.toBe(first.runId)
+      expect(calls).toBe(2)
+    } finally {
+      await gw.stop()
+      await rm(projectRoot, { recursive: true, force: true })
+    }
+  })
+
   it('returns 501 when no workflow loader is configured', async () => {
     const projectRoot = await mkdtemp(join(tmpdir(), 'skelm-pl-run-'))
     await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
