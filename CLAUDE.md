@@ -106,7 +106,7 @@ Ask the user to confirm before the first commit on a fresh feature so the commit
 
 All security infrastructure — permission resolution, permission enforcement, secret resolution, approvals, audit log writing — is owned by the gateway. The runtime does not enforce permissions; the gateway does. Backends do not write audit; the gateway does. Tools do not resolve secrets; the gateway does.
 
-When you are about to write code that touches a privileged action (exec, network, fs-write, tool dispatch), the answer is **always** to route it through the gateway's enforcement helper. CI has a guard (`scripts/guards/gateway-only-enforcement.ts`) that fails on direct calls.
+When you are about to write code that touches a privileged action (exec, network, fs-write, tool dispatch), the answer is **always** to route it through the gateway's enforcement helper. A CI guard for this rule (`scripts/guards/gateway-only-enforcement.ts`) is planned but not yet implemented — see `scripts/guards/README.md` for status.
 
 ### Default-deny is structural
 
@@ -117,7 +117,7 @@ When you are about to write code that touches a privileged action (exec, network
 3. You add an adversarial fixture under `tests/security/` proving the deny path fires.
 4. You document the dimension in the relevant `docs/` page.
 
-A guard script (`scripts/guards/default-deny-permissions.ts`) checks 1–3 mechanically.
+A guard script (`scripts/guards/default-deny-permissions.ts`) is planned to check 1–3 mechanically; until it lands, this rule is enforced only by review. See `scripts/guards/README.md`.
 
 ### Self-review before PR
 

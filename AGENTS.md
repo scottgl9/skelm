@@ -95,7 +95,7 @@ Coverage floors:
 
 ### Public API stability
 
-Anything exported from a package's top-level `index.ts` is part of the public API. Anything inside a subpath without an explicit `exports` entry is internal. Public API changes require updating the API baseline file in the same commit; CI enforces this via `scripts/guards/public-export-baseline.ts`.
+Anything exported from a package's top-level `index.ts` is part of the public API. Anything inside a subpath without an explicit `exports` entry is internal. Public API changes require updating the API baseline file in the same commit; a CI guard for this (`scripts/guards/public-export-baseline.ts`) is planned but not yet implemented — see `scripts/guards/README.md`.
 
 ## Quality gates
 
@@ -107,7 +107,7 @@ pnpm check
   → typecheck
   → lint              (biome)
   → unit              (vitest)
-  → guards            (architectural-invariant scripts under scripts/guards/)
+  → guards            (architectural-invariant scripts under scripts/guards/ — currently no-op; see scripts/guards/README.md for the implementation backlog)
   → adversarial       (security-tenet adversarial fixtures)
   → contract          (backend-contract suite)
   → doc-links
@@ -134,13 +134,13 @@ The review produces a structured result with sections for summary, changes, secu
 - Imports: package imports first, then relative. No circular imports.
 - Errors: typed error classes from `@skelm/core/errors`. Never throw bare strings.
 - Schemas: standard-schema-compatible (Zod is the documented default). Validate at system boundaries.
-- Default-deny in security-relevant types: every new field of `AgentPermissions` defaults to `undefined` (treated as deny) and ships with an adversarial fixture exercising the deny path. Enforced by `scripts/guards/default-deny-permissions.ts`.
+- Default-deny in security-relevant types: every new field of `AgentPermissions` defaults to `undefined` (treated as deny) and ships with an adversarial fixture exercising the deny path. A CI guard for this (`scripts/guards/default-deny-permissions.ts`) is planned but not yet implemented — see `scripts/guards/README.md`.
 
 ## Commits and PRs
 
 - Conventional-style commit messages (`feat:`, `fix:`, `refactor:`, `chore:`, `docs:`, `test:`).
 - One logical change per commit; one logical change per PR. Stack PRs if a feature naturally splits.
-- Every behavior-changing PR carries a changeset entry (enforced by `scripts/guards/changelog-present.ts`).
+- Every behavior-changing PR carries a changeset entry. A CI guard for this (`scripts/guards/changelog-present.ts`) is planned but not yet implemented — see `scripts/guards/README.md`.
 - PR descriptions include: what changed, why, how it was tested, and any security implications.
 - Do not reference internal note paths or internal rule identifiers in commit messages or PR descriptions; commits are read by anyone who later runs `git log`.
 
