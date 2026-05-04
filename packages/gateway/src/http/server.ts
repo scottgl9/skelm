@@ -1,3 +1,10 @@
+// Public HTTP entry point. Routes that need gateway-only state (pipeline
+// graph + JSON Schema serialization, durable event listing, run cancel via
+// AbortController, schedule registration) are owned by control-routes.ts
+// and mounted before the routes here when a gateway is supplied — see
+// mountControlRoutes below. Without a gateway this surface is intentionally
+// narrower; embedded callers reach those features through the gateway.
+
 import type { Pipeline, Run, RunStatus, RunStore, RunSummary } from '@skelm/core'
 import type { Runner } from '@skelm/core'
 import type { RunEvent } from '@skelm/core'
@@ -13,13 +20,7 @@ import {
 import type { AuthMode, ServerConfig } from './config.js'
 import { validateServerConfig } from './config.js'
 import { mountControlRoutes } from './control-routes.js'
-import type {
-  AsyncStartResponse,
-  PipelineInfo,
-  Schedule,
-  SkelmServer,
-  SyncRunResponse,
-} from './types.js'
+import type { AsyncStartResponse, PipelineInfo, SkelmServer, SyncRunResponse } from './types.js'
 
 /**
  * In-memory idempotency store: maps (pipelineId, key) -> runId
@@ -100,31 +101,6 @@ export function createServer(
       }))
 
       return pipelineList
-    }),
-  )
-
-  // GET /pipelines/:id - get pipeline detail
-  app.use(
-    '/pipelines/:id',
-    eventHandler(async (event: H3Event) => {
-      const pipelineId = event.context.params?.id
-      if (!pipelineId) {
-        throw createError({ statusCode: 400, message: 'Pipeline ID required' })
-      }
-
-      const pipeline = pipelines.find((p) => p.id === pipelineId)
-      if (!pipeline) {
-        throw createError({ statusCode: 404, message: 'Pipeline not found' })
-      }
-
-      // TODO: Serialize pipeline graph and schemas
-      return {
-        id: pipeline.id,
-        description: pipeline.description ?? '',
-        input: null, // TODO: JSON Schema
-        output: null, // TODO: JSON Schema
-        graph: null, // TODO: PipelineGraph
-      }
     }),
   )
 
@@ -273,26 +249,6 @@ export function createServer(
     }),
   )
 
-  // GET /runs/:runId/events - get run events
-  app.use(
-    '/runs/:runId/events',
-    eventHandler(async (event: H3Event) => {
-      const runId = event.context.params?.id
-      if (!runId) {
-        throw createError({ statusCode: 400, message: 'Run ID required' })
-      }
-
-      const state = await runStore.getRun(runId)
-      if (!state) {
-        throw createError({ statusCode: 404, message: 'Run not found' })
-      }
-
-      // Return events from the run store
-      // TODO: Implement event retrieval from store
-      return { runId, events: [] as RunEvent[] }
-    }),
-  )
-
   // GET /runs/:runId/stream - SSE event stream
   app.use(
     '/runs/:runId/stream',
@@ -371,53 +327,6 @@ export function createServer(
       } catch (err) {
         throw createError({ statusCode: 400, message: (err as Error).message })
       }
-    }),
-  )
-
-  // DELETE /runs/:runId - cancel run
-  app.use(
-    '/runs/:runId',
-    eventHandler(async (event: H3Event) => {
-      const runId = event.context.params?.id
-      if (!runId) {
-        throw createError({ statusCode: 400, message: 'Run ID required' })
-      }
-
-      // TODO: Implement cancel via abort signal
-      // For now, just return success
-      return { success: true }
-    }),
-  )
-
-  // GET /schedules - list schedules
-  app.use(
-    '/schedules',
-    eventHandler(async (_event: H3Event) => {
-      // TODO: Return registered schedules
-      return []
-    }),
-  )
-
-  // POST /schedules - register schedule
-  app.use(
-    '/schedules',
-    eventHandler(async (event: H3Event) => {
-      const body = await readBody(event).catch(() => ({}))
-      const raw = body as Record<string, unknown>
-      const schedule: Schedule = {
-        id: raw.id as string,
-        workflowId: raw.workflowId as string,
-        trigger: raw.trigger as Schedule['trigger'],
-        overlap: (raw.overlap as Schedule['overlap']) ?? 'skip',
-        enabled: (raw.enabled as boolean) ?? true,
-        retention: (raw.retention as Schedule['retention']) ?? 'persistent',
-      }
-      if (raw.defaultInput !== undefined)
-        schedule.defaultInput = raw.defaultInput as Record<string, unknown>
-      if (raw.notes !== undefined) schedule.notes = raw.notes as string
-
-      // TODO: Register schedule
-      return schedule
     }),
   )
 
