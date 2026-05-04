@@ -107,6 +107,44 @@ export class AcpSessionManager {
     return true
   }
 
+  /**
+   * Drop sessions that match the predicate. Returns the ids removed. Used by
+   * `skelm gateway prune-sessions` and the periodic compactor for
+   * long-running gateways. Common usage:
+   *
+   *   await mgr.prune({ expired: true })
+   *   await mgr.prune({ olderThanMs: 30 * 24 * 3600_000 })
+   *
+   * Either filter, or both, or pass a custom matcher().
+   */
+  async prune(opts: {
+    expired?: boolean
+    olderThanMs?: number
+    matcher?: (session: AcpSession) => boolean
+  } = {}): Promise<readonly string[]> {
+    await this.ensureLoaded()
+    const now = Date.now()
+    const removed: string[] = []
+    for (const [id, s] of this.sessions.entries()) {
+      let drop = false
+      if (opts.expired === true && s.state === 'expired') drop = true
+      if (
+        !drop &&
+        opts.olderThanMs !== undefined &&
+        Date.parse(s.lastSeenAt) < now - opts.olderThanMs
+      ) {
+        drop = true
+      }
+      if (!drop && opts.matcher !== undefined && opts.matcher(s)) drop = true
+      if (drop) {
+        this.sessions.delete(id)
+        removed.push(id)
+      }
+    }
+    if (removed.length > 0) await this.persist()
+    return removed
+  }
+
   private async ensureLoaded(): Promise<void> {
     if (!this.loaded) await this.loadFromDisk()
   }

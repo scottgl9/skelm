@@ -168,6 +168,22 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       return s
     }),
   )
+  router.post(
+    '/sessions/prune',
+    eventHandler(async (event: H3Event) => {
+      const rawBody = await readBody(event).catch(() => undefined)
+      const body =
+        rawBody !== null && typeof rawBody === 'object'
+          ? (rawBody as { expired?: unknown; olderThanMs?: unknown })
+          : {}
+      const opts: { expired?: boolean; olderThanMs?: number } = {}
+      if (body.expired === true) opts.expired = true
+      if (typeof body.olderThanMs === 'number') opts.olderThanMs = body.olderThanMs
+      const removed = await gateway.managers.acpSessions.prune(opts)
+      return { removed }
+    }),
+  )
+
   router.delete(
     '/sessions/:id',
     eventHandler(async (event: H3Event) => {
