@@ -11,6 +11,7 @@ Usage:
   skelm secrets <get|set|list> [args]
   skelm debug <breakpoints|add|remove|runs|release> [args]
   skelm sessions <list|prune> [--expired] [--older-than-ms <ms>] [--json]
+  skelm schedule <add|list|stop|fire> [args]
   skelm acp serve
   skelm init [<dir>] [--force]
   skelm --version
@@ -73,6 +74,18 @@ Sessions flags:
 
 Acp flags:
   skelm acp serve                               Not yet implemented (reserved for M4)
+
+Schedule flags:
+  skelm schedule list [--json]                  List registered schedules
+  skelm schedule add <workflow-id> [--id <id>] [--json]
+    --cron <expr>           Cron expression (e.g. '*/5 * * * *')
+    --every-ms <ms>         Interval in milliseconds
+    --webhook <path>        Webhook path (e.g. /my-hook)
+    --at <iso8601>          Fire once at a specific time
+    --input <json>          Input JSON passed to the workflow run
+    --overlap skip|queue|cancel  Overlap policy (default: skip)
+  skelm schedule stop <id> [--json]             Unregister a schedule
+  skelm schedule fire <id> [--json]             Manually fire a schedule now
 
 Init flags:
   --force                 Allow scaffolding into a non-empty directory

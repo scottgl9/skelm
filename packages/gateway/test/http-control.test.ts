@@ -1120,6 +1120,53 @@ describe('Gateway runStore', () => {
   })
 })
 
+it('DELETE /schedules/:id unregisters a schedule; 404 for unknown', async () => {
+  const port = await pickFreePort()
+  const gw = new Gateway({
+    stateDir,
+    watchRegistries: false,
+    enableHttp: true,
+    httpPort: port,
+    config: {},
+  })
+  await gw.start()
+  const base = `http://127.0.0.1:${port}`
+  try {
+    await fetch(`${base}/schedules`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: 'del-me',
+        workflowId: 'wf',
+        trigger: { kind: 'cron', expression: '0 * * * *' },
+      }),
+    })
+
+    // Should exist now
+    const list1 = (await fetch(`${base}/schedules`).then((r) => r.json())) as Array<{
+      id: string
+    }>
+    expect(list1.map((s) => s.id)).toContain('del-me')
+
+    // Delete it
+    const del = await fetch(`${base}/schedules/del-me`, { method: 'DELETE' })
+    expect(del.status).toBe(200)
+    expect(await del.json()).toMatchObject({ ok: true, id: 'del-me' })
+
+    // Gone from list
+    const list2 = (await fetch(`${base}/schedules`).then((r) => r.json())) as Array<{
+      id: string
+    }>
+    expect(list2.map((s) => s.id)).not.toContain('del-me')
+
+    // 404 for unknown
+    const notFound = await fetch(`${base}/schedules/no-such-id`, { method: 'DELETE' })
+    expect(notFound.status).toBe(404)
+  } finally {
+    await gw.stop()
+  }
+})
+
 async function pickFreePort(): Promise<number> {
   const { createServer } = await import('node:net')
   return new Promise((resolve, reject) => {
