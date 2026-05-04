@@ -2,6 +2,7 @@ import { approvalsCommand } from './approvals.js'
 import { parseArgv } from './argv.js'
 import { auditCommand, secretsCommand } from './audit.js'
 import { debugCommand } from './debug.js'
+import { sessionsCommand } from './sessions.js'
 import { describeCommand } from './describe.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { gatewayCommand } from './gateway.js'
@@ -202,6 +203,28 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
           {
             subcommand: sub,
             ...(typeof parsed.positional[1] === 'string' && { arg: parsed.positional[1] }),
+            ...(parsed.flags.json === true && { json: true }),
+          },
+          io,
+        )
+        return { exitCode: result.exitCode }
+      }
+      case 'sessions': {
+        const sub = parsed.positional[0]
+        if (sub !== 'list' && sub !== 'prune') {
+          io.stderr.write('error: sessions requires list or prune\n')
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        const olderRaw = parsed.flags['older-than-ms']
+        const olderThanMs =
+          typeof olderRaw === 'string' && /^\d+$/.test(olderRaw)
+            ? Number.parseInt(olderRaw, 10)
+            : undefined
+        const result = await sessionsCommand(
+          {
+            subcommand: sub,
+            ...(parsed.flags.expired === true && { expired: true }),
+            ...(olderThanMs !== undefined && { olderThanMs }),
             ...(parsed.flags.json === true && { json: true }),
           },
           io,
