@@ -23,8 +23,12 @@ export function applyConfiguredBackends<TInput, TOutput>(
 
 export async function buildBackendRegistry(
   config: SkelmConfig,
+  pipeline?: Pipeline<unknown, unknown>,
 ): Promise<BackendRegistry | undefined> {
   const backendIds = configuredBackendIds(config)
+  if (pipeline !== undefined) {
+    for (const id of backendIdsReferencedByPipeline(pipeline)) backendIds.add(id)
+  }
   if (backendIds.size === 0) return undefined
 
   const registry = new BackendRegistry()
@@ -33,6 +37,15 @@ export async function buildBackendRegistry(
     registry.register(backend)
   }
   return registry
+}
+
+function backendIdsReferencedByPipeline(pipeline: Pipeline<unknown, unknown>): Set<string> {
+  const ids = new Set<string>()
+  for (const step of pipeline.steps as readonly Step[]) {
+    const id = (step as { backend?: string }).backend
+    if (typeof id === 'string' && id !== '') ids.add(id)
+  }
+  return ids
 }
 
 function patchPipeline<TInput, TOutput>(
@@ -176,7 +189,12 @@ function createBackend(backendId: string, config: SkelmConfig) {
 }
 
 function configuredBackendIds(config: SkelmConfig): Set<string> {
-  const ids = new Set<string>(['openai', 'anthropic', 'copilot-acp', 'opencode', 'pi'])
+  // Only register backends that the config actually references — either via
+  // an explicit entry in `backends`, the `default` / `llm` / `agent`
+  // selectors, or the top-level `backend` field. This avoids constructing
+  // (and validating) backends the workflow never uses, which would
+  // otherwise throw on missing credentials for unrelated providers.
+  const ids = new Set<string>()
   const backends = config.backends ?? {}
   for (const [key, value] of Object.entries(backends)) {
     if (key === 'default' || key === 'llm' || key === 'agent') continue
