@@ -228,3 +228,73 @@ async function collect<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   }
   return out
 }
+
+describe('workflowPath persistence', () => {
+  it('MemoryRunStore: roundtrips workflowPath', async () => {
+    const store = new MemoryRunStore()
+    await store.putRun({ ...sampleRun('r1'), workflowPath: '/repo/workflows/foo.workflow.ts' })
+    const r = await store.getRun('r1')
+    expect(r?.workflowPath).toBe('/repo/workflows/foo.workflow.ts')
+  })
+
+  it('MemoryRunStore: workflowPath absent when not set', async () => {
+    const store = new MemoryRunStore()
+    await store.putRun(sampleRun('r2'))
+    const r = await store.getRun('r2')
+    expect(r?.workflowPath).toBeUndefined()
+  })
+
+  it('SqliteRunStore: roundtrips workflowPath', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-wp-'))
+    const store = new SqliteRunStore({ path: join(dir, 'runs.db') })
+    try {
+      await store.putRun({ ...sampleRun('r3'), workflowPath: '/repo/workflows/bar.workflow.ts' })
+      const r = await store.getRun('r3')
+      expect(r?.workflowPath).toBe('/repo/workflows/bar.workflow.ts')
+    } finally {
+      store.close()
+    }
+  })
+
+  it('SqliteRunStore: workflowPath in listRuns summary', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-wp2-'))
+    const store = new SqliteRunStore({ path: join(dir, 'runs.db') })
+    try {
+      await store.putRun({ ...sampleRun('r4'), workflowPath: '/repo/workflows/baz.ts' })
+      const summaries: import('./run-store.js').RunSummary[] = []
+      for await (const s of store.listRuns()) summaries.push(s)
+      expect(summaries.find((s) => s.runId === 'r4')?.workflowPath).toBe('/repo/workflows/baz.ts')
+    } finally {
+      store.close()
+    }
+  })
+
+  it('SqliteRunStore: migrates existing DB without workflow_path column', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-migrate-'))
+    // Create a DB without the workflow_path column (old schema)
+    const Database = (await import('better-sqlite3')).default
+    const db = new Database(join(dir, 'runs.db'))
+    db.exec(`CREATE TABLE runs (
+      run_id TEXT PRIMARY KEY,
+      pipeline_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      input_json TEXT NOT NULL,
+      steps_json TEXT NOT NULL,
+      output_json TEXT,
+      error_json TEXT,
+      started_at INTEGER NOT NULL,
+      completed_at INTEGER
+    )`)
+    db.close()
+    // Open with SqliteRunStore — migration should add the column
+    const store = new SqliteRunStore({ path: join(dir, 'runs.db') })
+    try {
+      await store.putRun(sampleRun('r5'))
+      const r = await store.getRun('r5')
+      expect(r?.runId).toBe('r5')
+      expect(r?.workflowPath).toBeUndefined()
+    } finally {
+      store.close()
+    }
+  })
+})

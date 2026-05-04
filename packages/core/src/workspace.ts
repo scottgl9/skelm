@@ -129,6 +129,10 @@ export class WorkspaceManager {
     if (workspace.gitRoot) {
       await ensureGitRoot(path)
     }
+    // Seed: copy files into the workspace before the step runs
+    if (workspace.seed?.copy) {
+      await seedWorkspace(path, workspace.seed.copy)
+    }
     const handle: WorkspaceHandle = Object.freeze({
       path,
       mode: 'persistent',
@@ -210,6 +214,10 @@ export class WorkspaceManager {
     const info = await stat(path)
     if (!info.isDirectory()) {
       throw new Error(`mounted workspace path is not a directory: ${path}`)
+    }
+    // Seed: copy files into the workspace before the step runs
+    if (workspace.seed?.copy) {
+      await seedWorkspace(path, workspace.seed.copy)
     }
     return {
       handle: Object.freeze({

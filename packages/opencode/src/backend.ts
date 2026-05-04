@@ -99,6 +99,10 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
         // Do NOT dispose — server stays alive for subsequent calls
       }
     },
+
+    async dispose(): Promise<void> {
+      await client.dispose()
+    },
   }
 
   return backend
