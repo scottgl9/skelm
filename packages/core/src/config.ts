@@ -134,9 +134,15 @@ export const DEFAULT_CONFIG: SkelmConfig = Object.freeze({
     },
   },
   secrets: { driver: 'env' as const },
+  // Storage paths are intentionally unset in the default. The gateway
+  // resolves runs.path to <stateDir>/runs.sqlite at startup so a caller that
+  // sets stateDir (per-project, or per-test mkdtemp) does not have to also
+  // override storage to avoid sharing one global file across runs. Users who
+  // want a stable home-directory path can set it explicitly in their
+  // skelm.config.ts.
   storage: {
-    runs: { driver: 'sqlite' as const, path: '~/.skelm/runs.db' },
-    state: { driver: 'sqlite' as const, path: '~/.skelm/runs.db' },
+    runs: { driver: 'sqlite' as const },
+    state: { driver: 'sqlite' as const },
   },
   server: {
     port: 4000,
