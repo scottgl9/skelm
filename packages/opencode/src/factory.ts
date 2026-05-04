@@ -10,6 +10,8 @@ import type { OpencodeBackendOptions } from './types.js'
  * Configuration for opencode backend in skelm.config.ts
  */
 export interface OpencodeBackendConfig {
+  /** Path to the opencode binary. Defaults to 'opencode' on PATH. */
+  command?: string
   /** Opencode API key (or { secret: 'ENV_VAR_NAME' } for env lookup) */
   apiKey?: string | { secret: string }
   /** Opencode API URL (optional, defaults to opencode.ai) */
@@ -44,22 +46,20 @@ export function createOpencodeBackendFromConfig(
 export function createOpencodeBackendFromConfig(
   config: OpencodeBackendConfig,
 ): ReturnType<typeof createOpencodeBackend> | Promise<ReturnType<typeof createOpencodeBackend>> {
+  const result: Record<string, unknown> = {}
+
+  // apiKey is optional now — the backend uses opencode serve (subprocess), not cloud API
   const directApiKey = typeof config.apiKey === 'string' ? config.apiKey : undefined
   const secretApiKey =
     typeof config.apiKey === 'object' && config.apiKey !== null && 'secret' in config.apiKey
       ? process.env[config.apiKey.secret as string]
       : undefined
-
   const resolvedApiKey = directApiKey ?? secretApiKey
+  if (resolvedApiKey) result.apiKey = resolvedApiKey
 
-  if (!resolvedApiKey) {
-    throw new Error(
-      'Opencode API key not configured. Set opencode.apiKey in config or OPENCODE_API_KEY env var.',
-    )
-  }
+  if (config.command !== undefined) result.command = config.command
 
-  const result: Record<string, unknown> = { apiKey: resolvedApiKey }
-  // apiUrlProvider (the gateway-supervised URL) takes precedence over a static apiUrl.
+  // apiUrlProvider takes precedence over a static apiUrl.
   if (config.apiUrlProvider !== undefined) {
     const promise = Promise.resolve(config.apiUrlProvider()).then((apiUrl) => {
       if (apiUrl !== undefined) result.apiUrl = apiUrl

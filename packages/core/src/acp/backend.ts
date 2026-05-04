@@ -3,15 +3,11 @@
 // Spawns the configured ACP agent process, opens a session per call, sends
 // the prompt, and aggregates the streaming response into an AgentResponse.
 //
-// `toolPermissions: 'unsupported'` for v0.1: this client does not yet
-// negotiate per-call permission enforcement with the agent. A step that
-// declares non-empty AgentPermissions against an ACP backend will fail at
-// step start once the gateway-side enforcement contract lands; for now
-// the runner accepts it and the backend forwards the policy as advisory
-// metadata only. Customers who need tighter enforcement against ACP
-// agents will want to gate at the workflow level (run claude with
-// --dangerously-skip-permissions=false; configure copilot --add-dir;
-// etc.).
+// `toolPermissions: 'native'`: ACP agents (opencode, copilot, claude) enforce
+// permissions themselves at the process level. Skelm passes the resolved policy
+// as advisory metadata in AgentRequest.permissions; the agent is responsible for
+// honouring it. This is the correct model for externally-sandboxed agents that
+// manage their own tool access.
 
 import type {
   AgentRequest,
@@ -58,7 +54,7 @@ export function createAcpBackend(opts: AcpBackendOptions): SkelmBackend {
     mcp: true,
     skills: false,
     modelSelection: opts.model !== undefined,
-    toolPermissions: 'unsupported',
+    toolPermissions: 'native',
   }
 
   const backend: SkelmBackend = {

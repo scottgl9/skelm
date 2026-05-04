@@ -1,7 +1,7 @@
-import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process' // @subprocess-ok: workspace git operations
+import { cp, mkdir, mkdtemp, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { RunStatus, WorkspaceConfig, WorkspaceHandle } from './types.js'
 
@@ -166,6 +166,10 @@ export class WorkspaceManager {
     const cleanup = workspace.cleanup ?? 'on-run-end'
     const path = await mkdtemp(join(base, prefix))
     await mkdir(join(path, '.skelm'), { recursive: true })
+    // Seed: copy files/dirs into the workspace before the step runs
+    if (workspace.seed?.copy) {
+      await seedWorkspace(path, workspace.seed.copy)
+    }
     const metadata = await touchMetadata(path, {
       pipelineId,
       mode: 'ephemeral',
@@ -330,4 +334,30 @@ function isMissing(error: unknown): boolean {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Copy each path in `sources` into `destDir`.
+ * Directories are copied recursively; files are copied to the same basename.
+ * Paths are resolved relative to `process.cwd()`.
+ */
+async function seedWorkspace(destDir: string, sources: readonly string[]): Promise<void> {
+  for (const src of sources) {
+    const abs = resolve(src)
+    let srcStat: Awaited<ReturnType<typeof stat>> | null = null
+    try {
+      srcStat = await stat(abs)
+    } catch {
+      // Skip missing sources silently — seed is best-effort
+      continue
+    }
+    const name = basename(abs)
+    const dest = join(destDir, name)
+    if (srcStat.isDirectory()) {
+      await cp(abs, dest, { recursive: true, force: true })
+    } else {
+      await mkdir(dirname(dest), { recursive: true })
+      await cp(abs, dest, { force: true })
+    }
+  }
 }

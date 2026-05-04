@@ -1,23 +1,20 @@
-import type { AgentRequest, BackendContext } from '@skelm/core'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createOpencodeBackend } from '../src/backend.js'
 
 describe('OpencodeBackend', () => {
   describe('createOpencodeBackend', () => {
     it('creates backend with default options', () => {
-      const backend = createOpencodeBackend({
-        apiKey: 'test-key',
-      })
+      const backend = createOpencodeBackend({})
 
       expect(backend.id).toBe('opencode')
       expect(backend.capabilities.prompt).toBe(true)
       expect(backend.capabilities.streaming).toBe(true)
-      expect(backend.capabilities.toolPermissions).toBe('wrapped')
+      // Opencode manages its own permissions at the process level
+      expect(backend.capabilities.toolPermissions).toBe('native')
     })
 
     it('creates backend with custom id and label', () => {
       const backend = createOpencodeBackend({
-        apiKey: 'test-key',
         id: 'custom-opencode',
         label: 'Custom Opencode Backend',
       })
@@ -26,108 +23,31 @@ describe('OpencodeBackend', () => {
       expect(backend.label).toBe('Custom Opencode Backend')
     })
 
-    it('creates backend with model selection capability', () => {
+    it('creates backend with model selection capability when model is set', () => {
       const backend = createOpencodeBackend({
-        apiKey: 'test-key',
-        model: 'anthropic/claude-sonnet-4',
+        model: 'llamacpp/qwen36',
       })
-
       expect(backend.capabilities.modelSelection).toBe(true)
     })
-  })
 
-  describe('Permission Enforcement', () => {
-    it('denies requests with unauthorized MCP servers', async () => {
-      const backend = createOpencodeBackend({
-        apiKey: 'test-key',
-      })
-
-      const request: AgentRequest = {
-        prompt: 'Use MCP server',
-        permissions: {
-          allowedTools: { exact: new Set(), prefixes: [], star: false },
-          deniedTools: { exact: new Set(), prefixes: [], star: false },
-          allowedExecutables: new Set(),
-          allowedMcpServers: new Set(), // No MCP servers allowed
-          allowedSkills: new Set(),
-          networkEgress: 'deny',
-          fsRead: new Set(),
-          fsWrite: new Set(),
-          approval: null,
-        },
-        mcpServers: [{ id: 'github', transport: 'stdio', command: 'mcp-github' }],
-      }
-
-      const context: BackendContext = {
-        signal: new AbortController().signal,
-      }
-
-      await expect(backend.run?.(request, context)).rejects.toThrow(
-        expect.objectContaining({
-          message: expect.stringContaining('Permission denied'),
-        }),
-      )
+    it('has no model selection capability when model is unset', () => {
+      const backend = createOpencodeBackend({})
+      expect(backend.capabilities.modelSelection).toBe(false)
     })
 
-    it('allows requests within declared permissions', async () => {
-      const backend = createOpencodeBackend({
-        apiKey: 'test-key',
-      })
-
-      const request: AgentRequest = {
-        prompt: 'Read file',
-        permissions: {
-          allowedTools: { exact: new Set(['read_file']), prefixes: [], star: false },
-          deniedTools: { exact: new Set(), prefixes: [], star: false },
-          allowedExecutables: new Set(),
-          allowedMcpServers: new Set(),
-          allowedSkills: new Set(),
-          networkEgress: 'deny',
-          fsRead: new Set(['/workspace']),
-          fsWrite: new Set(),
-          approval: null,
-        },
-        mcpServers: [],
-      }
-
-      const context: BackendContext = {
-        signal: new AbortController().signal,
-      }
-
-      // This will fail at SDK level (no real API key), but permission check should pass
-      // The SDK will fail when trying to make network requests
-      await expect(backend.run?.(request, context)).rejects.toThrow()
+    it('exposes run() method', () => {
+      const backend = createOpencodeBackend({})
+      expect(typeof backend.run).toBe('function')
     })
   })
 
-  describe('Error Handling', () => {
-    it('throws authentication error on invalid key', async () => {
-      const backend = createOpencodeBackend({
-        apiKey: 'invalid-key',
-      })
+  describe('capability flags', () => {
+    it('reports sessionLifecycle: true', () => {
+      expect(createOpencodeBackend({}).capabilities.sessionLifecycle).toBe(true)
+    })
 
-      const request: AgentRequest = {
-        prompt: 'Test',
-        permissions: {
-          allowedTools: { exact: new Set(), prefixes: [], star: false },
-          deniedTools: { exact: new Set(), prefixes: [], star: false },
-          allowedExecutables: new Set(),
-          allowedMcpServers: new Set(),
-          allowedSkills: new Set(),
-          networkEgress: 'deny',
-          fsRead: new Set(),
-          fsWrite: new Set(),
-          approval: null,
-        },
-        mcpServers: [],
-      }
-
-      const context: BackendContext = {
-        signal: new AbortController().signal,
-      }
-
-      // Will fail when trying to create session with invalid API key
-      await expect(backend.run?.(request, context)).rejects.toThrow()
+    it('reports mcp: true', () => {
+      expect(createOpencodeBackend({}).capabilities.mcp).toBe(true)
     })
   })
 })

@@ -20,6 +20,9 @@ export interface OpencodeBackendOptions {
   /** Permission defaults (can be overridden per pipeline step) */
   permissions?: OpencodePermissionConfig
 
+  /** Path to the opencode binary (defaults to 'opencode' on PATH). */
+  command?: string
+
   /** Model override for this backend */
   model?: string
 
