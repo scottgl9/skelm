@@ -7,6 +7,7 @@ Usage:
   skelm history [--workflow <id>] [--last <n>] [--run <id>] [--events] [--json]
   skelm workspace <list|show|clean> [args]
   skelm serve [flags]
+  skelm gateway <start|stop|pause|resume|reload|status> [flags]
   skelm audit query [flags]
   skelm secrets <get|set|list> [args]
   skelm init [<dir>] [--force]
@@ -44,6 +45,11 @@ Serve flags:
   --auth <mode>         none (loopback only) | bearer (requires token)
   --token <value>       Bearer token (or set SKELM_TOKEN env var)
   --config <path>       Config file path (default: skelm.config.ts)
+
+Gateway flags:
+  skelm gateway start [--foreground|--detach]   Run the gateway in this process
+  skelm gateway status [--json]                 Show running pid / url / state
+  (stop|pause|resume|reload land in Phase 11 once the control surface is wired)
 
 Audit flags:
   skelm audit query [--run <runId>] [--actor <name>] [--action <type>]

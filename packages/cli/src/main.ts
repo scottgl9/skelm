@@ -2,6 +2,7 @@ import { parseArgv } from './argv.js'
 import { auditCommand, secretsCommand } from './audit.js'
 import { describeCommand } from './describe.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
+import { gatewayCommand } from './gateway.js'
 import { HELP_TEXT } from './help.js'
 import { historyCommand } from './history.js'
 import { initCommand } from './init.js'
@@ -148,6 +149,32 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         if (typeof tokenFlag === 'string') serveArgs.token = tokenFlag
         if (typeof configFlag === 'string') serveArgs.configPath = configFlag
         const result = await serveCommand(serveArgs, io)
+        return { exitCode: result.exitCode }
+      }
+      case 'gateway': {
+        const subcommand = parsed.positional[0]
+        if (
+          subcommand !== 'start' &&
+          subcommand !== 'stop' &&
+          subcommand !== 'pause' &&
+          subcommand !== 'resume' &&
+          subcommand !== 'reload' &&
+          subcommand !== 'status'
+        ) {
+          io.stderr.write(
+            'error: gateway requires one of start, stop, pause, resume, reload, status\n',
+          )
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        const result = await gatewayCommand(
+          {
+            subcommand,
+            ...(parsed.flags.foreground === true && { foreground: true }),
+            ...(parsed.flags.detach === true && { detach: true }),
+            ...(parsed.flags.json === true && { json: true }),
+          },
+          io,
+        )
         return { exitCode: result.exitCode }
       }
       case 'audit': {
