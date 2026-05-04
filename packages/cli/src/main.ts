@@ -289,14 +289,10 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         // clear message so callers aren't left guessing.
         const sub = parsed.positional[0]
         if (sub !== 'serve') {
-          io.stderr.write(
-            'error: acp requires serve subcommand\n  skelm acp serve\n',
-          )
+          io.stderr.write('error: acp requires serve subcommand\n  skelm acp serve\n')
           return { exitCode: EXIT.CLI_ERROR }
         }
-        io.stderr.write(
-          'error: skelm acp serve is not yet implemented (reserved for M4)\n',
-        )
+        io.stderr.write('error: skelm acp serve is not yet implemented (reserved for M4)\n')
         return { exitCode: EXIT.CLI_ERROR }
       }
       default: {
