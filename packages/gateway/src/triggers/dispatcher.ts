@@ -60,7 +60,7 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
       opts.gateway.metrics?.recordTriggerFire(ctx.triggerId)
       const controller = new AbortController()
       runId = crypto.randomUUID()
-      opts.gateway.registerRun(runId, controller)
+      opts.gateway.registerRun(runId, controller, runner)
       const breakpoints = opts.gateway.breakpoints
       const handle = runner.start(
         pipeline as Parameters<Runner['start']>[0],
