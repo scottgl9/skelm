@@ -3,7 +3,6 @@ import { join, resolve } from 'node:path'
 import {
   type ApprovalGate,
   type AuditWriter,
-  AutoApproveGate,
   DEFAULT_CONFIG,
   EnvSecretResolver,
   NoopAuditWriter,
@@ -11,7 +10,11 @@ import {
   type SecretResolver,
   type SkelmConfig,
 } from '@skelm/core'
+import { SuspendApprovalGate } from '../approvals/suspend-gate.js'
 import { ChainAuditWriter } from '../audit/chain.js'
+import { AcpSessionManager, defaultAcpSessionStorePath } from '../managers/acp-session-manager.js'
+import { CodingAgentManager } from '../managers/coding-agent-manager.js'
+import { McpServerManager } from '../managers/mcp-server-manager.js'
 import {
   AgentRegistry,
   McpServerRegistry,
@@ -19,6 +22,7 @@ import {
   WorkflowRegistry,
 } from '../registries/index.js'
 import { FileSecretResolver } from '../secrets/file-driver.js'
+import { TriggerCoordinator } from '../triggers/coordinator.js'
 import { type DiscoveryRecord, removeDiscovery, writeDiscovery } from './discovery.js'
 import { type LockfileContents, acquireLockfile, releaseLockfile } from './lockfile.js'
 
@@ -61,6 +65,13 @@ export interface GatewayRegistries {
   mcpServers: McpServerRegistry
 }
 
+export interface GatewayManagers {
+  mcp: McpServerManager
+  codingAgents: CodingAgentManager
+  acpSessions: AcpSessionManager
+  triggers: TriggerCoordinator
+}
+
 /**
  * Long-running gateway lifecycle. Phase 2 wired the lockfile, discovery
  * file, and signal handlers; Phase 3 adds config-driven registries with
@@ -81,6 +92,7 @@ export class Gateway {
   private config: SkelmConfig
   private registriesInternal: GatewayRegistries | null = null
   private enforcementInternal: GatewayEnforcement | null = null
+  private managersInternal: GatewayManagers | null = null
 
   constructor(private readonly options: GatewayOptions = {}) {
     this.stateDir = options.stateDir ?? join(homedir(), '.skelm')
@@ -118,6 +130,14 @@ export class Gateway {
     return this.enforcementInternal
   }
 
+  /** Process / session supervisors hosted by the gateway. */
+  get managers(): GatewayManagers {
+    if (this.managersInternal === null) {
+      throw new Error('gateway managers are not available — start() the gateway first')
+    }
+    return this.managersInternal
+  }
+
   async start(): Promise<void> {
     if (this.state !== 'stopped') {
       throw new Error(`cannot start gateway in state ${this.state}`)
@@ -134,6 +154,7 @@ export class Gateway {
       await writeDiscovery(this.discoveryPath, this.discovery)
       this.enforcementInternal = this.buildEnforcement()
       this.registriesInternal = await this.buildRegistries()
+      this.managersInternal = await this.buildManagers()
       if (this.options.installSignalHandlers) this.attachSignals()
       this.state = 'running'
     } catch (err) {
@@ -142,6 +163,7 @@ export class Gateway {
       this.discovery = null
       this.registriesInternal = null
       this.enforcementInternal = null
+      this.managersInternal = null
       throw err
     }
   }
@@ -191,6 +213,11 @@ export class Gateway {
     this.state = 'stopping'
     try {
       this.detachSignals()
+      if (this.managersInternal !== null) {
+        await this.managersInternal.triggers.stop()
+        await this.managersInternal.mcp.stopAll()
+        await this.managersInternal.codingAgents.stopAll()
+      }
       if (this.registriesInternal !== null) {
         await Promise.all([
           this.registriesInternal.workflows.close(),
@@ -199,6 +226,9 @@ export class Gateway {
           this.registriesInternal.mcpServers.close(),
         ])
       }
+      // Drain pending approvals if the gate is the suspend implementation
+      const gate = this.enforcementInternal?.approvalGate
+      if (gate instanceof SuspendApprovalGate) gate.drain('gateway stopping')
       await removeDiscovery(this.discoveryPath)
       await releaseLockfile(this.lockfilePath)
     } finally {
@@ -207,7 +237,27 @@ export class Gateway {
       this.discovery = null
       this.registriesInternal = null
       this.enforcementInternal = null
+      this.managersInternal = null
     }
+  }
+
+  private async buildManagers(): Promise<GatewayManagers> {
+    const mcp = new McpServerManager()
+    const codingAgents = new CodingAgentManager()
+    const acpSessions = new AcpSessionManager({
+      storePath: defaultAcpSessionStorePath(this.stateDir),
+    })
+    const triggers = new TriggerCoordinator({
+      onFire: async (_ctx) => {
+        // Phase 11 leaves the workflow dispatcher as a no-op stub; the
+        // post-MVP iteration plugs in the registry → import → Runner.start
+        // pipeline once the runner can take a registry-backed loader.
+      },
+    })
+    await mcp.startAll(this.config.registries?.mcpServers ?? [])
+    await codingAgents.startAll(this.config.registries?.agents ?? [])
+    await acpSessions.reconcile()
+    return { mcp, codingAgents, acpSessions, triggers }
   }
 
   private buildEnforcement(): GatewayEnforcement {
@@ -235,6 +285,10 @@ export class Gateway {
       }
     }
 
+    // Default to the suspend gate so production runs actually wait for
+    // an approver. AutoApproveGate is an explicit opt-in for tests.
+    const approvalGate = this.options.approvalGate ?? new SuspendApprovalGate()
+
     return {
       permissionResolver: new PermissionResolver({
         ...(defaults !== undefined && { defaults }),
@@ -242,7 +296,7 @@ export class Gateway {
       }),
       auditWriter,
       secretResolver,
-      approvalGate: this.options.approvalGate ?? new AutoApproveGate(),
+      approvalGate,
     }
   }
 

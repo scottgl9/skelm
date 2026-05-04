@@ -1,6 +1,7 @@
 export { Gateway } from './gateway.js'
 export type {
   GatewayEnforcement,
+  GatewayManagers,
   GatewayOptions,
   GatewayRegistries,
   GatewayState,

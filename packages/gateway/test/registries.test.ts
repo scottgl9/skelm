@@ -154,7 +154,9 @@ describe('Gateway with registries', () => {
         registries: {
           workflows: { glob: 'workflows/**/*.workflow.ts' },
           skills: { glob: 'skills/**/SKILL.md' },
-          agents: [{ id: 'a', runtime: 'opencode', lifecycle: 'resident' }],
+          agents: [
+            { id: 'a', runtime: 'opencode', lifecycle: 'resident', url: 'http://127.0.0.1:1' },
+          ],
           mcpServers: [{ id: 'm', transport: 'stdio', command: 'echo' }],
         },
       },
