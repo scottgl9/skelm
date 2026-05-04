@@ -12,16 +12,10 @@
 // interface.
 
 import { describe, expect, it } from 'vitest'
-import type { RunStore, SecretResolver } from '../src/index.js'
 import type { RunEvent } from '../src/events.js'
+import type { RunStore, SecretResolver } from '../src/index.js'
 import type { AuditEntry, RunFilter, RunSummary } from '../src/run-store.js'
-import type {
-  Run,
-  RunId,
-  StateEntry,
-  StateReadOptions,
-  StateSetOptions,
-} from '../src/types.js'
+import type { Run, RunId, StateEntry, StateReadOptions, StateSetOptions } from '../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Minimal MemorySecretResolver — append-only (set once, never mutated)
@@ -204,8 +198,22 @@ describe('P4 shape lock — MinimalRunStore satisfies RunStore', () => {
 
   it('lists runs with filter', async () => {
     const store = new MinimalRunStore()
-    await store.putRun({ runId: 'r1', pipelineId: 'p1', status: 'completed', startedAt: 1, steps: [], input: undefined } as never)
-    await store.putRun({ runId: 'r2', pipelineId: 'p2', status: 'running', startedAt: 2, steps: [], input: undefined } as never)
+    await store.putRun({
+      runId: 'r1',
+      pipelineId: 'p1',
+      status: 'completed',
+      startedAt: 1,
+      steps: [],
+      input: undefined,
+    } as never)
+    await store.putRun({
+      runId: 'r2',
+      pipelineId: 'p2',
+      status: 'running',
+      startedAt: 2,
+      steps: [],
+      input: undefined,
+    } as never)
     const summaries: RunSummary[] = []
     for await (const s of store.listRuns({ pipelineId: 'p1' })) summaries.push(s)
     expect(summaries).toHaveLength(1)
