@@ -45,6 +45,14 @@ export type {
   McpServerManagerOptions,
   McpServerStatus,
 } from './managers/mcp-server-manager.js'
+export { CodingAgentManager } from './managers/coding-agent-manager.js'
+export type {
+  CodingAgentHandle,
+  CodingAgentManagerOptions,
+  CodingAgentStatus,
+  EphemeralRun,
+  ResidentHandle,
+} from './managers/coding-agent-manager.js'
 
 // Registries
 export {
