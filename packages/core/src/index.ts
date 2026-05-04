@@ -187,7 +187,7 @@ export type {
   ToolMatcher,
 } from './permissions.js'
 export type { RunHandle, RunOptions, WaitRequest } from './runner.js'
-export { runPipeline, Runner, SchemaValidationError } from './runner.js'
+export { ApprovalDeniedError, runPipeline, Runner, SchemaValidationError } from './runner.js'
 export type { SkelmSchema } from './schema.js'
 export { parseSkill, SkillParseError } from './skills.js'
 export type { Skill } from './skills.js'

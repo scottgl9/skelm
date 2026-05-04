@@ -28,7 +28,13 @@ export class TriggerCoordinator {
   private queues: Map<string, FireContext[]> = new Map()
   private stopping = false
 
-  constructor(private readonly opts: TriggerCoordinatorOptions) {}
+  constructor(private opts: TriggerCoordinatorOptions) {}
+
+  /** Replace the onFire callback after construction. Used by the gateway to */
+  /** wire the real workflow dispatcher once registries are loaded. */
+  setOnFire(onFire: TriggerCoordinatorOptions['onFire']): void {
+    this.opts = { ...this.opts, onFire }
+  }
 
   list(): TriggerRegistration[] {
     return Array.from(this.registrations.values())

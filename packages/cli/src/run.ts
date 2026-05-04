@@ -106,7 +106,7 @@ export async function runCommand(
     applyAgentDefinitions(workflow, workflowDir),
     config,
   )
-  const backends = buildBackendRegistry(config)
+  const backends = await buildBackendRegistry(config)
   const store = createRunStore(config)
   const workspaceManager = createWorkspaceManager(config)
   const controller = new AbortController()

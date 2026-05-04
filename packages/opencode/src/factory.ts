@@ -14,6 +14,14 @@ export interface OpencodeBackendConfig {
   apiKey?: string | { secret: string }
   /** Opencode API URL (optional, defaults to opencode.ai) */
   apiUrl?: string
+  /**
+   * Lazy URL resolver. When set, the factory awaits this *after* the
+   * gateway's coding-agent supervisor has spawned the resident
+   * `opencode serve` process, so the backend targets the supervised URL
+   * instead of a static one. Takes precedence over apiUrl when both are
+   * supplied.
+   */
+  apiUrlProvider?: () => string | Promise<string>
   /** Default agent to use (defaults to 'build') */
   agent?: string
   /** Request timeout in ms */
@@ -27,9 +35,15 @@ export interface OpencodeBackendConfig {
 /**
  * Create an opencode backend from CLI configuration
  */
+export async function createOpencodeBackendFromConfig(
+  config: OpencodeBackendConfig,
+): Promise<ReturnType<typeof createOpencodeBackend>>
+export function createOpencodeBackendFromConfig(
+  config: OpencodeBackendConfig & { apiUrlProvider?: undefined },
+): ReturnType<typeof createOpencodeBackend>
 export function createOpencodeBackendFromConfig(
   config: OpencodeBackendConfig,
-): ReturnType<typeof createOpencodeBackend> {
+): ReturnType<typeof createOpencodeBackend> | Promise<ReturnType<typeof createOpencodeBackend>> {
   const directApiKey = typeof config.apiKey === 'string' ? config.apiKey : undefined
   const secretApiKey =
     typeof config.apiKey === 'object' && config.apiKey !== null && 'secret' in config.apiKey
@@ -45,7 +59,22 @@ export function createOpencodeBackendFromConfig(
   }
 
   const result: Record<string, unknown> = { apiKey: resolvedApiKey }
+  // apiUrlProvider (the gateway-supervised URL) takes precedence over a static apiUrl.
+  if (config.apiUrlProvider !== undefined) {
+    const promise = Promise.resolve(config.apiUrlProvider()).then((apiUrl) => {
+      if (apiUrl !== undefined) result.apiUrl = apiUrl
+      return finalizeOpencode(result, config)
+    })
+    return promise
+  }
   if (config.apiUrl !== undefined) result.apiUrl = config.apiUrl
+  return finalizeOpencode(result, config)
+}
+
+function finalizeOpencode(
+  result: Record<string, unknown>,
+  config: OpencodeBackendConfig,
+): ReturnType<typeof createOpencodeBackend> {
   if (config.agent !== undefined) result.agent = config.agent
   if (config.timeout !== undefined) result.timeout = config.timeout
   if (config.maxRetries !== undefined) result.maxRetries = config.maxRetries

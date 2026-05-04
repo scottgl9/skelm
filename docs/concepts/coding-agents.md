@@ -62,11 +62,22 @@ config → spawn (port assigned) → spawn event → running → (crash) → bac
 
 `spawnEphemeral(entry, { stdin? | prompt? })` writes the input to the child's stdin, captures stdout / stderr, and resolves with `{ exitCode, stdout, stderr }`. The supervisor records the in-flight set so that `ephemeralRuns(id)` can introspect them and the optional `ephemeralConcurrency` cap can refuse new spawns.
 
-## Backend wiring (Phase 11)
+## Backend wiring
 
-Existing backends (`@skelm/opencode`, `@skelm/pi`) use a static `apiUrl` today. In Phase 11 they ask the gateway for the active resident handle by id and consume `handle.url`, so a crash-and-restart of `opencode serve` is invisible to the next step that runs.
+Both `@skelm/opencode` and `@skelm/pi` factories accept an optional lazy resolver — `apiUrlProvider` (opencode) and `commandProvider` (pi) — that the CLI / custom embeddings can populate from the gateway's coding-agent supervisor:
 
-For ephemeral agents, the same backend code can call `spawnEphemeral` instead of HTTPing — the choice is per-entry by `lifecycle`.
+```ts
+createOpencodeBackendFromConfig({
+  apiKey: { secret: 'OPENCODE_API_KEY' },
+  apiUrlProvider: () => gateway.managers.codingAgents.get('opencode-1')!.url,
+})
+```
+
+The provider is awaited at backend-construction time, so the supervised URL
+must be available when the registry is built. A static `apiUrl` / `command`
+remains supported when no provider is supplied.
+
+For ephemeral agents, custom backends can call `gateway.managers.codingAgents.spawnEphemeral(entry, { stdin })` directly inside the backend's `run()` instead of HTTPing — the choice is per-entry by `lifecycle`.
 
 ## Status
 

@@ -1,7 +1,9 @@
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { Gateway, readDiscovery, readLockfile } from '@skelm/gateway'
+import { pathToFileURL } from 'node:url'
+import { Gateway, createTriggerDispatcher, readDiscovery, readLockfile } from '@skelm/gateway'
+import { tsImport } from 'tsx/esm/api'
 import { EXIT } from './exit-codes.js'
 import type { MainIO, MainResult } from './main.js'
 
@@ -55,6 +57,16 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     io.stderr.write(`gateway start failed: ${(err as Error).message}\n`)
     return { exitCode: EXIT.CLI_ERROR }
   }
+
+  // Replace the trigger coordinator's onFire with the real dispatcher: workflows
+  // resolved via the registry, imported with tsx, and run through a Runner that
+  // shares the gateway's enforcement instances.
+  const dispatcher = createTriggerDispatcher({
+    gateway,
+    loadWorkflow: async (_id, absolutePath) =>
+      tsImport(pathToFileURL(absolutePath).href, import.meta.url),
+  })
+  gateway.managers.triggers.setOnFire(dispatcher)
 
   const discovery = gateway.getDiscovery()
   io.stdout.write(
