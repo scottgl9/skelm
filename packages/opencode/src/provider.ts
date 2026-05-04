@@ -1,11 +1,17 @@
 /**
  * Opencode provider plugin
- * 
+ *
  * Implements ProviderPluginBase for the opencode.ai coding agent.
  */
 
 import { ProviderPluginBase } from '@skelm/core'
-import type { ProviderCapabilities, ProviderSpecificCapabilities, ProviderModel, PluginConfig, PluginHealthStatus } from '@skelm/core'
+import type {
+  ProviderCapabilities,
+  ProviderSpecificCapabilities,
+  ProviderModel,
+  PluginConfig,
+  PluginHealthStatus,
+} from '@skelm/core'
 import { createOpencodeBackend } from './backend.js'
 import type { OpencodeBackendOptions } from './types.js'
 
@@ -88,7 +94,7 @@ export class OpencodeProvider extends ProviderPluginBase {
    */
   override async initialize(config: OpencodeProviderConfig): Promise<void> {
     this.config = {}
-    
+
     if (config.apiKey !== undefined) {
       this.config.apiKey = config.apiKey
     }
@@ -107,7 +113,7 @@ export class OpencodeProvider extends ProviderPluginBase {
     if (config.logLevel !== undefined) {
       this.config.logLevel = config.logLevel
     }
-    
+
     await super.initialize(config)
   }
 
@@ -118,14 +124,18 @@ export class OpencodeProvider extends ProviderPluginBase {
     // Validate API key
     const apiKey = config.apiKey ?? process.env.OPENCODE_API_KEY
     if (!apiKey) {
-      throw new Error('Opencode API key is required. Set apiKey config or OPENCODE_API_KEY env var.')
+      throw new Error(
+        'Opencode API key is required. Set apiKey config or OPENCODE_API_KEY env var.',
+      )
     }
   }
 
   /**
    * Create a backend instance
    */
-  async createBackend(options?: OpencodeBackendOptions): Promise<ReturnType<typeof createOpencodeBackend>> {
+  async createBackend(
+    options?: OpencodeBackendOptions,
+  ): Promise<ReturnType<typeof createOpencodeBackend>> {
     if (!this.initialized) {
       throw new Error('Provider must be initialized before creating backends')
     }
@@ -133,7 +143,7 @@ export class OpencodeProvider extends ProviderPluginBase {
     const config: OpencodeBackendOptions = {
       apiKey: this.config.apiKey ?? process.env.OPENCODE_API_KEY!,
     }
-    
+
     if (this.config.apiUrl !== undefined) {
       config.apiUrl = this.config.apiUrl
     }
@@ -207,7 +217,11 @@ export class OpencodeProvider extends ProviderPluginBase {
   /**
    * Health check
    */
-  protected override async doHealthCheck(): Promise<{ healthy: boolean; status: string; details?: Record<string, unknown> }> {
+  protected override async doHealthCheck(): Promise<{
+    healthy: boolean
+    status: string
+    details?: Record<string, unknown>
+  }> {
     // Basic connectivity check
     const apiKey = this.config.apiKey ?? process.env.OPENCODE_API_KEY
     if (!apiKey) {
@@ -218,14 +232,14 @@ export class OpencodeProvider extends ProviderPluginBase {
     try {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 5000)
-      
+
       const response = await fetch(`${this.config.apiUrl ?? 'https://api.opencode.ai'}/health`, {
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         signal: controller.signal,
       })
-      
+
       clearTimeout(timeoutId)
 
       if (response.ok) {
@@ -253,6 +267,8 @@ export class OpencodeProvider extends ProviderPluginBase {
 /**
  * Create an Opencode provider instance
  */
-export function createOpencodeProvider(options?: { logLevel?: 'debug' | 'info' | 'warn' | 'error' }): OpencodeProvider {
+export function createOpencodeProvider(options?: {
+  logLevel?: 'debug' | 'info' | 'warn' | 'error'
+}): OpencodeProvider {
   return new OpencodeProvider(options)
 }

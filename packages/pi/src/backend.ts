@@ -1,11 +1,20 @@
 /**
  * Pi coding agent backend for skelm
- * 
+ *
  * Uses subprocess/RPC mode to communicate with the Pi coding agent.
  * Permission enforcement at the skelm layer maintains control over execution.
  */
 
-import type { SkelmBackend, BackendCapabilities, BackendContext, AgentRequest, AgentResponse, InferRequest, InferResponse, ResolvedPolicy } from '@skelm/core'
+import type {
+  SkelmBackend,
+  BackendCapabilities,
+  BackendContext,
+  AgentRequest,
+  AgentResponse,
+  InferRequest,
+  InferResponse,
+  ResolvedPolicy,
+} from '@skelm/core'
 import type { PiBackendOptions } from './types.js'
 import { validatePermissions, buildPermissionAuditEntry } from './permission-mapper.js'
 
@@ -15,7 +24,7 @@ import { validatePermissions, buildPermissionAuditEntry } from './permission-map
 export class PiBackendError extends Error {
   override readonly name: string = 'PiBackendError'
   public override readonly cause: unknown
-  
+
   constructor(message: string, cause?: unknown) {
     super(message)
     this.cause = cause
@@ -51,7 +60,9 @@ const capabilities: BackendCapabilities = {
  * Create a Pi coding agent backend using subprocess/RPC mode
  */
 export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
-  const config: Required<Pick<PiBackendOptions, 'command' | 'args' | 'timeout' | 'maxRetries' | 'logLevel'>> & {
+  const config: Required<
+    Pick<PiBackendOptions, 'command' | 'args' | 'timeout' | 'maxRetries' | 'logLevel'>
+  > & {
     cwd?: string
   } = {
     command: options.command ?? 'pi',
@@ -60,7 +71,7 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
     maxRetries: options.maxRetries ?? 3,
     logLevel: options.logLevel ?? 'info',
   }
-  
+
   // Only set cwd if defined
   if (options.cwd !== undefined) {
     config.cwd = options.cwd
@@ -80,23 +91,19 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
         maxTurns: number
         permissions?: ResolvedPolicy
       } = {
-        prompt: request.messages.map(m => m.content).join('\n'),
+        prompt: request.messages.map((m) => m.content).join('\n'),
         maxTurns: 1,
       }
-      
+
       if (request.system !== undefined) {
         agentRequest.system = request.system
       }
-      
+
       if (context.permissions !== undefined) {
         agentRequest.permissions = context.permissions
       }
-      
-      const agentResponse = await runPiSubprocess(
-        config,
-        agentRequest,
-        context
-      )
+
+      const agentResponse = await runPiSubprocess(config, agentRequest, context)
       return {
         ...(agentResponse.text !== undefined && { text: agentResponse.text }),
         ...(agentResponse.structured !== undefined && { structured: agentResponse.structured }),
@@ -110,15 +117,13 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
       // Validate permissions before proceeding
       if (permissions) {
         const result = validatePermissions(permissions, request.prompt)
-        
+
         if (result.denied.length > 0) {
           console.warn('Permission denied for Pi agent request:', result.denied)
-          const auditEntry = buildPermissionAuditEntry(
-            'unknown',
-            'unknown',
-            permissions,
-            { allowed: result.allowed, denied: result.denied }
-          )
+          const auditEntry = buildPermissionAuditEntry('unknown', 'unknown', permissions, {
+            allowed: result.allowed,
+            denied: result.denied,
+          })
           console.warn('Permission audit:', auditEntry)
           throw new Error(`Permission denied: ${result.denied.join(', ')}`)
         }
@@ -137,7 +142,10 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
         }
         if (error instanceof Error) {
           if (error.message.includes('EACCES') || error.message.includes('ENOENT')) {
-            throw new PiBackendAuthenticationError(`Pi agent not found or not executable. Ensure 'pi' is installed: npm install -g @mariozechner/pi-coding-agent`, error)
+            throw new PiBackendAuthenticationError(
+              `Pi agent not found or not executable. Ensure 'pi' is installed: npm install -g @mariozechner/pi-coding-agent`,
+              error,
+            )
           }
           throw new PiBackendError('Pi agent execution failed', error)
         }
@@ -169,7 +177,7 @@ interface PiBackendConfig {
 async function runPiSubprocess(
   config: PiBackendConfig,
   request: AgentRequest,
-  context: BackendContext
+  context: BackendContext,
 ): Promise<AgentResponse> {
   const { spawn } = await import('child_process')
   const { promisify } = await import('util')
@@ -177,11 +185,8 @@ async function runPiSubprocess(
 
   return new Promise((resolve, reject) => {
     const startTime = Date.now()
-    
-    const piProcess = spawn(config.command, [
-      '--mode', 'rpc',
-      ...config.args,
-    ], {
+
+    const piProcess = spawn(config.command, ['--mode', 'rpc', ...config.args], {
       ...(config.cwd !== undefined && { cwd: config.cwd }),
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: false,
@@ -217,9 +222,9 @@ async function runPiSubprocess(
 
     piProcess.on('close', (code: number | null) => {
       clearTimeout(timeoutHandle)
-      
+
       if (timedOut) return
-      
+
       if (code === 0) {
         // Parse RPC response
         const text = parsePiRpcResponse(stdout)
@@ -265,7 +270,7 @@ function parsePiRpcResponse(output: string): string | undefined {
   if (!output || output.trim() === '') {
     return undefined
   }
-  const lines = output.split('\n').filter(line => line.trim())
+  const lines = output.split('\n').filter((line) => line.trim())
   for (const line of lines) {
     try {
       const json = JSON.parse(line)

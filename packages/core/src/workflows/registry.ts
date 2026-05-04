@@ -11,7 +11,7 @@ import type { WorkflowConfig, WorkflowHealthStatus } from './types.js'
 export class WorkflowRegistry {
   /** Registered workflows */
   private readonly workflows: Map<string, WorkflowPluginBase> = new Map()
-  
+
   /**
    * Register a workflow plugin
    */
@@ -19,10 +19,10 @@ export class WorkflowRegistry {
     if (this.workflows.has(workflow.id)) {
       throw new Error(`Workflow with id '${workflow.id}' is already registered`)
     }
-    
+
     this.workflows.set(workflow.id, workflow)
   }
-  
+
   /**
    * Unregister a workflow plugin
    */
@@ -31,42 +31,42 @@ export class WorkflowRegistry {
     if (!workflow) {
       return
     }
-    
+
     if (workflow.isActive) {
       await workflow.stop()
     }
-    
+
     this.workflows.delete(id)
   }
-  
+
   /**
    * Get a workflow by ID
    */
   get(id: string): WorkflowPluginBase | undefined {
     return this.workflows.get(id)
   }
-  
+
   /**
    * Check if a workflow exists
    */
   has(id: string): boolean {
     return this.workflows.has(id)
   }
-  
+
   /**
    * List all registered workflows
    */
   list(): WorkflowPluginBase[] {
     return Array.from(this.workflows.values())
   }
-  
+
   /**
    * List enabled workflows
    */
   listEnabled(): WorkflowPluginBase[] {
     return this.list().filter((w) => w.isEnabled)
   }
-  
+
   /**
    * Initialize all registered workflows
    */
@@ -81,10 +81,10 @@ export class WorkflowRegistry {
         }
       }
     })
-    
+
     await Promise.all(promises)
   }
-  
+
   /**
    * Start all enabled workflows
    */
@@ -96,16 +96,16 @@ export class WorkflowRegistry {
         console.error(`Failed to start workflow '${workflow.id}':`, error)
       }
     })
-    
+
     await Promise.all(promises)
   }
-  
+
   /**
    * Stop all workflows
    */
   async stopAll(): Promise<void> {
     const workflows = this.list()
-    
+
     // Stop in reverse order of registration
     const promises = workflows.reverse().map(async (workflow) => {
       try {
@@ -114,10 +114,10 @@ export class WorkflowRegistry {
         console.error(`Failed to stop workflow '${workflow.id}':`, error)
       }
     })
-    
+
     await Promise.all(promises)
   }
-  
+
   /**
    * Shutdown all workflows and clear registry
    */
@@ -125,13 +125,13 @@ export class WorkflowRegistry {
     await this.stopAll()
     this.workflows.clear()
   }
-  
+
   /**
    * Check health of all workflows
    */
   async checkAllHealth(): Promise<Record<string, WorkflowHealthStatus>> {
     const results: Record<string, WorkflowHealthStatus> = {}
-    
+
     const promises = this.list().map(async (workflow) => {
       try {
         results[workflow.id] = await workflow.healthCheck()
@@ -144,11 +144,11 @@ export class WorkflowRegistry {
         }
       }
     })
-    
+
     await Promise.all(promises)
     return results
   }
-  
+
   /**
    * Get healthy workflows
    */

@@ -12,13 +12,7 @@
   "bugs": {
     "url": "https://github.com/scottgl9/skelm/issues"
   },
-  "keywords": [
-    "skelm",
-    "server",
-    "http",
-    "sse",
-    "gateway"
-  ],
+  "keywords": ["skelm", "server", "http", "sse", "gateway"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

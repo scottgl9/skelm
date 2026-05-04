@@ -1,12 +1,18 @@
 /**
  * Pi provider plugin
- * 
+ *
  * Implements ProviderPluginBase for the Pi coding agent.
  * Uses subprocess/RPC mode for communication.
  */
 
 import { ProviderPluginBase } from '@skelm/core'
-import type { ProviderCapabilities, ProviderSpecificCapabilities, ProviderModel, PluginConfig, PluginHealthStatus } from '@skelm/core'
+import type {
+  ProviderCapabilities,
+  ProviderSpecificCapabilities,
+  ProviderModel,
+  PluginConfig,
+  PluginHealthStatus,
+} from '@skelm/core'
 import { createPiBackend } from './backend.js'
 import type { PiBackendOptions } from './types.js'
 
@@ -101,12 +107,12 @@ export class PiProvider extends ProviderPluginBase {
       maxRetries: config.maxRetries ?? 3,
       logLevel: config.logLevel ?? 'info',
     }
-    
+
     // Only set cwd if defined
     if (config.cwd !== undefined) {
       this.config.cwd = config.cwd
     }
-    
+
     await super.initialize(config)
   }
 
@@ -120,7 +126,9 @@ export class PiProvider extends ProviderPluginBase {
       execSync('pi --version', { stdio: 'ignore' })
       this.logger.info('Pi agent found')
     } catch {
-      this.logger.warn('Pi agent not found in PATH. Ensure it is installed: npm install -g @mariozechner/pi-coding-agent')
+      this.logger.warn(
+        'Pi agent not found in PATH. Ensure it is installed: npm install -g @mariozechner/pi-coding-agent',
+      )
     }
   }
 
@@ -139,7 +147,7 @@ export class PiProvider extends ProviderPluginBase {
       maxRetries: options?.maxRetries ?? this.config.maxRetries,
       logLevel: options?.logLevel ?? this.config.logLevel,
     }
-    
+
     // Only set cwd if defined
     const cwd = options?.cwd ?? this.config.cwd
     if (cwd !== undefined) {
@@ -197,11 +205,18 @@ export class PiProvider extends ProviderPluginBase {
   /**
    * Health check
    */
-  protected override async doHealthCheck(): Promise<{ healthy: boolean; status: string; details?: Record<string, unknown> }> {
+  protected override async doHealthCheck(): Promise<{
+    healthy: boolean
+    status: string
+    details?: Record<string, unknown>
+  }> {
     // Check if pi command is available
     try {
       const { execSync } = await import('child_process')
-      const version = execSync('pi --version', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      const version = execSync('pi --version', {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
       return {
         healthy: true,
         status: 'healthy',
@@ -227,6 +242,8 @@ export class PiProvider extends ProviderPluginBase {
 /**
  * Create a Pi provider instance
  */
-export function createPiProvider(options?: { logLevel?: 'debug' | 'info' | 'warn' | 'error' }): PiProvider {
+export function createPiProvider(options?: {
+  logLevel?: 'debug' | 'info' | 'warn' | 'error'
+}): PiProvider {
   return new PiProvider(options)
 }

@@ -12,13 +12,7 @@
   "bugs": {
     "url": "https://github.com/scottgl9/skelm/issues"
   },
-  "keywords": [
-    "skelm",
-    "cli",
-    "workflow",
-    "pipeline",
-    "agent"
-  ],
+  "keywords": ["skelm", "cli", "workflow", "pipeline", "agent"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

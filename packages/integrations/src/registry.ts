@@ -51,7 +51,7 @@ export class IntegrationRegistry {
    * Get enabled integrations
    */
   listEnabled(): Integration[] {
-    return this.list().filter(i => i.config.enabled)
+    return this.list().filter((i) => i.config.enabled)
   }
 
   /**
@@ -64,10 +64,7 @@ export class IntegrationRegistry {
   /**
    * Register an event handler for a specific integration
    */
-  onEvent(
-    integrationId: string,
-    handler: (event: unknown) => Promise<unknown>
-  ): void {
+  onEvent(integrationId: string, handler: (event: unknown) => Promise<unknown>): void {
     if (!this.eventHandlers.has(integrationId)) {
       this.eventHandlers.set(integrationId, [])
     }
@@ -77,10 +74,7 @@ export class IntegrationRegistry {
   /**
    * Remove an event handler
    */
-  offEvent(
-    integrationId: string,
-    handler: (event: unknown) => Promise<unknown>
-  ): void {
+  offEvent(integrationId: string, handler: (event: unknown) => Promise<unknown>): void {
     const handlers = this.eventHandlers.get(integrationId)
     if (!handlers) {
       return
@@ -154,7 +148,7 @@ export class IntegrationRegistry {
    * Shutdown all integrations
    */
   async shutdown(): Promise<void> {
-    const promises = Array.from(this.integrations.values()).map(i => i.shutdown())
+    const promises = Array.from(this.integrations.values()).map((i) => i.shutdown())
     await Promise.all(promises)
     this.integrations.clear()
     this.eventHandlers.clear()

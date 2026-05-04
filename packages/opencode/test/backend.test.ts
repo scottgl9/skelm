@@ -65,7 +65,7 @@ describe('OpencodeBackend', () => {
       await expect(backend.run!(request, context)).rejects.toThrow(
         expect.objectContaining({
           message: expect.stringContaining('Permission denied'),
-        })
+        }),
       )
     })
 

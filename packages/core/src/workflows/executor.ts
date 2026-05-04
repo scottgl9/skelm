@@ -1,6 +1,6 @@
 /**
  * Workflow executor for processing trigger invocations
- * 
+ *
  * Simple executor that routes workflow invocations to registered workflows
  */
 
@@ -9,18 +9,18 @@ import type { WorkflowInvocation, WorkflowExecutionResult } from './types.js'
 
 /**
  * Simple workflow executor
- * 
+ *
  * Routes workflow invocations to the appropriate workflow plugin
  */
 export class WorkflowExecutor {
   constructor(private readonly registry: WorkflowRegistry) {}
-  
+
   /**
    * Execute a workflow invocation
    */
   async execute(invocation: WorkflowInvocation): Promise<WorkflowExecutionResult> {
     const workflow = this.registry.get(invocation.workflowId)
-    
+
     if (!workflow) {
       return {
         executionId: `exec-${Date.now()}-${Math.random().toString(36).substring(7)}`,
@@ -31,7 +31,7 @@ export class WorkflowExecutor {
         completedAt: new Date(),
       }
     }
-    
+
     if (!workflow.isActive) {
       return {
         executionId: `exec-${Date.now()}-${Math.random().toString(36).substring(7)}`,
@@ -42,13 +42,13 @@ export class WorkflowExecutor {
         completedAt: new Date(),
       }
     }
-    
+
     const executionId = `exec-${Date.now()}-${Math.random().toString(36).substring(7)}`
     const startedAt = new Date()
-    
+
     try {
       const result = await workflow.execute(invocation)
-      
+
       return {
         ...result,
         executionId,
@@ -66,7 +66,7 @@ export class WorkflowExecutor {
       }
     }
   }
-  
+
   /**
    * Execute multiple workflow invocations in parallel
    */

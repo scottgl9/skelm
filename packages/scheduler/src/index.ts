@@ -1,6 +1,6 @@
 /**
  * @skelm/scheduler - Long-running trigger management for pipelines
- * 
+ *
  * Provides cron, interval, webhook, poll, and queue-based triggers
  * with deduplication and overlap policies.
  */

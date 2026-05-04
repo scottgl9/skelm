@@ -3,15 +3,28 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { ProviderPluginBase, ProviderError, ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError } from '../../src/providers/base.js'
+import {
+  ProviderPluginBase,
+  ProviderError,
+  ProviderAuthenticationError,
+  ProviderRateLimitError,
+  ProviderTimeoutError,
+} from '../../src/providers/base.js'
 import type { ProviderCapabilities } from '../../src/providers/base.js'
 import type { PluginConfig, PluginHealthStatus } from '../../src/plugins.js'
 
 // Mock provider implementation for testing
 class TestProvider extends ProviderPluginBase {
   private _capabilities: ProviderCapabilities
-  
-  constructor(options: { id?: string; name?: string; version?: string; logLevel?: 'debug' | 'info' | 'warn' | 'error' } = {}) {
+
+  constructor(
+    options: {
+      id?: string
+      name?: string
+      version?: string
+      logLevel?: 'debug' | 'info' | 'warn' | 'error'
+    } = {},
+  ) {
     super({
       id: options.id ?? 'test-provider',
       name: options.name ?? 'Test Provider',
@@ -171,10 +184,10 @@ describe('ProviderPluginBase', () => {
     it('should transition to error state on start failure', async () => {
       const failingProvider = new TestProvider()
       await failingProvider.initialize({})
-      
+
       // Override doStart to throw
       vi.spyOn(failingProvider, 'doStart').mockRejectedValue(new Error('Start failed'))
-      
+
       await expect(failingProvider.start()).rejects.toThrow()
       expect(failingProvider.state).toBe('error')
     })
@@ -208,10 +221,10 @@ describe('ProviderPluginBase', () => {
       const errorProvider = new TestProvider()
       await errorProvider.initialize({})
       await errorProvider.start()
-      
+
       // Override doStop to throw
       vi.spyOn(errorProvider, 'doStop').mockRejectedValue(new Error('Stop failed'))
-      
+
       await expect(errorProvider.stop()).rejects.toThrow()
       expect(errorProvider.state).toBe('error')
     })
@@ -280,36 +293,46 @@ describe('ProviderPluginBase', () => {
 
     it('should retry on failure', async () => {
       let attempts = 0
-      const result = await provider['withRetry'](async () => {
-        attempts++
-        if (attempts < 3) throw new Error('Transient error')
-        return 'success'
-      }, { maxRetries: 3, initialDelayMs: 10 })
-      
+      const result = await provider['withRetry'](
+        async () => {
+          attempts++
+          if (attempts < 3) throw new Error('Transient error')
+          return 'success'
+        },
+        { maxRetries: 3, initialDelayMs: 10 },
+      )
+
       expect(result).toBe('success')
       expect(attempts).toBe(3)
     })
 
     it('should stop retrying when max retries exceeded', async () => {
       let attempts = 0
-      await expect(provider['withRetry'](
-        async () => { attempts++; throw new Error('Permanent error') },
-        { maxRetries: 2, initialDelayMs: 10 }
-      )).rejects.toThrow('Permanent error')
-      
+      await expect(
+        provider['withRetry'](
+          async () => {
+            attempts++
+            throw new Error('Permanent error')
+          },
+          { maxRetries: 2, initialDelayMs: 10 },
+        ),
+      ).rejects.toThrow('Permanent error')
+
       expect(attempts).toBe(3) // Initial + 2 retries
     })
 
     it('should respect retryable predicate', async () => {
       let attempts = 0
-      await expect(provider['withRetry'](
-        async () => {
-          attempts++
-          throw new Error('Non-retryable error')
-        },
-        { maxRetries: 3, retryable: () => false }
-      )).rejects.toThrow('Non-retryable error')
-      
+      await expect(
+        provider['withRetry'](
+          async () => {
+            attempts++
+            throw new Error('Non-retryable error')
+          },
+          { maxRetries: 3, retryable: () => false },
+        ),
+      ).rejects.toThrow('Non-retryable error')
+
       expect(attempts).toBe(1) // No retries
     })
 
@@ -321,9 +344,9 @@ describe('ProviderPluginBase', () => {
           if (times.length < 3) throw new Error('Error')
           return 'success'
         },
-        { maxRetries: 3, initialDelayMs: 50, backoffFactor: 2 }
+        { maxRetries: 3, initialDelayMs: 50, backoffFactor: 2 },
       )
-      
+
       // Check that delays increased
       const delay1 = times[1] - times[0]
       const delay2 = times[2] - times[1]

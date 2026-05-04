@@ -1,9 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import {
-  createCronTrigger,
-  CronTrigger,
-  type CronTriggerConfig,
-} from '../../src/triggers/cron.js'
+import { createCronTrigger, CronTrigger, type CronTriggerConfig } from '../../src/triggers/cron.js'
 import {
   createWebhookTrigger,
   WebhookTrigger,
@@ -42,7 +38,7 @@ import {
 
 /**
  * Schema validation tests for all trigger types
- * 
+ *
  * These tests validate that each trigger properly validates its configuration
  * and rejects invalid configurations with appropriate error messages.
  */

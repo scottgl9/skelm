@@ -1,6 +1,6 @@
 /**
  * @skelm/integrations - Third-party integration abstractions
- * 
+ *
  * Provides typed connectors for GitHub, Slack, Jira, IMAP, Telegram, etc.
  * Each integration follows a common pattern for authentication, API calls,
  * and webhook handling.
@@ -68,19 +68,19 @@ export interface Integration {
   readonly capabilities: IntegrationCapabilities
   /** Configuration */
   config: IntegrationConfig
-  
+
   /** Initialize the integration (validate credentials, setup webhooks) */
   init(): Promise<void>
-  
+
   /** Shutdown the integration (cleanup webhooks, connections) */
   shutdown(): Promise<void>
-  
+
   /** Check if the integration is healthy */
   healthCheck(): Promise<boolean>
-  
+
   /** Convert external event to RunInput (if canTrigger) */
   eventToRunInput?(event: unknown): Promise<RunInput | null>
-  
+
   /** Send notification (if canSendNotifications) */
   sendNotification?(message: string, options?: Record<string, unknown>): Promise<void>
 }

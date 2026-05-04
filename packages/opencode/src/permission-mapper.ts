@@ -32,17 +32,17 @@ export interface MappedPermissions {
 function toolIsAllowed(matcher: ResolvedToolMatcher, toolId: string): boolean {
   if (matcher.star) return true
   if (matcher.exact.has(toolId)) return true
-  return matcher.prefixes.some(prefix => toolId.startsWith(prefix))
+  return matcher.prefixes.some((prefix) => toolId.startsWith(prefix))
 }
 
 /**
  * Map skelm's ResolvedPolicy to opencode's permission configuration
- * 
+ *
  * This is critical for enforcement - skelm validates permissions BEFORE
  * forwarding to opencode, ensuring we maintain control over execution.
  */
 export function mapSkelmPermissionsToOpencode(
-  skelmPermissions: ResolvedPolicy
+  skelmPermissions: ResolvedPolicy,
 ): OpencodePermissionConfig {
   const opencodePerms: OpencodePermissionConfig = {}
 
@@ -93,7 +93,10 @@ export function mapSkelmPermissionsToOpencode(
 
   // Network egress mapping (opencode doesn't have direct network permissions)
   // This is enforced at skelm layer via tool restrictions
-  if (typeof skelmPermissions.networkEgress === 'object' && skelmPermissions.networkEgress.allowHosts) {
+  if (
+    typeof skelmPermissions.networkEgress === 'object' &&
+    skelmPermissions.networkEgress.allowHosts
+  ) {
     // We can't directly map this to opencode permissions
     // Enforcement happens at skelm layer before forwarding
     if (skelmPermissions.networkEgress.allowHosts.length === 0) {
@@ -121,7 +124,7 @@ export function mapSkelmPermissionsToOpencode(
  * (for audit logging and status reporting)
  */
 export function mapOpencodePermissionsToSkelm(
-  opencodePerms: OpencodePermissionConfig
+  opencodePerms: OpencodePermissionConfig,
 ): MappedPermissions {
   const mapped: MappedPermissions = {}
 
@@ -166,7 +169,7 @@ export function mapOpencodePermissionsToSkelm(
  */
 export function validatePermissions(
   policy: ResolvedPolicy,
-  requested: { tools?: string[]; executables?: string[]; mcpServers?: string[] }
+  requested: { tools?: string[]; executables?: string[]; mcpServers?: string[] },
 ): { allowed: boolean; denied: string[] } {
   const denied: string[] = []
 
@@ -210,7 +213,7 @@ export function buildPermissionAuditEntry(
   runId: string,
   stepId: string,
   policy: ResolvedPolicy,
-  result: { allowed: boolean; denied: string[] }
+  result: { allowed: boolean; denied: string[] },
 ): Record<string, unknown> {
   return {
     runId,

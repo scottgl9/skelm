@@ -1,6 +1,6 @@
 /**
  * Custom trigger implementation
- * 
+ *
  * Allows users to register custom trigger logic via handler functions
  * Perfect for file watchers, DB listeners, WebSocket subscriptions, etc.
  */
@@ -25,45 +25,47 @@ export interface CustomTriggerConfig extends TriggerConfig {
  */
 export class CustomTrigger extends TriggerPluginBase {
   private isRunning: boolean = false
-  
+
   constructor(id: string, name: string, description?: string) {
     super(id, name, '1.0.0', description)
   }
-  
+
   override getTriggerType(): TriggerType {
     return 'custom'
   }
-  
+
   override async doInitialize(config: CustomTriggerConfig): Promise<void> {
     if (!config.handler || typeof config.handler !== 'function') {
       throw new TriggerError('Custom trigger requires a handler function')
     }
-    
+
     this.logger.info(`Initialized custom trigger: ${this.name}`)
   }
-  
+
   override async doStart(): Promise<void> {
     const config = this.config as CustomTriggerConfig | null
     if (!config) {
       throw new TriggerError('Custom trigger not initialized')
     }
-    
+
     this.isRunning = true
-    
+
     try {
       await config.handler()
       this.logger.info('Custom trigger handler executed')
     } catch (error) {
-      this.logger.error(`Custom trigger handler error: ${error instanceof Error ? error.message : String(error)}`)
+      this.logger.error(
+        `Custom trigger handler error: ${error instanceof Error ? error.message : String(error)}`,
+      )
       throw error
     }
   }
-  
+
   override async doStop(): Promise<void> {
     this.isRunning = false
     this.logger.info('Custom trigger stopped')
   }
-  
+
   override async doHealthCheck(): Promise<TriggerHealthStatus> {
     const config = this.config as CustomTriggerConfig | null
     if (config?.healthCheck) {
@@ -76,14 +78,14 @@ export class CustomTrigger extends TriggerPluginBase {
         },
       }
     }
-    
+
     return {
       healthy: this.isRunning,
       status: this.isRunning ? 'running' : 'stopped',
       details: {},
     }
   }
-  
+
   /**
    * Get custom state storage
    */
@@ -91,7 +93,7 @@ export class CustomTrigger extends TriggerPluginBase {
     const config = this.config as CustomTriggerConfig | null
     return config?.state?.[key] as T | undefined
   }
-  
+
   /**
    * Set custom state storage
    */
@@ -104,7 +106,7 @@ export class CustomTrigger extends TriggerPluginBase {
     }
     config.state[key] = value
   }
-  
+
   /**
    * Emit an event from the custom trigger
    */
@@ -120,7 +122,7 @@ export class CustomTrigger extends TriggerPluginBase {
         ...metadata,
       },
     }
-    
+
     await super.emitEvent(event)
   }
 }

@@ -72,33 +72,33 @@ describe('OpencodeProvider', () => {
         apiKey: 'test-api-key',
         apiUrl: 'https://api.opencode.ai',
       }
-      
+
       await provider.initialize(config)
       expect(provider.state).toBe('initialized')
     })
 
     it('should initialize from environment variable', async () => {
       vi.stubEnv('OPENCODE_API_KEY', 'env-api-key')
-      
+
       const config: OpencodeProviderConfig = {}
       await provider.initialize(config)
-      
+
       expect(provider.state).toBe('initialized')
       vi.unstubAllEnvs()
     })
 
     it('should throw when no API key provided', async () => {
       vi.unstubAllEnvs()
-      
+
       const config: OpencodeProviderConfig = {}
       await expect(provider.initialize(config)).rejects.toThrow('API key is required')
     })
 
     it('should transition through states correctly', async () => {
       expect(provider.state).toBe('loading')
-      
+
       await provider.initialize({ apiKey: 'test-key' })
-      
+
       expect(provider.state).toBe('initialized')
     })
   })
@@ -113,7 +113,7 @@ describe('OpencodeProvider', () => {
         timeout: 5000,
         maxRetries: 3,
       })
-      
+
       expect(backend).toBeDefined()
     })
 
@@ -126,7 +126,7 @@ describe('OpencodeProvider', () => {
       const backend = await provider.createBackend({
         timeout: 10000,
       })
-      
+
       expect(backend).toBeDefined()
     })
   })
@@ -138,24 +138,24 @@ describe('OpencodeProvider', () => {
 
     it('should return list of models', async () => {
       const models = await provider.listModels()
-      
+
       expect(models).toBeDefined()
       expect(models.length).toBeGreaterThan(0)
     })
 
     it('should include Qwen models', async () => {
       const models = await provider.listModels()
-      const qwen35 = models.find(m => m.id === 'qwen35')
-      const qwen36 = models.find(m => m.id === 'qwen36')
-      
+      const qwen35 = models.find((m) => m.id === 'qwen35')
+      const qwen36 = models.find((m) => m.id === 'qwen36')
+
       expect(qwen35).toBeDefined()
       expect(qwen36).toBeDefined()
     })
 
     it('should include model capabilities', async () => {
       const models = await provider.listModels()
-      const qwen35 = models.find(m => m.id === 'qwen35')
-      
+      const qwen35 = models.find((m) => m.id === 'qwen35')
+
       expect(qwen35?.capabilities).toContain('file-ops')
       expect(qwen35?.capabilities).toContain('bash')
       expect(qwen35?.capabilities).toContain('reasoning')
@@ -163,8 +163,8 @@ describe('OpencodeProvider', () => {
 
     it('should include context window info', async () => {
       const models = await provider.listModels()
-      const qwen36 = models.find(m => m.id === 'qwen36')
-      
+      const qwen36 = models.find((m) => m.id === 'qwen36')
+
       expect(qwen36?.contextWindow).toBe(262144)
     })
   })
@@ -177,7 +177,7 @@ describe('OpencodeProvider', () => {
     it('should return unhealthy when not initialized', async () => {
       const newProvider = createOpencodeProvider()
       const status = await newProvider.healthCheck()
-      
+
       expect(status.healthy).toBe(false)
       expect(status.status).toBe('not-initialized')
     })
@@ -195,7 +195,7 @@ describe('OpencodeProvider', () => {
       } as Response)
 
       const status = await provider.healthCheck()
-      
+
       expect(status.healthy).toBe(true)
       expect(status.status).toBe('healthy')
     })
@@ -207,7 +207,7 @@ describe('OpencodeProvider', () => {
       } as Response)
 
       const status = await provider.healthCheck()
-      
+
       expect(status.healthy).toBe(false)
       expect(status.status).toContain('api-error')
     })
@@ -216,7 +216,7 @@ describe('OpencodeProvider', () => {
       vi.mocked(fetch).mockRejectedValueOnce(new Error('Network error'))
 
       const status = await provider.healthCheck()
-      
+
       expect(status.healthy).toBe(false)
       expect(status.status).toBe('api-unreachable')
     })
@@ -225,7 +225,7 @@ describe('OpencodeProvider', () => {
   describe('getMetadata', () => {
     it('should return provider metadata', () => {
       const metadata = provider.getMetadata()
-      
+
       expect(metadata.id).toBe('opencode')
       expect(metadata.name).toBe('Opencode.ai')
       expect(metadata.version).toBe('1.0.0')
@@ -254,10 +254,10 @@ describe('OpencodeProvider', () => {
   describe('error handling', () => {
     it('should wrap errors with provider context', async () => {
       const failingProvider = createOpencodeProvider()
-      
+
       // Mock doInitialize to throw
       vi.spyOn(failingProvider as any, 'doInitialize').mockRejectedValue(
-        new Error('Initialization failed')
+        new Error('Initialization failed'),
       )
 
       try {

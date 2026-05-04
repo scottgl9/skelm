@@ -3,7 +3,13 @@
  */
 
 import type { TriggerPluginBase } from './base.js'
-import type { TriggerConfig, TriggerEvent, TriggerEventHandler, TriggerType, TriggerHealthStatus } from './types.js'
+import type {
+  TriggerConfig,
+  TriggerEvent,
+  TriggerEventHandler,
+  TriggerType,
+  TriggerHealthStatus,
+} from './types.js'
 
 /**
  * Trigger event handler wrapper
@@ -19,10 +25,10 @@ interface TriggerHandlerEntry {
 export class TriggerRegistry {
   /** Registered triggers */
   private readonly triggers: Map<string, TriggerPluginBase> = new Map()
-  
+
   /** Event handlers */
   private readonly eventHandlers: TriggerHandlerEntry[] = []
-  
+
   /**
    * Register a trigger plugin
    */
@@ -30,10 +36,10 @@ export class TriggerRegistry {
     if (this.triggers.has(trigger.id)) {
       throw new Error(`Trigger with id '${trigger.id}' is already registered`)
     }
-    
+
     this.triggers.set(trigger.id, trigger)
   }
-  
+
   /**
    * Unregister a trigger plugin
    */
@@ -42,49 +48,49 @@ export class TriggerRegistry {
     if (!trigger) {
       return
     }
-    
+
     if (trigger.isActive) {
       await trigger.stop()
     }
-    
+
     this.triggers.delete(id)
   }
-  
+
   /**
    * Get a trigger by ID
    */
   get(id: string): TriggerPluginBase | undefined {
     return this.triggers.get(id)
   }
-  
+
   /**
    * Check if a trigger exists
    */
   has(id: string): boolean {
     return this.triggers.has(id)
   }
-  
+
   /**
    * List all registered triggers
    */
   list(): TriggerPluginBase[] {
     return Array.from(this.triggers.values())
   }
-  
+
   /**
    * List enabled triggers
    */
   listEnabled(): TriggerPluginBase[] {
     return this.list().filter((t) => t.enabled)
   }
-  
+
   /**
    * List triggers by type
    */
   listByType(type: TriggerType): TriggerPluginBase[] {
     return this.list().filter((t) => t.getTriggerType() === type)
   }
-  
+
   /**
    * Initialize all registered triggers
    */
@@ -99,10 +105,10 @@ export class TriggerRegistry {
         }
       }
     })
-    
+
     await Promise.all(promises)
   }
-  
+
   /**
    * Start all enabled triggers
    */
@@ -114,16 +120,16 @@ export class TriggerRegistry {
         console.error(`Failed to start trigger '${trigger.id}':`, error)
       }
     })
-    
+
     await Promise.all(promises)
   }
-  
+
   /**
    * Stop all triggers
    */
   async stopAll(): Promise<void> {
     const triggers = this.list()
-    
+
     // Stop in reverse order of registration
     const promises = triggers.reverse().map(async (trigger) => {
       try {
@@ -132,10 +138,10 @@ export class TriggerRegistry {
         console.error(`Failed to stop trigger '${trigger.id}':`, error)
       }
     })
-    
+
     await Promise.all(promises)
   }
-  
+
   /**
    * Shutdown all triggers and clear registry
    */
@@ -144,7 +150,7 @@ export class TriggerRegistry {
     this.triggers.clear()
     this.eventHandlers.length = 0
   }
-  
+
   /**
    * Add an event handler
    */
@@ -155,7 +161,7 @@ export class TriggerRegistry {
     }
     this.eventHandlers.push(entry)
   }
-  
+
   /**
    * Remove an event handler
    */
@@ -165,7 +171,7 @@ export class TriggerRegistry {
       this.eventHandlers.splice(index, 1)
     }
   }
-  
+
   /**
    * Dispatch an event to all matching handlers
    */
@@ -175,23 +181,23 @@ export class TriggerRegistry {
       if (triggerTypes && !triggerTypes.includes(event.triggerType)) {
         return
       }
-      
+
       try {
         await handler(event)
       } catch (error) {
         console.error(`Event handler error for ${event.eventId}:`, error)
       }
     })
-    
+
     await Promise.all(promises)
   }
-  
+
   /**
    * Check health of all triggers
    */
   async checkAllHealth(): Promise<Record<string, TriggerHealthStatus>> {
     const results: Record<string, TriggerHealthStatus> = {}
-    
+
     const promises = this.list().map(async (trigger) => {
       try {
         results[trigger.id] = await trigger.healthCheck()
@@ -204,11 +210,11 @@ export class TriggerRegistry {
         }
       }
     })
-    
+
     await Promise.all(promises)
     return results
   }
-  
+
   /**
    * Get healthy triggers
    */

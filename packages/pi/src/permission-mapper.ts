@@ -10,13 +10,16 @@ import type { MappedPermissions } from './types.js'
  */
 export function validatePermissions(
   policy: ResolvedPolicy,
-  requested: string
+  requested: string,
 ): { allowed: string[]; denied: string[] } {
   const allowed: string[] = []
   const denied: string[] = []
 
   // Check network egress
-  if (policy.networkEgress === 'deny' && (requested.includes('curl') || requested.includes('wget') || requested.includes('http'))) {
+  if (
+    policy.networkEgress === 'deny' &&
+    (requested.includes('curl') || requested.includes('wget') || requested.includes('http'))
+  ) {
     denied.push('network request')
   } else {
     allowed.push('network request')
@@ -69,7 +72,7 @@ export function buildPermissionAuditEntry(
   runId: string,
   stepId: string,
   policy: ResolvedPolicy,
-  result: { allowed: string[]; denied: string[] }
+  result: { allowed: string[]; denied: string[] },
 ): Record<string, unknown> {
   return {
     type: 'permission-audit',
@@ -101,7 +104,7 @@ function formatToolMatcher(matcher: ResolvedToolMatcher): unknown {
     result.push(...Array.from(matcher.exact))
   }
   if (matcher.prefixes.length > 0) {
-    result.push(...matcher.prefixes.map(p => `${p}:prefix`))
+    result.push(...matcher.prefixes.map((p) => `${p}:prefix`))
   }
   return result
 }

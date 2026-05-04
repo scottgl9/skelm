@@ -1,6 +1,6 @@
 /**
  * Agent Provider abstraction for coding agent SDKs
- * 
+ *
  * Supports: ACP (Agent Communication Protocol), pi, opencode, GitHub Copilot, etc.
  * Used for agent() steps in workflows
  */
@@ -15,25 +15,25 @@ import type { RunMetadata } from './types.js'
 export interface AgentProviderConfig {
   /** Provider identifier (e.g., 'acp', 'opencode', 'pi', 'github-copilot') */
   provider: string
-  
+
   /** API endpoint or connection string */
   endpoint?: string
-  
+
   /** API key or token */
   apiKey?: string
-  
+
   /** Agent-specific configuration */
   agentConfig?: Record<string, unknown>
-  
+
   /** Timeout for agent operations (ms) */
   timeoutMs?: number
-  
+
   /** Retry configuration */
   retry?: {
     maxAttempts?: number
     delayMs?: number
   }
-  
+
   /** Provider-specific options */
   [key: string]: unknown
 }
@@ -44,22 +44,22 @@ export interface AgentProviderConfig {
 export interface AgentRequest {
   /** Unique request ID */
   requestId: string
-  
+
   /** Prompt or task for the agent */
   prompt: string
-  
+
   /** Conversation history */
   history?: AgentMessage[]
-  
+
   /** Working directory */
   cwd?: string
-  
+
   /** Allowed tools/capabilities */
   allowedTools?: string[]
-  
+
   /** Timeout (ms) */
   timeoutMs?: number
-  
+
   /** Streaming preference */
   stream?: boolean
 }
@@ -74,16 +74,16 @@ export interface AgentMessage {
 export interface AgentResponse {
   /** Response ID */
   responseId: string
-  
+
   /** Agent's response */
   content: string
-  
+
   /** Tool calls to execute */
   toolCalls?: AgentToolCall[]
-  
+
   /** Finished reason */
   finishReason?: string
-  
+
   /** Raw response */
   raw?: unknown
 }
@@ -106,28 +106,28 @@ export interface AgentToolResult {
 export interface AgentProvider {
   /** Provider identifier */
   readonly id: string
-  
+
   /** Provider name */
   readonly name: string
-  
+
   /** Initialize with configuration */
   initialize(config: AgentProviderConfig): Promise<void>
-  
+
   /** Create a backend instance */
   createBackend(config?: Partial<AgentProviderConfig>): Promise<SkelmBackend>
-  
+
   /** Execute a single agent request */
   execute(request: AgentRequest): Promise<AgentResponse>
-  
+
   /** Execute with streaming */
   executeStream?(request: AgentRequest): AsyncIterable<AgentResponse>
-  
+
   /** Check health */
   healthCheck(): Promise<{ healthy: boolean; status: string }>
-  
+
   /** Get current configuration */
   getConfig(): AgentProviderConfig
-  
+
   /** List available agents */
   listAgents?(): Promise<string[]>
 }
@@ -138,40 +138,40 @@ export interface AgentProvider {
 export abstract class AgentProviderBase implements AgentProvider {
   abstract readonly id: string
   abstract readonly name: string
-  
+
   protected config: AgentProviderConfig | null = null
   protected initialized = false
-  
+
   async initialize(config: AgentProviderConfig): Promise<void> {
     this.config = config
     this.initialized = true
     await this.doInitialize(config)
   }
-  
+
   abstract doInitialize(config: AgentProviderConfig): Promise<void>
-  
+
   async createBackend(config?: Partial<AgentProviderConfig>): Promise<SkelmBackend> {
     if (!this.initialized) {
       throw new Error(`Agent provider not initialized: ${this.id}`)
     }
     return this.doCreateBackend(config)
   }
-  
+
   abstract doCreateBackend(config?: Partial<AgentProviderConfig>): Promise<SkelmBackend>
-  
+
   async execute(request: AgentRequest): Promise<AgentResponse> {
     if (!this.initialized) {
       throw new Error(`Agent provider not initialized: ${this.id}`)
     }
     return this.doExecute(request)
   }
-  
+
   abstract doExecute(request: AgentRequest): Promise<AgentResponse>
-  
+
   async healthCheck(): Promise<{ healthy: boolean; status: string }> {
     return { healthy: this.initialized, status: this.initialized ? 'ready' : 'not-initialized' }
   }
-  
+
   getConfig(): AgentProviderConfig {
     if (!this.config) {
       throw new Error(`Agent provider not initialized: ${this.id}`)
@@ -273,7 +273,7 @@ export class AgentRegistry {
 export async function executeAgentStep(
   step: AgentStep,
   ctx: Context,
-  registry: AgentRegistry
+  registry: AgentRegistry,
 ): Promise<AgentResponse> {
   const providerId = step.backend || (registry.getDefault()?.id as string | undefined)
   if (!providerId) {
@@ -292,7 +292,7 @@ export async function executeAgentStep(
     requestId: `agent-${Date.now()}-${Math.random().toString(36).substring(7)}`,
     prompt: resolvedPrompt,
   }
-  
+
   if (step.maxTurns) {
     request.timeoutMs = step.maxTurns * 60000
   }

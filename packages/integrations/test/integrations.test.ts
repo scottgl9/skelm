@@ -280,7 +280,9 @@ describe('SlackIntegration', () => {
       },
     }
 
-    const result = await slack.eventToRunInput(messageEvent as unknown as { type: string; event: unknown; channel_id: string })
+    const result = await slack.eventToRunInput(
+      messageEvent as unknown as { type: string; event: unknown; channel_id: string },
+    )
 
     expect(result).not.toBeNull()
     expect(result?.trigger.type).toBe('slack-message')

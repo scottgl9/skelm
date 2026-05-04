@@ -178,7 +178,10 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
       }
       case 'secrets': {
         const subcommand = parsed.positional[0]
-        if (!subcommand || (subcommand !== 'get' && subcommand !== 'set' && subcommand !== 'list')) {
+        if (
+          !subcommand ||
+          (subcommand !== 'get' && subcommand !== 'set' && subcommand !== 'list')
+        ) {
           io.stderr.write('error: secrets requires get, set, or list subcommand\n')
           return { exitCode: EXIT.CLI_ERROR }
         }

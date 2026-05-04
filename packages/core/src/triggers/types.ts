@@ -5,7 +5,15 @@
 /**
  * Trigger types supported by skelm
  */
-export type TriggerType = 'cron' | 'webhook' | 'slack' | 'matrix' | 'github' | 'discord' | 'email' | 'custom'
+export type TriggerType =
+  | 'cron'
+  | 'webhook'
+  | 'slack'
+  | 'matrix'
+  | 'github'
+  | 'discord'
+  | 'email'
+  | 'custom'
 
 /**
  * Configuration for a trigger plugin
