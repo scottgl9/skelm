@@ -10,6 +10,7 @@ Usage:
   skelm audit query [flags]
   skelm secrets <get|set|list> [args]
   skelm debug <breakpoints|add|remove|runs|release> [args]
+  skelm sessions <list|prune> [--expired] [--older-than-ms <ms>] [--json]
   skelm init [<dir>] [--force]
   skelm --version
   skelm --help
@@ -63,6 +64,11 @@ Debug flags:
   skelm debug remove <stepId>                   Remove a breakpoint
   skelm debug runs [--json]                     List runs paused at a breakpoint
   skelm debug release <runId>                   Release a paused run
+
+Sessions flags:
+  skelm sessions list [--json]                  List ACP sessions tracked by the gateway
+  skelm sessions prune [--expired] [--older-than-ms <ms>] [--json]
+                                                Drop sessions matching either filter
 
 Init flags:
   --force                 Allow scaffolding into a non-empty directory
