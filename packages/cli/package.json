@@ -43,6 +43,8 @@
   },
   "dependencies": {
     "@skelm/core": "workspace:*",
+    "@skelm/opencode": "workspace:*",
+    "@skelm/pi": "workspace:*",
     "@skelm/server": "workspace:*",
     "tsx": "^4.19.2"
   },

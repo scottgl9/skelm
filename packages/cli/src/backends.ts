@@ -134,24 +134,38 @@ function createBackend(backendId: string, config: SkelmConfig) {
       })
     }
     case 'opencode': {
+      const apiKey = entry.apiKey as string | { secret: string } | undefined
+      const apiUrl = readString(entry.apiUrl)
+      const agent = readString(entry.agent)
+      const timeout = readNumber(entry.timeout)
+      const maxRetries = readNumber(entry.maxRetries)
+      const logLevel = readString(entry.logLevel) as 'debug' | 'info' | 'warn' | 'error' | undefined
+      
       return createOpencodeBackendFromConfig({
-        apiKey: entry.apiKey as string | { secret: string } | undefined,
-        apiUrl: readString(entry.apiUrl),
-        agent: readString(entry.agent),
-        timeout: readNumber(entry.timeout),
-        maxRetries: readNumber(entry.maxRetries),
-        logLevel: readString(entry.logLevel) as 'debug' | 'info' | 'warn' | 'error' | undefined,
-      })
+        ...(apiKey !== undefined && { apiKey }),
+        ...(apiUrl !== undefined && { apiUrl }),
+        ...(agent !== undefined && { agent }),
+        ...(timeout !== undefined && { timeout }),
+        ...(maxRetries !== undefined && { maxRetries }),
+        ...(logLevel !== undefined && { logLevel }),
+      } as any)
     }
     case 'pi': {
+      const cmd = readString(entry.command)
+      const cwd = readString(entry.cwd)
+      const args = readStringArray(entry.args)
+      const timeout = readNumber(entry.timeout)
+      const maxRetries = readNumber(entry.maxRetries)
+      const logLevel = readString(entry.logLevel) as 'debug' | 'info' | 'warn' | 'error' | undefined
+      
       return createPiBackendFromConfig({
-        command: readString(entry.command),
-        cwd: readString(entry.cwd),
-        args: readStringArray(entry.args),
-        timeout: readNumber(entry.timeout),
-        maxRetries: readNumber(entry.maxRetries),
-        logLevel: readString(entry.logLevel) as 'debug' | 'info' | 'warn' | 'error' | undefined,
-      })
+        ...(cmd !== undefined && { command: cmd }),
+        ...(cwd !== undefined && { cwd }),
+        ...(args !== undefined && { args }),
+        ...(timeout !== undefined && { timeout }),
+        ...(maxRetries !== undefined && { maxRetries }),
+        ...(logLevel !== undefined && { logLevel }),
+      } as any)
     }
     default:
       throw new Error(`unsupported backend in CLI config: ${backendId}`)
