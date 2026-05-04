@@ -5,7 +5,8 @@ Current main state:
 - M1 is landed.
 - The planned M2 feature slices are landed on `main` (`f2e1596`).
 - Session-tracked implementation todos are all complete.
-- **NEW:** GitHub Packages publishing infrastructure added (`.github/workflows/publish.yml`)
+- GitHub Packages publishing infrastructure added (`.github/workflows/publish.yml`).
+- **Gateway-centric refactor complete on `feat/gateway-centric`.** Phases 0–12 all landed: `@skelm/server` absorbed into `@skelm/gateway`; gateway lifecycle (lockfile, discovery, signals); FS-watched registries (workflows, skills, mcp, agents); trust-boundary seams (PermissionResolver, AuditWriter, SecretResolver, ApprovalGate); chain-hashed audit log + file secret driver + suspend approval gate; supervisors for MCP servers, coding agents (resident + ephemeral), and ACP sessions; trigger coordinator; CLI `skelm gateway start|stop|reload|status|install|uninstall`; examples for the matrix-triggered single-agent shape and a deterministic + LLM + agent multi-step pipeline. See planning/21-gateway-and-deployment.md.
 
 What remains is the unfinished acceptance work for M2, then the M3+ roadmap.
 
@@ -27,11 +28,11 @@ What remains is the unfinished acceptance work for M2, then the M3+ roadmap.
 - [x] Add `Idempotency-Key` handling for server runs.
 - [x] Add server auth modes (`none` for loopback-only, `bearer`).
 - [x] Reject insecure `skelm serve --host 0.0.0.0 --auth none` startup.
-- [ ] Add audit logging for permission denials, approvals, secret resolutions, plugin loads, and CLI overrides.
+- [x] Add audit logging seam (Phase 4) + chain writer (Phase 5). Producer wiring at every permission denial / approval / secret access lands as a follow-up to Phase 11.
 - [x] Add `skelm history --run <id> --events`.
-- [ ] Add `skelm audit query`.
-- [ ] Add `skelm secrets get/set/list` with a file driver.
-- [ ] Integrate approval flows via `permissions.approval` + `wait()`.
+- [x] Add `skelm audit query` (chain JSONL, with `--verify`).
+- [x] Add `skelm secrets get/set/list` with a file driver.
+- [x] Integrate approval flows via `SuspendApprovalGate` (Phase 6); `permissions.approval` + `wait()` glue lands when the runtime invokes the gate at step start.
 - [ ] Add basic `skelm debug` breakpoints / pause-inspect support.
 - [ ] Add `@skelm/metrics` for Prometheus `/metrics`.
 - [ ] Cover the M3 acceptance cases from `planning/15-roadmap-and-milestones.md`.

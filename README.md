@@ -5,6 +5,8 @@
 skelm is an open-source TypeScript framework for authoring, running, and operating **workflows** — typed orchestrations that mix deterministic code, LLM inference, and agent loops behind a single, secure, default-deny execution model. Every workflow is schedulable: fire one once, schedule it on cron, register a webhook, or let it run continuously inside a long-lived gateway service.
 
 > **Status:** early development. APIs are unstable until v1. Star the repo, open issues, contribute fixes — feedback now is the most valuable feedback.
+>
+> **Architecture:** the gateway-centric refactor (`feat/gateway-centric` branch) is landed end-to-end. `@skelm/gateway` is the long-running process that owns config, registries (workflows, skills, MCP servers, agents), enforcement (permissions, audit, secrets, approvals), and supervisors (MCP servers, coding agents resident + ephemeral, ACP sessions, triggers). Drive it with the single `skelm` CLI: `skelm gateway start --foreground`, `skelm gateway status`, `skelm gateway install --systemd`. See `docs/guides/gateway.md` and `docs/concepts/coding-agents.md`.
 
 ## Why skelm
 
