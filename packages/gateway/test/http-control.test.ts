@@ -3,9 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { code, parallel, pipeline, wait } from '@skelm/core'
+import { MemoryRunStore } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { MemoryRunStore } from '@skelm/core'
 import { Gateway, InMemoryQueueDriver, type SuspendApprovalGate } from '../src/index.js'
 
 let stateDir: string

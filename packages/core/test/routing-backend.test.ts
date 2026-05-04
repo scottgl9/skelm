@@ -74,7 +74,8 @@ describe('createRoutingBackend', () => {
       id: 'r',
       primary,
       failover: [secondary],
-      onFailover: (info) => events.push(`${info.from}->${info.to}:${(info.error as Error).message}`),
+      onFailover: (info) =>
+        events.push(`${info.from}->${info.to}:${(info.error as Error).message}`),
     })
     const out = await router.infer?.({ messages: [] }, dummyCtx)
     expect(out?.text).toBe('from-secondary')
