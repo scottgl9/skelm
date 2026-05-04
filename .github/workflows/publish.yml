@@ -5,6 +5,11 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
+      version:
+        description: 'Version to publish (e.g., 0.3.0)'
+        required: true
+        default: '0.3.0'
+        type: string
       dry-run:
         description: 'Dry run (verify without publishing)'
         required: false
@@ -44,7 +49,7 @@ jobs:
       - name: Run tests
         run: pnpm test
 
-      - name: Determine version from release tag
+      - name: Determine version from release tag or manual input
         id: version
         run: |
           if [ -n "${{ github.event.release.tag_name }}" ]; then
@@ -52,9 +57,12 @@ jobs:
             TAG_VERSION="${TAG_VERSION#v}"
             echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
             echo "Release tag detected: $TAG_VERSION"
+          elif [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "tag_version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "Manual version input: ${{ github.event.inputs.version }}"
           else
-            echo "tag_version=" >> $GITHUB_OUTPUT
-            echo "No release tag found (manual dispatch)"
+            echo "tag_version=0.3.0" >> $GITHUB_OUTPUT
+            echo "Using default version: 0.3.0"
           fi
 
       - name: Update package versions (if release tag)
@@ -112,7 +120,7 @@ jobs:
           echo "The workflow will automatically publish all packages with that version."
 
       - name: Publish @skelm/core
-        if: inputs.dry-run != true && steps.version.outputs.tag_version != ''
+        if: inputs.dry-run != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -122,7 +130,7 @@ jobs:
           cd ..
 
       - name: Publish @skelm/cli
-        if: inputs.dry-run != true && steps.version.outputs.tag_version != ''
+        if: inputs.dry-run != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -132,7 +140,7 @@ jobs:
           cd ..
 
       - name: Publish @skelm/opencode
-        if: inputs.dry-run != true && steps.version.outputs.tag_version != ''
+        if: inputs.dry-run != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -142,7 +150,7 @@ jobs:
           cd ..
 
       - name: Publish @skelm/pi
-        if: inputs.dry-run != true && steps.version.outputs.tag_version != ''
+        if: inputs.dry-run != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -152,7 +160,7 @@ jobs:
           cd ..
 
       - name: Publish @skelm/server
-        if: inputs.dry-run != true && steps.version.outputs.tag_version != ''
+        if: inputs.dry-run != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -162,7 +170,7 @@ jobs:
           cd ..
 
       - name: Publish skelm
-        if: inputs.dry-run != true && steps.version.outputs.tag_version != ''
+        if: inputs.dry-run != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -172,7 +180,7 @@ jobs:
           cd ..
 
       - name: Publish success summary
-        if: inputs.dry-run != true && steps.version.outputs.tag_version != ''
+        if: inputs.dry-run != 'true'
         run: |
           echo "✅ Successfully published all packages to GitHub Packages!"
           echo ""
