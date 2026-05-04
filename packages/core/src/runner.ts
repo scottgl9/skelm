@@ -13,7 +13,12 @@ import {
   NoopAuditWriter,
   type SecretResolver,
 } from './enforcement/index.js'
-import { RunCancelledError, WaitTimeoutError, serializeError } from './errors.js'
+import {
+  PermissionDeniedError,
+  RunCancelledError,
+  WaitTimeoutError,
+  serializeError,
+} from './errors.js'
 import { EventBus } from './events.js'
 import { createMcpHost } from './mcp/host.js'
 import type { AgentPermissions, PermissionDimension } from './permissions.js'
@@ -731,9 +736,16 @@ async function runStep(
           for (const server of mcpServers) {
             const decision = enforcer.canAttachMcpServer(server.id)
             if (!decision.allow) {
-              throw new Error(
-                `step "${step.id}" is not allowed to attach MCP server "${server.id}" (${decision.reason})`,
-              )
+              const detail = `step "${step.id}" is not allowed to attach MCP server "${server.id}" (${decision.reason})`
+              events?.publish({
+                type: 'permission.denied',
+                runId: ctx.run.runId,
+                stepId: step.id,
+                dimension: 'mcp',
+                detail,
+                at: Date.now(),
+              })
+              throw new PermissionDeniedError(detail)
             }
           }
         }
