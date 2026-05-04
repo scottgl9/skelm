@@ -22,6 +22,13 @@ export type TriggerSpec =
       sourceFnId: string
       dedupeKeyFnId?: string
     }
+  | {
+      kind: 'queue'
+      id: string
+      workflowId: string
+      driver: string
+      config?: Record<string, unknown>
+    }
 
 export type OverlapPolicy = 'skip' | 'queue' | 'cancel'
 

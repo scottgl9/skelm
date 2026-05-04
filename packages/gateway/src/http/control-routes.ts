@@ -260,12 +260,6 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       }
       const overlap = (body.overlap as 'skip' | 'queue' | 'cancel' | undefined) ?? 'skip'
       const spec = scheduleTriggerToSpec(id, workflowId, trigger as { kind: string })
-      if (spec === 'unsupported-queue') {
-        throw createError({
-          statusCode: 501,
-          message: 'queue triggers are not yet implemented (no driver registered)',
-        })
-      }
       if (spec === 'invalid') {
         throw createError({ statusCode: 400, message: 'invalid trigger configuration' })
       }
@@ -354,10 +348,7 @@ function scheduleTriggerToSpec(
   id: string,
   workflowId: string,
   trigger: { kind: string } & Record<string, unknown>,
-):
-  | import('../triggers/types.js').TriggerSpec
-  | 'unsupported-queue'
-  | 'invalid' {
+): import('../triggers/types.js').TriggerSpec | 'invalid' {
   switch (trigger.kind) {
     case 'immediate':
       return { kind: 'immediate', id, workflowId }
@@ -403,8 +394,20 @@ function scheduleTriggerToSpec(
       if (typeof trigger.dedupeKeyFnId === 'string') spec.dedupeKeyFnId = trigger.dedupeKeyFnId
       return spec
     }
-    case 'queue':
-      return 'unsupported-queue'
+    case 'queue': {
+      const driver = trigger.driver
+      if (typeof driver !== 'string') return 'invalid'
+      const spec: import('../triggers/types.js').TriggerSpec = {
+        kind: 'queue',
+        id,
+        workflowId,
+        driver,
+      }
+      if (typeof trigger.config === 'object' && trigger.config !== null) {
+        spec.config = trigger.config as Record<string, unknown>
+      }
+      return spec
+    }
     default:
       return 'invalid'
   }
@@ -449,6 +452,10 @@ function registrationToSchedule(
     case 'poll':
       trigger = { kind: 'poll', everyMs: spec.everyMs, sourceFnId: spec.sourceFnId }
       if (spec.dedupeKeyFnId !== undefined) trigger.dedupeKeyFnId = spec.dedupeKeyFnId
+      break
+    case 'queue':
+      trigger = { kind: 'queue', driver: spec.driver }
+      if (spec.config !== undefined) trigger.config = spec.config
       break
   }
   const out: ReturnType<typeof registrationToSchedule> = {
