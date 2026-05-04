@@ -666,6 +666,134 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
   })
 })
 
+describe('Gateway HTTP OpenAI-compat surface', () => {
+  it('POST /v1/chat/completions translates messages to a pipeline run and wraps output', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'skelm-oai-'))
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    await fs.writeFile(join(projectRoot, 'workflows/r.workflow.ts'), 'export default {}')
+
+    const wf = pipeline({
+      id: 'echo',
+      steps: [
+        code({
+          id: 'echo',
+          run: (ctx) => {
+            const msgs = (ctx.input as { messages?: Array<{ content: string }> }).messages ?? []
+            const last = msgs[msgs.length - 1]?.content ?? ''
+            return { content: `you said: ${last}` }
+          },
+        }),
+      ],
+    })
+
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      loadWorkflow: async () => wf,
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+    })
+    await gw.start()
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'workflows/r.workflow.ts',
+          messages: [{ role: 'user', content: 'hello' }],
+        }),
+      })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        object: string
+        choices: Array<{ message: { role: string; content: string }; finish_reason: string }>
+      }
+      expect(body.object).toBe('chat.completion')
+      expect(body.choices).toHaveLength(1)
+      expect(body.choices[0]?.message.role).toBe('assistant')
+      expect(body.choices[0]?.message.content).toBe('you said: hello')
+      expect(body.choices[0]?.finish_reason).toBe('stop')
+    } finally {
+      await gw.stop()
+      await rm(projectRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('POST /v1/chat/completions 404s when the named model has no pipeline', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    })
+    await gw.start()
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'nothing', messages: [] }),
+      })
+      expect(res.status).toBe(404)
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('POST /v1/responses accepts string input and produces an output_text part', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'skelm-oai-'))
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    await fs.writeFile(join(projectRoot, 'workflows/r.workflow.ts'), 'export default {}')
+
+    const wf = pipeline({
+      id: 'mirror',
+      steps: [
+        code({
+          id: 'mirror',
+          run: (ctx) => {
+            const msgs = (ctx.input as { messages: Array<{ content: string }> }).messages
+            return { content: `mirror: ${msgs[0]?.content}` }
+          },
+        }),
+      ],
+    })
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      loadWorkflow: async () => wf,
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+    })
+    await gw.start()
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/v1/responses`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'workflows/r.workflow.ts', input: 'hi' }),
+      })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        object: string
+        status: string
+        output: Array<{ content: Array<{ type: string; text: string }> }>
+      }
+      expect(body.object).toBe('response')
+      expect(body.status).toBe('completed')
+      expect(body.output[0]?.content[0]?.text).toBe('mirror: hi')
+    } finally {
+      await gw.stop()
+      await rm(projectRoot, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('Gateway HTTP /pipelines', () => {
   it('GET /pipelines lists registry entries', async () => {
     // Project with a workflow file the registry can discover.
