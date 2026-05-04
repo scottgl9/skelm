@@ -12,6 +12,10 @@ Complete, runnable workflows for the patterns customers ship most often. Each re
 
 - **[HTTP enrichment](./http-enrichment.md)** — sync workflow called from existing infrastructure (queue worker, webhook). Deterministic normalization plus LLM classification, then posts to Slack. The simplest production-shaped pattern.
 
+## Observability
+
+- **[OpenTelemetry traces](./otel-exporter.md)** — wire `@skelm/otel` to any OTLP-compatible collector (Tempo, Jaeger, Honeycomb, Datadog). The adapter records spans; you bring the exporter.
+
 ## How to use these
 
 Every recipe has the same shape:
