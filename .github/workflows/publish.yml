@@ -85,8 +85,8 @@ jobs:
           npm version $TAG_VERSION --no-git-tag-version --force
           cd ..
           
-          # Update server
-          cd packages/server
+          # Update gateway
+          cd packages/gateway
           npm version $TAG_VERSION --no-git-tag-version --force
           cd ..
           
@@ -124,8 +124,8 @@ jobs:
           npm version $TAG_VERSION --no-git-tag-version --force
           cd ..
           
-          # Update server
-          cd packages/server
+          # Update gateway
+          cd packages/gateway
           npm version $TAG_VERSION --no-git-tag-version --force
           cd ..
           
@@ -144,7 +144,7 @@ jobs:
           echo "  - @skelm/cli@$(cat packages/cli/package.json | grep '"version"' | cut -d'"' -f4)"
           echo "  - @skelm/opencode@$(cat packages/opencode/package.json | grep '"version"' | cut -d'"' -f4)"
           echo "  - @skelm/pi@$(cat packages/pi/package.json | grep '"version"' | cut -d'"' -f4)"
-          echo "  - @skelm/server@$(cat packages/server/package.json | grep '"version"' | cut -d'"' -f4)"
+          echo "  - @skelm/gateway@$(cat packages/gateway/package.json | grep '"version"' | cut -d'"' -f4)"
           echo "  - skelm@$(cat packages/skelm/package.json | grep '"version"' | cut -d'"' -f4)"
           echo ""
           echo "Registry: https://npm.pkg.github.com/scottgl9"
@@ -192,13 +192,13 @@ jobs:
           npm publish --registry=https://npm.pkg.github.com/scottgl9 --access=public
           cd ..
 
-      - name: Publish @skelm/server
+      - name: Publish @skelm/gateway
         if: inputs.dry-run != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd packages/server
-          echo "Publishing @skelm/server@$(node -p "require('./package.json').version")"
+          cd packages/gateway
+          echo "Publishing @skelm/gateway@$(node -p "require('./package.json').version")"
           npm publish --registry=https://npm.pkg.github.com/scottgl9 --access=public
           cd ..
 
@@ -222,7 +222,7 @@ jobs:
           echo "  https://npm.pkg.github.com/scottgl9/@skelm/cli"
           echo "  https://npm.pkg.github.com/scottgl9/@skelm/opencode"
           echo "  https://npm.pkg.github.com/scottgl9/@skelm/pi"
-          echo "  https://npm.pkg.github.com/scottgl9/@skelm/server"
+          echo "  https://npm.pkg.github.com/scottgl9/@skelm/gateway"
           echo "  https://npm.pkg.github.com/scottgl9/skelm"
           echo ""
           echo "Version: ${{ steps.version.outputs.tag_version }}"

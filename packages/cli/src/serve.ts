@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { resolve } from 'node:path'
 import { Runner, SqliteRunStore } from '@skelm/core'
-import { type ServerConfig, createServer } from '@skelm/server'
+import { type ServerConfig, createServer } from '@skelm/gateway'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import type { MainIO, MainResult } from './main.js'
 

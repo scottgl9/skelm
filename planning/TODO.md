@@ -21,7 +21,7 @@ What remains is the unfinished acceptance work for M2, then the M3+ roadmap.
 
 ## M3 — finish v1
 
-- [x] Create `@skelm/server`.
+- [x] Create `@skelm/server` (absorbed into `@skelm/gateway/http` in the gateway-centric refactor).
 - [x] Add the HTTP + SSE run surface from `planning/08-server-mode.md`.
 - [x] Support sync runs, async runs, resume, and cancellation over HTTP.
 - [x] Add `Idempotency-Key` handling for server runs.

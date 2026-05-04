@@ -39,7 +39,7 @@
     "@skelm/core": "workspace:*",
     "@skelm/opencode": "workspace:*",
     "@skelm/pi": "workspace:*",
-    "@skelm/server": "workspace:*",
+    "@skelm/gateway": "workspace:*",
     "tsx": "^4.19.2"
   },
   "devDependencies": {
