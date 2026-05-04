@@ -103,7 +103,7 @@ npm publish --registry=https://npm.pkg.github.com/scottgl9 --access=public
 | CLI | `@skelm/cli` | 0.2.0 |
 | Opencode backend | `@skelm/opencode` | 0.1.0 |
 | Pi backend | `@skelm/pi` | 0.1.0 |
-| Server | `@skelm/server` | 0.2.0 |
+| Gateway | `@skelm/gateway` | 0.2.0 |
 | Main package | `skelm` | 0.1.0 |
 | Integrations | `@skelm/integrations` | (not configured) |
 
