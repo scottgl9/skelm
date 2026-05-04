@@ -144,3 +144,9 @@ vite.config.ts.timestamp-*
 
 # Local-only planning notes (not committed)
 planning/
+
+# TypeScript build artifacts that escape into src/ (compiled output belongs in dist/)
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.d.ts.map
