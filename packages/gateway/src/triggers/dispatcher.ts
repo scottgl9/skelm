@@ -1,4 +1,4 @@
-import { Runner } from '@skelm/core'
+import { type BackendRegistry, Runner } from '@skelm/core'
 import type { Gateway } from '../lifecycle/gateway.js'
 import type { FireContext, RunCallback } from './types.js'
 
@@ -12,6 +12,11 @@ export type WorkflowLoader = (registryId: string, absolutePath: string) => Promi
 export interface CreateDispatcherOptions {
   gateway: Gateway
   loadWorkflow: WorkflowLoader
+  /**
+   * Pre-built backend instances to register for dispatched runs. Consumers
+   * pass `config.instances` here so triggered workflows can use agent() steps.
+   */
+  backends?: BackendRegistry
   /**
    * Hook for tests to observe dispatcher errors. Defaults to swallowing —
    * the trigger coordinator already records onFire errors as `lastError`
@@ -54,6 +59,7 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         secretResolver: enforcement.secretResolver,
         auditWriter: enforcement.auditWriter,
         store: opts.gateway.runStore,
+        ...(opts.backends !== undefined && { backends: opts.backends }),
       })
       // Feed step events into the metrics collector if enabled.
       opts.gateway.attachMetricsBus(runner.events)
