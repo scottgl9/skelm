@@ -126,6 +126,11 @@ runBackendContract(
   },
 )
 
+// ACP backends are agent-only — `prompt: false` in their capabilities —
+// so the `infer` half of the contract is structurally not applicable and
+// is explicitly skipped (not silently). The remaining contract bullets
+// (capability self-consistency, agent run shape, permission-gate fail-
+// closed for `unsupported` toolPermissions) all run.
 runBackendContract(
   () =>
     createAcpBackend({
