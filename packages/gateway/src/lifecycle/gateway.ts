@@ -75,6 +75,16 @@ export interface GatewayOptions {
    * gateway.attachMetricsBus(); the route renders the current snapshot.
    */
   enableMetrics?: boolean
+  /**
+   * Custom RunStore. When provided, overrides the storage config and is
+   * used as-is — the gateway calls no constructor and applies no path
+   * resolution. This is the integration point for callers that want a
+   * Postgres-backed store, a Redis store, an in-memory store for tests,
+   * or any other implementation of RunStore. Without this option, the
+   * gateway constructs a SqliteRunStore at <stateDir>/runs.sqlite (or
+   * the path from config.storage.runs.path if set).
+   */
+  runStore?: RunStore
 }
 
 export interface GatewayEnforcement {
@@ -405,6 +415,7 @@ export class Gateway {
   }
 
   private buildRunStore(): RunStore {
+    if (this.options.runStore !== undefined) return this.options.runStore
     const cfg = this.config.storage?.runs
     if (cfg === undefined || cfg.driver === 'sqlite') {
       const dbPath = expandHome(cfg?.path ?? join(this.stateDir, 'runs.sqlite'))

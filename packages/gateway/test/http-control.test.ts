@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { code, parallel, pipeline, wait } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
+import { MemoryRunStore } from '@skelm/core'
 import { Gateway, InMemoryQueueDriver, type SuspendApprovalGate } from '../src/index.js'
 
 let stateDir: string
@@ -1086,6 +1087,36 @@ describe('Gateway runStore', () => {
     await gw.start()
     await gw.stop()
     expect(() => gw.runStore).toThrow(/runStore is not available/)
+  })
+
+  it('uses a caller-supplied RunStore when options.runStore is set', async () => {
+    const custom = new MemoryRunStore()
+    await custom.putRun({
+      runId: 'pre-existing',
+      pipelineId: 'p',
+      status: 'completed',
+      input: {},
+      steps: [],
+      output: undefined,
+      error: undefined,
+      startedAt: 1,
+      completedAt: 2,
+    })
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      runStore: custom,
+    })
+    await gw.start()
+    try {
+      // The injected store is identity-equal to the gateway's runStore;
+      // the pre-existing run is visible.
+      expect(gw.runStore).toBe(custom)
+      const found = await gw.runStore.getRun('pre-existing')
+      expect(found?.runId).toBe('pre-existing')
+    } finally {
+      await gw.stop()
+    }
   })
 })
 
