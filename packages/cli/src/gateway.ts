@@ -1,20 +1,23 @@
+import { promises as fs } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { Gateway, readDiscovery, readLockfile } from '@skelm/gateway'
 import { EXIT } from './exit-codes.js'
 import type { MainIO, MainResult } from './main.js'
 
 export interface GatewayArgs {
-  subcommand: 'start' | 'stop' | 'pause' | 'resume' | 'reload' | 'status'
+  subcommand: 'start' | 'stop' | 'pause' | 'resume' | 'reload' | 'status' | 'install' | 'uninstall'
   foreground?: boolean
   detach?: boolean
   json?: boolean
+  /** For `install --systemd`. */
+  systemd?: boolean
 }
 
-/**
- * Phase 2 implementation. Only `start --foreground`, `stop`, and `status`
- * have meaningful behaviour against an in-process gateway. The remote-control
- * verbs (pause/resume/reload + the detached form of start/stop) land in
- * Phase 11 once an HTTP control surface is wired in.
- */
+function defaultStateDir(): string {
+  return process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm')
+}
+
 export async function gatewayCommand(args: GatewayArgs, io: MainIO): Promise<MainResult> {
   switch (args.subcommand) {
     case 'start':
@@ -22,19 +25,27 @@ export async function gatewayCommand(args: GatewayArgs, io: MainIO): Promise<Mai
     case 'status':
       return statusGateway(args, io)
     case 'stop':
+      return signalGateway('SIGTERM', io)
+    case 'reload':
+      return signalGateway('SIGHUP', io)
     case 'pause':
     case 'resume':
-    case 'reload':
       io.stderr.write(
-        `gateway ${args.subcommand}: requires running gateway control surface (Phase 11)\n`,
+        `gateway ${args.subcommand}: requires HTTP control surface — call POST /gateway/${args.subcommand} on the running gateway\n`,
       )
       return { exitCode: EXIT.CLI_ERROR }
+    case 'install':
+      return installSystemd(args, io)
+    case 'uninstall':
+      return uninstallSystemd(io)
   }
 }
 
 async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> {
   if (args.detach) {
-    io.stderr.write('gateway start --detach is not yet implemented (Phase 11)\n')
+    io.stderr.write(
+      'gateway start --detach: spawn `nohup skelm gateway start --foreground &` from your shell, or use the systemd unit (`skelm gateway install --systemd`).\n',
+    )
     return { exitCode: EXIT.CLI_ERROR }
   }
   const gateway = new Gateway({ installSignalHandlers: true })
@@ -47,7 +58,7 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
 
   const discovery = gateway.getDiscovery()
   io.stdout.write(
-    `skelm gateway started\n  pid: ${process.pid}\n  url: ${discovery?.url ?? '(unbound)'}\n  state-dir: ${gateway.stateDir}\n`,
+    `skelm gateway started\n  pid: ${process.pid}\n  url: ${discovery?.url ?? '(unbound)'}\n  state-dir: ${gateway.stateDir}\n  workflows: ${gateway.registries.workflows.list().length}\n  agents:    ${gateway.registries.agents.list().length}\n`,
   )
 
   await new Promise<void>((resolve) => {
@@ -80,4 +91,75 @@ async function statusGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
     io.stdout.write('gateway: not running\n')
   }
   return { exitCode: EXIT.OK }
+}
+
+async function signalGateway(sig: 'SIGTERM' | 'SIGHUP', io: MainIO): Promise<MainResult> {
+  const probe = new Gateway()
+  const lock = await readLockfile(probe.lockfilePath)
+  if (lock === null) {
+    io.stderr.write('gateway: not running\n')
+    return { exitCode: EXIT.CLI_ERROR }
+  }
+  try {
+    process.kill(lock.pid, sig)
+    io.stdout.write(`sent ${sig} to pid ${lock.pid}\n`)
+    return { exitCode: EXIT.OK }
+  } catch (err) {
+    io.stderr.write(`failed to signal pid ${lock.pid}: ${(err as Error).message}\n`)
+    return { exitCode: EXIT.CLI_ERROR }
+  }
+}
+
+const SYSTEMD_DIR = `${process.env.HOME ?? homedir()}/.config/systemd/user`
+const SYSTEMD_UNIT_PATH = `${SYSTEMD_DIR}/skelm-gateway.service`
+
+const SYSTEMD_UNIT = `[Unit]
+Description=skelm gateway
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env skelm gateway start --foreground
+ExecReload=/usr/bin/env skelm gateway reload
+Environment=NODE_ENV=production
+Restart=on-failure
+RestartSec=5s
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=%h/.skelm %h/.config/skelm
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
+`
+
+async function installSystemd(args: GatewayArgs, io: MainIO): Promise<MainResult> {
+  if (!args.systemd) {
+    io.stderr.write('error: gateway install requires --systemd\n')
+    return { exitCode: EXIT.CLI_ERROR }
+  }
+  await fs.mkdir(SYSTEMD_DIR, { recursive: true })
+  await fs.writeFile(SYSTEMD_UNIT_PATH, SYSTEMD_UNIT)
+  io.stdout.write(
+    `wrote ${SYSTEMD_UNIT_PATH}\n\nNext:\n  systemctl --user daemon-reload\n  systemctl --user enable --now skelm-gateway\n  journalctl --user -u skelm-gateway -f\n`,
+  )
+  // Touch defaultStateDir so PrivateTmp + ReadWritePaths land cleanly when the unit runs.
+  await fs.mkdir(defaultStateDir(), { recursive: true })
+  return { exitCode: EXIT.OK }
+}
+
+async function uninstallSystemd(io: MainIO): Promise<MainResult> {
+  try {
+    await fs.rm(SYSTEMD_UNIT_PATH)
+    io.stdout.write(
+      `removed ${SYSTEMD_UNIT_PATH}\n\nNext:\n  systemctl --user daemon-reload\n  systemctl --user disable skelm-gateway || true\n`,
+    )
+    return { exitCode: EXIT.OK }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      io.stderr.write('skelm-gateway.service not installed\n')
+      return { exitCode: EXIT.CLI_ERROR }
+    }
+    throw err
+  }
 }
