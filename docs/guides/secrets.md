@@ -8,10 +8,11 @@ skelm resolves secrets through a gateway-owned `SecretResolver`. Pipeline source
 |--------|------|-----------|
 | `env` | default | `process.env` (12-factor friendly) |
 | `file` | opt-in via `secrets: { driver: 'file' }` in `skelm.config.ts` | `~/.skelm/secrets.json`, mode `0600` |
+| `vault` | <!-- @planned M4 --> | HashiCorp Vault KV v2; see `VaultSecretResolver` in `@skelm/gateway` |
 
 Override the file path with `secrets: { driver: 'file', file: '/path/to/secrets.json' }`.
 
-Vault and cloud secret drivers land in M4+.
+Vault and cloud secret drivers land in M4+. The `VaultSecretResolver` shape is exported from `@skelm/gateway` today as a typed skeleton — every method throws `NotImplementedError` until the driver lands.
 
 ## CLI
 
