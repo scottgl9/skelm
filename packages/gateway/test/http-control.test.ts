@@ -271,6 +271,112 @@ describe('Gateway HTTP webhook trigger dispatch', () => {
   })
 })
 
+describe('Gateway HTTP /schedules', () => {
+  it('POST /schedules registers a trigger via the coordinator and GET lists them', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    })
+    await gw.start()
+    const base = `http://127.0.0.1:${port}`
+    try {
+      const empty = await fetch(`${base}/schedules`).then((r) => r.json())
+      expect(empty).toEqual([])
+
+      const created = await fetch(`${base}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-cron',
+          workflowId: 'wf',
+          trigger: { kind: 'cron', expression: '*/5 * * * *' },
+          overlap: 'skip',
+        }),
+      }).then((r) => r.json())
+      expect(created.id).toBe('s-cron')
+      expect(created.trigger).toEqual({ kind: 'cron', expression: '*/5 * * * *' })
+
+      // Listing now reflects the registered trigger.
+      const list = (await fetch(`${base}/schedules`).then((r) => r.json())) as Array<{
+        id: string
+      }>
+      expect(list.map((s) => s.id)).toEqual(['s-cron'])
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('POST /schedules with kind=queue returns 501', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    })
+    await gw.start()
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-queue',
+          workflowId: 'wf',
+          trigger: { kind: 'queue', driver: 'bull', config: {} },
+        }),
+      })
+      expect(res.status).toBe(501)
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('POST /schedules validates required fields', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    })
+    await gw.start()
+    try {
+      const noId = await fetch(`http://127.0.0.1:${port}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ workflowId: 'w', trigger: { kind: 'immediate' } }),
+      })
+      expect(noId.status).toBe(400)
+
+      const noTrigger = await fetch(`http://127.0.0.1:${port}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 's', workflowId: 'w' }),
+      })
+      expect(noTrigger.status).toBe(400)
+
+      const badTrigger = await fetch(`http://127.0.0.1:${port}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's',
+          workflowId: 'w',
+          trigger: { kind: 'interval' /* missing everyMs */ },
+        }),
+      })
+      expect(badTrigger.status).toBe(400)
+    } finally {
+      await gw.stop()
+    }
+  })
+})
+
 describe('Gateway runStore', () => {
   it('constructs a SqliteRunStore at <stateDir>/runs.sqlite by default', async () => {
     const gw = new Gateway({
