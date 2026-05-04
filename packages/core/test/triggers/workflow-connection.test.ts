@@ -1,10 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CronTrigger, createCronTrigger } from '../../src/triggers/cron.js'
-import { WorkflowRegistry } from '../../src/workflows/registry.js'
-import { WorkflowExecutor } from '../../src/workflows/executor.js'
-import { WorkflowPluginBase } from '../../src/workflows/base.js'
-import type { WorkflowConfig, WorkflowExecutionResult, WorkflowInvocation, WorkflowHealthStatus } from '../../src/workflows/types.js'
 import type { TriggerEvent } from '../../src/triggers/types.js'
+import { WorkflowPluginBase } from '../../src/workflows/base.js'
+import { WorkflowExecutor } from '../../src/workflows/executor.js'
+import { WorkflowRegistry } from '../../src/workflows/registry.js'
+import type { WorkflowConfig, WorkflowExecutionResult, WorkflowHealthStatus, WorkflowInvocation } from '../../src/workflows/types.js'
 
 class TestWorkflow extends WorkflowPluginBase {
   private executeHandler: (invocation: WorkflowInvocation) => Promise<WorkflowExecutionResult>

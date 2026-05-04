@@ -1,12 +1,12 @@
 import type {
-  Trigger,
   CronTrigger,
+  DedupePolicy,
   IntervalTrigger,
-  WebhookTrigger,
+  OverlapPolicy,
   PollTrigger,
   QueueTrigger,
-  DedupePolicy,
-  OverlapPolicy,
+  Trigger,
+  WebhookTrigger,
 } from './types.js'
 
 /** Generate a unique ID for a trigger */

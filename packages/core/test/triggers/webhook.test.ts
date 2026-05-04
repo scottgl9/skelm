@@ -1,7 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
-import { WebhookTrigger, createWebhookTrigger } from '../../src/triggers/webhook.js'
+import { describe, expect, it, vi } from 'vitest'
 import { TriggerState } from '../../src/triggers/base.js'
 import type { TriggerConfig } from '../../src/triggers/types.js'
+import { WebhookTrigger, createWebhookTrigger } from '../../src/triggers/webhook.js'
 
 describe('WebhookTrigger', () => {
   let portCounter = 3010

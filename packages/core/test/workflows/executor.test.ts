@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { WorkflowPluginBase, WorkflowState } from '../../src/workflows/base.js'
 import { WorkflowExecutor } from '../../src/workflows/executor.js'
 import { WorkflowRegistry } from '../../src/workflows/registry.js'
-import { WorkflowPluginBase, WorkflowState } from '../../src/workflows/base.js'
-import type { WorkflowConfig, WorkflowExecutionResult, WorkflowInvocation, WorkflowHealthStatus } from '../../src/workflows/types.js'
+import type { WorkflowConfig, WorkflowExecutionResult, WorkflowHealthStatus, WorkflowInvocation } from '../../src/workflows/types.js'
 
 class TestWorkflowPlugin extends WorkflowPluginBase {
   private mockExecute: (invocation: WorkflowInvocation) => Promise<WorkflowExecutionResult>
@@ -10,7 +10,7 @@ class TestWorkflowPlugin extends WorkflowPluginBase {
   constructor(
     id: string,
     name: string,
-    version: string = '1.0.0',
+    version = '1.0.0',
     execute?: (invocation: WorkflowInvocation) => Promise<WorkflowExecutionResult>
   ) {
     super(id, name, version)

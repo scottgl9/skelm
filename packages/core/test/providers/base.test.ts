@@ -2,16 +2,16 @@
  * Unit tests for ProviderPluginBase
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { PluginConfig, PluginHealthStatus } from '../../src/plugins.js'
 import {
-  ProviderPluginBase,
-  ProviderError,
   ProviderAuthenticationError,
+  ProviderError,
+  ProviderPluginBase,
   ProviderRateLimitError,
   ProviderTimeoutError,
 } from '../../src/providers/base.js'
 import type { ProviderCapabilities } from '../../src/providers/base.js'
-import type { PluginConfig, PluginHealthStatus } from '../../src/plugins.js'
 
 // Mock provider implementation for testing
 class TestProvider extends ProviderPluginBase {

@@ -1,5 +1,5 @@
 import { IntegrationBase } from './base.js'
-import type { GitHubConfig, GitHubWebhookEvent, GitHubIssueTrigger } from './types.js'
+import type { GitHubConfig, GitHubIssueTrigger, GitHubWebhookEvent } from './types.js'
 
 /**
  * GitHub integration for skelm pipelines

@@ -4,14 +4,14 @@ import type {
   BackendCapabilities,
   BackendContext,
   McpServerConfig,
-  SkelmBackend,
   ResolvedPolicy,
+  SkelmBackend,
 } from '@skelm/core'
 import { OpencodeClientWrapper } from './client.js'
 import {
+  buildPermissionAuditEntry,
   mapSkelmPermissionsToOpencode,
   validatePermissions,
-  buildPermissionAuditEntry,
 } from './permission-mapper.js'
 import type { OpencodeBackendOptions } from './types.js'
 

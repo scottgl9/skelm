@@ -6,17 +6,17 @@
  */
 
 import type {
-  SkelmBackend,
-  BackendCapabilities,
-  BackendContext,
   AgentRequest,
   AgentResponse,
+  BackendCapabilities,
+  BackendContext,
   InferRequest,
   InferResponse,
   ResolvedPolicy,
+  SkelmBackend,
 } from '@skelm/core'
+import { buildPermissionAuditEntry, validatePermissions } from './permission-mapper.js'
 import type { PiBackendOptions } from './types.js'
-import { validatePermissions, buildPermissionAuditEntry } from './permission-mapper.js'
 
 /**
  * Custom error types for Pi backend

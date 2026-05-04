@@ -9,12 +9,12 @@
  * - Config validation
  */
 
-import type { SkelmBackend, BackendCapabilities } from '../backend.js'
+import type { BackendCapabilities, SkelmBackend } from '../backend.js'
 import type {
-  ProviderModel,
+  PluginConfig,
   PluginHealthStatus,
   PluginLifecycle,
-  PluginConfig,
+  ProviderModel,
 } from '../plugins.js'
 
 /**

@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { IntegrationRegistry } from '../src/registry.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GitHubIntegration } from '../src/github.js'
+import { IntegrationRegistry } from '../src/registry.js'
 import { SlackIntegration } from '../src/slack.js'
 import type { GitHubConfig, SlackConfig } from '../src/types.js'
 

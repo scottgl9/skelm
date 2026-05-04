@@ -1,12 +1,12 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { Scheduler } from '../src/scheduler.js'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createCronTrigger,
   createIntervalTrigger,
-  createWebhookTrigger,
   createPollTrigger,
   createQueueTrigger,
+  createWebhookTrigger,
 } from '../src/builders.js'
+import { Scheduler } from '../src/scheduler.js'
 
 describe('Scheduler', () => {
   let mockRunStore: { putRun: ReturnType<typeof vi.fn> }

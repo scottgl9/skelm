@@ -5,7 +5,7 @@
  * Enables auto-selection of providers based on task requirements.
  */
 
-import type { ProviderModel, PluginHealthStatus } from '../plugins.js'
+import type { PluginHealthStatus, ProviderModel } from '../plugins.js'
 import type { ProviderCapabilities, ProviderSpecificCapabilities } from './base.js'
 
 /**

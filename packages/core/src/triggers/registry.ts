@@ -7,8 +7,8 @@ import type {
   TriggerConfig,
   TriggerEvent,
   TriggerEventHandler,
-  TriggerType,
   TriggerHealthStatus,
+  TriggerType,
 } from './types.js'
 
 /**

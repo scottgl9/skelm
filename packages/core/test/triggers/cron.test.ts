@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest'
-import { CronTrigger, createCronTrigger } from '../../src/triggers/cron.js'
+import { describe, expect, it, vi } from 'vitest'
 import { TriggerState } from '../../src/triggers/base.js'
+import { CronTrigger, createCronTrigger } from '../../src/triggers/cron.js'
 import type { TriggerConfig } from '../../src/triggers/types.js'
 
 describe('CronTrigger', () => {

@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest'
-import { SlackTrigger, createSlackTrigger } from '../../src/triggers/slack.js'
+import { describe, expect, it, vi } from 'vitest'
 import { TriggerState } from '../../src/triggers/base.js'
+import { SlackTrigger, createSlackTrigger } from '../../src/triggers/slack.js'
 import type { TriggerConfig } from '../../src/triggers/types.js'
 
 describe('SlackTrigger', () => {

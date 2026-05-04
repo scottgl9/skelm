@@ -10,7 +10,15 @@ describe('MetricsCollector', () => {
 
     bus.publish({ type: 'run.created', runId: 'r1', pipelineId: 'p', input: {}, at: 1 })
     bus.publish({ type: 'run.started', runId: 'r1', at: 2 })
-    bus.publish({ type: 'step.complete', runId: 'r1', stepId: 's1', kind: 'code', output: {}, durationMs: 42, at: 3 })
+    bus.publish({
+      type: 'step.complete',
+      runId: 'r1',
+      stepId: 's1',
+      kind: 'code',
+      output: {},
+      durationMs: 42,
+      at: 3,
+    })
     bus.publish({ type: 'run.completed', runId: 'r1', output: {}, durationMs: 50, at: 4 })
 
     bus.publish({ type: 'run.started', runId: 'r2', at: 5 })

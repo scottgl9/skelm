@@ -6,7 +6,7 @@
  */
 
 import type { SkelmBackend } from './backend.js'
-import type { Context, AgentStep } from './types.js'
+import type { AgentStep, Context } from './types.js'
 import type { RunMetadata } from './types.js'
 
 /**

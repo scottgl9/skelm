@@ -5,7 +5,7 @@
  */
 
 import { TriggerPluginBase } from './base.js'
-import type { TriggerConfig, TriggerType, TriggerEvent, TriggerHealthStatus } from './types.js'
+import type { TriggerConfig, TriggerEvent, TriggerHealthStatus, TriggerType } from './types.js'
 
 /**
  * Discord message structure
@@ -91,7 +91,7 @@ export interface DiscordTriggerConfig extends TriggerConfig {
  * consider using discord.js or discord.js-rest for full client functionality.
  */
 export class DiscordTrigger extends TriggerPluginBase {
-  private isRunning: boolean = false
+  private isRunning = false
 
   constructor(id: string, name: string, description?: string) {
     super(id, name, '1.0.0', description)

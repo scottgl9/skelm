@@ -5,8 +5,8 @@
  * cost, latency, and health status.
  */
 
-import type { ProviderQuery, ProviderRegistration, ProviderCapabilityRegistry } from './registry.js'
 import type { ProviderModel } from '../plugins.js'
+import type { ProviderCapabilityRegistry, ProviderQuery, ProviderRegistration } from './registry.js'
 import { globalCapabilityRegistry } from './registry.js'
 
 /**
@@ -176,8 +176,8 @@ function sortCandidates(
 
     // Cost optimization
     if (requirements.costOptimized) {
-      const costA = regA.capabilities.pricing?.inputPer1K ?? Infinity
-      const costB = regB.capabilities.pricing?.inputPer1K ?? Infinity
+      const costA = regA.capabilities.pricing?.inputPer1K ?? Number.POSITIVE_INFINITY
+      const costB = regB.capabilities.pricing?.inputPer1K ?? Number.POSITIVE_INFINITY
       if (costA !== costB) return costA - costB
     }
 

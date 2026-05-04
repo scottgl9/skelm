@@ -5,8 +5,8 @@
  * Perfect for file watchers, DB listeners, WebSocket subscriptions, etc.
  */
 
-import { TriggerPluginBase, TriggerError } from './base.js'
-import type { TriggerConfig, TriggerType, TriggerEvent, TriggerHealthStatus } from './types.js'
+import { TriggerError, TriggerPluginBase } from './base.js'
+import type { TriggerConfig, TriggerEvent, TriggerHealthStatus, TriggerType } from './types.js'
 
 /**
  * Custom trigger configuration
@@ -24,7 +24,7 @@ export interface CustomTriggerConfig extends TriggerConfig {
  * Custom trigger plugin
  */
 export class CustomTrigger extends TriggerPluginBase {
-  private isRunning: boolean = false
+  private isRunning = false
 
   constructor(id: string, name: string, description?: string) {
     super(id, name, '1.0.0', description)

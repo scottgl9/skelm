@@ -2,15 +2,15 @@
  * Unit tests for ProviderSelector
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ProviderCapabilities } from '../../src/providers/base.js'
 import { ProviderCapabilityRegistry } from '../../src/providers/registry.js'
 import {
-  selectProviderForTask,
-  selectProvider,
   ProviderSelectionError,
+  selectProvider,
+  selectProviderForTask,
 } from '../../src/providers/selector.js'
-import type { TaskRequirements, ProviderSelection } from '../../src/providers/selector.js'
-import type { ProviderCapabilities } from '../../src/providers/base.js'
+import type { ProviderSelection, TaskRequirements } from '../../src/providers/selector.js'
 
 function createTestRegistry(): ProviderCapabilityRegistry {
   const registry = new ProviderCapabilityRegistry()

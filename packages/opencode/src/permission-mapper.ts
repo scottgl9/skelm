@@ -1,4 +1,4 @@
-import type { ResolvedPolicy, ResolvedToolMatcher, NetworkPolicy } from '@skelm/core'
+import type { NetworkPolicy, ResolvedPolicy, ResolvedToolMatcher } from '@skelm/core'
 
 /**
  * Permission configuration matching opencode's permission system

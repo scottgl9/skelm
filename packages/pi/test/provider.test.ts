@@ -2,8 +2,8 @@
  * Unit tests for PiProvider
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { PiProvider, createPiProvider } from '../src/provider.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { type PiProvider, createPiProvider } from '../src/provider.js'
 import type { PiProviderConfig } from '../src/provider.js'
 
 // Mock child_process for PiProvider
