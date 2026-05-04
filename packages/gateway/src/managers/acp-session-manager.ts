@@ -117,11 +117,13 @@ export class AcpSessionManager {
    *
    * Either filter, or both, or pass a custom matcher().
    */
-  async prune(opts: {
-    expired?: boolean
-    olderThanMs?: number
-    matcher?: (session: AcpSession) => boolean
-  } = {}): Promise<readonly string[]> {
+  async prune(
+    opts: {
+      expired?: boolean
+      olderThanMs?: number
+      matcher?: (session: AcpSession) => boolean
+    } = {},
+  ): Promise<readonly string[]> {
     await this.ensureLoaded()
     const now = Date.now()
     const removed: string[] = []

@@ -4,40 +4,48 @@ import type { TriggerEvent } from '../../src/triggers/types.js'
 import { WorkflowPluginBase } from '../../src/workflows/base.js'
 import { WorkflowExecutor } from '../../src/workflows/executor.js'
 import { WorkflowRegistry } from '../../src/workflows/registry.js'
-import type { WorkflowConfig, WorkflowExecutionResult, WorkflowHealthStatus, WorkflowInvocation } from '../../src/workflows/types.js'
+import type {
+  WorkflowConfig,
+  WorkflowExecutionResult,
+  WorkflowHealthStatus,
+  WorkflowInvocation,
+} from '../../src/workflows/types.js'
 
 class TestWorkflow extends WorkflowPluginBase {
   private executeHandler: (invocation: WorkflowInvocation) => Promise<WorkflowExecutionResult>
-  
+
   constructor(
     id: string,
     name: string,
-    executeHandler?: (invocation: WorkflowInvocation) => Promise<WorkflowExecutionResult>
+    executeHandler?: (invocation: WorkflowInvocation) => Promise<WorkflowExecutionResult>,
   ) {
     super(id, name, '1.0.0')
-    this.executeHandler = executeHandler || (() => Promise.resolve({
-      executionId: 'exec-1',
-      workflowId: id,
-      success: true,
-      data: { processed: true },
-      startedAt: new Date(),
-      completedAt: new Date(),
-    }))
+    this.executeHandler =
+      executeHandler ||
+      (() =>
+        Promise.resolve({
+          executionId: 'exec-1',
+          workflowId: id,
+          success: true,
+          data: { processed: true },
+          startedAt: new Date(),
+          completedAt: new Date(),
+        }))
   }
-  
+
   override getPluginType(): 'workflow' {
     return 'workflow'
   }
-  
+
   override execute(invocation: WorkflowInvocation): Promise<WorkflowExecutionResult> {
     return this.executeHandler(invocation)
   }
-  
-  override protected doInitialize(config: WorkflowConfig): Promise<void> {
+
+  protected override doInitialize(config: WorkflowConfig): Promise<void> {
     return Promise.resolve()
   }
-  
-  override protected doHealthCheck(): Promise<WorkflowHealthStatus> {
+
+  protected override doHealthCheck(): Promise<WorkflowHealthStatus> {
     return Promise.resolve({ healthy: true, status: 'healthy' })
   }
 }
@@ -45,16 +53,16 @@ class TestWorkflow extends WorkflowPluginBase {
 describe('Trigger → Workflow Integration', () => {
   let workflowRegistry: WorkflowRegistry
   let workflowExecutor: WorkflowExecutor
-  
+
   beforeEach(() => {
     workflowRegistry = new WorkflowRegistry()
     workflowExecutor = new WorkflowExecutor(workflowRegistry)
   })
-  
+
   afterEach(async () => {
     await workflowRegistry.shutdown()
   })
-  
+
   describe('CronTrigger invokes workflow', () => {
     it('invokes workflow when trigger fires', async () => {
       // Set up workflow
@@ -73,7 +81,7 @@ describe('Trigger → Workflow Integration', () => {
       await workflow.initialize({ id: 'test-workflow' })
       await workflow.start()
       workflowRegistry.register(workflow)
-      
+
       // Set up trigger with workflow executor
       const trigger = createCronTrigger('cron-workflow-test', 'Cron Workflow Test')
       trigger.setWorkflowExecutor(workflowExecutor)
@@ -82,7 +90,7 @@ describe('Trigger → Workflow Integration', () => {
         schedule: '0 * * * *',
         workflowId: 'test-workflow',
       })
-      
+
       // Manually emit an event to test workflow invocation
       const mockEvent: TriggerEvent = {
         eventId: 'event-1',
@@ -92,16 +100,18 @@ describe('Trigger → Workflow Integration', () => {
         payload: { scheduled: true },
         metadata: { source: 'cron' },
       }
-      
+
       // Call emitEvent via a test hook
-      await (trigger as unknown as { emitEvent: (e: TriggerEvent) => Promise<void> }).emitEvent(mockEvent)
-      
+      await (trigger as unknown as { emitEvent: (e: TriggerEvent) => Promise<void> }).emitEvent(
+        mockEvent,
+      )
+
       // Verify workflow was invoked
       expect(capturedInvocation).not.toBeNull()
       expect(capturedInvocation?.workflowId).toBe('test-workflow')
       expect(capturedInvocation?.triggerEvent.eventId).toBe('event-1')
     })
-    
+
     it('passes input to workflow', async () => {
       let capturedInput: unknown = null
       const workflow = new TestWorkflow('input-workflow', 'Input Workflow', async (invocation) => {
@@ -118,7 +128,7 @@ describe('Trigger → Workflow Integration', () => {
       await workflow.initialize({ id: 'input-workflow' })
       await workflow.start()
       workflowRegistry.register(workflow)
-      
+
       const trigger = createCronTrigger('cron-input-test', 'Cron Input Test')
       trigger.setWorkflowExecutor(workflowExecutor)
       await trigger.initialize({
@@ -127,7 +137,7 @@ describe('Trigger → Workflow Integration', () => {
         workflowId: 'input-workflow',
         input: { custom: 'data' },
       })
-      
+
       const mockEvent: TriggerEvent = {
         eventId: 'event-1',
         triggerId: 'cron-input-test',
@@ -136,29 +146,35 @@ describe('Trigger → Workflow Integration', () => {
         payload: {},
         metadata: { source: 'cron' },
       }
-      
-      await (trigger as unknown as { emitEvent: (e: TriggerEvent) => Promise<void> }).emitEvent(mockEvent)
-      
+
+      await (trigger as unknown as { emitEvent: (e: TriggerEvent) => Promise<void> }).emitEvent(
+        mockEvent,
+      )
+
       expect(capturedInput).toEqual({ custom: 'data' })
     })
-    
+
     it('passes context from event metadata to workflow', async () => {
       let capturedContext: Record<string, unknown> | undefined
-      const workflow = new TestWorkflow('context-workflow', 'Context Workflow', async (invocation) => {
-        capturedContext = invocation.context
-        return {
-          executionId: 'exec-1',
-          workflowId: 'context-workflow',
-          success: true,
-          data: {},
-          startedAt: new Date(),
-          completedAt: new Date(),
-        }
-      })
+      const workflow = new TestWorkflow(
+        'context-workflow',
+        'Context Workflow',
+        async (invocation) => {
+          capturedContext = invocation.context
+          return {
+            executionId: 'exec-1',
+            workflowId: 'context-workflow',
+            success: true,
+            data: {},
+            startedAt: new Date(),
+            completedAt: new Date(),
+          }
+        },
+      )
       await workflow.initialize({ id: 'context-workflow' })
       await workflow.start()
       workflowRegistry.register(workflow)
-      
+
       const trigger = createCronTrigger('cron-context-test', 'Cron Context Test')
       trigger.setWorkflowExecutor(workflowExecutor)
       await trigger.initialize({
@@ -166,25 +182,27 @@ describe('Trigger → Workflow Integration', () => {
         schedule: '0 * * * *',
         workflowId: 'context-workflow',
       })
-      
+
       const mockEvent: TriggerEvent = {
         eventId: 'event-1',
         triggerId: 'cron-context-test',
         triggerType: 'cron',
         timestamp: new Date(),
         payload: {},
-        metadata: { 
+        metadata: {
           source: 'cron',
           userId: 'user-123',
           channelId: 'channel-456',
         },
       }
-      
-      await (trigger as unknown as { emitEvent: (e: TriggerEvent) => Promise<void> }).emitEvent(mockEvent)
-      
+
+      await (trigger as unknown as { emitEvent: (e: TriggerEvent) => Promise<void> }).emitEvent(
+        mockEvent,
+      )
+
       expect(capturedContext).toEqual({ userId: 'user-123', channelId: 'channel-456' })
     })
-    
+
     it('handles workflow execution errors gracefully', async () => {
       const workflow = new TestWorkflow('error-workflow', 'Error Workflow', async () => {
         throw new Error('Workflow execution failed')
@@ -192,7 +210,7 @@ describe('Trigger → Workflow Integration', () => {
       await workflow.initialize({ id: 'error-workflow' })
       await workflow.start()
       workflowRegistry.register(workflow)
-      
+
       const trigger = createCronTrigger('cron-error-test', 'Cron Error Test')
       trigger.setWorkflowExecutor(workflowExecutor)
       await trigger.initialize({
@@ -200,7 +218,7 @@ describe('Trigger → Workflow Integration', () => {
         schedule: '0 * * * *',
         workflowId: 'error-workflow',
       })
-      
+
       const mockEvent: TriggerEvent = {
         eventId: 'event-1',
         triggerId: 'cron-error-test',
@@ -209,10 +227,12 @@ describe('Trigger → Workflow Integration', () => {
         payload: {},
         metadata: { source: 'cron' },
       }
-      
+
       // Should not throw even if workflow fails
       await expect(
-        (trigger as unknown as { emitEvent: (e: TriggerEvent) => Promise<void> }).emitEvent(mockEvent)
+        (trigger as unknown as { emitEvent: (e: TriggerEvent) => Promise<void> }).emitEvent(
+          mockEvent,
+        ),
       ).resolves.not.toThrow()
     })
   })

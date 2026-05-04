@@ -281,7 +281,9 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
         created_at: Math.floor(Date.now() / 1000),
         model: body.model,
         status: final.status === 'completed' ? 'completed' : 'failed',
-        output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: content }] }],
+        output: [
+          { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: content }] },
+        ],
         ...(final.error !== undefined && {
           error: { message: final.error.message ?? String(final.error) },
         }),
@@ -688,7 +690,10 @@ async function runPipelineSync(
   }
   const pipeline = extractPipeline(mod)
   if (pipeline === undefined) {
-    throw createError({ statusCode: 422, message: 'workflow module did not export a default pipeline' })
+    throw createError({
+      statusCode: 422,
+      message: 'workflow module did not export a default pipeline',
+    })
   }
   const enforcement = gateway.enforcement
   const runner = new Runner({
@@ -702,11 +707,10 @@ async function runPipelineSync(
   const runId = crypto.randomUUID()
   gateway.registerRun(runId, controller, runner)
   try {
-    const handle = runner.start(
-      pipeline as Parameters<Runner['start']>[0],
-      input as never,
-      { runId, signal: controller.signal },
-    )
+    const handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
+      runId,
+      signal: controller.signal,
+    })
     const final = await handle.wait()
     return {
       runId: final.runId,

@@ -24,7 +24,9 @@ describe('parseCron', () => {
   it('parses ranges and lists', () => {
     const p = parseCron('1,5,10-12 9-17 * * 1-5')
     expect(Array.from(p?.minute ?? []).sort((a, b) => a - b)).toEqual([1, 5, 10, 11, 12])
-    expect(Array.from(p?.hour ?? []).sort((a, b) => a - b)).toEqual([9, 10, 11, 12, 13, 14, 15, 16, 17])
+    expect(Array.from(p?.hour ?? []).sort((a, b) => a - b)).toEqual([
+      9, 10, 11, 12, 13, 14, 15, 16, 17,
+    ])
     expect(Array.from(p?.dayOfWeek ?? []).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5])
   })
 
