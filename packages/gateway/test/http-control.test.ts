@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { code, parallel, pipeline } from '@skelm/core'
 import { Gateway, type SuspendApprovalGate } from '../src/index.js'
 
 let stateDir: string
@@ -371,6 +372,148 @@ describe('Gateway HTTP /schedules', () => {
         }),
       })
       expect(badTrigger.status).toBe(400)
+    } finally {
+      await gw.stop()
+    }
+  })
+})
+
+describe('Gateway HTTP /pipelines', () => {
+  it('GET /pipelines lists registry entries', async () => {
+    // Project with a workflow file the registry can discover.
+    const projectRoot = await mkdtemp(join(tmpdir(), 'skelm-pl-proj-'))
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    await fs.writeFile(
+      join(projectRoot, 'workflows/hello.workflow.ts'),
+      'export default { id: "hello", steps: [] }',
+    )
+
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {
+        registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } },
+      },
+    })
+    await gw.start()
+    try {
+      const list = (await fetch(`http://127.0.0.1:${port}/pipelines`).then((r) => r.json())) as Array<{
+        id: string
+      }>
+      expect(list.map((p) => p.id)).toEqual(['workflows/hello.workflow.ts'])
+    } finally {
+      await gw.stop()
+      await rm(projectRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('GET /pipelines/:id returns the serialized graph when a loader is configured', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'skelm-pl-proj-'))
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    await fs.writeFile(join(projectRoot, 'workflows/x.workflow.ts'), 'export default {}')
+
+    const wf = pipeline({
+      id: 'demo',
+      description: 'a demo pipeline',
+      steps: [
+        code({ id: 'first', run: () => ({}) }),
+        parallel({
+          id: 'fan-out',
+          steps: [
+            code({ id: 'a', run: () => ({}) }),
+            code({ id: 'b', run: () => ({}) }),
+          ],
+        }),
+      ],
+    })
+
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      loadWorkflow: async () => wf,
+      config: {
+        registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } },
+      },
+    })
+    await gw.start()
+    try {
+      const detail = (await fetch(
+        `http://127.0.0.1:${port}/pipelines/${encodeURIComponent('workflows/x.workflow.ts')}`,
+      ).then((r) => r.json())) as {
+        id: string
+        description?: string
+        graph: { steps: Array<{ id: string; kind: string; children?: Array<{ id: string }> }> }
+        input: unknown
+        output: unknown
+      }
+      expect(detail.id).toBe('demo')
+      expect(detail.description).toBe('a demo pipeline')
+      expect(detail.graph.steps.map((s) => s.kind)).toEqual(['code', 'parallel'])
+      expect(detail.graph.steps[1]?.children?.map((c) => c.id)).toEqual(['a', 'b'])
+      // JSON Schema serialization not yet implemented.
+      expect(detail.input).toBeNull()
+      expect(detail.output).toBeNull()
+    } finally {
+      await gw.stop()
+      await rm(projectRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('GET /pipelines/:id returns metadata only when no loader is configured', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'skelm-pl-proj-'))
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    await fs.writeFile(join(projectRoot, 'workflows/y.workflow.ts'), 'export default {}')
+
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      // no loadWorkflow
+      config: {
+        registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } },
+      },
+    })
+    await gw.start()
+    try {
+      const detail = (await fetch(
+        `http://127.0.0.1:${port}/pipelines/${encodeURIComponent('workflows/y.workflow.ts')}`,
+      ).then((r) => r.json())) as { id: string; graph: unknown; input: unknown; output: unknown }
+      expect(detail.id).toBe('workflows/y.workflow.ts')
+      expect(detail.graph).toBeNull()
+      expect(detail.input).toBeNull()
+      expect(detail.output).toBeNull()
+    } finally {
+      await gw.stop()
+      await rm(projectRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('GET /pipelines/:id 404s for unknown ids', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    })
+    await gw.start()
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:${port}/pipelines/${encodeURIComponent('does/not/exist.ts')}`,
+      )
+      expect(res.status).toBe(404)
     } finally {
       await gw.stop()
     }

@@ -137,6 +137,8 @@ export {
 } from './errors.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
+export { describePipeline, describeStep } from './introspect.js'
+export type { DescribedStep, PipelineDescription } from './introspect.js'
 export * from './mcp/index.js'
 export * from './openai/index.js'
 export { ModelProviderBase, ModelRegistry, executeLlmStep } from './model-provider.js'
