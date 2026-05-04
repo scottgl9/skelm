@@ -3,36 +3,23 @@
  */
 
 export interface PiBackendOptions {
-  /** Pi agent command (defaults to 'pi') */
+  /** Backend id (default: 'pi') */
+  id?: string
+  /** Human-readable label */
+  label?: string
+  /** Path to the pi binary (default: 'pi' on PATH) */
   command?: string
+  /** Provider name (e.g. 'llamacpp', 'anthropic'). Omit to use pi's default. */
+  provider?: string
+  /** Model ID (e.g. 'qwen36'). Omit to use pi's default. */
+  model?: string
   /** Working directory for the pi process */
   cwd?: string
-  /** Additional arguments to pass to pi */
-  args?: readonly string[]
-  /** Request timeout in ms */
+  /** Request timeout in ms (default: 300_000 = 5 min) */
   timeout?: number
-  /** Maximum retries on failure */
-  maxRetries?: number
-  /** Log level */
-  logLevel?: 'debug' | 'info' | 'warn' | 'error'
-}
-
-export interface PiPermissionConfig {
-  /** Allow bash command execution */
-  allowBash: boolean
-  /** Allow file read operations */
-  allowFsRead: boolean
-  /** Allow file write operations */
-  allowFsWrite: boolean
-  /** Allowed executable patterns */
-  allowedExecutables: readonly string[]
-  /** Allowed MCP servers */
-  allowedMcpServers: readonly string[]
-}
-
-export interface MappedPermissions {
-  /** Commands that are allowed */
-  allowed: readonly string[]
-  /** Commands that are denied */
-  denied: readonly string[]
+  /**
+   * Maximum simultaneous pi processes. Defaults to 4. Set to 0 for unlimited.
+   * Excess calls are queued until a slot opens.
+   */
+  maxConcurrent?: number
 }

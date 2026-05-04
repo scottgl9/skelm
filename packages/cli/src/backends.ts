@@ -195,19 +195,19 @@ function createBackend(backendId: string, config: SkelmConfig) {
     case 'pi': {
       const cmd = readString(entry.command)
       const cwd = readString(entry.cwd)
-      const args = readStringArray(entry.args)
+      const provider = readString(entry.provider)
+      const model = readString(entry.model)
       const timeout = readNumber(entry.timeout)
-      const maxRetries = readNumber(entry.maxRetries)
-      const logLevel = readString(entry.logLevel) as 'debug' | 'info' | 'warn' | 'error' | undefined
+      const maxConcurrent = readNumber(entry.maxConcurrent)
 
       return createPiBackendFromConfig({
         ...(cmd !== undefined && { command: cmd }),
         ...(cwd !== undefined && { cwd }),
-        ...(args !== undefined && { args }),
+        ...(provider !== undefined && { provider }),
+        ...(model !== undefined && { model }),
         ...(timeout !== undefined && { timeout }),
-        ...(maxRetries !== undefined && { maxRetries }),
-        ...(logLevel !== undefined && { logLevel }),
-      } as any)
+        ...(maxConcurrent !== undefined && { maxConcurrent }),
+      })
     }
     default:
       throw new Error(`unsupported backend in CLI config: ${backendId}`)

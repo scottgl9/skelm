@@ -1,5 +1,13 @@
+value:PiBackendAuthenticationError
+value:PiBackendError
+value:PiBackendRateLimitError
+value:PiBackendTimeoutError
 value:PiProvider
+value:PiRpcClient
 value:createPiBackend
 value:createPiBackendFromConfig
 value:createPiProvider
+type:PiBackendConfig
 type:PiBackendOptions
+type:PiRpcClientOptions
+type:PiRpcResponse
