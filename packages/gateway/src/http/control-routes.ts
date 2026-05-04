@@ -790,6 +790,8 @@ function scheduleTriggerToSpec(
   switch (trigger.kind) {
     case 'immediate':
       return { kind: 'immediate', id, workflowId }
+    case 'manual':
+      return { kind: 'manual', id, workflowId }
     case 'at': {
       const when = trigger.when
       if (typeof when !== 'string') return 'invalid'

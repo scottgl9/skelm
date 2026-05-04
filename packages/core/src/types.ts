@@ -48,6 +48,12 @@ export type WorkspaceConfig =
       readonly mode: 'ephemeral'
       readonly prefix?: string
       readonly cleanup?: 'on-step-end' | 'on-run-end' | 'on-success'
+      /**
+       * Optional seed: copy files/directories into the workspace before
+       * the step runs. Paths are resolved relative to `process.cwd()`.
+       * Example: `seed: { copy: ['./src/', './package.json'] }`
+       */
+      readonly seed?: { readonly copy: readonly string[] }
     }
   | {
       readonly mode: 'mounted'
@@ -103,6 +109,11 @@ export interface Context<TInput = unknown> {
   readonly signal: AbortSignal
   readonly state: State
   readonly workspace?: WorkspaceHandle
+  /**
+   * Current item when inside a `forEach` step. Undefined outside forEach.
+   * Typed as `unknown`; cast to your item type in the step's `run` function.
+   */
+  readonly item?: unknown
 }
 
 /** Per-step retry policy applied by the runner around step execution. */
