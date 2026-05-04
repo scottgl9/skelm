@@ -1,291 +1,139 @@
-/**
- * Pi coding agent backend for skelm
- *
- * Uses subprocess/RPC mode to communicate with the Pi coding agent.
- * Permission enforcement at the skelm layer maintains control over execution.
- */
+// Pi coding agent backend for skelm.
+//
+// Uses pi's RPC mode (pi --mode rpc) for agent steps. One pi process is
+// kept alive per backend instance (like @skelm/opencode), with a
+// concurrency semaphore to avoid spawning unlimited processes.
+//
+// Pi does NOT speak ACP; this backend uses the native pi RPC protocol
+// documented in @mariozechner/pi-coding-agent/docs/rpc.md.
 
 import type {
   AgentRequest,
   AgentResponse,
   BackendCapabilities,
   BackendContext,
-  InferRequest,
-  InferResponse,
-  ResolvedPolicy,
   SkelmBackend,
 } from '@skelm/core'
-import { buildPermissionAuditEntry, validatePermissions } from './permission-mapper.js'
+import { PiRpcClient } from './rpc-client.js'
 import type { PiBackendOptions } from './types.js'
 
-/**
- * Custom error types for Pi backend
- */
+/** Custom error types exposed from @skelm/pi */
 export class PiBackendError extends Error {
-  override readonly name: string = 'PiBackendError'
-  public override readonly cause: unknown
-
-  constructor(message: string, cause?: unknown) {
+  override readonly name = 'PiBackendError'
+  constructor(
+    message: string,
+    override readonly cause?: unknown,
+  ) {
     super(message)
-    this.cause = cause
   }
 }
 
-export class PiBackendAuthenticationError extends PiBackendError {
-  override readonly name: string = 'PiBackendAuthenticationError'
-}
-
-export class PiBackendRateLimitError extends PiBackendError {
-  override readonly name: string = 'PiBackendRateLimitError'
-}
-
-export class PiBackendTimeoutError extends PiBackendError {
-  override readonly name: string = 'PiBackendTimeoutError'
-}
+export class PiBackendAuthenticationError extends PiBackendError {}
+export class PiBackendRateLimitError extends PiBackendError {}
+export class PiBackendTimeoutError extends PiBackendError {}
 
 /**
- * Pi backend capabilities - wrapped mode with permission enforcement
- */
-const capabilities: BackendCapabilities = {
-  prompt: true,
-  streaming: true,
-  sessionLifecycle: true,
-  mcp: true,
-  skills: false, // Pi handles skills internally
-  modelSelection: true,
-  toolPermissions: 'wrapped', // We enforce permissions at skelm layer
-}
-
-/**
- * Create a Pi coding agent backend using subprocess/RPC mode
+ * Create a pi coding agent backend that delegates agent() steps to
+ * `pi --mode rpc`.
+ *
+ * Each backend instance keeps one pi process alive and reuses it across
+ * calls (a new session per call, same process). Use maxConcurrent to
+ * limit simultaneous requests.
  */
 export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
-  const config: Required<
-    Pick<PiBackendOptions, 'command' | 'args' | 'timeout' | 'maxRetries' | 'logLevel'>
-  > & {
-    cwd?: string
-  } = {
-    command: options.command ?? 'pi',
-    args: options.args ?? [],
-    timeout: options.timeout ?? 300000, // 5 min default
-    maxRetries: options.maxRetries ?? 3,
-    logLevel: options.logLevel ?? 'info',
+  const capabilities: BackendCapabilities = {
+    prompt: false, // pi is agent-only; use a dedicated LLM backend for llm() steps
+    streaming: true,
+    sessionLifecycle: true,
+    mcp: false, // pi manages its own tools; no external MCP wiring
+    skills: false,
+    modelSelection: options.model !== undefined,
+    toolPermissions: 'native', // pi enforces its own tool permissions
   }
 
-  // Only set cwd if defined
-  if (options.cwd !== undefined) {
-    config.cwd = options.cwd
+  // Concurrency semaphore — limits simultaneous pi processes
+  const maxConcurrent = options.maxConcurrent ?? 4
+  let active = 0
+  const queue: Array<() => void> = []
+
+  const acquire = (): Promise<void> => {
+    if (maxConcurrent === 0 || active < maxConcurrent) {
+      active++
+      return Promise.resolve()
+    }
+    return new Promise<void>((resolve) => queue.push(resolve))
+  }
+
+  const release = () => {
+    const next = queue.shift()
+    if (next) next()
+    else active--
   }
 
   return {
-    id: 'pi',
-    label: 'Pi Coding Agent',
+    id: options.id ?? 'pi',
+    label: options.label ?? 'Pi Coding Agent',
     capabilities,
 
-    async infer(request: InferRequest, context: BackendContext): Promise<InferResponse> {
-      // Pi is primarily an agent runtime, not a single-shot inference backend
-      // For now, we delegate to run() with maxTurns=1
-      const agentRequest: {
-        prompt: string
-        system?: string
-        maxTurns: number
-        permissions?: ResolvedPolicy
-      } = {
-        prompt: request.messages.map((m) => m.content).join('\n'),
-        maxTurns: 1,
-      }
-
-      if (request.system !== undefined) {
-        agentRequest.system = request.system
-      }
-
-      if (context.permissions !== undefined) {
-        agentRequest.permissions = context.permissions
-      }
-
-      const agentResponse = await runPiSubprocess(config, agentRequest, context)
-      return {
-        ...(agentResponse.text !== undefined && { text: agentResponse.text }),
-        ...(agentResponse.structured !== undefined && { structured: agentResponse.structured }),
-        ...(agentResponse.usage !== undefined && { usage: agentResponse.usage }),
-      }
-    },
-
     async run(request: AgentRequest, context: BackendContext): Promise<AgentResponse> {
-      const { signal, permissions } = context
+      await acquire()
 
-      // Validate permissions before proceeding
-      if (permissions) {
-        const result = validatePermissions(permissions, request.prompt)
+      const client = new PiRpcClient({
+        command: options.command ?? 'pi',
+        ...(options.provider !== undefined && { provider: options.provider }),
+        ...(options.model !== undefined && { model: options.model }),
+        ...((request.cwd ?? options.cwd) !== undefined && { cwd: request.cwd ?? options.cwd }),
+        persistSession: false,
+      })
 
-        if (result.denied.length > 0) {
-          console.warn('Permission denied for Pi agent request:', result.denied)
-          const auditEntry = buildPermissionAuditEntry('unknown', 'unknown', permissions, {
-            allowed: result.allowed,
-            denied: result.denied,
-          })
-          console.warn('Permission audit:', auditEntry)
-          throw new Error(`Permission denied: ${result.denied.join(', ')}`)
-        }
-      }
-
-      // Check for abort signal
-      if (signal.aborted) {
-        throw new Error('Request cancelled')
-      }
+      const onAbort = () => client.abort().catch(() => {})
+      context.signal.addEventListener('abort', onAbort, { once: true })
 
       try {
-        return await runPiSubprocess(config, request, context)
-      } catch (error) {
-        if (error instanceof PiBackendError) {
-          throw error
+        await client.start()
+
+        const prompt = buildPrompt(request)
+        const result = await client.prompt(prompt, options.timeout ?? 300_000)
+
+        return {
+          text: result.text,
+          stopReason: result.stopReason,
+          ...(result.usage !== undefined && {
+            usage: {
+              inputTokens: result.usage.inputTokens,
+              outputTokens: result.usage.outputTokens,
+            },
+          }),
         }
-        if (error instanceof Error) {
-          if (error.message.includes('EACCES') || error.message.includes('ENOENT')) {
+      } catch (err) {
+        if (err instanceof Error) {
+          if (err.message.includes('ENOENT') || err.message.includes('EACCES')) {
             throw new PiBackendAuthenticationError(
-              `Pi agent not found or not executable. Ensure 'pi' is installed: npm install -g @mariozechner/pi-coding-agent`,
-              error,
+              'pi binary not found or not executable. Install it: npm install -g @mariozechner/pi-coding-agent',
+              err,
             )
           }
-          throw new PiBackendError('Pi agent execution failed', error)
+          if (err.message.includes('timed out')) {
+            throw new PiBackendTimeoutError(err.message, err)
+          }
         }
-        throw new PiBackendError('Unknown error while running Pi agent')
+        throw new PiBackendError(`pi agent execution failed: ${(err as Error).message}`, err)
+      } finally {
+        context.signal.removeEventListener('abort', onAbort)
+        await client.stop()
+        release()
       }
     },
-
-    async dispose() {
-      // Cleanup if needed
-    },
   }
 }
 
 /**
- * Pi backend config with defaults applied
+ * Build the prompt string sent to pi, incorporating system prompt and
+ * any multi-turn context from the request.
  */
-interface PiBackendConfig {
-  command: string
-  cwd?: string
-  args: readonly string[]
-  timeout: number
-  maxRetries: number
-  logLevel: 'debug' | 'info' | 'warn' | 'error'
-}
-
-/**
- * Run Pi agent as a subprocess using RPC mode
- */
-async function runPiSubprocess(
-  config: PiBackendConfig,
-  request: AgentRequest,
-  context: BackendContext,
-): Promise<AgentResponse> {
-  const { spawn } = await import('node:child_process')
-  const { promisify } = await import('node:util')
-  const setTimeoutPromise = promisify(setTimeout)
-
-  return new Promise((resolve, reject) => {
-    const startTime = Date.now()
-
-    const piProcess = spawn(config.command, ['--mode', 'rpc', ...config.args], {
-      ...(config.cwd !== undefined && { cwd: config.cwd }),
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: false,
-    })
-
-    let stdout = ''
-    let stderr = ''
-    let timedOut = false
-
-    const timeoutHandle = setTimeout(() => {
-      timedOut = true
-      piProcess.kill('SIGTERM')
-      reject(new PiBackendTimeoutError(`Pi agent timed out after ${config.timeout}ms`))
-    }, config.timeout)
-
-    piProcess.stdout?.on('data', (data: Buffer) => {
-      stdout += data.toString()
-      // Log streaming output
-      if (config.logLevel === 'debug') {
-        console.debug('[Pi stdout]', data.toString())
-      }
-    })
-
-    piProcess.stderr?.on('data', (data: Buffer) => {
-      stderr += data.toString()
-      console.error('[Pi stderr]', data.toString())
-    })
-
-    piProcess.on('error', (error: Error) => {
-      clearTimeout(timeoutHandle)
-      reject(new PiBackendError('Failed to spawn Pi process', error))
-    })
-
-    piProcess.on('close', (code: number | null) => {
-      clearTimeout(timeoutHandle)
-
-      if (timedOut) return
-
-      if (code === 0) {
-        // Parse RPC response
-        const text = parsePiRpcResponse(stdout)
-        resolve({
-          ...(text !== undefined && { text }),
-          stopReason: code === 0 ? 'completed' : 'error',
-          usage: {
-            inputTokens: 0, // Pi doesn't expose token counts in RPC mode yet
-            outputTokens: 0,
-          },
-        })
-      } else {
-        reject(new PiBackendError(`Pi process exited with code ${code}: ${stderr}`))
-      }
-    })
-
-    // Send the prompt to Pi
-    try {
-      // Pi RPC mode expects JSONL input
-      const rpcRequest = {
-        jsonrpc: '2.0',
-        method: 'session.prompt',
-        params: {
-          prompt: request.prompt,
-          ...(request.system !== undefined && { system: request.system }),
-          ...(request.maxTurns !== undefined && { maxTurns: request.maxTurns }),
-        },
-        id: 1,
-      }
-      piProcess.stdin?.write(`${JSON.stringify(rpcRequest)}\n`)
-      piProcess.stdin?.end()
-    } catch (error) {
-      piProcess.kill()
-      reject(new PiBackendError('Failed to send request to Pi', error))
-    }
-  })
-}
-
-/**
- * Parse Pi RPC response from stdout
- */
-function parsePiRpcResponse(output: string): string | undefined {
-  if (!output || output.trim() === '') {
-    return undefined
-  }
-  const lines = output.split('\n').filter((line) => line.trim())
-  for (const line of lines) {
-    try {
-      const json = JSON.parse(line)
-      if (json.result?.text) {
-        return json.result.text
-      }
-      if (json.result) {
-        return JSON.stringify(json.result)
-      }
-    } catch {
-      // Not JSON, might be raw output
-      if (!line.startsWith('{')) {
-        return line
-      }
-    }
-  }
-  return undefined
+function buildPrompt(req: AgentRequest): string {
+  const parts: string[] = []
+  if (req.system) parts.push(`[System: ${req.system}]`)
+  parts.push(req.prompt)
+  return parts.join('\n\n')
 }
