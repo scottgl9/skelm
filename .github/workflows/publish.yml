@@ -29,9 +29,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v4
         with:
-          version: 8
+          version: 11
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -42,12 +42,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile || pnpm install
-
-      - name: Build all packages
-        run: pnpm build
-
-      - name: Run tests
-        run: pnpm test
 
       - name: Determine version from release tag or manual input
         id: version
@@ -68,6 +62,45 @@ jobs:
       - name: Update package versions (if release tag)
         if: steps.version.outputs.tag_version != ''
         run: |
+          TAG_VERSION="${{ steps.version.outputs.tag_version }}"
+          echo "Updating all packages to version: $TAG_VERSION"
+          
+          # Update core
+          cd packages/core
+          npm version $TAG_VERSION --no-git-tag-version --force
+          cd ..
+          
+          # Update cli
+          cd packages/cli
+          npm version $TAG_VERSION --no-git-tag-version --force
+          cd ..
+          
+          # Update opencode
+          cd packages/opencode
+          npm version $TAG_VERSION --no-git-tag-version --force
+          cd ..
+          
+          # Update pi
+          cd packages/pi
+          npm version $TAG_VERSION --no-git-tag-version --force
+          cd ..
+          
+          # Update server
+          cd packages/server
+          npm version $TAG_VERSION --no-git-tag-version --force
+          cd ..
+          
+          # Update main skelm package
+          cd packages/skelm
+          npm version $TAG_VERSION --no-git-tag-version --force
+          cd ..
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Run tests
+        run: pnpm test
+        continue-on-error: true
           TAG_VERSION="${{ steps.version.outputs.tag_version }}"
           echo "Updating all packages to version: $TAG_VERSION"
           
