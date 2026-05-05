@@ -1,13 +1,14 @@
 {
   "name": "skelm",
-  "version": "0.1.0",
+  "version": "0.3.3",
   "description": "skelm — TypeScript framework for secure, agentic, long-running workflows",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
   "homepage": "https://github.com/scottgl9/skelm#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/scottgl9/skelm.git"
+    "url": "git+https://github.com/scottgl9/skelm.git",
+    "directory": "packages/skelm"
   },
   "bugs": {
     "url": "https://github.com/scottgl9/skelm/issues"
@@ -37,10 +38,14 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "../../README.md", "../../LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com/scottgl9",
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

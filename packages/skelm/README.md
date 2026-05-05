@@ -1,20 +1,35 @@
-# skelm
+<h1 align="center">skelm</h1>
 
-The top-level meta package for [skelm](https://github.com/scottgl9/skelm) — a TypeScript framework for secure, agentic, long-running workflows.
+<p align="center">
+  <strong>Build secure, agentic, long-running workflows in TypeScript. Run them anywhere Node runs.</strong>
+</p>
 
-This is what customers install. It re-exports everything from [`@skelm/core`](../core/README.md) and ships the `skelm` CLI bin sourced from [`@skelm/cli`](../cli/README.md).
+<p align="center">
+  <a href="https://www.npmjs.com/package/skelm"><img src="https://img.shields.io/npm/v/skelm" alt="npm version" /></a>
+  <a href="https://github.com/scottgl9/skelm/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
+</p>
+
+---
+
+This is the meta-package that ships the `skelm` CLI bin and re-exports the runtime. It depends on:
+
+- **[@skelm/core](https://www.npmjs.com/package/@skelm/core)** — runtime, types, builders, permissions, event bus
+- **[@skelm/cli](https://www.npmjs.com/package/@skelm/cli)** — command-line interface and programmatic primitives
+
+For the long-running orchestrator (HTTP, registries, audit, agent lifecycle), install [`@skelm/gateway`](https://www.npmjs.com/package/@skelm/gateway) separately so this meta package stays small for users who only need the authoring + runner surface.
 
 ## Install
 
-```sh
-npm i -g skelm
-skelm --help
+```bash
+npm install -g skelm
+skelm init my-bot && cd my-bot
+skelm run workflows/hello.workflow.ts
 ```
 
-For a project-local install:
+For project-local use:
 
-```sh
-npm i skelm zod
+```bash
+npm install skelm zod
 ```
 
 ## Quickstart
@@ -31,32 +46,46 @@ export default pipeline({
   steps: [
     code({
       id: 'greet',
-      run: (ctx) => ({ greeting: `hello, ${(ctx.input as { name: string }).name}` }),
+      run: (ctx) => ({ greeting: `hello, ${ctx.input.name}` }),
     }),
   ],
 })
 ```
 
-```sh
+```bash
 skelm run my.workflow.ts --input '{"name":"world"}'
 # → {"greeting":"hello, world"}
 ```
 
-See the project [README](../../README.md) for the full pitch and the [docs](../../docs/) for guides, recipes, and reference.
+## Usage
+
+```bash
+skelm init                            # Scaffold a project
+skelm run workflow.ts                 # Run a workflow once
+skelm run workflow.ts --events json   # Stream JSON events to stderr
+skelm gateway start                   # Start the long-running orchestrator
+skelm gateway start --detach          # Fork the gateway in the background
+skelm gateway status                  # Inspect a running gateway
+skelm gateway stop                    # Stop it
+```
 
 ## What is exported
 
 Everything from `@skelm/core`:
 
-- Builders — `pipeline()`, `code()`, `llm()`, `agent()`, `parallel()`, `forEach()`, `branch()`, `loop()`, `wait()`, `pipelineStep()`
-- Runtime — `runPipeline()`, `RunOptions`
-- Types — `Pipeline`, `Step`, `Context`, `Run`, `StepResult`, `RunMetadata`, etc.
-- Schemas — `SkelmSchema`, `SchemaValidationError`
-- Events — `EventBus`, `RunEvent`, `RunEventType`
-- Permissions — `AgentPermissions`, `TrustEnforcer`, `resolvePermissions`
-- Errors — `StepError`, `RunCancelledError`, `serializeError`
+- **Builders** — `pipeline()`, `code()`, `llm()`, `agent()`, `parallel()`, `forEach()`, `branch()`, `loop()`, `wait()`, `pipelineStep()`
+- **Runtime** — `runPipeline()`, `Runner`, `RunOptions`
+- **Types** — `Pipeline`, `Step`, `Context`, `Run`, `StepResult`, `RunMetadata`, `RunStatus`, `StepStatus`, `RetryPolicy`, ...
+- **Schemas** — `SkelmSchema`, `SchemaValidationError` (Standard Schema-compatible; Zod is the documented default)
+- **Events** — `EventBus`, `RunEvent`, `RunEventType`
+- **Permissions** — `AgentPermissions`, `TrustEnforcer`, `resolvePermissions`
+- **Errors** — `StepError`, `RunCancelledError`, `WaitTimeoutError`, `serializeError`
 
-The gateway surface (HTTP + SSE + lifecycle) is imported from `@skelm/gateway` explicitly so the meta package stays small for users who only need the authoring + runner surface.
+## Learn more
+
+Full documentation, examples, and source code:
+
+**[github.com/scottgl9/skelm](https://github.com/scottgl9/skelm)**
 
 ## Stability
 
@@ -64,4 +93,4 @@ The gateway surface (HTTP + SSE + lifecycle) is imported from `@skelm/gateway` e
 
 ## License
 
-MIT.
+[MIT](LICENSE)

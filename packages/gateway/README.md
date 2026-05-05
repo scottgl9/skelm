@@ -1,27 +1,82 @@
 # @skelm/gateway
 
-The long-running orchestrator at the heart of skelm.
+> The long-running orchestrator at the heart of [skelm](https://github.com/scottgl9/skelm) — owns config, registries, permission enforcement, audit, agent lifecycle, and the HTTP surface.
+
+[![npm](https://img.shields.io/npm/v/@skelm/gateway)](https://www.npmjs.com/package/@skelm/gateway)
+
+Part of [skelm](https://github.com/scottgl9/skelm).
 
 The gateway is the canonical trust boundary and the home of every persistent concern:
 
 - **Config** — loads `skelm.config.ts`, watches for changes, hot-reloads on edit or `SIGHUP`.
 - **Registries** — workflows, skills, MCP servers, agents (ACP + coding agents), triggers.
-- **Enforcement** — permission resolution, secret resolution, audit chain, approval gating.
+- **Enforcement** — permission resolution, secret resolution, hash-chained audit log, approval gating.
 - **Process & session lifecycle** — supervises resident coding agents (e.g. `opencode serve`), spawns ephemeral agents per step, persists ACP sessions across restarts.
 - **HTTP surface** — sync / async runs, SSE event streams, idempotency, approvals, sessions.
-- **Scheduler** — fires cron / matrix / slack / webhook triggers into registered workflows.
+- **Scheduler** — fires cron / interval / webhook / poll / queue triggers into registered workflows.
 
-The gateway is consumed via the `skelm` CLI:
+## Install
 
 ```bash
-skelm gateway start --foreground   # run the gateway in this process
-skelm gateway start --detach       # fork a foreground gateway
-skelm gateway status
-skelm gateway stop
+npm install @skelm/gateway
+```
+
+The gateway is normally driven through the `skelm` CLI:
+
+```bash
+skelm gateway start --foreground   # Run the gateway in this process
+skelm gateway start --detach       # Fork a foreground gateway
+skelm gateway status               # Inspect a running gateway
+skelm gateway stop                 # Stop it
+skelm gateway install --systemd    # Install a user-level systemd unit
 ```
 
 There is no separate `skelm-gateway` executable — the gateway always runs from the single `skelm` bin.
 
-## Status
+## Programmatic use
 
-Phase 0 scaffold. Subsequent phases populate the package; see `planning/21-gateway-and-deployment.md` for design.
+```ts
+import { createGateway } from '@skelm/gateway'
+
+const gateway = await createGateway({
+  configPath: './skelm.config.ts',
+  http: { host: '127.0.0.1', port: 4711 },
+})
+
+await gateway.start()
+// ...
+await gateway.stop()
+```
+
+## HTTP surface
+
+The HTTP API speaks JSON over `h3`, with SSE for run event streams.
+
+| Method | Path                                | Purpose                              |
+| ------ | ----------------------------------- | ------------------------------------ |
+| `GET`  | `/health`                           | Liveness                             |
+| `GET`  | `/registry/workflows`               | List registered workflows            |
+| `POST` | `/runs`                             | Start a run (sync or async)          |
+| `GET`  | `/runs/:id`                         | Fetch a run by id                    |
+| `GET`  | `/runs/:id/events`                  | SSE stream of run events             |
+| `POST` | `/runs/:id/cancel`                  | Cancel an in-flight run              |
+| `POST` | `/approvals/:id/{approve,deny}`     | Resolve a pending approval           |
+| `GET`  | `/audit`                            | Tamper-evident, hash-chained audit   |
+
+See [`docs/reference/`](https://github.com/scottgl9/skelm/blob/main/docs/reference/) for the full schema and [`docs/deployment/`](https://github.com/scottgl9/skelm/blob/main/docs/deployment/) for production deployment (reverse proxy, Postgres, secrets vaults).
+
+## Why a separate package?
+
+The runtime + builders (`@skelm/core`) are small and dependency-light by design. Spinning up an HTTP server, a SQLite/Postgres run store, an audit chain, an approval queue, and a scheduler costs more — both in install size and in setup complexity. Pulling those into a separate package keeps the meta `skelm` package small for users who only want to author and run workflows from the CLI.
+
+## Stability
+
+`0.x` — APIs may change between minor versions until v1.
+
+## Contributing
+
+See the [contributing guide](https://github.com/scottgl9/skelm/blob/main/CONTRIBUTING.md).
+
+## License
+
+[MIT](LICENSE)

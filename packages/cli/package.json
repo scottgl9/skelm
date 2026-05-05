@@ -1,19 +1,25 @@
 {
   "name": "@skelm/cli",
-  "version": "0.2.0",
+  "version": "0.3.3",
   "description": "skelm CLI primitives. End users install the meta-package `skelm`, which depends on this and exposes the `skelm` bin. This package is the programmatic entry point for tooling that wants to drive the CLI directly.",
-  "private": true,
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
   "homepage": "https://github.com/scottgl9/skelm#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/scottgl9/skelm.git"
+    "url": "git+https://github.com/scottgl9/skelm.git",
+    "directory": "packages/cli"
   },
   "bugs": {
     "url": "https://github.com/scottgl9/skelm/issues"
   },
-  "keywords": ["skelm", "cli", "workflow", "pipeline", "agent"],
+  "keywords": [
+    "skelm",
+    "cli",
+    "workflow",
+    "pipeline",
+    "agent"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -23,10 +29,14 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com/scottgl9",
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -1,18 +1,25 @@
 {
   "name": "@skelm/pi",
-  "version": "0.1.0",
+  "version": "0.3.3",
   "description": "Pi coding-agent backend for skelm with full permission enforcement",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
   "homepage": "https://github.com/scottgl9/skelm#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/scottgl9/skelm.git"
+    "url": "git+https://github.com/scottgl9/skelm.git",
+    "directory": "packages/pi"
   },
   "bugs": {
     "url": "https://github.com/scottgl9/skelm/issues"
   },
-  "keywords": ["skelm", "pi", "agent", "backend"],
+  "keywords": [
+    "skelm",
+    "pi",
+    "agent",
+    "backend",
+    "coding-agent"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -22,25 +29,29 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "clean": "rm -rf dist"
   },
-  "files": ["dist"],
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com/scottgl9",
-    "access": "public"
-  },
   "dependencies": {},
+  "peerDependencies": {
+    "@skelm/core": "workspace:*"
+  },
   "devDependencies": {
     "@skelm/core": "workspace:*",
     "@types/node": "^20.10.0",
     "typescript": "^5.3.0",
     "vitest": "^1.0.0"
-  },
-  "peerDependencies": {
-    "@skelm/core": "workspace:*"
   }
 }

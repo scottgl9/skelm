@@ -1,4 +1,4 @@
-name: Publish to GitHub Packages
+name: Publish to npm
 
 on:
   release:
@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish (e.g., 0.3.2)'
+        description: 'Version to publish (e.g., 0.3.3)'
         required: true
-        default: '0.3.2'
+        default: '0.3.3'
         type: string
       dry-run:
         description: 'Dry run (verify without publishing)'
@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      id-token: write    # required for npm provenance
 
     steps:
       - name: Checkout
@@ -38,88 +38,56 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-          registry-url: 'https://npm.pkg.github.com'
-          scope: '@scottgl9'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
-      - name: Determine version from release tag or manual input
+      - name: Determine version
         id: version
         run: |
           if [ -n "${{ github.event.release.tag_name }}" ]; then
             TAG_VERSION="${{ github.event.release.tag_name }}"
             TAG_VERSION="${TAG_VERSION#v}"
-          elif [ -n "${{ github.event.inputs.version }}" ]; then
-            TAG_VERSION="${{ github.event.inputs.version }}"
           else
-            TAG_VERSION="0.3.2"
+            TAG_VERSION="${{ github.event.inputs.version }}"
           fi
-          echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
+          echo "tag_version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved version: $TAG_VERSION"
 
-      - name: Update package versions
+      - name: Sync package versions
         run: |
           TAG_VERSION="${{ steps.version.outputs.tag_version }}"
-          for pkg in core cli opencode pi gateway skelm; do
-            (cd packages/$pkg && npm version "$TAG_VERSION" --no-git-tag-version --allow-same-version)
+          for pkg in core cli gateway scheduler integrations metrics opencode otel pi skelm; do
+            (cd "packages/$pkg" && npm version "$TAG_VERSION" --no-git-tag-version --allow-same-version)
           done
-
-      - name: Rescope package names to @scottgl9
-        run: |
-          node <<'EOF'
-          const fs = require('fs');
-          const path = require('path');
-          const pkgs = ['core','cli','opencode','pi','gateway','skelm'];
-          const renameMap = {
-            '@skelm/core': '@scottgl9/core',
-            '@skelm/cli': '@scottgl9/cli',
-            '@skelm/opencode': '@scottgl9/opencode',
-            '@skelm/pi': '@scottgl9/pi',
-            '@skelm/gateway': '@scottgl9/gateway',
-            'skelm': '@scottgl9/skelm',
-          };
-          for (const p of pkgs) {
-            const file = path.join('packages', p, 'package.json');
-            const json = JSON.parse(fs.readFileSync(file, 'utf8'));
-            if (renameMap[json.name]) json.name = renameMap[json.name];
-            for (const depKey of ['dependencies','devDependencies','peerDependencies','optionalDependencies']) {
-              if (!json[depKey]) continue;
-              for (const [k, v] of Object.entries(json[depKey])) {
-                if (renameMap[k]) {
-                  json[depKey][renameMap[k]] = v;
-                  delete json[depKey][k];
-                }
-              }
-            }
-            if (json.publishConfig) json.publishConfig.registry = 'https://npm.pkg.github.com';
-            fs.writeFileSync(file, JSON.stringify(json, null, 2) + '\n');
-            console.log('rescoped', file, '->', json.name);
-          }
-          EOF
 
       - name: Build all packages
         run: pnpm build
 
-      - name: Dry run summary
+      - name: Run gates
+        run: pnpm typecheck && pnpm test
+
+      - name: Publish (dry run)
         if: inputs.dry-run == 'true'
         run: |
-          for p in core cli opencode pi gateway skelm; do
-            echo "  $(node -p "require('./packages/$p/package.json').name")@$(node -p "require('./packages/$p/package.json').version")"
+          for pkg in core cli gateway scheduler integrations metrics opencode otel pi skelm; do
+            (cd "packages/$pkg" && npm publish --dry-run --access public)
           done
 
-      - name: Publish all packages
+      - name: Publish to npm
         if: inputs.dry-run != 'true'
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for p in core cli opencode pi gateway skelm; do
-            (cd packages/$p && \
+          # Publish in dependency order: core first, then leaf backends, then cli/gateway/skelm.
+          for pkg in core scheduler integrations metrics otel opencode pi gateway cli skelm; do
+            (cd "packages/$pkg" && \
               echo "Publishing $(node -p "require('./package.json').name")@$(node -p "require('./package.json').version")" && \
-              npm publish --registry=https://npm.pkg.github.com --access=public)
+              npm publish --access public --provenance)
           done
 
       - name: Success summary
         if: inputs.dry-run != 'true'
         run: |
-          echo "Published version ${{ steps.version.outputs.tag_version }} to https://npm.pkg.github.com under @scottgl9/*"
+          echo "Published version ${{ steps.version.outputs.tag_version }} to https://registry.npmjs.org"
