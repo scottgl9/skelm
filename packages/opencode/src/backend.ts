@@ -78,12 +78,10 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
       // Load skills and inject into system prompt before forwarding
       const enrichedRequest = await injectSkills(request, context)
 
-      // Use the shared client (server started on first call, kept alive)
-      const onAbort = () => client.cancel()
-      context.signal.addEventListener('abort', onAbort, { once: true })
-
+      // Signal and timeout are threaded directly into prompt(); no separate
+      // cancel() listener needed — the SSE loop handles abort internally.
       try {
-        const result = await client.prompt(enrichedRequest, {})
+        const result = await client.prompt(enrichedRequest, context.signal, options.timeout)
         return result
       } catch (error) {
         if (error instanceof Error) {
@@ -93,15 +91,13 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
           if (error.message.includes('Rate limit')) {
             throw new BackendRateLimitError(`Opencode rate limit exceeded: ${error.message}`)
           }
-          if (error.message.includes('Timeout')) {
-            throw new BackendTimeoutError(`Opencode request timeout: ${error.message}`)
+          if (error.message.includes('timed out')) {
+            throw new BackendTimeoutError(error.message)
           }
         }
         throw error
-      } finally {
-        context.signal.removeEventListener('abort', onAbort)
-        // Do NOT dispose — server stays alive for subsequent calls
       }
+      // Do NOT dispose — server stays alive for subsequent calls
     },
 
     async dispose(): Promise<void> {

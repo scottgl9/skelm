@@ -256,9 +256,10 @@ describe('OpencodeProvider', () => {
       const failingProvider = createOpencodeProvider()
 
       // Mock doInitialize to throw
-      vi.spyOn(failingProvider as any, 'doInitialize').mockRejectedValue(
-        new Error('Initialization failed'),
-      )
+      vi.spyOn(
+        failingProvider as unknown as { doInitialize: () => Promise<void> },
+        'doInitialize',
+      ).mockRejectedValue(new Error('Initialization failed'))
 
       try {
         await failingProvider.initialize({ apiKey: 'test-key' })

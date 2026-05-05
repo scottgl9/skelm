@@ -43,7 +43,7 @@ describe('opencode backend — skill injection via injectSkills', () => {
     )
     const ctx = makeCtx({ loadSkill })
 
-    await backend.run!({ prompt: 'go', skills: ['triage'] }, ctx)
+    await backend.run?.({ prompt: 'go', skills: ['triage'] }, ctx)
 
     const forwarded = mockPrompt.mock.calls[0][0]
     expect(forwarded.system).toContain('## Skill: triage')
@@ -58,7 +58,7 @@ describe('opencode backend — skill injection via injectSkills', () => {
     )
     const ctx = makeCtx({ loadSkill })
 
-    await backend.run!({ prompt: 'go', system: 'You are helpful.', skills: ['triage'] }, ctx)
+    await backend.run?.({ prompt: 'go', system: 'You are helpful.', skills: ['triage'] }, ctx)
 
     const forwarded = mockPrompt.mock.calls[0][0]
     expect(forwarded.system).toMatch(/You are helpful\..*## Skill: triage/s)
@@ -69,7 +69,7 @@ describe('opencode backend — skill injection via injectSkills', () => {
     const loadSkill = vi.fn(async (_id: string): Promise<Skill | null> => null)
     const ctx = makeCtx({ loadSkill })
 
-    await backend.run!({ prompt: 'go', skills: ['denied'] }, ctx)
+    await backend.run?.({ prompt: 'go', skills: ['denied'] }, ctx)
 
     const forwarded = mockPrompt.mock.calls[0][0]
     expect(forwarded.system).toBeUndefined()
@@ -78,7 +78,7 @@ describe('opencode backend — skill injection via injectSkills', () => {
   it('does not call loadSkill when ctx.loadSkill is absent', async () => {
     const backend = createOpencodeBackend({})
 
-    await backend.run!({ prompt: 'go', skills: ['triage'] }, makeCtx())
+    await backend.run?.({ prompt: 'go', skills: ['triage'] }, makeCtx())
 
     const forwarded = mockPrompt.mock.calls[0][0]
     expect(forwarded.system).toBeUndefined()

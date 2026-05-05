@@ -1,7 +1,11 @@
 // Opencode HTTP client — spawns `opencode serve --port 0` once per backend
-// instance and reuses the process across multiple prompt() calls (session
-// per call, server kept alive). Disposed via dispose() when the backend
-// is done.
+// instance and reuses the process across multiple prompt() calls (one session
+// per call, server kept alive). Disposed via dispose() when the backend is done.
+//
+// Improvements over the original:
+//   #1 — Cleaner spawn: OPENCODE_CONFIG_CONTENT + no dead cancel()/getSessionId()
+//   #2 — Model/logLevel injected via OPENCODE_CONFIG_CONTENT at server startup
+//   #3 — Non-blocking promptAsync + SSE stream instead of blocking session.prompt()
 
 import { type ChildProcess, spawn } from 'node:child_process' // @subprocess-ok: spawns opencode serve for HTTP backend
 import { createOpencodeClient } from '@opencode-ai/sdk'
@@ -10,23 +14,23 @@ import type { OpencodeBackendOptions } from './types.js'
 
 type SdkClient = ReturnType<typeof createOpencodeClient>
 
+// Shape of OPENCODE_CONFIG_CONTENT — subset of opencode's Config type.
+interface OpencodeServerConfig {
+  model?: string
+  logLevel?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
+}
+
 export class OpencodeClientWrapper {
   private proc: ChildProcess | null = null
   private client: SdkClient | null = null
-  private baseUrl: string | null = null
-  private currentSessionId: string | null = null
   private startPromise: Promise<void> | null = null
-  private _cancelled = false
   private readonly options: OpencodeBackendOptions
 
   constructor(options: OpencodeBackendOptions) {
     this.options = options
   }
 
-  /**
-   * Ensure the opencode server is running. Safe to call concurrently —
-   * subsequent callers await the same start promise.
-   */
+  /** Ensure the opencode server is running. Safe to call concurrently. */
   async ensureStarted(): Promise<void> {
     if (this.client !== null) return
     if (this.startPromise) return this.startPromise
@@ -34,12 +38,27 @@ export class OpencodeClientWrapper {
     await this.startPromise
   }
 
+  /** Alias kept for callers that start the server explicitly before first use. */
+  async start(): Promise<void> {
+    return this.ensureStarted()
+  }
+
   private async _start(): Promise<void> {
     const command = this.options.command ?? 'opencode'
 
+    // (#2) Inject model and logLevel via OPENCODE_CONFIG_CONTENT so opencode
+    // uses them as its defaults for every session, without needing per-session
+    // body overrides.
+    const serverConfig: OpencodeServerConfig = {}
+    if (this.options.model) serverConfig.model = this.options.model
+    if (this.options.logLevel && this.options.logLevel !== 'off') {
+      const logLevelMap = { debug: 'DEBUG', info: 'INFO', warn: 'WARN', error: 'ERROR' } as const
+      serverConfig.logLevel = logLevelMap[this.options.logLevel]
+    }
+
     return new Promise<void>((resolve, reject) => {
       const proc = spawn(command, ['serve', '--port', '0'], {
-        env: { ...process.env },
+        env: { ...process.env, OPENCODE_CONFIG_CONTENT: JSON.stringify(serverConfig) },
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       this.proc = proc
@@ -50,12 +69,10 @@ export class OpencodeClientWrapper {
       const tryParse = (chunk: Buffer) => {
         if (resolved) return
         buf += chunk.toString()
-        // stdout: "opencode server listening on http://127.0.0.1:PORT"
         const m = buf.match(/listening on (https?:\/\/[^\s]+)/)
         if (m?.[1]) {
           resolved = true
-          this.baseUrl = m[1].trim()
-          this.client = createOpencodeClient({ baseUrl: this.baseUrl })
+          this.client = createOpencodeClient({ baseUrl: m[1].trim() })
           resolve()
         }
       }
@@ -77,95 +94,109 @@ export class OpencodeClientWrapper {
   }
 
   private _handleExit(): void {
-    // Server died unexpectedly — reset so next call restarts it
     this.proc = null
     this.client = null
     this.startPromise = null
   }
 
-  /** For backward-compat with backend.ts which calls start() explicitly. */
-  async start(): Promise<void> {
-    return this.ensureStarted()
-  }
-
-  async prompt(request: AgentRequest, _permissions: unknown): Promise<AgentResponse> {
+  async prompt(
+    request: AgentRequest,
+    signal: AbortSignal,
+    timeoutMs = 300_000,
+  ): Promise<AgentResponse> {
     await this.ensureStarted()
     if (!this.client) throw new Error('opencode serve not ready')
 
     const cwd = request.cwd ?? process.cwd()
 
-    // Create a new session for this call (sessions are per-conversation)
     const sessResult = await this.client.session.create({ query: { directory: cwd } })
     if (!sessResult.data) {
       throw new Error(`session.create failed: ${JSON.stringify(sessResult.error)}`)
     }
-    this.currentSessionId = sessResult.data.id
-    const sessionId = this.currentSessionId
+    const sessionId = sessResult.data.id
 
-    // Build model spec: split "providerID/modelID"
-    let modelBody: { model?: { providerID: string; modelID: string } } = {}
-    if (this.options.model) {
-      const slashIdx = this.options.model.indexOf('/')
-      if (slashIdx > 0) {
-        modelBody = {
-          model: {
-            providerID: this.options.model.slice(0, slashIdx),
-            modelID: this.options.model.slice(slashIdx + 1),
-          },
+    // (#3) Subscribe to the global SSE stream BEFORE calling promptAsync so
+    // we don't miss events that fire immediately after the session starts.
+    const sseAbort = new AbortController()
+    const timeoutId = setTimeout(
+      () => sseAbort.abort(new Error(`opencode timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    )
+    const onSignalAbort = () => sseAbort.abort(new Error('opencode aborted'))
+    signal.addEventListener('abort', onSignalAbort, { once: true })
+
+    try {
+      const { stream } = await this.client.event.subscribe({ signal: sseAbort.signal })
+
+      // (#3) Fire promptAsync — returns immediately; response arrives over SSE.
+      // Model is already set via OPENCODE_CONFIG_CONTENT (#2), so no per-request body needed.
+      const promptResult = await this.client.session.promptAsync({
+        path: { id: sessionId },
+        body: { parts: [{ type: 'text', text: request.prompt }] },
+      })
+      if (!promptResult.data) {
+        throw new Error(`session.promptAsync failed: ${JSON.stringify(promptResult.error)}`)
+      }
+
+      return await this._collectFromStream(stream, sessionId, signal)
+    } finally {
+      clearTimeout(timeoutId)
+      signal.removeEventListener('abort', onSignalAbort)
+      sseAbort.abort() // close SSE connection
+      // Best-effort abort of the session if we're bailing out early
+      if (signal.aborted) {
+        this.client?.session.abort({ path: { id: sessionId } }).catch(() => {})
+      }
+    }
+  }
+
+  // (#3) Collect text from SSE events for one session until it goes idle.
+  private async _collectFromStream(
+    stream: AsyncIterable<unknown>,
+    sessionId: string,
+    signal: AbortSignal,
+  ): Promise<AgentResponse> {
+    // Each TextPart is updated incrementally; track the latest full text per part id.
+    const textParts = new Map<string, string>()
+
+    for await (const raw of stream) {
+      if (signal.aborted) break
+
+      const event = raw as { type: string; properties: Record<string, unknown> }
+
+      if (event.type === 'session.error') {
+        const props = event.properties as { sessionID?: string; error?: unknown }
+        if (!props.sessionID || props.sessionID === sessionId) {
+          throw new Error(`opencode session error: ${JSON.stringify(props.error)}`)
         }
       }
-    }
 
-    // session.prompt() returns the full AssistantMessage synchronously
-    const result = await this.client.session.prompt({
-      path: { id: sessionId },
-      body: {
-        ...modelBody,
-        parts: [{ type: 'text', text: request.prompt }],
-      },
-    })
+      if (event.type === 'message.part.updated') {
+        const props = event.properties as {
+          part: { type: string; sessionID: string; id: string; text?: string; synthetic?: boolean }
+        }
+        const { part } = props
+        if (part.sessionID === sessionId && part.type === 'text' && !part.synthetic && part.text) {
+          textParts.set(part.id, part.text)
+        }
+      }
 
-    if (!result.data) {
-      throw new Error(`session.prompt failed: ${JSON.stringify(result.error)}`)
-    }
-
-    // Extract text parts (skip synthetic/tool parts)
-    let text = ''
-    for (const part of result.data.parts as Array<{
-      type: string
-      text?: string
-      synthetic?: boolean
-    }>) {
-      if (part.type === 'text' && !part.synthetic && part.text) {
-        text += part.text
+      if (event.type === 'session.idle') {
+        const props = event.properties as { sessionID: string }
+        if (props.sessionID === sessionId) break
       }
     }
 
+    if (signal.aborted) throw new Error('opencode agent aborted')
+
+    const text = [...textParts.values()].join('')
     return { text: text.trim(), stopReason: 'end_turn' }
   }
 
-  async cancel(): Promise<void> {
-    this._cancelled = true
-    if (this.client && this.currentSessionId) {
-      try {
-        await this.client.session.abort({ path: { id: this.currentSessionId } })
-      } catch {
-        /* best effort */
-      }
-    }
-  }
-
-  /** Stop the opencode server and clean up. Called when the backend is no longer needed. */
   async dispose(): Promise<void> {
-    this._cancelled = true
     this.proc?.kill('SIGTERM')
     this.proc = null
     this.client = null
     this.startPromise = null
-    this.currentSessionId = null
-  }
-
-  getSessionId(): string | null {
-    return this.currentSessionId
   }
 }
