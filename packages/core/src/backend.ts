@@ -119,13 +119,25 @@ export interface AgentRequest {
   /** Skill IDs to load and inject into the agent context before the run. */
   skills?: readonly string[]
   /**
-   * Loaded agent definition (instructions + optional persona) resolved
-   * from the step's `agentDef` spec. Backends prepend soul + instructions
-   * to the system prompt.
+   * Secrets resolved by the runner from the step's declared `secrets: [...]`.
+   * Backends should inject these as environment variables on tool/exec calls.
+   * Never log values.
    */
-  agentDef?: import('./agent-def.js').AgentDefinition
+  secrets?: Readonly<Record<string, string>>
   /** When set, the runtime expects a structured value matching this schema. */
   outputSchema?: SkelmSchema
+  /** Agent definition loaded from AGENTS.md (and optional SOUL.md). */
+  agentDef?: AgentDefinition
+}
+
+/** Agent definition loaded from AGENTS.md. */
+export interface AgentDefinition {
+  /** Required: agent name from AGENTS.md. */
+  name: string
+  /** Optional: soul content from SOUL.md. */
+  soul?: string
+  /** Required: instructions from AGENTS.md. */
+  instructions: string
 }
 
 /** Response shape for `run()`. */
@@ -204,21 +216,12 @@ export class BackendNotFoundError extends Error {
   override readonly name = 'BackendNotFoundError'
 }
 
-/**
- * Thrown by a backend when it cannot service a request *right now* but the
- * call would normally succeed: rate limits, request timeouts, transient
- * connection errors. The runner treats this as a fallback signal when a
- * step declares `backend: ['a', 'b', ...]`.
- *
- * Do *not* throw this for permission denials, schema validation failures,
- * or any other deterministic logic error — those must surface immediately.
- */
+/** Thrown when a registered backend is unavailable or failed to initialize. */
 export class BackendUnavailableError extends Error {
   override readonly name = 'BackendUnavailableError'
   constructor(
     message: string,
     readonly backendId: BackendId,
-    override readonly cause?: unknown,
   ) {
     super(message)
   }
@@ -283,24 +286,6 @@ export class BackendRegistry {
       if (typeof candidate.run === 'function') return candidate
     }
     throw new BackendNotFoundError('no backend with run() capability is registered')
-  }
-
-  /**
-   * Resolve an ordered chain of backends, one per requested id. Each id must
-   * be registered (otherwise throws BackendNotFoundError up-front rather than
-   * deferring the failure to mid-fallback). Capability is *not* checked here;
-   * callers (the runner) check per-call so they can attribute capability
-   * mismatches to the right backend in the chain.
-   */
-  resolveChain(ids: readonly BackendId[]): readonly SkelmBackend[] {
-    if (ids.length === 0) {
-      throw new BackendNotFoundError('resolveChain: empty backend list')
-    }
-    return ids.map((id) => {
-      const found = this.backends.get(id)
-      if (!found) throw new BackendNotFoundError(`backend not registered: ${id}`)
-      return found
-    })
   }
 
   list(): readonly SkelmBackend[] {

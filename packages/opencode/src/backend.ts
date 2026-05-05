@@ -144,6 +144,7 @@ function createEmptyPolicy(): ResolvedPolicy {
     allowedExecutables: new Set(),
     allowedMcpServers: new Set(),
     allowedSkills: new Set(),
+    allowedSecrets: new Set(),
     networkEgress: 'deny',
     fsRead: new Set(),
     fsWrite: new Set(),

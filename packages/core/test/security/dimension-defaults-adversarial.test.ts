@@ -53,6 +53,13 @@ describe('dimension defaults — TrustEnforcer per-dimension default-deny', () =
     if (!decision.allow) expect(decision.dimension).toBe('skill')
   })
 
+  it('secret: omitted allowedSecrets → all reads denied', () => {
+    const e = new TrustEnforcer(resolvePermissions(undefined, undefined))
+    const decision = e.canAccessSecret('JIRA_API_TOKEN')
+    expect(decision.allow).toBe(false)
+    if (!decision.allow) expect(decision.dimension).toBe('secret')
+  })
+
   it('network: omitted networkEgress → resolves to deny → all fetches denied', () => {
     const policy = resolvePermissions(undefined, undefined)
     expect(policy.networkEgress).toBe('deny')
@@ -103,6 +110,16 @@ describe('dimension defaults — explicit-mismatch denials', () => {
     const e = new TrustEnforcer(resolvePermissions({ allowedSkills: ['triage'] }, undefined))
     expect(e.canLoadSkill('triage').allow).toBe(true)
     expect(e.canLoadSkill('exfil').allow).toBe(false)
+  })
+
+  it('secret: not-in-allowlist denies even with allowlist set', () => {
+    const e = new TrustEnforcer(
+      resolvePermissions({ allowedSecrets: ['JIRA_API_TOKEN'] }, undefined),
+    )
+    expect(e.canAccessSecret('JIRA_API_TOKEN').allow).toBe(true)
+    const decision = e.canAccessSecret('GH_TOKEN')
+    expect(decision.allow).toBe(false)
+    if (!decision.allow) expect(decision.reason).toBe('not-in-allowlist')
   })
 
   it('network: allowHosts excludes everything else', () => {
