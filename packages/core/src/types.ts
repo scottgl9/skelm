@@ -185,6 +185,14 @@ export interface AgentStep<TOutput = unknown> {
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   readonly permissions?: import('./permissions.js').AgentPermissions
   readonly maxTurns?: number
+  /**
+   * Wall-clock timeout in milliseconds. When set, the runner aborts the
+   * backend's run() call (via the BackendContext signal) and throws
+   * StepTimeoutError if the step has not produced a result by then.
+   * Cooperates with the step's retry policy: a timeout counts as a retryable
+   * failure.
+   */
+  readonly timeoutMs?: number
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
 }

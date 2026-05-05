@@ -16,6 +16,7 @@ import {
 import {
   PermissionDeniedError,
   RunCancelledError,
+  StepTimeoutError,
   WaitTimeoutError,
   serializeError,
 } from './errors.js'
@@ -854,13 +855,15 @@ async function runStep(
                 )
               : undefined
           // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
-          const response = await backend.run!(req, {
-            signal: ctx.signal,
-            ...(policy !== undefined && { permissions: policy }),
-            ...(mcpHost !== undefined && { mcpHost }),
-            ...(policyFetch !== undefined && { fetch: policyFetch }),
-            ...(loadSkill !== undefined && { loadSkill }),
-          })
+          const response = await invokeWithTimeout(step, ctx.signal, (signal) =>
+            backend.run!(req, {
+              signal,
+              ...(policy !== undefined && { permissions: policy }),
+              ...(mcpHost !== undefined && { mcpHost }),
+              ...(policyFetch !== undefined && { fetch: policyFetch }),
+              ...(loadSkill !== undefined && { loadSkill }),
+            }),
+          )
           const candidate =
             step.outputSchema !== undefined
               ? (response.structured ?? extractJsonFromText(response.text))
@@ -1249,6 +1252,36 @@ function makeSkillLoader(
     const promise = source(skillId)
     cache.set(skillId, promise)
     return promise
+  }
+}
+
+async function invokeWithTimeout<T>(
+  step: { readonly id: StepId; readonly timeoutMs?: number },
+  parentSignal: AbortSignal,
+  call: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  if (step.timeoutMs === undefined) {
+    return call(parentSignal)
+  }
+  const childController = new AbortController()
+  const onParentAbort = (): void => childController.abort(parentSignal.reason)
+  if (parentSignal.aborted) {
+    childController.abort(parentSignal.reason)
+  } else {
+    parentSignal.addEventListener('abort', onParentAbort, { once: true })
+  }
+  let timer: NodeJS.Timeout | undefined
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      childController.abort()
+      reject(new StepTimeoutError(step.id, step.timeoutMs ?? 0))
+    }, step.timeoutMs)
+  })
+  try {
+    return await Promise.race([call(childController.signal), timeoutPromise])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+    parentSignal.removeEventListener('abort', onParentAbort)
   }
 }
 

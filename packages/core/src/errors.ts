@@ -35,6 +35,17 @@ export class PermissionDeniedError extends Error {
   override readonly name = 'PermissionDeniedError'
 }
 
+/** Thrown when an agent step exceeds its declared `timeoutMs` wall clock. */
+export class StepTimeoutError extends Error {
+  override readonly name = 'StepTimeoutError'
+  constructor(
+    readonly stepId: string,
+    readonly timeoutMs: number,
+  ) {
+    super(`step "${stepId}" exceeded its ${timeoutMs}ms timeout`)
+  }
+}
+
 /** Convert any thrown value to the serializable error shape we record. */
 export function serializeError(err: unknown): SerializedError {
   if (err instanceof Error) {

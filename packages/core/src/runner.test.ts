@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { code, pipeline } from './builders.js'
+import { BackendRegistry, type SkelmBackend } from './backend.js'
+import { agent, code, pipeline } from './builders.js'
+import { StepTimeoutError } from './errors.js'
 import { EventBus } from './events.js'
 import { runPipeline } from './runner.js'
 
@@ -198,5 +200,134 @@ describe('retry policy', () => {
     expect(run.status).toBe('failed')
     expect(run.error?.message).toBe('still broken')
     expect(attempts).toBe(2)
+  })
+})
+
+describe('runPipeline — agent timeoutMs', () => {
+  function hangingBackend(opts: {
+    onAbort?: () => void
+    delayMs?: number
+  }): SkelmBackend {
+    return {
+      id: 'hang-backend',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'wrapped',
+      },
+      async run(_req, ctx) {
+        return await new Promise<{ text: string }>((resolve, reject) => {
+          const timer = setTimeout(() => resolve({ text: 'late' }), opts.delayMs ?? 5000)
+          ctx.signal.addEventListener(
+            'abort',
+            () => {
+              clearTimeout(timer)
+              opts.onAbort?.()
+              reject(new Error('aborted'))
+            },
+            { once: true },
+          )
+        })
+      },
+    }
+  }
+
+  it('aborts the backend signal and fails the step with StepTimeoutError', async () => {
+    const registry = new BackendRegistry()
+    let aborted = false
+    registry.register(hangingBackend({ onAbort: () => (aborted = true) }))
+    const wf = pipeline({
+      id: 'timeout-runner',
+      steps: [agent({ id: 'work', backend: 'hang-backend', prompt: 'hi', timeoutMs: 25 })],
+    })
+    const run = await runPipeline(wf, undefined, { backends: registry })
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('StepTimeoutError')
+    expect(aborted).toBe(true)
+  })
+
+  it('retries after a timeout when retry policy is set', async () => {
+    const registry = new BackendRegistry()
+    let calls = 0
+    registry.register({
+      id: 'flaky-backend',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'wrapped',
+      },
+      async run(_req, ctx) {
+        calls += 1
+        if (calls < 2) {
+          return await new Promise<{ text: string }>((_resolve, reject) => {
+            ctx.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+          })
+        }
+        return { text: 'eventually' }
+      },
+    } as SkelmBackend)
+    const wf = pipeline({
+      id: 'timeout-retry',
+      steps: [
+        agent({
+          id: 'work',
+          backend: 'flaky-backend',
+          prompt: 'hi',
+          timeoutMs: 25,
+          retry: { maxAttempts: 2, delayMs: 0 },
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, undefined, { backends: registry })
+    expect(run.status).toBe('completed')
+    expect(calls).toBe(2)
+  })
+
+  it('does not impose a timeout when timeoutMs is absent', async () => {
+    const registry = new BackendRegistry()
+    registry.register({
+      id: 'fast',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'wrapped',
+      },
+      async run() {
+        return { text: 'instant' }
+      },
+    } as SkelmBackend)
+    const wf = pipeline({
+      id: 'no-timeout',
+      steps: [agent({ id: 'work', backend: 'fast', prompt: 'hi' })],
+    })
+    const run = await runPipeline(wf, undefined, { backends: registry })
+    expect(run.status).toBe('completed')
+  })
+
+  it('rejects negative or zero timeoutMs at builder time', () => {
+    expect(() => agent({ id: 'bad', backend: 'x', prompt: 'hi', timeoutMs: 0 })).toThrow(
+      /timeoutMs/,
+    )
+    expect(() => agent({ id: 'bad', backend: 'x', prompt: 'hi', timeoutMs: -1 })).toThrow(
+      /timeoutMs/,
+    )
+  })
+
+  it('StepTimeoutError carries stepId and timeoutMs', () => {
+    const err = new StepTimeoutError('work', 1000)
+    expect(err.stepId).toBe('work')
+    expect(err.timeoutMs).toBe(1000)
   })
 })

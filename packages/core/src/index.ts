@@ -132,6 +132,7 @@ export {
   PermissionDeniedError,
   RunCancelledError,
   StepError,
+  StepTimeoutError,
   WaitTimeoutError,
   serializeError,
 } from './errors.js'
