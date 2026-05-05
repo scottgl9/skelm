@@ -34,11 +34,17 @@
     "test:watch": "vitest",
     "clean": "rm -rf dist"
   },
-  "dependencies": {},
   "peerDependencies": {
+    "@mariozechner/pi-coding-agent": ">=0.1.0",
     "@skelm/core": "workspace:*"
   },
+  "peerDependenciesMeta": {
+    "@mariozechner/pi-coding-agent": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.73.0",
     "@skelm/core": "workspace:*",
     "@types/node": "^20.10.0",
     "typescript": "^5.3.0",

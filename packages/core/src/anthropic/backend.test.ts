@@ -40,7 +40,7 @@ describe('createAnthropicBackend — skill injection', () => {
     )
     const ctx = makeCtx({ loadSkill })
 
-    await backend.run!({ prompt: 'do the thing', skills: ['triage', 'classify'] }, ctx)
+    await backend.run?.({ prompt: 'do the thing', skills: ['triage', 'classify'] }, ctx)
 
     const body = JSON.parse((fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string)
     expect(body.system).toContain('## Skill: triage')
@@ -59,7 +59,7 @@ describe('createAnthropicBackend — skill injection', () => {
     )
     const ctx = makeCtx({ loadSkill })
 
-    await backend.run!({ prompt: 'go', system: 'You are helpful.', skills: ['triage'] }, ctx)
+    await backend.run?.({ prompt: 'go', system: 'You are helpful.', skills: ['triage'] }, ctx)
 
     const body = JSON.parse((fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string)
     expect(body.system).toMatch(/You are helpful\..*## Skill: triage/s)
@@ -72,7 +72,7 @@ describe('createAnthropicBackend — skill injection', () => {
     const loadSkill = vi.fn(async (_id: string): Promise<Skill | null> => null)
     const ctx = makeCtx({ loadSkill })
 
-    await backend.run!({ prompt: 'go', skills: ['denied'] }, ctx)
+    await backend.run?.({ prompt: 'go', skills: ['denied'] }, ctx)
 
     const body = JSON.parse((fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string)
     expect(body.system).toBeUndefined()
@@ -82,7 +82,7 @@ describe('createAnthropicBackend — skill injection', () => {
     const fetchSpy = mockFetch('result')
     const backend = createAnthropicBackend({ apiKey: 'test-key', fetch: fetchSpy })
 
-    await backend.run!({ prompt: 'go', skills: ['triage'] }, makeCtx())
+    await backend.run?.({ prompt: 'go', skills: ['triage'] }, makeCtx())
 
     const body = JSON.parse((fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string)
     expect(body.system).toBeUndefined()
@@ -92,7 +92,7 @@ describe('createAnthropicBackend — skill injection', () => {
     const fetchSpy = mockFetch('result')
     const backend = createAnthropicBackend({ apiKey: 'test-key', fetch: fetchSpy })
 
-    await backend.run!({ prompt: 'go', system: 'Be concise.' }, makeCtx())
+    await backend.run?.({ prompt: 'go', system: 'Be concise.' }, makeCtx())
 
     const body = JSON.parse((fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string)
     expect(body.system).toBe('Be concise.')
