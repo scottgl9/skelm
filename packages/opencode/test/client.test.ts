@@ -80,10 +80,28 @@ function makeSignal(aborted = false): AbortSignal {
   return aborted ? AbortSignal.abort() : new AbortController().signal
 }
 
+const ASSISTANT_MSG_ID = 'msg-assistant-1'
+
+function assistantMessageEvent(sessionID: string) {
+  return {
+    type: 'message.updated',
+    properties: { info: { id: ASSISTANT_MSG_ID, sessionID, role: 'assistant' } },
+  }
+}
+
 function textPartEvent(sessionID: string, id: string, text: string) {
   return {
     type: 'message.part.updated',
-    properties: { part: { type: 'text', sessionID, id, text, synthetic: false } },
+    properties: {
+      part: {
+        type: 'text',
+        sessionID,
+        messageID: ASSISTANT_MSG_ID,
+        id,
+        text,
+        synthetic: false,
+      },
+    },
   }
 }
 
@@ -136,6 +154,7 @@ describe('OpencodeClientWrapper — SSE streaming (#3)', () => {
 
   it('accumulates text from message.part.updated events', async () => {
     mockSubscribeStream = makeSseStream([
+      assistantMessageEvent('sess-123'),
       textPartEvent('sess-123', 'p1', 'Hello '),
       textPartEvent('sess-123', 'p2', 'world'),
       idleEvent('sess-123'),
@@ -146,6 +165,7 @@ describe('OpencodeClientWrapper — SSE streaming (#3)', () => {
 
   it('tracks latest text per part id (incremental updates)', async () => {
     mockSubscribeStream = makeSseStream([
+      assistantMessageEvent('sess-123'),
       textPartEvent('sess-123', 'p1', 'Hello'),
       textPartEvent('sess-123', 'p1', 'Hello world'), // same part id, updated
       idleEvent('sess-123'),
@@ -156,10 +176,18 @@ describe('OpencodeClientWrapper — SSE streaming (#3)', () => {
 
   it('ignores synthetic text parts', async () => {
     mockSubscribeStream = makeSseStream([
+      assistantMessageEvent('sess-123'),
       {
         type: 'message.part.updated',
         properties: {
-          part: { type: 'text', sessionID: 'sess-123', id: 'p1', text: 'real', synthetic: false },
+          part: {
+            type: 'text',
+            sessionID: 'sess-123',
+            messageID: ASSISTANT_MSG_ID,
+            id: 'p1',
+            text: 'real',
+            synthetic: false,
+          },
         },
       },
       {
@@ -168,6 +196,7 @@ describe('OpencodeClientWrapper — SSE streaming (#3)', () => {
           part: {
             type: 'text',
             sessionID: 'sess-123',
+            messageID: ASSISTANT_MSG_ID,
             id: 'p2',
             text: 'synthetic',
             synthetic: true,
@@ -182,6 +211,7 @@ describe('OpencodeClientWrapper — SSE streaming (#3)', () => {
 
   it('ignores events from other sessions', async () => {
     mockSubscribeStream = makeSseStream([
+      assistantMessageEvent('sess-123'),
       textPartEvent('other-sess', 'p1', 'not mine'),
       textPartEvent('sess-123', 'p2', 'mine'),
       idleEvent('sess-123'),
@@ -192,6 +222,7 @@ describe('OpencodeClientWrapper — SSE streaming (#3)', () => {
 
   it('terminates on session.idle for the correct session', async () => {
     mockSubscribeStream = makeSseStream([
+      assistantMessageEvent('sess-123'),
       textPartEvent('sess-123', 'p1', 'done'),
       idleEvent('sess-123'),
       // These would never be reached:
@@ -217,6 +248,7 @@ describe('OpencodeClientWrapper — SSE streaming (#3)', () => {
 
   it('returns stopReason end_turn', async () => {
     mockSubscribeStream = makeSseStream([
+      assistantMessageEvent('sess-123'),
       textPartEvent('sess-123', 'p1', 'ok'),
       idleEvent('sess-123'),
     ])
