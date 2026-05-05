@@ -1,9 +1,9 @@
+import { loadAgentDefinition } from './agent-def.js'
 import {
   type AgentRequest,
   BackendCapabilityError,
   BackendNotFoundError,
   type BackendRegistry,
-  BackendUnavailableError,
   type SkelmBackend,
 } from './backend.js'
 import {
@@ -97,6 +97,28 @@ export interface RunOptions {
    * no skill provider.
    */
   skillSource?: (skillId: string) => Promise<import('./skills.js').Skill | null>
+  /**
+   * Optional base path that constrains where `agentDef` specs may resolve.
+   * Defaults to the workflow file's directory. Useful in tests where no
+   * workflow file path is set.
+   */
+  agentDefRoot?: string
+}
+
+export class BackendChainExhaustedError extends Error {
+  override readonly name = 'BackendChainExhaustedError'
+  constructor(
+    readonly stepId: string,
+    readonly attempts: ReadonlyArray<{ backendId: string; cause: unknown }>,
+  ) {
+    const summary = attempts.map((a) => `${a.backendId}: ${fallbackReason(a.cause)}`).join('; ')
+    super(`step "${stepId}" exhausted backend chain — ${summary}`)
+  }
+}
+
+function fallbackReason(cause: unknown): string {
+  if (cause instanceof Error) return cause.message
+  return String(cause)
 }
 
 export class ApprovalDeniedError extends Error {
@@ -135,6 +157,9 @@ interface ExecutionRuntime {
   readonly permissionProfiles?: Readonly<Record<string, AgentPermissions>>
   readonly approvalGate?: ApprovalGate
   readonly skillSource?: (skillId: string) => Promise<import('./skills.js').Skill | null>
+  readonly workflowPath?: string
+  readonly agentDefRoot?: string
+  readonly agentDefCache: Map<string, Promise<import('./agent-def.js').AgentDefinition>>
   readonly currentWorkspace: Context['workspace']
   setCurrentWorkspace(workspace: Context['workspace']): void
   deferRunWorkspaceFinalizer(finalizer: (status: RunStatus) => Promise<void>): void
@@ -318,6 +343,7 @@ export async function runPipeline<TInput, TOutput>(
   const stateStore = options.stateStore ?? options.store ?? defaultStateStore
   const storeWrites: Promise<void>[] = []
   const workspaceManager = options.workspaceManager ?? new WorkspaceManager()
+  const agentDefCache = new Map<string, Promise<import('./agent-def.js').AgentDefinition>>()
   const deferredWorkspaceFinalizers: Array<(status: RunStatus) => Promise<void>> = []
   let currentWorkspace: Context['workspace']
   const unsubscribeStore =
@@ -433,6 +459,9 @@ export async function runPipeline<TInput, TOutput>(
           }),
           ...(options.approvalGate !== undefined && { approvalGate: options.approvalGate }),
           ...(options.skillSource !== undefined && { skillSource: options.skillSource }),
+          ...(options.workflowPath !== undefined && { workflowPath: options.workflowPath }),
+          ...(options.agentDefRoot !== undefined && { agentDefRoot: options.agentDefRoot }),
+          agentDefCache,
           currentWorkspace,
           ...(store !== undefined && { store }),
           setCurrentWorkspace: (workspace) => {
@@ -681,7 +710,7 @@ async function runStep(
           `step "${step.id}" requires a backend registry but none was provided to runPipeline()`,
         )
       }
-      const chain = resolveBackendChain(backends, step.backend, 'llm')
+      const backend = backends.resolveForLlm({ backendId: step.backend as string | undefined })
       const promptText = typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt
       const systemText =
         step.system === undefined
@@ -697,52 +726,16 @@ async function runStep(
         ...(step.maxTokens !== undefined && { maxTokens: step.maxTokens }),
         ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
       }
-      const attempts: Array<{ backendId: string; cause: unknown }> = []
-      for (let i = 0; i < chain.length; i++) {
-        // biome-ignore lint/style/noNonNullAssertion: chain entries verified non-null by resolver
-        const candidate = chain[i]!
-        try {
-          if (!candidate.capabilities.prompt || typeof candidate.infer !== 'function') {
-            throw new BackendCapabilityError(
-              `backend ${candidate.id} does not support llm() steps`,
-              candidate.id,
-              'prompt',
-            )
-          }
-          const response = await candidate.infer(req, { signal: ctx.signal })
-          if (step.outputSchema !== undefined) {
-            const out = response.structured ?? response.text
-            return await validate(step.outputSchema, out, 'output', {
-              stepId: step.id,
-              pipelineId: ctx.run.pipelineId,
-            })
-          }
-          return { text: response.text ?? '', usage: response.usage }
-        } catch (err) {
-          attempts.push({ backendId: candidate.id, cause: err })
-          if (isFallbackTrigger(err)) {
-            if (i + 1 < chain.length) {
-              // biome-ignore lint/style/noNonNullAssertion: bounds checked above
-              const next = chain[i + 1]!
-              events?.publish({
-                type: 'backend.fallback',
-                runId: ctx.run.runId,
-                stepId: step.id,
-                from: candidate.id,
-                to: next.id,
-                reason: fallbackReason(err),
-                at: Date.now(),
-              })
-              continue
-            }
-            if (chain.length > 1) {
-              throw new BackendChainExhaustedError(step.id, attempts)
-            }
-          }
-          throw err
-        }
+      // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForLlm
+      const response = await backend.infer!(req, { signal: ctx.signal })
+      if (step.outputSchema !== undefined) {
+        const candidate = response.structured ?? response.text
+        return await validate(step.outputSchema, candidate, 'output', {
+          stepId: step.id,
+          pipelineId: ctx.run.pipelineId,
+        })
       }
-      throw new BackendChainExhaustedError(step.id, attempts)
+      return { text: response.text ?? '', usage: response.usage }
     }
     case 'agent': {
       if (!backends) {
@@ -750,10 +743,9 @@ async function runStep(
           `step "${step.id}" requires a backend registry but none was provided to runPipeline()`,
         )
       }
-      const chain = resolveBackendChain(backends, step.backend, 'agent')
+      const backend = backends.resolveForAgent({ backendId: step.backend as string | undefined })
       let preparedWorkspace: Awaited<ReturnType<WorkspaceManager['prepare']>> | undefined
       let finishedWorkspace = false
-      const agentAttempts: Array<{ backendId: string; cause: unknown }> = []
       try {
         const workspaceConfig =
           step.workspace === undefined
@@ -818,7 +810,22 @@ async function runStep(
             }
           }
         }
+        if (mcpServers !== undefined && mcpServers.length > 0 && !backend.capabilities.mcp) {
+          throw new BackendCapabilityError(
+            `backend ${backend.id} does not support per-step MCP attachments`,
+            backend.id,
+            'mcp',
+          )
+        }
+        if (step.skills !== undefined && step.skills.length > 0 && !backend.capabilities.skills) {
+          throw new BackendCapabilityError(
+            `backend ${backend.id} does not support skill loading`,
+            backend.id,
+            'skills',
+          )
+        }
         const declaredPermissionDimensions = collectResolvedPermissionDimensions(policy, mcpServers)
+        assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions)
         if (policy?.approval && runtime?.approvalGate !== undefined) {
           const decision = await runtime.approvalGate.request({
             runId: ctx.run.runId,
@@ -833,141 +840,98 @@ async function runStep(
             throw new ApprovalDeniedError(step.id, decision.approver, decision.reason)
           }
         }
+        const agentDef =
+          step.agentDef !== undefined && runtime !== undefined
+            ? await loadAgentDefForStep(step.agentDef, runtime)
+            : undefined
         const req: AgentRequest = {
           prompt: resolvedPromptText,
           ...(resolvedSystemText !== undefined && { system: resolvedSystemText }),
           ...(step.maxTurns !== undefined && { maxTurns: step.maxTurns }),
           ...(preparedWorkspace !== undefined && { cwd: preparedWorkspace.handle.path }),
           ...(policy !== undefined && { permissions: policy }),
+          ...(agentDef !== undefined && { agentDef }),
           ...(mcpServers !== undefined && { mcpServers }),
           ...(step.skills !== undefined && { skills: step.skills }),
           ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
         }
-        const policyFetch =
-          policy !== undefined
-            ? createPolicyFetch(
-                new TrustEnforcer(policy),
-                events !== undefined
-                  ? {
-                      publish: (ev) => events.publish(ev),
-                      runId: ctx.run.runId,
-                      stepId: step.id,
-                    }
-                  : undefined,
-              )
+        const mcpHost =
+          mcpServers !== undefined &&
+          mcpServers.length > 0 &&
+          backend.capabilities.toolPermissions === 'wrapped'
+            ? await createMcpHost(mcpServers, {
+                ...(policy !== undefined && { enforcer: new TrustEnforcer(policy) }),
+                ...(events !== undefined && { events }),
+                runId: ctx.run.runId,
+                stepId: step.id,
+              })
             : undefined
-        const loadSkill =
-          runtime?.skillSource !== undefined && policy !== undefined
-            ? makeSkillLoader(
-                runtime.skillSource,
-                new TrustEnforcer(policy),
-                events,
-                ctx.run.runId,
-                step.id,
-              )
-            : undefined
-        for (let i = 0; i < chain.length; i++) {
-          // biome-ignore lint/style/noNonNullAssertion: chain entries verified non-null by resolver
-          const backend = chain[i]!
-          let mcpHost: Awaited<ReturnType<typeof createMcpHost>> | undefined
-          try {
-            if (typeof backend.run !== 'function') {
-              throw new BackendCapabilityError(
-                `backend ${backend.id} does not support agent() steps`,
-                backend.id,
-                'prompt',
-              )
-            }
-            if (mcpServers !== undefined && mcpServers.length > 0 && !backend.capabilities.mcp) {
-              throw new BackendCapabilityError(
-                `backend ${backend.id} does not support per-step MCP attachments`,
-                backend.id,
-                'mcp',
-              )
-            }
-            if (
-              step.skills !== undefined &&
-              step.skills.length > 0 &&
-              !backend.capabilities.skills
-            ) {
-              throw new BackendCapabilityError(
-                `backend ${backend.id} does not support skill loading`,
-                backend.id,
-                'skills',
-              )
-            }
-            assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions)
-            mcpHost =
-              mcpServers !== undefined &&
-              mcpServers.length > 0 &&
-              backend.capabilities.toolPermissions === 'wrapped'
-                ? await createMcpHost(mcpServers, {
-                    ...(policy !== undefined && { enforcer: new TrustEnforcer(policy) }),
-                    ...(events !== undefined && { events }),
-                    runId: ctx.run.runId,
-                    stepId: step.id,
-                  })
-                : undefined
-            const response = await backend.run(req, {
-              signal: ctx.signal,
-              ...(policy !== undefined && { permissions: policy }),
-              ...(mcpHost !== undefined && { mcpHost }),
-              ...(policyFetch !== undefined && { fetch: policyFetch }),
-              ...(loadSkill !== undefined && { loadSkill }),
-            })
-            const out =
-              step.outputSchema !== undefined
-                ? (response.structured ?? extractJsonFromText(response.text))
-                : undefined
-            const result =
-              step.outputSchema !== undefined
-                ? await validate(step.outputSchema, out, 'output', {
-                    stepId: step.id,
-                    pipelineId: ctx.run.pipelineId,
-                    rawValue: response.text,
-                  })
-                : {
-                    text: response.text ?? '',
-                    ...(response.usage !== undefined && { usage: response.usage }),
-                    ...(response.stopReason !== undefined && { stopReason: response.stopReason }),
-                  }
-            await preparedWorkspace?.finishStep('completed')
-            finishedWorkspace = true
-            if (preparedWorkspace !== undefined) {
-              const finalizedWorkspace = preparedWorkspace
-              runtime?.setCurrentWorkspace(
-                finalizedWorkspace.exposeAfterStep ? finalizedWorkspace.handle : undefined,
-              )
-              runtime?.deferRunWorkspaceFinalizer((status) => finalizedWorkspace.finishRun(status))
-            }
-            return result
-          } catch (err) {
-            agentAttempts.push({ backendId: backend.id, cause: err })
-            if (isFallbackTrigger(err)) {
-              if (i + 1 < chain.length) {
-                // biome-ignore lint/style/noNonNullAssertion: bounds checked above
-                const next = chain[i + 1]!
-                events?.publish({
-                  type: 'backend.fallback',
-                  runId: ctx.run.runId,
+        try {
+          // Policy-enforcing fetch wrapper: if the step declares a network
+          // policy, wrap globalThis.fetch so outbound requests are checked
+          // against the allowedHosts / deny setting before they go out.
+          const policyFetch =
+            policy !== undefined
+              ? createPolicyFetch(
+                  new TrustEnforcer(policy),
+                  events !== undefined
+                    ? {
+                        publish: (ev) => events.publish(ev),
+                        runId: ctx.run.runId,
+                        stepId: step.id,
+                      }
+                    : undefined,
+                )
+              : undefined
+          // Skill loader: gates each skill lookup through canLoadSkill so the
+          // allowedSkills policy fires even for backends with native skill support.
+          const loadSkill =
+            runtime?.skillSource !== undefined && policy !== undefined
+              ? makeSkillLoader(
+                  runtime.skillSource,
+                  new TrustEnforcer(policy),
+                  events,
+                  ctx.run.runId,
+                  step.id,
+                )
+              : undefined
+          // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
+          const response = await backend.run!(req, {
+            signal: ctx.signal,
+            ...(policy !== undefined && { permissions: policy }),
+            ...(mcpHost !== undefined && { mcpHost }),
+            ...(policyFetch !== undefined && { fetch: policyFetch }),
+            ...(loadSkill !== undefined && { loadSkill }),
+          })
+          const candidate =
+            step.outputSchema !== undefined
+              ? (response.structured ?? extractJsonFromText(response.text))
+              : undefined
+          const result =
+            step.outputSchema !== undefined
+              ? await validate(step.outputSchema, candidate, 'output', {
                   stepId: step.id,
-                  from: backend.id,
-                  to: next.id,
-                  reason: fallbackReason(err),
-                  at: Date.now(),
+                  pipelineId: ctx.run.pipelineId,
+                  rawValue: response.text,
                 })
-                continue
-              }
-              if (chain.length > 1) {
-                throw new BackendChainExhaustedError(step.id, agentAttempts)
-              }
-            }
-            throw err
-          } finally {
-            await mcpHost?.dispose()
+              : {
+                  text: response.text ?? '',
+                  ...(response.usage !== undefined && { usage: response.usage }),
+                  ...(response.stopReason !== undefined && { stopReason: response.stopReason }),
+                }
+          await preparedWorkspace?.finishStep('completed')
+          finishedWorkspace = true
+          if (preparedWorkspace !== undefined) {
+            const finalizedWorkspace = preparedWorkspace
+            runtime?.setCurrentWorkspace(
+              finalizedWorkspace.exposeAfterStep ? finalizedWorkspace.handle : undefined,
+            )
+            runtime?.deferRunWorkspaceFinalizer((status) => finalizedWorkspace.finishRun(status))
           }
+          return result
+        } finally {
+          await mcpHost?.dispose()
         }
-        throw new BackendChainExhaustedError(step.id, agentAttempts)
       } catch (error) {
         if (!finishedWorkspace) {
           await preparedWorkspace?.finishStep('failed')
@@ -1062,6 +1026,9 @@ async function runIdempotent(
       ...(runtime?.permissionProfiles !== undefined && {
         permissionProfiles: runtime.permissionProfiles,
       }),
+      agentDefCache: runtime?.agentDefCache ?? new Map(),
+      ...(runtime?.workflowPath !== undefined && { workflowPath: runtime.workflowPath }),
+      ...(runtime?.agentDefRoot !== undefined && { agentDefRoot: runtime.agentDefRoot }),
       currentWorkspace: runtime?.currentWorkspace,
       setCurrentWorkspace: (workspace) => runtime?.setCurrentWorkspace(workspace),
       deferRunWorkspaceFinalizer: (finalizer) => runtime?.deferRunWorkspaceFinalizer(finalizer),
@@ -1230,6 +1197,8 @@ async function runPipelineStep(
       permissionProfiles: runtime.permissionProfiles,
     }),
     ...(runtime?.workspaceManager !== undefined && { workspaceManager: runtime.workspaceManager }),
+    ...(runtime?.workflowPath !== undefined && { workflowPath: runtime.workflowPath }),
+    ...(runtime?.agentDefRoot !== undefined && { agentDefRoot: runtime.agentDefRoot }),
     ...(waitForInput !== undefined && { waitForInput }),
   })
   if (nestedRun.status === 'completed') {
@@ -1291,6 +1260,9 @@ function createDetachedWorkspaceRuntime(
       permissionProfiles: runtime.permissionProfiles,
     }),
     ...(runtime.skillSource !== undefined && { skillSource: runtime.skillSource }),
+    ...(runtime.workflowPath !== undefined && { workflowPath: runtime.workflowPath }),
+    ...(runtime.agentDefRoot !== undefined && { agentDefRoot: runtime.agentDefRoot }),
+    agentDefCache: runtime.agentDefCache,
     currentWorkspace,
     setCurrentWorkspace: (workspace) => {
       currentWorkspace = workspace
@@ -1330,43 +1302,18 @@ function makeSkillLoader(
   }
 }
 
-function resolveBackendChain(
-  backends: BackendRegistry,
-  spec: string | readonly string[] | undefined,
-  kind: 'llm' | 'agent',
-): readonly SkelmBackend[] {
-  if (Array.isArray(spec)) {
-    return backends.resolveChain(spec)
-  }
-  const single =
-    kind === 'llm'
-      ? backends.resolveForLlm({ backendId: spec as string | undefined })
-      : backends.resolveForAgent({ backendId: spec as string | undefined })
-  return [single]
-}
-
-function isFallbackTrigger(err: unknown): boolean {
-  return (
-    err instanceof BackendNotFoundError ||
-    err instanceof BackendCapabilityError ||
-    err instanceof BackendUnavailableError
-  )
-}
-
-function fallbackReason(err: unknown): string {
-  if (err instanceof Error) return `${err.name}: ${err.message}`
-  return String(err)
-}
-
-export class BackendChainExhaustedError extends Error {
-  override readonly name = 'BackendChainExhaustedError'
-  constructor(
-    readonly stepId: string,
-    readonly attempts: ReadonlyArray<{ backendId: string; cause: unknown }>,
-  ) {
-    const summary = attempts.map((a) => `${a.backendId}: ${fallbackReason(a.cause)}`).join('; ')
-    super(`step "${stepId}" exhausted backend chain — ${summary}`)
-  }
+async function loadAgentDefForStep(
+  spec: string,
+  runtime: ExecutionRuntime,
+): Promise<import('./agent-def.js').AgentDefinition> {
+  const cached = runtime.agentDefCache.get(spec)
+  if (cached !== undefined) return cached
+  const opts: import('./agent-def.js').LoadAgentDefinitionOptions = {}
+  if (runtime.workflowPath !== undefined) opts.workflowPath = runtime.workflowPath
+  if (runtime.agentDefRoot !== undefined) opts.agentDefRoot = runtime.agentDefRoot
+  const promise = loadAgentDefinition(spec, opts)
+  runtime.agentDefCache.set(spec, promise)
+  return promise
 }
 
 function resolveIdempotentKey(key: string | ((ctx: Context) => string), ctx: Context): string {

@@ -146,6 +146,8 @@ async function loadSkillBodies(req: AgentRequest, ctx: BackendContext): Promise<
 function buildPrompt(req: AgentRequest, skillBodies: string[] = []): string {
   const parts: string[] = []
   const systemParts: string[] = []
+  if (req.agentDef?.soul !== undefined) systemParts.push(req.agentDef.soul)
+  if (req.agentDef !== undefined) systemParts.push(req.agentDef.instructions)
   if (req.system) systemParts.push(req.system)
   for (const body of skillBodies) systemParts.push(body)
   if (systemParts.length > 0) parts.push(`[System: ${systemParts.join('\n\n---\n\n')}]`)

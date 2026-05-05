@@ -109,14 +109,20 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
 }
 
 async function injectSkills(req: AgentRequest, ctx: BackendContext): Promise<AgentRequest> {
-  if (!req.skills || req.skills.length === 0 || !ctx.loadSkill) return req
+  const prefixParts: string[] = []
+  if (req.agentDef?.soul !== undefined) prefixParts.push(req.agentDef.soul)
+  if (req.agentDef !== undefined) prefixParts.push(req.agentDef.instructions)
   const skillParts: string[] = []
-  for (const skillId of req.skills) {
-    const skill = await ctx.loadSkill(skillId)
-    if (skill !== null) skillParts.push(formatSkillBlock(skill))
+  if (req.skills !== undefined && req.skills.length > 0 && ctx.loadSkill !== undefined) {
+    for (const skillId of req.skills) {
+      const skill = await ctx.loadSkill(skillId)
+      if (skill !== null) skillParts.push(formatSkillBlock(skill))
+    }
   }
-  if (skillParts.length === 0) return req
-  const systemParts = req.system !== undefined ? [req.system, ...skillParts] : skillParts
+  if (prefixParts.length === 0 && skillParts.length === 0) return req
+  const systemParts: string[] = [...prefixParts]
+  if (req.system !== undefined) systemParts.push(req.system)
+  systemParts.push(...skillParts)
   return { ...req, system: systemParts.join('\n\n---\n\n') }
 }
 

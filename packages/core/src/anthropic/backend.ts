@@ -67,6 +67,8 @@ export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): Skel
         outputSchema: req.outputSchema !== undefined,
       }
       const systemParts: string[] = []
+      if (req.agentDef?.soul !== undefined) systemParts.push(req.agentDef.soul)
+      if (req.agentDef !== undefined) systemParts.push(req.agentDef.instructions)
       if (req.system !== undefined) systemParts.push(req.system)
       if (req.skills !== undefined && req.skills.length > 0 && ctx.loadSkill !== undefined) {
         for (const skillId of req.skills) {

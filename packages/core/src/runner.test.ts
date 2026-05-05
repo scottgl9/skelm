@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest'
-import { BackendRegistry, BackendUnavailableError, type SkelmBackend } from './backend.js'
+import { promises as fs } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { AgentDefinition } from './agent-def.js'
+import { BackendRegistry, type SkelmBackend } from './backend.js'
 import { agent, code, pipeline } from './builders.js'
-import { PermissionDeniedError } from './errors.js'
-import { EventBus, type RunEvent } from './events.js'
+import { EventBus } from './events.js'
 import { runPipeline } from './runner.js'
 
 describe('runPipeline — sequential code steps', () => {
@@ -203,13 +207,18 @@ describe('retry policy', () => {
   })
 })
 
-describe('runPipeline — backend fallback chain', () => {
-  function stubBackend(
-    id: string,
-    behavior: 'ok' | 'unavailable' | 'permission' = 'ok',
-  ): SkelmBackend {
+describe('runPipeline — agentDef', () => {
+  let projectRoot: string
+  beforeEach(async () => {
+    projectRoot = await mkdtemp(join(tmpdir(), 'skelm-runner-agentdef-'))
+  })
+  afterEach(async () => {
+    await rm(projectRoot, { recursive: true, force: true })
+  })
+
+  function recordingBackend(captured: { def: AgentDefinition | undefined }): SkelmBackend {
     return {
-      id,
+      id: 'def-backend',
       capabilities: {
         prompt: false,
         streaming: false,
@@ -219,76 +228,51 @@ describe('runPipeline — backend fallback chain', () => {
         modelSelection: false,
         toolPermissions: 'wrapped',
       },
-      async run() {
-        if (behavior === 'unavailable')
-          throw new BackendUnavailableError(`${id} is unavailable`, id)
-        if (behavior === 'permission') throw new PermissionDeniedError(`denied by ${id}`)
-        return { text: `from ${id}` }
+      async run(req) {
+        captured.def = req.agentDef
+        return { text: 'ok' }
       },
     }
   }
 
-  it('falls through to the next backend on BackendUnavailableError and emits backend.fallback', async () => {
+  it('resolves agentDef from disk and attaches it to AgentRequest', async () => {
+    await fs.mkdir(join(projectRoot, 'agents/jira/'), { recursive: true })
+    await fs.writeFile(join(projectRoot, 'agents/jira/AGENTS.md'), 'jira instructions')
+    await fs.writeFile(join(projectRoot, 'agents/jira/SOUL.md'), 'jira soul')
+    const captured = { def: undefined as AgentDefinition | undefined }
     const registry = new BackendRegistry()
-    registry.register(stubBackend('a', 'unavailable'))
-    registry.register(stubBackend('b', 'ok'))
-    const events = new EventBus()
-    const fallbacks: RunEvent[] = []
-    events.subscribe((e) => {
-      if (e.type === 'backend.fallback') fallbacks.push(e)
-    })
+    registry.register(recordingBackend(captured))
     const wf = pipeline({
-      id: 'fb-ok',
-      steps: [agent({ id: 'work', backend: ['a', 'b'], prompt: 'hi' })],
+      id: 'agentdef-runner',
+      steps: [
+        agent({ id: 'work', backend: 'def-backend', prompt: 'hi', agentDef: './agents/jira' }),
+      ],
     })
-    const run = await runPipeline(wf, undefined, { backends: registry, events })
+    const run = await runPipeline(wf, undefined, {
+      backends: registry,
+      agentDefRoot: projectRoot,
+    })
     expect(run.status).toBe('completed')
-    expect(fallbacks).toHaveLength(1)
-    expect(fallbacks[0]).toMatchObject({ from: 'a', to: 'b' })
+    expect(captured.def?.id).toBe('jira')
+    expect(captured.def?.instructions).toBe('jira instructions')
+    expect(captured.def?.soul).toBe('jira soul')
   })
 
-  it('does not fall back on logic errors (e.g. PermissionDeniedError)', async () => {
+  it('fails the step when AGENTS.md is missing under the resolved spec', async () => {
+    const captured = { def: undefined as AgentDefinition | undefined }
     const registry = new BackendRegistry()
-    registry.register(stubBackend('a', 'permission'))
-    registry.register(stubBackend('b', 'ok'))
-    const events = new EventBus()
-    const fallbacks: RunEvent[] = []
-    events.subscribe((e) => {
-      if (e.type === 'backend.fallback') fallbacks.push(e)
-    })
+    registry.register(recordingBackend(captured))
     const wf = pipeline({
-      id: 'fb-no',
-      steps: [agent({ id: 'work', backend: ['a', 'b'], prompt: 'hi' })],
+      id: 'agentdef-missing',
+      steps: [
+        agent({ id: 'work', backend: 'def-backend', prompt: 'hi', agentDef: './agents/ghost' }),
+      ],
     })
-    const run = await runPipeline(wf, undefined, { backends: registry, events })
+    const run = await runPipeline(wf, undefined, {
+      backends: registry,
+      agentDefRoot: projectRoot,
+    })
     expect(run.status).toBe('failed')
-    expect(run.error?.name).toBe('PermissionDeniedError')
-    expect(fallbacks).toHaveLength(0)
-  })
-
-  it('throws BackendChainExhaustedError when every backend in the chain fails transiently', async () => {
-    const registry = new BackendRegistry()
-    registry.register(stubBackend('a', 'unavailable'))
-    registry.register(stubBackend('b', 'unavailable'))
-    const wf = pipeline({
-      id: 'fb-exhaust',
-      steps: [agent({ id: 'work', backend: ['a', 'b'], prompt: 'hi' })],
-    })
-    const run = await runPipeline(wf, undefined, { backends: registry })
-    expect(run.status).toBe('failed')
-    expect(run.error?.name).toBe('BackendChainExhaustedError')
-    expect(run.error?.message).toContain('a')
-    expect(run.error?.message).toContain('b')
-  })
-
-  it('treats a single-string backend as a chain of length one', async () => {
-    const registry = new BackendRegistry()
-    registry.register(stubBackend('only', 'ok'))
-    const wf = pipeline({
-      id: 'fb-single',
-      steps: [agent({ id: 'work', backend: 'only', prompt: 'hi' })],
-    })
-    const run = await runPipeline(wf, undefined, { backends: registry })
-    expect(run.status).toBe('completed')
+    expect(run.error?.name).toBe('AgentDefinitionError')
   })
 })
