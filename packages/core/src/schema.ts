@@ -15,6 +15,11 @@ export class SchemaValidationError extends Error {
     message: string,
     readonly where: 'input' | 'output',
     readonly issues: readonly StandardSchemaV1.Issue[],
+    readonly context?: {
+      stepId?: string
+      pipelineId?: string
+      rawValue?: unknown
+    },
   ) {
     super(message)
   }
@@ -32,12 +37,17 @@ export async function validate<T>(
   schema: SkelmSchema<T>,
   value: unknown,
   where: 'input' | 'output',
+  context?: {
+    stepId?: string
+    pipelineId?: string
+    rawValue?: unknown
+  },
 ): Promise<T> {
   const maybe = schema['~standard'].validate(value)
   const result = await maybe
   if ('issues' in result && result.issues !== undefined) {
-    const message = formatIssues(result.issues, where)
-    throw new SchemaValidationError(message, where, result.issues)
+    const message = formatIssues(result.issues, where, context)
+    throw new SchemaValidationError(message, where, result.issues, context)
   }
   return (result as { value: T }).value
 }
@@ -45,16 +55,46 @@ export async function validate<T>(
 function formatIssues(
   issues: readonly StandardSchemaV1.Issue[],
   where: 'input' | 'output',
+  context?: {
+    stepId?: string
+    pipelineId?: string
+    rawValue?: unknown
+  },
 ): string {
-  const head = `${where} validation failed`
-  if (issues.length === 0) return head
+  const parts: string[] = []
+  
+  // Add context header if available
+  if (context?.stepId || context?.pipelineId) {
+    const ctx = []
+    if (context.pipelineId) ctx.push(`pipeline "${context.pipelineId}"`)
+    if (context.stepId) ctx.push(`step "${context.stepId}"`)
+    parts.push(`Validation failed for ${ctx.join(' in ')}`)
+  } else {
+    parts.push(`${where} validation failed`)
+  }
+  
+  if (issues.length === 0) return parts.join('\n')
+  
   const detail = issues
     .map((i) => {
       const path = i.path ? renderPath(i.path) : ''
       return path ? `${path}: ${i.message}` : i.message
     })
     .join('; ')
-  return `${head}: ${detail}`
+  
+  parts.push(detail)
+  
+  // Add hint for common issues
+  if (where === 'output' && context?.rawValue !== undefined) {
+    if (typeof context.rawValue === 'string') {
+      const trimmed = context.rawValue.trim()
+      if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+        parts.push('Hint: Agent returned plain text instead of JSON. Check that the agent was instructed to return valid JSON.')
+      }
+    }
+  }
+  
+  return parts.join('\n')
 }
 
 function renderPath(path: ReadonlyArray<PropertyKey | StandardSchemaV1.PathSegment>): string {
