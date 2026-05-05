@@ -194,6 +194,14 @@ export interface AgentStep<TOutput = unknown> {
     | readonly import('./backend.js').McpServerConfig[]
     | ((ctx: Context) => readonly import('./backend.js').McpServerConfig[])
   readonly skills?: readonly string[]
+  /**
+   * Secret names this step declares it needs. Resolved through the runner's
+   * SecretResolver and passed to the backend via AgentRequest.secrets, so the
+   * backend can inject them as env vars on tool/exec calls. Names not in the
+   * step's `permissions.allowedSecrets` are denied with a `permission.denied`
+   * event (dimension: 'secret').
+   */
+  readonly secrets?: readonly string[]
   readonly workspace?: WorkspaceConfig | ((ctx: Context) => WorkspaceConfig)
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   readonly permissions?: import('./permissions.js').AgentPermissions

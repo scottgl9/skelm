@@ -16,6 +16,7 @@ export type PermissionDimension =
   | 'executable'
   | 'mcp'
   | 'skill'
+  | 'secret'
   | 'network'
   | 'fs.read'
   | 'fs.write'
@@ -50,6 +51,8 @@ export interface AgentPermissions {
   allowedMcpServers?: readonly string[]
   /** Skill ids permitted to load. */
   allowedSkills?: readonly string[]
+  /** Secret names the agent step is permitted to access. */
+  allowedSecrets?: readonly string[]
   /** Network egress policy. */
   networkEgress?: NetworkPolicy
   /** Path roots the agent may read. */
@@ -67,6 +70,7 @@ export interface ResolvedPolicy {
   readonly allowedExecutables: ReadonlySet<string>
   readonly allowedMcpServers: ReadonlySet<string>
   readonly allowedSkills: ReadonlySet<string>
+  readonly allowedSecrets: ReadonlySet<string>
   readonly networkEgress: NetworkPolicy
   readonly fsRead: ReadonlySet<string>
   readonly fsWrite: ReadonlySet<string>
@@ -126,6 +130,7 @@ export function resolvePermissions(
     allowedExecutables: intersectStrings(inputs.map((p) => p.allowedExecutables)),
     allowedMcpServers: intersectStrings(inputs.map((p) => p.allowedMcpServers)),
     allowedSkills: intersectStrings(inputs.map((p) => p.allowedSkills)),
+    allowedSecrets: intersectStrings(inputs.map((p) => p.allowedSecrets)),
     networkEgress: intersectNetwork(inputs.map((p) => p.networkEgress)),
     fsRead: intersectStrings(inputs.map((p) => p.fsRead)),
     fsWrite: intersectStrings(inputs.map((p) => p.fsWrite)),
@@ -167,6 +172,13 @@ export class TrustEnforcer {
   canLoadSkill(skillId: string): EnforceDecision {
     if (!this.policy.allowedSkills.has(skillId)) {
       return { allow: false, reason: 'not-in-allowlist', dimension: 'skill' }
+    }
+    return { allow: true }
+  }
+
+  canAccessSecret(name: string): EnforceDecision {
+    if (!this.policy.allowedSecrets.has(name)) {
+      return { allow: false, reason: 'not-in-allowlist', dimension: 'secret' }
     }
     return { allow: true }
   }

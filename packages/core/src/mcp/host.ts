@@ -2,7 +2,7 @@ import { basename } from 'node:path'
 import type { McpServerConfig } from '../backend.js'
 import { PermissionDeniedError, RunCancelledError } from '../errors.js'
 import type { EventBus } from '../events.js'
-import type { TrustEnforcer } from '../permissions.js'
+import type { PermissionDimension, TrustEnforcer } from '../permissions.js'
 import type { RunId, StepId } from '../types.js'
 import { McpClient } from './client.js'
 import type { ToolCallResponse } from './protocol.js'
@@ -199,7 +199,7 @@ function publishToolResult(
 function publishPermissionDenied(
   opts: McpHostOptions,
   toolId: string,
-  dimension: 'tool' | 'executable' | 'mcp' | 'skill' | 'network' | 'fs.read' | 'fs.write',
+  dimension: PermissionDimension,
   reason: string,
   detail = `tool "${toolId}" was denied by ${dimension} policy (${reason})`,
 ): void {

@@ -145,6 +145,20 @@ describe('TrustEnforcer — default-deny enforcement', () => {
     expect(e.canLoadSkill('triage').allow).toBe(true)
     expect(e.canLoadSkill('rogue').allow).toBe(false)
   })
+
+  it('canAccessSecret default-deny', () => {
+    const allowed = new TrustEnforcer(
+      resolvePermissions({ allowedSecrets: ['JIRA_API_TOKEN'] }, undefined),
+    )
+    expect(allowed.canAccessSecret('JIRA_API_TOKEN').allow).toBe(true)
+    const decision = allowed.canAccessSecret('GH_TOKEN')
+    expect(decision.allow).toBe(false)
+    if (!decision.allow) {
+      expect(decision.dimension).toBe('secret')
+    }
+    const empty = new TrustEnforcer(resolvePermissions(undefined, undefined))
+    expect(empty.canAccessSecret('any').allow).toBe(false)
+  })
 })
 
 describe('runPipeline — permission profiles', () => {
