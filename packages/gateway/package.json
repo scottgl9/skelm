@@ -1,6 +1,6 @@
 {
   "name": "@skelm/gateway",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "skelm gateway — long-running orchestrator owning config, registries, permissions, audit, agent lifecycle, and the HTTP surface",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
@@ -13,7 +13,14 @@
   "bugs": {
     "url": "https://github.com/scottgl9/skelm/issues"
   },
-  "keywords": ["skelm", "gateway", "orchestrator", "http", "agent", "workflow"],
+  "keywords": [
+    "skelm",
+    "gateway",
+    "orchestrator",
+    "http",
+    "agent",
+    "workflow"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -23,7 +30,11 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"

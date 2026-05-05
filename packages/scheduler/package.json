@@ -1,6 +1,6 @@
 {
   "name": "@skelm/scheduler",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
   "homepage": "https://github.com/scottgl9/skelm#readme",
@@ -12,7 +12,14 @@
   "bugs": {
     "url": "https://github.com/scottgl9/skelm/issues"
   },
-  "keywords": ["skelm", "scheduler", "cron", "webhook", "trigger", "workflow"],
+  "keywords": [
+    "skelm",
+    "scheduler",
+    "cron",
+    "webhook",
+    "trigger",
+    "workflow"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -22,7 +29,11 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
