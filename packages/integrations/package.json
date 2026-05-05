@@ -1,6 +1,6 @@
 {
   "name": "@skelm/integrations",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Third-party integrations for skelm pipelines",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
