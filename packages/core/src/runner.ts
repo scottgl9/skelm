@@ -1168,9 +1168,15 @@ async function runPipelineStep(
   )
 }
 
-function freezeContext<TInput>(ctx: Context<TInput>): Context<TInput> {
+function freezeContext<TInput>(ctx: Omit<Context<TInput>, 'get'>): Context<TInput> {
   Object.freeze(ctx.steps)
-  return Object.freeze(ctx)
+  const steps = ctx.steps
+  const withGet = Object.assign(ctx, {
+    get<T = unknown>(stepId: StepId): T | undefined {
+      return steps[stepId] as T | undefined
+    },
+  }) as Context<TInput>
+  return Object.freeze(withGet)
 }
 
 function adoptLastStepOutput<TOutput>(stepResults: readonly StepResult[]): TOutput | undefined {
