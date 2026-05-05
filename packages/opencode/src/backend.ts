@@ -1,3 +1,4 @@
+import { formatSkillBlock } from '@skelm/core'
 import type {
   AgentRequest,
   AgentResponse,
@@ -74,12 +75,15 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
         throw new Error(`Permission denied: ${permissionResult.denied.join(', ')}`)
       }
 
+      // Load skills and inject into system prompt before forwarding
+      const enrichedRequest = await injectSkills(request, context)
+
       // Use the shared client (server started on first call, kept alive)
       const onAbort = () => client.cancel()
       context.signal.addEventListener('abort', onAbort, { once: true })
 
       try {
-        const result = await client.prompt(request, {})
+        const result = await client.prompt(enrichedRequest, {})
         return result
       } catch (error) {
         if (error instanceof Error) {
@@ -106,6 +110,18 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
   }
 
   return backend
+}
+
+async function injectSkills(req: AgentRequest, ctx: BackendContext): Promise<AgentRequest> {
+  if (!req.skills || req.skills.length === 0 || !ctx.loadSkill) return req
+  const skillParts: string[] = []
+  for (const skillId of req.skills) {
+    const skill = await ctx.loadSkill(skillId)
+    if (skill !== null) skillParts.push(formatSkillBlock(skill))
+  }
+  if (skillParts.length === 0) return req
+  const systemParts = req.system !== undefined ? [req.system, ...skillParts] : skillParts
+  return { ...req, system: systemParts.join('\n\n---\n\n') }
 }
 
 /**

@@ -196,7 +196,7 @@ export type {
 export type { RunHandle, RunOptions, WaitRequest } from './runner.js'
 export { ApprovalDeniedError, runPipeline, Runner, SchemaValidationError } from './runner.js'
 export type { SkelmSchema } from './schema.js'
-export { parseSkill, SkillParseError } from './skills.js'
+export { formatSkillBlock, parseSkill, SkillParseError } from './skills.js'
 export type { Skill } from './skills.js'
 
 // Enforcement seams owned by the gateway in production

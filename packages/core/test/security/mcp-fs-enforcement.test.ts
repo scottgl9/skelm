@@ -1,0 +1,144 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { McpClient } from '../../src/mcp/client.js'
+import { createMcpHost } from '../../src/mcp/host.js'
+import { TrustEnforcer, resolvePermissions } from '../../src/permissions.js'
+
+// Mock McpClient so we can simulate tool calls without spawning real processes.
+vi.mock('../../src/mcp/client.js', () => {
+  const MockMcpClient = vi.fn().mockImplementation(() => ({
+    connectHttp: vi.fn().mockResolvedValue(undefined),
+    listTools: vi.fn().mockResolvedValue({
+      tools: [
+        { name: 'read_file', description: 'Read a file', inputSchema: {} },
+        { name: 'write_file', description: 'Write a file', inputSchema: {} },
+        { name: 'list_directory', description: 'List a dir', inputSchema: {} },
+        { name: 'create_file', description: 'Create a file', inputSchema: {} },
+      ],
+    }),
+    callTool: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] }),
+    stop: vi.fn().mockResolvedValue(undefined),
+  }))
+  return { McpClient: MockMcpClient }
+})
+
+describe('MCP host — canRead/canWrite enforcement on filesystem tool calls', () => {
+  const servers = [{ id: 'fs', transport: 'http' as const, url: 'http://127.0.0.1:9100' }]
+
+  it('default-deny: read_file is denied when fsRead is omitted', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['fs'],
+        allowedTools: ['fs.read_file'],
+      }),
+    )
+    const host = await createMcpHost(servers, { enforcer })
+
+    await expect(host.invokeTool('fs.read_file', { path: '/etc/passwd' })).rejects.toThrow(
+      /read access.*which is not allowed/,
+    )
+
+    await host.dispose()
+  })
+
+  it('default-deny: write_file is denied when fsWrite is omitted', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['fs'],
+        allowedTools: ['fs.write_file'],
+        fsRead: ['./'],
+      }),
+    )
+    const host = await createMcpHost(servers, { enforcer })
+
+    await expect(host.invokeTool('fs.write_file', { path: '/tmp/evil.txt' })).rejects.toThrow(
+      /write access.*which is not allowed/,
+    )
+
+    await host.dispose()
+  })
+
+  it('explicit-deny: read outside fsRead roots is denied', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['fs'],
+        allowedTools: ['fs.read_file'],
+        fsRead: ['/project/'],
+      }),
+    )
+    const host = await createMcpHost(servers, { enforcer })
+
+    await expect(host.invokeTool('fs.read_file', { path: '/etc/passwd' })).rejects.toThrow(
+      /read access.*which is not allowed/,
+    )
+
+    await host.dispose()
+  })
+
+  it('allows read when path is within fsRead root', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['fs'],
+        allowedTools: ['fs.read_file'],
+        fsRead: ['/project/'],
+      }),
+    )
+    const host = await createMcpHost(servers, { enforcer })
+
+    // Should not throw — path is under the allowed root
+    const result = await host.invokeTool('fs.read_file', { path: '/project/src/main.ts' })
+    expect(result).toBeDefined()
+
+    await host.dispose()
+  })
+
+  it('allows write when path is within fsWrite root', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['fs'],
+        allowedTools: ['fs.write_file'],
+        fsRead: ['/project/'],
+        fsWrite: ['/project/'],
+      }),
+    )
+    const host = await createMcpHost(servers, { enforcer })
+
+    const result = await host.invokeTool('fs.write_file', { path: '/project/output.txt' })
+    expect(result).toBeDefined()
+
+    await host.dispose()
+  })
+
+  it('allows write to /tmp when fsWrite includes /tmp', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['fs'],
+        allowedTools: ['fs.create_file'],
+        fsRead: ['./'],
+        fsWrite: ['/tmp/'],
+      }),
+    )
+    const host = await createMcpHost(servers, { enforcer })
+
+    const result = await host.invokeTool('fs.create_file', { path: '/tmp/output.txt' })
+    expect(result).toBeDefined()
+
+    await host.dispose()
+  })
+
+  it('non-filesystem tool names bypass fs enforcement entirely', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['fs'],
+        allowedTools: ['fs.search_code'],
+        // No fsRead declared — but should not fire for unknown tool names
+      }),
+    )
+    const host = await createMcpHost(servers, { enforcer })
+
+    // 'search_code' is not in FS_READ_NAMES or FS_WRITE_NAMES → no path check
+    const result = await host.invokeTool('fs.search_code', { query: 'hello' })
+    expect(result).toBeDefined()
+
+    await host.dispose()
+  })
+})

@@ -23,6 +23,23 @@ export interface Skill {
   source: string
 }
 
+/**
+ * Format a skill as a markdown block for injection into an agent system prompt.
+ * Includes description, compatibility, and allowed-tools hints from frontmatter
+ * so the agent has the full context the skill author intended.
+ */
+export function formatSkillBlock(skill: Skill): string {
+  const lines: string[] = [`## Skill: ${skill.id}`]
+  if (skill.description) lines.push(`_${skill.description}_`)
+  const compat = skill.metadata.compatibility
+  if (typeof compat === 'string' && compat) lines.push(`**Compatibility:** ${compat}`)
+  const allowedTools = skill.metadata['allowed-tools']
+  if (typeof allowedTools === 'string' && allowedTools)
+    lines.push(`**Allowed tools:** ${allowedTools}`)
+  lines.push('', skill.body)
+  return lines.join('\n')
+}
+
 export class SkillParseError extends Error {
   constructor(
     message: string,

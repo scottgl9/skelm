@@ -180,6 +180,7 @@ export interface AgentStep<TOutput = unknown> {
   readonly mcp?:
     | readonly import('./backend.js').McpServerConfig[]
     | ((ctx: Context) => readonly import('./backend.js').McpServerConfig[])
+  readonly skills?: readonly string[]
   readonly workspace?: WorkspaceConfig | ((ctx: Context) => WorkspaceConfig)
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   readonly permissions?: import('./permissions.js').AgentPermissions
