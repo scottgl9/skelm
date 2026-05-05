@@ -2,6 +2,22 @@
  * Types for @skelm/pi - Pi coding agent backend
  */
 
+export interface PiSdkBackendOptions {
+  /** Backend id (default: 'pi-sdk') */
+  id?: string
+  /** Human-readable label */
+  label?: string
+  /** Working directory for pi's project-local discovery */
+  cwd?: string
+  /** Request timeout in ms (default: 300_000 = 5 min) */
+  timeout?: number
+  /**
+   * Maximum simultaneous pi sessions. Defaults to 4. Set to 0 for unlimited.
+   * Excess calls are queued until a slot opens.
+   */
+  maxConcurrent?: number
+}
+
 export interface PiBackendOptions {
   /** Backend id (default: 'pi') */
   id?: string
