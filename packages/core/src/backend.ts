@@ -199,6 +199,26 @@ export class BackendNotFoundError extends Error {
 }
 
 /**
+ * Thrown by a backend when it cannot service a request *right now* but the
+ * call would normally succeed: rate limits, request timeouts, transient
+ * connection errors. The runner treats this as a fallback signal when a
+ * step declares `backend: ['a', 'b', ...]`.
+ *
+ * Do *not* throw this for permission denials, schema validation failures,
+ * or any other deterministic logic error — those must surface immediately.
+ */
+export class BackendUnavailableError extends Error {
+  override readonly name = 'BackendUnavailableError'
+  constructor(
+    message: string,
+    readonly backendId: BackendId,
+    override readonly cause?: unknown,
+  ) {
+    super(message)
+  }
+}
+
+/**
  * Minimal in-memory registry. The gateway will eventually use this; tests
  * already do. Resolution order: explicit backend id → first backend that
  * supports the requested capability → throw.
@@ -257,6 +277,24 @@ export class BackendRegistry {
       if (typeof candidate.run === 'function') return candidate
     }
     throw new BackendNotFoundError('no backend with run() capability is registered')
+  }
+
+  /**
+   * Resolve an ordered chain of backends, one per requested id. Each id must
+   * be registered (otherwise throws BackendNotFoundError up-front rather than
+   * deferring the failure to mid-fallback). Capability is *not* checked here;
+   * callers (the runner) check per-call so they can attribute capability
+   * mismatches to the right backend in the chain.
+   */
+  resolveChain(ids: readonly BackendId[]): readonly SkelmBackend[] {
+    if (ids.length === 0) {
+      throw new BackendNotFoundError('resolveChain: empty backend list')
+    }
+    return ids.map((id) => {
+      const found = this.backends.get(id)
+      if (!found) throw new BackendNotFoundError(`backend not registered: ${id}`)
+      return found
+    })
   }
 
   list(): readonly SkelmBackend[] {

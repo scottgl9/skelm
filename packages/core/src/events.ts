@@ -93,6 +93,15 @@ export type RunEvent =
   | { type: 'run.completed'; runId: RunId; output: unknown; durationMs: number; at: number }
   | { type: 'run.failed'; runId: RunId; error: SerializedError; at: number }
   | { type: 'run.cancelled'; runId: RunId; at: number }
+  | {
+      type: 'backend.fallback'
+      runId: RunId
+      stepId: string
+      from: string
+      to: string
+      reason: string
+      at: number
+    }
 
 export type RunEventType = RunEvent['type']
 
