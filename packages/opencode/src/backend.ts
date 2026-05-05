@@ -81,7 +81,7 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
       // Signal and timeout are threaded directly into prompt(); no separate
       // cancel() listener needed — the SSE loop handles abort internally.
       try {
-        const result = await client.prompt(enrichedRequest, context.signal, options.timeout)
+        const result = await client.prompt(enrichedRequest, context.signal, options.timeout, policy)
         return result
       } catch (error) {
         if (error instanceof Error) {

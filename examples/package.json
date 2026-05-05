@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@skelm/core": "workspace:*",
+    "@skelm/opencode": "workspace:*",
+    "@skelm/pi": "workspace:*",
     "zod": "^4.4.2"
   },
   "devDependencies": {

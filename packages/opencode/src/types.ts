@@ -40,6 +40,16 @@ export interface OpencodeBackendOptions {
 
   /** Log level */
   logLevel?: 'debug' | 'info' | 'warn' | 'error' | 'off'
+  /**
+   * Server-level permission defaults injected via OPENCODE_CONFIG_CONTENT at
+   * server startup. These apply to every session on this backend instance.
+   * For per-request tool blocking, use the skelm permission layer instead.
+   */
+  serverPermissions?: {
+    bash?: 'allow' | 'ask' | 'deny'
+    edit?: 'allow' | 'ask' | 'deny'
+    webfetch?: 'allow' | 'ask' | 'deny'
+  }
 }
 
 /**
