@@ -109,6 +109,15 @@ createPiSdkBackend({
 | policy `undefined` | no override — pi uses its defaults |
 | policy present, nothing granted | `noTools: 'all'` — all built-ins suppressed |
 
+### ⚠ Permission semantics differ from MCP-host backends
+
+The SDK backend trades skelm's per-call MCP enforcement for pi's process-level enforcement. Two consequences worth knowing:
+
+- **`bash` is all-or-nothing.** Pi has a single `bash` tool, not per-binary tools. If `allowedExecutables` contains `bash` or `sh`, the agent can run *any* binary. Per-binary filtering (e.g. allow `git` but not `rm`) is not enforced — pi has no hook for it. With backends that route through `@skelm/core`'s MCP host, `requestedExecutable()` does enforce per-binary at the call site.
+- **Filesystem paths are advisory.** `fsRead`/`fsWrite` paths unlock the *category* of filesystem tools, but pi's `read`/`write`/`grep`/`find`/`ls` tools can access anywhere the pi process has filesystem permission. They do not honour skelm's path allowlist.
+
+If you need per-binary or per-path enforcement, use the MCP-host backends (claude-code, opencode) and route privileged operations through MCP servers that skelm can intercept. Use the pi SDK backend when you accept process-level sandboxing — typically when running pi inside an isolated workspace (ephemeral cwd, OS sandbox, container) where pi's full filesystem and shell access is already bounded.
+
 ## RPC backend
 
 ```ts

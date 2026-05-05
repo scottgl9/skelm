@@ -89,6 +89,8 @@ export interface SkelmConfig {
   instances?: readonly import('./backend.js').SkelmBackend[]
   /** Project-level default permissions; per-step permissions intersect with these. */
   defaults?: {
+    /** Default backend id. Equivalent to the top-level `backend` field; both are checked. */
+    backend?: string
     permissions?: AgentPermissions
     permissionProfiles?: Readonly<Record<string, AgentPermissions>>
   }
