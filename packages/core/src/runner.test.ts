@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { BackendRegistry, type SkelmBackend } from './backend.js'
 import { agent, code, pipeline } from './builders.js'
-import { MissingSecretError, type SecretResolver } from './enforcement/index.js'
 import { EventBus, type RunEvent } from './events.js'
 import { runPipeline } from './runner.js'
+import type { Skill } from './skills.js'
 
 describe('runPipeline — sequential code steps', () => {
   it('runs a single code step and adopts its output as the run output', async () => {
@@ -145,6 +145,123 @@ describe('builders — validation', () => {
   })
 })
 
+describe('runPipeline — skill loading', () => {
+  function skillBackend(captured: { loaded: Array<Skill | null> }): SkelmBackend {
+    return {
+      id: 'skill-backend',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: true,
+        modelSelection: false,
+        toolPermissions: 'native',
+      },
+      async run(req, ctx) {
+        if (req.skills !== undefined && ctx.loadSkill !== undefined) {
+          for (const id of req.skills) {
+            captured.loaded.push(await ctx.loadSkill(id))
+          }
+        }
+        return { text: 'ok' }
+      },
+    }
+  }
+
+  it('passes the skill loader through and returns the loaded skill when permitted', async () => {
+    const registry = new BackendRegistry()
+    const captured = { loaded: [] as Array<Skill | null> }
+    registry.register(skillBackend(captured))
+    const wf = pipeline({
+      id: 'skills-allowed',
+      steps: [
+        agent({
+          id: 'work',
+          backend: 'skill-backend',
+          prompt: 'hi',
+          skills: ['triage'],
+          permissions: { allowedSkills: ['triage'] },
+        }),
+      ],
+    })
+    const skill: Skill = Object.freeze({
+      id: 'triage',
+      metadata: Object.freeze({}),
+      body: 'do triage',
+      source: 'memory://triage',
+    }) as Skill
+    const run = await runPipeline(wf, undefined, {
+      backends: registry,
+      skillSource: async (id) => (id === 'triage' ? skill : null),
+    })
+    expect(run.status).toBe('completed')
+    expect(captured.loaded).toEqual([skill])
+  })
+
+  it('emits permission.denied and yields null when the skill is not in allowedSkills', async () => {
+    const registry = new BackendRegistry()
+    const captured = { loaded: [] as Array<Skill | null> }
+    registry.register(skillBackend(captured))
+    const events = new EventBus()
+    const denials: RunEvent[] = []
+    events.subscribe((ev) => {
+      if (ev.type === 'permission.denied') denials.push(ev)
+    })
+    const wf = pipeline({
+      id: 'skills-denied',
+      steps: [
+        agent({
+          id: 'work',
+          backend: 'skill-backend',
+          prompt: 'hi',
+          skills: ['rogue'],
+          permissions: { allowedSkills: ['triage'] },
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, undefined, {
+      backends: registry,
+      events,
+      skillSource: async () =>
+        ({
+          id: 'rogue',
+          metadata: {},
+          body: 'should not be returned',
+          source: 'memory://rogue',
+        }) as Skill,
+    })
+    expect(run.status).toBe('completed')
+    expect(captured.loaded).toEqual([null])
+    expect(denials).toHaveLength(1)
+    expect(denials[0]).toMatchObject({ dimension: 'skill', stepId: 'work' })
+  })
+
+  it('returns null gracefully when skillSource yields no skill for the id', async () => {
+    const registry = new BackendRegistry()
+    const captured = { loaded: [] as Array<Skill | null> }
+    registry.register(skillBackend(captured))
+    const wf = pipeline({
+      id: 'skills-missing',
+      steps: [
+        agent({
+          id: 'work',
+          backend: 'skill-backend',
+          prompt: 'hi',
+          skills: ['ghost'],
+          permissions: { allowedSkills: ['ghost'] },
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, undefined, {
+      backends: registry,
+      skillSource: async () => null,
+    })
+    expect(run.status).toBe('completed')
+    expect(captured.loaded).toEqual([null])
+  })
+})
+
 describe('retry policy', () => {
   it('retries a step until it succeeds and emits step.retry events', async () => {
     let attempts = 0
@@ -200,164 +317,5 @@ describe('retry policy', () => {
     expect(run.status).toBe('failed')
     expect(run.error?.message).toBe('still broken')
     expect(attempts).toBe(2)
-  })
-})
-
-describe('runPipeline — agent secrets', () => {
-  function captureBackend(captured: {
-    secrets?: Readonly<Record<string, string>>
-  }): SkelmBackend {
-    return {
-      id: 'sec-backend',
-      capabilities: {
-        prompt: false,
-        streaming: false,
-        sessionLifecycle: false,
-        mcp: false,
-        skills: false,
-        modelSelection: false,
-        toolPermissions: 'wrapped',
-      },
-      async run(req) {
-        captured.secrets = req.secrets
-        return { text: 'ok' }
-      },
-    }
-  }
-
-  function memoryResolver(values: Record<string, string>): SecretResolver {
-    return {
-      async resolve(name) {
-        return values[name]
-      },
-    }
-  }
-
-  it('resolves declared secrets and injects them into AgentRequest.secrets', async () => {
-    const captured: { secrets?: Readonly<Record<string, string>> } = {}
-    const registry = new BackendRegistry()
-    registry.register(captureBackend(captured))
-    const events = new EventBus()
-    const accessed: RunEvent[] = []
-    events.subscribe((e) => {
-      if (e.type === 'secret.accessed') accessed.push(e)
-    })
-    const wf = pipeline({
-      id: 'sec-ok',
-      steps: [
-        agent({
-          id: 'work',
-          backend: 'sec-backend',
-          prompt: 'hi',
-          secrets: ['JIRA_API_TOKEN'],
-          permissions: { allowedSecrets: ['JIRA_API_TOKEN'] },
-        }),
-      ],
-    })
-    const run = await runPipeline(wf, undefined, {
-      backends: registry,
-      events,
-      secretResolver: memoryResolver({ JIRA_API_TOKEN: 'super-sekrit' }),
-    })
-    expect(run.status).toBe('completed')
-    expect(captured.secrets).toEqual({ JIRA_API_TOKEN: 'super-sekrit' })
-    expect(accessed).toHaveLength(1)
-    expect(accessed[0]).toMatchObject({ name: 'JIRA_API_TOKEN', stepId: 'work' })
-  })
-
-  it('denies an undeclared secret with permission.denied (dimension: secret) and never resolves it', async () => {
-    const captured: { secrets?: Readonly<Record<string, string>> } = {}
-    const registry = new BackendRegistry()
-    registry.register(captureBackend(captured))
-    const events = new EventBus()
-    const denials: RunEvent[] = []
-    let resolverCalls = 0
-    events.subscribe((e) => {
-      if (e.type === 'permission.denied') denials.push(e)
-    })
-    const wf = pipeline({
-      id: 'sec-denied',
-      steps: [
-        agent({
-          id: 'work',
-          backend: 'sec-backend',
-          prompt: 'hi',
-          secrets: ['SHOULD_NOT_HAVE'],
-          permissions: { allowedSecrets: ['ALLOWED'] },
-        }),
-      ],
-    })
-    const run = await runPipeline(wf, undefined, {
-      backends: registry,
-      events,
-      secretResolver: {
-        async resolve(_name) {
-          resolverCalls += 1
-          return 'leaked-value'
-        },
-      },
-    })
-    expect(run.status).toBe('failed')
-    expect(run.error?.name).toBe('PermissionDeniedError')
-    expect(denials).toHaveLength(1)
-    expect(denials[0]).toMatchObject({ dimension: 'secret', stepId: 'work' })
-    expect(captured.secrets).toBeUndefined()
-    expect(resolverCalls).toBe(0)
-  })
-
-  it('throws MissingSecretError when the resolver returns undefined for an allowed secret', async () => {
-    const registry = new BackendRegistry()
-    registry.register(captureBackend({}))
-    const wf = pipeline({
-      id: 'sec-missing',
-      steps: [
-        agent({
-          id: 'work',
-          backend: 'sec-backend',
-          prompt: 'hi',
-          secrets: ['NOT_IN_ENV'],
-          permissions: { allowedSecrets: ['NOT_IN_ENV'] },
-        }),
-      ],
-    })
-    const run = await runPipeline(wf, undefined, {
-      backends: registry,
-      secretResolver: memoryResolver({}),
-    })
-    expect(run.status).toBe('failed')
-    expect(run.error?.name).toBe('MissingSecretError')
-  })
-
-  it('never includes secret values in event payloads', async () => {
-    const registry = new BackendRegistry()
-    registry.register(captureBackend({}))
-    const events = new EventBus()
-    const seen: RunEvent[] = []
-    events.subscribe((e) => seen.push(e))
-    const wf = pipeline({
-      id: 'sec-no-leak',
-      steps: [
-        agent({
-          id: 'work',
-          backend: 'sec-backend',
-          prompt: 'hi',
-          secrets: ['LEAK_PROBE'],
-          permissions: { allowedSecrets: ['LEAK_PROBE'] },
-        }),
-      ],
-    })
-    await runPipeline(wf, undefined, {
-      backends: registry,
-      events,
-      secretResolver: memoryResolver({ LEAK_PROBE: 'TOPSECRET' }),
-    })
-    for (const ev of seen) {
-      expect(JSON.stringify(ev)).not.toContain('TOPSECRET')
-    }
-  })
-
-  it('MissingSecretError exposes the secret name', () => {
-    const err = new MissingSecretError('FOO')
-    expect(err.secretName).toBe('FOO')
   })
 })

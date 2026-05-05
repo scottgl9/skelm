@@ -106,6 +106,8 @@ export {
   type RegistryListener,
   SkillRegistry,
   type SkillRegistryOptions,
+  createSkillSource,
+  type CreateSkillSourceOptions,
   WorkflowRegistry,
   type WorkflowEntry,
   type WorkflowRegistryOptions,
