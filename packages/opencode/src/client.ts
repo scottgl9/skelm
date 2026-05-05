@@ -9,7 +9,7 @@
 
 import { type ChildProcess, spawn } from 'node:child_process' // @subprocess-ok: spawns opencode serve for HTTP backend
 import { createOpencodeClient } from '@opencode-ai/sdk'
-import type { AgentRequest, AgentResponse } from '@skelm/core'
+import type { AgentRequest, AgentResponse, ResolvedPolicy } from '@skelm/core'
 import type { OpencodeBackendOptions } from './types.js'
 
 type SdkClient = ReturnType<typeof createOpencodeClient>
@@ -18,6 +18,12 @@ type SdkClient = ReturnType<typeof createOpencodeClient>
 interface OpencodeServerConfig {
   model?: string
   logLevel?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
+  // Server-level permission defaults (apply to every session on this server).
+  permission?: {
+    bash?: 'allow' | 'ask' | 'deny'
+    edit?: 'allow' | 'ask' | 'deny'
+    webfetch?: 'allow' | 'ask' | 'deny'
+  }
 }
 
 export class OpencodeClientWrapper {
@@ -54,6 +60,9 @@ export class OpencodeClientWrapper {
     if (this.options.logLevel && this.options.logLevel !== 'off') {
       const logLevelMap = { debug: 'DEBUG', info: 'INFO', warn: 'WARN', error: 'ERROR' } as const
       serverConfig.logLevel = logLevelMap[this.options.logLevel]
+    }
+    if (this.options.serverPermissions) {
+      serverConfig.permission = this.options.serverPermissions
     }
 
     return new Promise<void>((resolve, reject) => {
@@ -103,6 +112,7 @@ export class OpencodeClientWrapper {
     request: AgentRequest,
     signal: AbortSignal,
     timeoutMs = 300_000,
+    resolvedPolicy?: ResolvedPolicy,
   ): Promise<AgentResponse> {
     await this.ensureStarted()
     if (!this.client) throw new Error('opencode serve not ready')
@@ -132,7 +142,13 @@ export class OpencodeClientWrapper {
       // Model is already set via OPENCODE_CONFIG_CONTENT (#2), so no per-request body needed.
       const promptResult = await this.client.session.promptAsync({
         path: { id: sessionId },
-        body: { parts: [{ type: 'text', text: request.prompt }] },
+        body: {
+          parts: [{ type: 'text', text: request.prompt }],
+          ...(request.system !== undefined && { system: request.system }),
+          ...(resolvedPolicy !== undefined && {
+            tools: buildOpencodeToolsFromPolicy(resolvedPolicy),
+          }),
+        },
       })
       if (!promptResult.data) {
         throw new Error(`session.promptAsync failed: ${JSON.stringify(promptResult.error)}`)
@@ -156,6 +172,8 @@ export class OpencodeClientWrapper {
     sessionId: string,
     signal: AbortSignal,
   ): Promise<AgentResponse> {
+    // Only collect text parts from assistant messages; track which message IDs are assistant.
+    const assistantMessageIds = new Set<string>()
     // Each TextPart is updated incrementally; track the latest full text per part id.
     const textParts = new Map<string, string>()
 
@@ -171,12 +189,34 @@ export class OpencodeClientWrapper {
         }
       }
 
+      if (event.type === 'message.updated') {
+        const props = event.properties as {
+          info: { id: string; sessionID: string; role: string }
+        }
+        if (props.info.sessionID === sessionId && props.info.role === 'assistant') {
+          assistantMessageIds.add(props.info.id)
+        }
+      }
+
       if (event.type === 'message.part.updated') {
         const props = event.properties as {
-          part: { type: string; sessionID: string; id: string; text?: string; synthetic?: boolean }
+          part: {
+            type: string
+            sessionID: string
+            messageID: string
+            id: string
+            text?: string
+            synthetic?: boolean
+          }
         }
         const { part } = props
-        if (part.sessionID === sessionId && part.type === 'text' && !part.synthetic && part.text) {
+        if (
+          part.sessionID === sessionId &&
+          assistantMessageIds.has(part.messageID) &&
+          part.type === 'text' &&
+          !part.synthetic &&
+          part.text
+        ) {
           textParts.set(part.id, part.text)
         }
       }
@@ -198,5 +238,26 @@ export class OpencodeClientWrapper {
     this.proc = null
     this.client = null
     this.startPromise = null
+  }
+}
+
+// Map a skelm ResolvedPolicy to opencode's per-prompt tool allow/deny map.
+// opencode tool names: bash, read, edit, glob, grep, list, webSearch.
+function buildOpencodeToolsFromPolicy(policy: ResolvedPolicy): Record<string, boolean> {
+  // star = all tools allowed; return empty map to let opencode use its defaults.
+  if (policy.allowedTools.star) return {}
+
+  const allow = (name: string) =>
+    policy.allowedTools.exact.has(name) ||
+    policy.allowedTools.prefixes.some((p) => name.startsWith(p))
+
+  return {
+    bash: policy.allowedExecutables.size > 0 || allow('bash'),
+    read: policy.fsRead.size > 0 || allow('read'),
+    edit: policy.fsWrite.size > 0 || allow('edit'),
+    glob: policy.fsRead.size > 0 || allow('glob'),
+    grep: policy.fsRead.size > 0 || allow('grep'),
+    list: policy.fsRead.size > 0 || allow('list'),
+    webSearch: policy.networkEgress !== 'deny' || allow('webSearch'),
   }
 }
