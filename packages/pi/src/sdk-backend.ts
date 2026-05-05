@@ -5,6 +5,11 @@
  * individual tool calls), this backend uses the pi SDK directly, allowing
  * skelm to pass a hard tool allowlist that pi enforces natively.
  *
+ * System prompt strategy:
+ *   By default pi's coding-agent system prompt is kept active. req.system
+ *   and skill blocks are appended after it so the agent has full context.
+ *   Set options.systemPrompt to replace pi's base prompt entirely.
+ *
  * Permission → tool mapping:
  *   allowedExecutables contains 'bash' or 'sh'  → 'bash'
  *   fsRead.size > 0                              → 'read', 'grep', 'find', 'ls'
@@ -81,22 +86,33 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
     async run(request: AgentRequest, context: BackendContext): Promise<AgentResponse> {
       await acquire()
 
-      const policy = context.permissions ?? request.permissions
-      const toolAllowlist = derivePiToolAllowlist(policy)
-
-      const client = new PiSdkClient({
-        ...(options.cwd !== undefined || request.cwd !== undefined
-          ? { cwd: request.cwd ?? options.cwd }
-          : {}),
-        ...(toolAllowlist !== undefined && { tools: toolAllowlist }),
-        // When a policy is present but grants no tools, disable all built-ins
-        ...(policy !== undefined && toolAllowlist?.length === 0 && { noTools: 'all' as const }),
-      })
-
       try {
+        const policy = context.permissions ?? request.permissions
+        const toolAllowlist = derivePiToolAllowlist(policy)
+
         const skillBodies = await loadSkillBodies(request, context)
-        const prompt = buildPrompt(request, skillBodies)
-        const result = await client.prompt(prompt, context.signal, options.timeout ?? 300_000)
+        const systemContent = buildSystemContent(options.systemPrompt, request, skillBodies)
+
+        const cwd = request.cwd ?? options.cwd
+        const client = new PiSdkClient({
+          ...(cwd !== undefined && { cwd }),
+          ...(toolAllowlist !== undefined && { tools: toolAllowlist }),
+          ...(policy !== undefined && toolAllowlist?.length === 0 && { noTools: 'all' as const }),
+          ...(options.noExtensions !== undefined && { noExtensions: options.noExtensions }),
+          ...(options.noSkills !== undefined && { noSkills: options.noSkills }),
+          ...(options.noContextFiles !== undefined && { noContextFiles: options.noContextFiles }),
+          // System prompt: inject content and indicate whether to replace pi's base
+          ...(systemContent !== undefined && {
+            system: systemContent,
+            replaceSystemPrompt: options.systemPrompt !== undefined,
+          }),
+        })
+
+        const result = await client.prompt(
+          request.prompt,
+          context.signal,
+          options.timeout ?? 300_000,
+        )
 
         return {
           text: result.text,
@@ -139,19 +155,16 @@ export function derivePiToolAllowlist(policy: ResolvedPolicy | undefined): strin
 
   const allowed: string[] = []
 
-  // Shell/exec access
   const execs = policy.allowedExecutables
   if (execs.has('bash') || execs.has('sh')) {
     allowed.push('bash')
   }
 
-  // Filesystem read access
   const fsRead = policy.fsRead
   if (fsRead instanceof Set ? fsRead.size > 0 : Array.isArray(fsRead) && fsRead.length > 0) {
     allowed.push('read', 'grep', 'find', 'ls')
   }
 
-  // Filesystem write access (also enables read implicitly)
   const fsWrite = policy.fsWrite
   if (fsWrite instanceof Set ? fsWrite.size > 0 : Array.isArray(fsWrite) && fsWrite.length > 0) {
     if (!allowed.includes('read')) allowed.push('read', 'grep', 'find', 'ls')
@@ -159,6 +172,24 @@ export function derivePiToolAllowlist(policy: ResolvedPolicy | undefined): strin
   }
 
   return allowed
+}
+
+/**
+ * Assemble the system content to inject into pi's system prompt.
+ *
+ * When systemBase is set it replaces pi's prompt; req.system and skills are
+ * always appended so the agent has the step's context regardless of mode.
+ */
+function buildSystemContent(
+  systemBase: string | undefined,
+  req: AgentRequest,
+  skillBodies: string[],
+): string | undefined {
+  const parts: string[] = []
+  if (systemBase !== undefined) parts.push(systemBase)
+  if (req.system) parts.push(req.system)
+  for (const body of skillBodies) parts.push(body)
+  return parts.length > 0 ? parts.join('\n\n---\n\n') : undefined
 }
 
 async function loadSkillBodies(req: AgentRequest, ctx: BackendContext): Promise<string[]> {
@@ -169,14 +200,4 @@ async function loadSkillBodies(req: AgentRequest, ctx: BackendContext): Promise<
     if (skill !== null) bodies.push(formatSkillBlock(skill))
   }
   return bodies
-}
-
-function buildPrompt(req: AgentRequest, skillBodies: string[] = []): string {
-  const parts: string[] = []
-  const systemParts: string[] = []
-  if (req.system) systemParts.push(req.system)
-  for (const body of skillBodies) systemParts.push(body)
-  if (systemParts.length > 0) parts.push(`[System: ${systemParts.join('\n\n---\n\n')}]`)
-  parts.push(req.prompt)
-  return parts.join('\n\n')
 }
