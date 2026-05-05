@@ -47,8 +47,8 @@ describe('agent() step + ACP backend', () => {
         agent({
           id: 'classify',
           backend: 'acp-mock',
-          prompt: '{"label":"feature"}',
-          // The mock echoes "echo:" + prompt, which doesn't match this schema —
+          prompt: 'plain text response',
+          // The mock echoes "echo:" + prompt, which is plain text and doesn't match this schema —
           // so this asserts the negative path: structured-output validation
           // catches a non-conforming agent reply.
           output: z.object({ label: z.string() }),

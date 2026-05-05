@@ -146,6 +146,7 @@ function createBackend(backendId: string, config: SkelmConfig) {
     case 'copilot-acp': {
       const cwd = readString(entry.cwd)
       return createAcpBackend({
+        id: backendId,
         command: readString(entry.command) ?? 'copilot',
         args: readStringArray(entry.args) ?? ['--acp'],
         ...(cwd !== undefined && { cwd }),
