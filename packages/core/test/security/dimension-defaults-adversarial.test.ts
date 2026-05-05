@@ -9,11 +9,12 @@ import { TrustEnforcer, resolvePermissions } from '../../src/permissions.js'
 //   - tool        → enforced by mcp/host.ts (e2e fixture: permissions-adversarial)
 //   - executable  → enforced by mcp/host.ts (e2e fixture: permissions-adversarial)
 //   - mcp         → enforced by runner.ts   (e2e fixture: mcp-attach-adversarial)
-//   - skill       → helper present, runtime call site not yet wired
+//   - skill       → enforced by runner.ts makeSkillLoader via BackendContext.loadSkill
+//                   (unit fixture: skill-loader.test.ts)
 //   - network     → enforced by runner.ts via createPolicyFetch in BackendContext.fetch
 //                   (unit fixture: policy-fetch.test.ts)
-//   - fs.read     → helper present, workspace intersection wired,
-//                   per-call enforcement deferred to a future fs wrapper
+//   - fs.read     → enforced by mcp/host.ts requestedFsPath extractor (invokeTool)
+//                   (unit fixture: mcp-fs-enforcement.test.ts)
 //   - fs.write    → as above
 //
 // Helpers for the deferred dimensions are pinned here so a regression in

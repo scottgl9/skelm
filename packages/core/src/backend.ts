@@ -116,6 +116,8 @@ export interface AgentRequest {
   permissions?: ResolvedPolicy
   /** MCP servers to attach for this agent run. */
   mcpServers?: readonly McpServerConfig[]
+  /** Skill IDs to load and inject into the agent context before the run. */
+  skills?: readonly string[]
   /** When set, the runtime expects a structured value matching this schema. */
   outputSchema?: SkelmSchema
 }
@@ -148,6 +150,15 @@ export interface BackendContext {
    * policy, or via the contract test harness).
    */
   fetch?: typeof globalThis.fetch
+  /**
+   * Policy-enforcing skill loader. Returns the skill body when the resolved
+   * policy permits loading the given skill id, or null when the id is unknown
+   * or the policy denies it. Backends that support native skill loading
+   * (capabilities.skills = true) should call this instead of reading skill
+   * files directly so the canLoadSkill enforcement path fires.
+   * Undefined when no skill registry is available.
+   */
+  loadSkill?: (skillId: string) => Promise<import('./skills.js').Skill | null>
 }
 
 /**

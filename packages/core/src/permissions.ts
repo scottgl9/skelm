@@ -194,7 +194,8 @@ export class TrustEnforcer {
     roots: ReadonlySet<string>,
     dimension: 'fs.read' | 'fs.write',
   ): EnforceDecision {
-    for (const root of roots) {
+    for (const rawRoot of roots) {
+      const root = rawRoot.endsWith('/') ? rawRoot.slice(0, -1) : rawRoot
       if (path === root || path.startsWith(`${root}/`)) {
         return { allow: true }
       }
