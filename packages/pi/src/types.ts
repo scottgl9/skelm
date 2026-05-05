@@ -16,6 +16,29 @@ export interface PiSdkBackendOptions {
    * Excess calls are queued until a slot opens.
    */
   maxConcurrent?: number
+  /**
+   * Replace pi's coding-agent system prompt with a custom base.
+   * When omitted, pi's default prompt is kept and req.system / skills are
+   * appended after it.
+   */
+  systemPrompt?: string
+  /**
+   * Disable pi's extension loading from .pi/extensions/.
+   * Default: true — extensions can expand the tool surface in ways skelm
+   * cannot audit; disabled by default for predictable sandboxing.
+   */
+  noExtensions?: boolean
+  /**
+   * Disable pi's built-in skill loading from .pi/skills/.
+   * Default: true — skelm injects skills itself; loading pi's own skills
+   * would cause duplicates.
+   */
+  noSkills?: boolean
+  /**
+   * Disable pi's cwd context file discovery (AGENTS.md, .pi/context/).
+   * Default: false — project context files are useful and safe.
+   */
+  noContextFiles?: boolean
 }
 
 export interface PiBackendOptions {
