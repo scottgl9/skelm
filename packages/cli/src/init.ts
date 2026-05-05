@@ -1,6 +1,7 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { EXIT, type ExitCode } from './exit-codes.js'
 
 export interface InitCommandArgs {
@@ -60,9 +61,20 @@ async function isNonEmpty(dir: string): Promise<boolean> {
   return entries.length > 0
 }
 
+function getSkelmVersion(): string {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url))
+    const pkg = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8'))
+    return typeof pkg.version === 'string' ? pkg.version : '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
+}
+
 function scaffoldFiles(): ReadonlyArray<readonly [string, string]> {
+  const skelmVersion = getSkelmVersion()
   return [
-    ['package.json', PACKAGE_JSON],
+    ['package.json', makePackageJson(skelmVersion)],
     ['tsconfig.json', TSCONFIG],
     ['skelm.config.ts', SKELM_CONFIG],
     ['workflows/hello.workflow.ts', HELLO_WORKFLOW],
@@ -71,7 +83,8 @@ function scaffoldFiles(): ReadonlyArray<readonly [string, string]> {
   ]
 }
 
-const PACKAGE_JSON = `{
+function makePackageJson(skelmVersion: string): string {
+  return `{
   "name": "skelm-project",
   "version": "0.1.0",
   "private": true,
@@ -80,11 +93,12 @@ const PACKAGE_JSON = `{
     "start": "skelm run workflows/hello.workflow.ts --input '{\\"name\\":\\"world\\"}'"
   },
   "dependencies": {
-    "skelm": "^0.1.0",
+    "skelm": "^${skelmVersion}",
     "zod": "^4.4.2"
   }
 }
 `
+}
 
 const TSCONFIG = `{
   "compilerOptions": {
