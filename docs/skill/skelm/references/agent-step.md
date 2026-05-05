@@ -61,6 +61,8 @@ Permission → pi tool mapping:
 - `fsRead.size > 0` → `read`, `grep`, `find`, `ls`
 - `fsWrite.size > 0` → `write`, `edit` (+ read tools)
 
+⚠ **Permission semantics with the SDK backend differ from MCP-host backends.** Pi has one `bash` tool (not per-binary) — enabling `bash` lets the agent run any executable. Filesystem paths are advisory: `fsRead`/`fsWrite` unlock the tool category but don't constrain paths. Use the SDK backend inside an already-bounded workspace (ephemeral cwd, sandbox, container); use MCP-host backends (claude-code, opencode) when you need per-call binary/path enforcement.
+
 ## MCP servers
 
 Attach MCP servers by id (must be declared in config):
