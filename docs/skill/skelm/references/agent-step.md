@@ -37,6 +37,30 @@ agent({ id: 'implement', backend: 'opencode', prompt: '...' })
 
 If `backend` is omitted, the config `defaults.backend` is used (or the first declared agent).
 
+### Pi backends (`@skelm/pi`)
+
+Two pi backends ship in `@skelm/pi`. Prefer the SDK backend for new work.
+
+| | `createPiBackend` (RPC) | `createPiSdkBackend` (SDK) |
+|---|---|---|
+| Tool enforcement | Advisory | **Native** — pi hard-enforces the allowlist |
+| System prompt | Not controllable | Pi's default; `req.system` appended; optional full replace |
+| Peer dep | `pi` CLI on `$PATH` | `@mariozechner/pi-coding-agent` npm package |
+
+```ts
+import { createPiSdkBackend } from '@skelm/pi'
+
+// skelm.config.ts
+backends: [createPiSdkBackend({ maxConcurrent: 4 })]
+```
+
+The SDK backend defaults to `noExtensions: true` and `noSkills: true` so project-local pi extensions and skills don't expand the tool surface or duplicate skelm's skill injection. Set `noContextFiles: false` (the default) to keep AGENTS.md and `.pi/context/` loaded.
+
+Permission → pi tool mapping:
+- `allowedExecutables` has `bash`/`sh` → `bash`
+- `fsRead.size > 0` → `read`, `grep`, `find`, `ls`
+- `fsWrite.size > 0` → `write`, `edit` (+ read tools)
+
 ## MCP servers
 
 Attach MCP servers by id (must be declared in config):

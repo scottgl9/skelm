@@ -1,12 +1,21 @@
 # @skelm/pi
 
-> Pi coding-agent backend for [skelm](https://github.com/scottgl9/skelm) — drives [`@mariozechner/pi-coding-agent`](https://www.npmjs.com/package/@mariozechner/pi-coding-agent) over its JSONL RPC protocol with full permission enforcement.
+> Pi coding-agent backend for [skelm](https://github.com/scottgl9/skelm) — integrates [`@mariozechner/pi-coding-agent`](https://www.npmjs.com/package/@mariozechner/pi-coding-agent) with full permission enforcement.
 
 [![npm](https://img.shields.io/npm/v/@skelm/pi)](https://www.npmjs.com/package/@skelm/pi)
 
 Part of [skelm](https://github.com/scottgl9/skelm).
 
-Spawns `pi --mode rpc` per call and streams the response back over the documented JSONL protocol. Maps skelm's `AgentPermissions` onto Pi's permission flags so denied tools / hosts / filesystem writes fail at step start.
+Two backends are available:
+
+| | `createPiBackend` (RPC) | `createPiSdkBackend` (SDK) |
+|---|---|---|
+| **How it works** | Spawns `pi --mode rpc` per call | Uses `@mariozechner/pi-coding-agent` SDK directly |
+| **Tool enforcement** | Advisory (skelm intercepts after the fact) | Native (pi hard-enforces the allowlist) |
+| **System prompt** | Not controllable | Pi's default; `req.system` appended; optional full replace |
+| **Peer dependency** | `pi` CLI on `$PATH` | `@mariozechner/pi-coding-agent` installed |
+
+Use the **SDK backend** for new work — it gives you hard tool enforcement and real system prompt control. The RPC backend exists for environments where the SDK peer dependency can't be installed.
 
 ## Install
 
@@ -14,18 +23,29 @@ Spawns `pi --mode rpc` per call and streams the response back over the documente
 npm install @skelm/pi
 ```
 
-You need the `pi` CLI on `$PATH` (or set `command` in the backend options).
+**RPC backend** additionally requires the `pi` CLI on `$PATH`:
 
-## Quick Start
+```bash
+npm install -g @mariozechner/pi-coding-agent   # installs the `pi` binary
+```
+
+**SDK backend** additionally requires the SDK as a peer dependency:
+
+```bash
+npm install @mariozechner/pi-coding-agent
+```
+
+## SDK backend (recommended)
 
 ```ts
 import { agent, pipeline } from 'skelm'
-import { createPiBackend } from '@skelm/pi'
+import { createPiSdkBackend } from '@skelm/pi'
 
-const pi = createPiBackend({
-  command: 'pi',
-  model: 'qwen-3-coder-32b',
-  // ...
+const pi = createPiSdkBackend({
+  // All options are optional
+  cwd: './workspace',          // working directory; defaults to process.cwd()
+  timeout: 300_000,            // ms; default 5 min
+  maxConcurrent: 4,            // queued beyond this; 0 = unlimited
 })
 
 export default pipeline({
@@ -34,35 +54,109 @@ export default pipeline({
     agent({
       id: 'pi-step',
       backend: pi,
-      agentDef: './agents/coder',
+      prompt: 'Refactor the auth module to use async/await throughout.',
       permissions: {
-        allowedTools: ['edit', 'bash'],
-        fsRead:       ['./src'],
-        fsWrite:      ['./src'],
+        allowedExecutables: ['bash'],
+        fsRead:  ['./src'],
+        fsWrite: ['./src'],
       },
-      maxTurns: 8,
     }),
   ],
 })
 ```
 
-## What's exported
+### System prompt
+
+By default pi's coding-agent system prompt is kept active. `req.system` and skill blocks are appended after it.
 
 ```ts
-export {
-  createPiBackend,
-  PiBackendError,
-  PiBackendAuthenticationError,
-  PiBackendRateLimitError,
-  PiBackendTimeoutError,
-} from './backend.js'
-export { createPiBackendFromConfig } from './factory.js'
-export { PiProvider, createPiProvider } from './provider.js'
-export { PiRpcClient } from './rpc-client.js'
+// append step-level system context to pi's default prompt (default)
+agent({ system: 'Follow the project style guide.', ... })
 
-export type { PiBackendOptions } from './types.js'
-export type { PiBackendConfig } from './factory.js'
-export type { PiRpcClientOptions, PiRpcResponse } from './rpc-client.js'
+// replace pi's base prompt entirely (use sparingly)
+createPiSdkBackend({ systemPrompt: 'You are a TypeScript refactoring specialist.' })
+```
+
+### Sandbox defaults
+
+The SDK backend enables predictable sandboxing out of the box:
+
+| Option | Default | Reason |
+|---|---|---|
+| `noExtensions` | `true` | `.pi/extensions/` can register tools and intercept messages in ways skelm cannot audit |
+| `noSkills` | `true` | skelm injects skills itself; loading `.pi/skills/` would cause duplicates |
+| `noContextFiles` | `false` | `AGENTS.md` and `.pi/context/` are useful project context |
+
+Opt back in at the backend level:
+
+```ts
+createPiSdkBackend({
+  noExtensions: false,   // allow project extensions
+  noSkills: false,       // also load .pi/skills/ from cwd
+  noContextFiles: true,  // suppress cwd context files
+})
+```
+
+### Permission → tool mapping
+
+`derivePiToolAllowlist(policy)` translates a skelm `ResolvedPolicy` into pi's native tool names:
+
+| skelm permission | pi tools enabled |
+|---|---|
+| `allowedExecutables` has `bash` or `sh` | `bash` |
+| `fsRead.size > 0` | `read`, `grep`, `find`, `ls` |
+| `fsWrite.size > 0` | `write`, `edit` (+ read tools) |
+| policy `undefined` | no override — pi uses its defaults |
+| policy present, nothing granted | `noTools: 'all'` — all built-ins suppressed |
+
+## RPC backend
+
+```ts
+import { createPiBackend } from '@skelm/pi'
+
+const pi = createPiBackend({
+  command: 'pi',               // path to binary; default: 'pi' on $PATH
+  provider: 'anthropic',       // pi provider name; omit for pi's default
+  model: 'claude-opus-4-5',    // model id; omit for pi's default
+  cwd: './workspace',
+  timeout: 300_000,
+  maxConcurrent: 4,
+})
+```
+
+The RPC backend spawns one `pi --mode rpc` process per call and streams the response over the JSONL protocol. Tool enforcement is advisory — skelm maps `AgentPermissions` to pi's permission flags but cannot intercept individual tool calls after dispatch.
+
+## Skills
+
+Both backends support skelm skills. Declare them on the `agent()` step:
+
+```ts
+agent({
+  id: 'implement',
+  backend: pi,
+  skills: ['code-review', 'style-guide'],
+  prompt: 'Implement the feature.',
+})
+```
+
+Skills are injected into the system prompt via `formatSkillBlock` (includes the skill's description, compatibility, and allowed-tools metadata before the body).
+
+## Exports
+
+```ts
+// RPC backend
+export { createPiBackend, PiBackendError, PiBackendAuthenticationError,
+         PiBackendRateLimitError, PiBackendTimeoutError } from '@skelm/pi'
+export { createPiBackendFromConfig } from '@skelm/pi'
+export { PiProvider, createPiProvider } from '@skelm/pi'
+export { PiRpcClient } from '@skelm/pi'
+export type { PiBackendOptions, PiBackendConfig, PiRpcClientOptions, PiRpcResponse } from '@skelm/pi'
+
+// SDK backend
+export { createPiSdkBackend, derivePiToolAllowlist, PiSdkBackendError,
+         PiSdkBackendAuthenticationError, PiSdkBackendTimeoutError } from '@skelm/pi'
+export { PiSdkClient } from '@skelm/pi'
+export type { PiSdkBackendOptions, PiSdkClientOptions, PiSdkResponse } from '@skelm/pi'
 ```
 
 ## Stability
