@@ -47,7 +47,7 @@ describe('pi backend — skill injection via buildPrompt', () => {
     )
     const ctx = makeCtx({ loadSkill })
 
-    await backend.run!({ prompt: 'do the thing', skills: ['triage'] }, ctx)
+    await backend.run?.({ prompt: 'do the thing', skills: ['triage'] }, ctx)
 
     const sentPrompt: string = mockPrompt.mock.calls[0][0]
     expect(sentPrompt).toContain('[System:')
@@ -63,7 +63,7 @@ describe('pi backend — skill injection via buildPrompt', () => {
     )
     const ctx = makeCtx({ loadSkill })
 
-    await backend.run!({ prompt: 'go', system: 'Be concise.', skills: ['triage'] }, ctx)
+    await backend.run?.({ prompt: 'go', system: 'Be concise.', skills: ['triage'] }, ctx)
 
     const sentPrompt: string = mockPrompt.mock.calls[0][0]
     expect(sentPrompt).toMatch(/Be concise\..*## Skill: triage/s)
@@ -74,7 +74,7 @@ describe('pi backend — skill injection via buildPrompt', () => {
     const loadSkill = vi.fn(async (_id: string): Promise<Skill | null> => null)
     const ctx = makeCtx({ loadSkill })
 
-    await backend.run!({ prompt: 'go', skills: ['denied'] }, ctx)
+    await backend.run?.({ prompt: 'go', skills: ['denied'] }, ctx)
 
     const sentPrompt: string = mockPrompt.mock.calls[0][0]
     expect(sentPrompt).not.toContain('[System:')
@@ -83,7 +83,7 @@ describe('pi backend — skill injection via buildPrompt', () => {
   it('does not call loadSkill when ctx.loadSkill is absent', async () => {
     const backend = createPiBackend({})
 
-    await backend.run!({ prompt: 'go', skills: ['triage'] }, makeCtx())
+    await backend.run?.({ prompt: 'go', skills: ['triage'] }, makeCtx())
 
     const sentPrompt: string = mockPrompt.mock.calls[0][0]
     expect(sentPrompt).not.toContain('[System:')

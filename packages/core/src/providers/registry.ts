@@ -152,19 +152,21 @@ export class ProviderCapabilityRegistry {
 
     // Filter by max cost
     if (query.maxCostPer1K !== undefined) {
+      const maxCost = query.maxCostPer1K
       candidates = candidates.filter(
         (p) =>
           p.capabilities.pricing?.inputPer1K === undefined ||
-          p.capabilities.pricing.inputPer1K <= query.maxCostPer1K!,
+          p.capabilities.pricing.inputPer1K <= maxCost,
       )
     }
 
     // Filter by min context window
     if (query.minContextWindow !== undefined) {
+      const minCtx = query.minContextWindow
       candidates = candidates.filter(
         (p) =>
           p.capabilities.maxContextWindow === undefined ||
-          p.capabilities.maxContextWindow >= query.minContextWindow!,
+          p.capabilities.maxContextWindow >= minCtx,
       )
     }
 
