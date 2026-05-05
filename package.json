@@ -1,6 +1,6 @@
 {
   "name": "skelm-workspace",
-  "version": "0.0.0",
+  "version": "0.3.3",
   "private": true,
   "description": "skelm monorepo workspace root",
   "license": "MIT",
@@ -19,7 +19,9 @@
     "test:watch": "vitest",
     "guards": "tsx scripts/guards/default-deny-permissions.ts && tsx scripts/guards/public-export-baseline.ts && tsx scripts/guards/gateway-only-enforcement.ts",
     "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm guards && pnpm test",
-    "clean": "pnpm -r clean && rm -rf node_modules"
+    "clean": "pnpm -r clean && rm -rf node_modules",
+    "release:dry": "DRY_RUN=1 ./scripts/publish-npm.sh",
+    "release": "./scripts/publish-npm.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

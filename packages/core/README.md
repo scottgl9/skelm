@@ -1,31 +1,26 @@
 # @skelm/core
 
-Runtime, types, and builders for [skelm](https://github.com/scottgl9/skelm).
+> Runtime, types, and builders for [skelm](https://github.com/scottgl9/skelm) — secure, agentic, long-running workflows in TypeScript.
 
-This is the package every skelm workflow imports from (transitively, via the [`skelm`](../skelm/README.md) meta package). It contains:
+[![npm](https://img.shields.io/npm/v/@skelm/core)](https://www.npmjs.com/package/@skelm/core)
 
-- The public type surface — `Pipeline`, `Step`, `Context`, `Run`, `RunMetadata`, `StepResult`, `RunStatus`, etc.
-- Builders — `pipeline()`, `code()`, `llm()`, `agent()`, `parallel()`, `forEach()`, `branch()`, `loop()`, `wait()`, `pipelineStep()`.
-- The sequential `runPipeline()` runner with `AbortSignal` cancellation, finalize / last-step-adoption output resolution, and structured error capture.
-- Standard-schema bridge for input/output validation. Zod is the documented default; any standard-schema-compatible validator works.
-- The default-deny `AgentPermissions` model + `TrustEnforcer` for agent step gating (used in upcoming agent-step milestones).
-- The `EventBus` and `RunEvent` union for observability.
+Part of [skelm](https://github.com/scottgl9/skelm).
 
 ## Install
 
-You almost never install this directly. Customers install [`skelm`](../skelm/README.md), which re-exports everything here.
+You usually don't install this directly. End users install [`skelm`](https://www.npmjs.com/package/skelm), which re-exports everything here. Install `@skelm/core` directly when building libraries, plugins, or backends on top of skelm.
 
-```sh
-npm i skelm
+```bash
+npm install @skelm/core zod
 ```
 
 ```ts
-import { code, pipeline, runPipeline } from 'skelm'
+import { pipeline, code, runPipeline } from '@skelm/core'
 // equivalent to
-import { code, pipeline, runPipeline } from '@skelm/core'
+import { pipeline, code, runPipeline } from 'skelm'
 ```
 
-## At a glance
+## Quick Start
 
 ```ts
 import { code, pipeline, runPipeline } from '@skelm/core'
@@ -50,6 +45,16 @@ const run = await runPipeline(wf, { a: 2, b: 3 })
 console.log(run.output) // { sum: 5 }
 ```
 
+## Features
+
+- **Three step kinds** — `code()` for deterministic logic, `llm()` for one-shot inference, `agent()` for full agent loops. None is a wrapper around another.
+- **Native control flow** — `parallel()`, `forEach()`, `branch()`, `loop()`, `wait()`, and nested `pipelineStep()`.
+- **Standard Schema bridge** — Zod is the documented default; any Standard Schema-compatible validator works for input/output validation.
+- **Default-deny permission model** — `AgentPermissions` and `TrustEnforcer` for agent step gating. Optional fields default to deny.
+- **Typed `EventBus`** — `RunEvent` union covers run lifecycle, step lifecycle, agent turns, tool calls, decisions, and errors.
+- **Sequential runner** — `runPipeline()` with `AbortSignal` cancellation, finalize / last-step-adoption output resolution, and structured error capture.
+- **Persistent state primitives** — `ctx.state` for typed KV across runs; append-only journals for "what did the agent decide and why."
+
 ## Public exports
 
 ```ts
@@ -60,9 +65,9 @@ export {
   runPipeline, Runner, type RunOptions,
   // types
   type Pipeline, type Step, type CodeStep,
-   type Context, type Run, type RunMetadata, type StepResult,
-   type RunId, type StepId, type StepKind, type RunStatus, type StepStatus,
-   type RetryPolicy,
+  type Context, type Run, type RunMetadata, type StepResult,
+  type RunId, type StepId, type StepKind, type RunStatus, type StepStatus,
+  type RetryPolicy,
   type SerializedError,
   // schemas
   type SkelmSchema, SchemaValidationError,
@@ -78,10 +83,16 @@ export {
 }
 ```
 
+A `@skelm/core/testing` subpath is also published with helpers for unit-testing pipelines.
+
 ## Stability
 
-`@skelm/core` is `0.x` — APIs may change between minor versions until v1. Anything exported from `index.ts` is part of the public API; submodule paths are internal and may move.
+`0.x` — APIs may change between minor versions until v1. Anything exported from `index.ts` is part of the public API; submodule paths are internal and may move.
+
+## Contributing
+
+See the [contributing guide](https://github.com/scottgl9/skelm/blob/main/CONTRIBUTING.md).
 
 ## License
 
-MIT.
+[MIT](LICENSE)
