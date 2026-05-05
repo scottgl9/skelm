@@ -1,6 +1,6 @@
 {
   "name": "skelm",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "skelm — TypeScript framework for secure, agentic, long-running workflows",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",

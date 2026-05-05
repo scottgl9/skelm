@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-05-05
+
+Republish of 0.3.3 with workspace-dependency rewriting fixed.
+
+### Fixed
+- **Published tarballs no longer ship `workspace:*` deps.** The 0.3.3 tarballs included `"@skelm/core": "workspace:*"` etc., which made `npm install skelm` fail with `EUNSUPPORTEDPROTOCOL`. The publish path now rewrites every `workspace:*` to a concrete `^X.Y.Z` range on disk before `npm publish` runs, with a trapped restore so the working tree returns to its pre-publish state. See `scripts/rewrite-workspace-deps.mjs` and the updated `scripts/publish-npm.sh` / `.github/workflows/publish.yml`.
+
 ## [0.3.3] - 2026-05-04
 
 First public release on npmjs.com. Versions of all published packages are aligned at `0.3.3`.
