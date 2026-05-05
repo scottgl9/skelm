@@ -1,4 +1,3 @@
-import { loadAgentDefinition } from './agent-def.js'
 import {
   type AgentRequest,
   BackendCapabilityError,
@@ -11,6 +10,7 @@ import {
   type AuditWriter,
   AutoApproveGate,
   EnvSecretResolver,
+  MissingSecretError,
   NoopAuditWriter,
   type SecretResolver,
 } from './enforcement/index.js'
@@ -98,11 +98,12 @@ export interface RunOptions {
    */
   skillSource?: (skillId: string) => Promise<import('./skills.js').Skill | null>
   /**
-   * Optional base path that constrains where `agentDef` specs may resolve.
-   * Defaults to the workflow file's directory. Useful in tests where no
-   * workflow file path is set.
+   * Optional secret resolver consulted when an agent step declares
+   * `secrets: [...]`. The runner gates each name through `canAccessSecret`
+   * (default-deny via `permissions.allowedSecrets`) before resolving. When
+   * omitted, declared secrets cannot resolve and the step fails.
    */
-  agentDefRoot?: string
+  secretResolver?: SecretResolver
 }
 
 export class BackendChainExhaustedError extends Error {
@@ -157,9 +158,7 @@ interface ExecutionRuntime {
   readonly permissionProfiles?: Readonly<Record<string, AgentPermissions>>
   readonly approvalGate?: ApprovalGate
   readonly skillSource?: (skillId: string) => Promise<import('./skills.js').Skill | null>
-  readonly workflowPath?: string
-  readonly agentDefRoot?: string
-  readonly agentDefCache: Map<string, Promise<import('./agent-def.js').AgentDefinition>>
+  readonly secretResolver?: SecretResolver
   readonly currentWorkspace: Context['workspace']
   setCurrentWorkspace(workspace: Context['workspace']): void
   deferRunWorkspaceFinalizer(finalizer: (status: RunStatus) => Promise<void>): void
@@ -251,6 +250,7 @@ export class Runner {
         workspaceManager: this.options.workspaceManager,
       }),
       approvalGate: this.enforcement.approvalGate,
+      secretResolver: this.enforcement.secretResolver,
       waitForInput: (request) => this.awaitResume(request),
     })
     return {
@@ -343,7 +343,6 @@ export async function runPipeline<TInput, TOutput>(
   const stateStore = options.stateStore ?? options.store ?? defaultStateStore
   const storeWrites: Promise<void>[] = []
   const workspaceManager = options.workspaceManager ?? new WorkspaceManager()
-  const agentDefCache = new Map<string, Promise<import('./agent-def.js').AgentDefinition>>()
   const deferredWorkspaceFinalizers: Array<(status: RunStatus) => Promise<void>> = []
   let currentWorkspace: Context['workspace']
   const unsubscribeStore =
@@ -459,9 +458,7 @@ export async function runPipeline<TInput, TOutput>(
           }),
           ...(options.approvalGate !== undefined && { approvalGate: options.approvalGate }),
           ...(options.skillSource !== undefined && { skillSource: options.skillSource }),
-          ...(options.workflowPath !== undefined && { workflowPath: options.workflowPath }),
-          ...(options.agentDefRoot !== undefined && { agentDefRoot: options.agentDefRoot }),
-          agentDefCache,
+          ...(options.secretResolver !== undefined && { secretResolver: options.secretResolver }),
           currentWorkspace,
           ...(store !== undefined && { store }),
           setCurrentWorkspace: (workspace) => {
@@ -840,19 +837,22 @@ async function runStep(
             throw new ApprovalDeniedError(step.id, decision.approver, decision.reason)
           }
         }
-        const agentDef =
-          step.agentDef !== undefined && runtime !== undefined
-            ? await loadAgentDefForStep(step.agentDef, runtime)
-            : undefined
+        const resolvedSecrets = await resolveDeclaredSecrets(
+          step,
+          policy,
+          runtime?.secretResolver,
+          events,
+          ctx.run.runId,
+        )
         const req: AgentRequest = {
           prompt: resolvedPromptText,
           ...(resolvedSystemText !== undefined && { system: resolvedSystemText }),
           ...(step.maxTurns !== undefined && { maxTurns: step.maxTurns }),
           ...(preparedWorkspace !== undefined && { cwd: preparedWorkspace.handle.path }),
           ...(policy !== undefined && { permissions: policy }),
-          ...(agentDef !== undefined && { agentDef }),
           ...(mcpServers !== undefined && { mcpServers }),
           ...(step.skills !== undefined && { skills: step.skills }),
+          ...(resolvedSecrets !== undefined && { secrets: resolvedSecrets }),
           ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
         }
         const mcpHost =
@@ -1026,9 +1026,6 @@ async function runIdempotent(
       ...(runtime?.permissionProfiles !== undefined && {
         permissionProfiles: runtime.permissionProfiles,
       }),
-      agentDefCache: runtime?.agentDefCache ?? new Map(),
-      ...(runtime?.workflowPath !== undefined && { workflowPath: runtime.workflowPath }),
-      ...(runtime?.agentDefRoot !== undefined && { agentDefRoot: runtime.agentDefRoot }),
       currentWorkspace: runtime?.currentWorkspace,
       setCurrentWorkspace: (workspace) => runtime?.setCurrentWorkspace(workspace),
       deferRunWorkspaceFinalizer: (finalizer) => runtime?.deferRunWorkspaceFinalizer(finalizer),
@@ -1197,8 +1194,6 @@ async function runPipelineStep(
       permissionProfiles: runtime.permissionProfiles,
     }),
     ...(runtime?.workspaceManager !== undefined && { workspaceManager: runtime.workspaceManager }),
-    ...(runtime?.workflowPath !== undefined && { workflowPath: runtime.workflowPath }),
-    ...(runtime?.agentDefRoot !== undefined && { agentDefRoot: runtime.agentDefRoot }),
     ...(waitForInput !== undefined && { waitForInput }),
   })
   if (nestedRun.status === 'completed') {
@@ -1260,9 +1255,7 @@ function createDetachedWorkspaceRuntime(
       permissionProfiles: runtime.permissionProfiles,
     }),
     ...(runtime.skillSource !== undefined && { skillSource: runtime.skillSource }),
-    ...(runtime.workflowPath !== undefined && { workflowPath: runtime.workflowPath }),
-    ...(runtime.agentDefRoot !== undefined && { agentDefRoot: runtime.agentDefRoot }),
-    agentDefCache: runtime.agentDefCache,
+    ...(runtime.secretResolver !== undefined && { secretResolver: runtime.secretResolver }),
     currentWorkspace,
     setCurrentWorkspace: (workspace) => {
       currentWorkspace = workspace
@@ -1302,18 +1295,51 @@ function makeSkillLoader(
   }
 }
 
-async function loadAgentDefForStep(
-  spec: string,
-  runtime: ExecutionRuntime,
-): Promise<import('./agent-def.js').AgentDefinition> {
-  const cached = runtime.agentDefCache.get(spec)
-  if (cached !== undefined) return cached
-  const opts: import('./agent-def.js').LoadAgentDefinitionOptions = {}
-  if (runtime.workflowPath !== undefined) opts.workflowPath = runtime.workflowPath
-  if (runtime.agentDefRoot !== undefined) opts.agentDefRoot = runtime.agentDefRoot
-  const promise = loadAgentDefinition(spec, opts)
-  runtime.agentDefCache.set(spec, promise)
-  return promise
+async function resolveDeclaredSecrets(
+  step: { readonly id: StepId; readonly secrets?: readonly string[] },
+  policy: ReturnType<typeof resolvePermissions> | undefined,
+  resolver: SecretResolver | undefined,
+  events: EventBus | undefined,
+  runId: string,
+): Promise<Readonly<Record<string, string>> | undefined> {
+  if (step.secrets === undefined || step.secrets.length === 0) return undefined
+  const enforcer = policy !== undefined ? new TrustEnforcer(policy) : undefined
+  const resolved: Record<string, string> = {}
+  for (const name of step.secrets) {
+    if (enforcer !== undefined) {
+      const decision = enforcer.canAccessSecret(name)
+      if (!decision.allow) {
+        const detail = `step "${step.id}" is not allowed to access secret "${name}" (${decision.reason})`
+        events?.publish({
+          type: 'permission.denied',
+          runId,
+          stepId: step.id,
+          dimension: 'secret',
+          detail,
+          at: Date.now(),
+        })
+        throw new PermissionDeniedError(detail)
+      }
+    }
+    if (resolver === undefined) {
+      throw new Error(
+        `step "${step.id}" declares secret "${name}" but no SecretResolver is configured`,
+      )
+    }
+    const value = await resolver.resolve(name)
+    if (value === undefined) {
+      throw new MissingSecretError(name)
+    }
+    resolved[name] = value
+    events?.publish({
+      type: 'secret.accessed',
+      runId,
+      stepId: step.id,
+      name,
+      at: Date.now(),
+    })
+  }
+  return Object.freeze(resolved)
 }
 
 function resolveIdempotentKey(key: string | ((ctx: Context) => string), ctx: Context): string {

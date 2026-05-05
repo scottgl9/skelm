@@ -139,6 +139,7 @@ export function agent<TOutput>(def: {
   system?: string | ((ctx: Context) => string)
   mcp?: readonly McpServerConfig[] | ((ctx: Context) => readonly McpServerConfig[])
   skills?: readonly string[]
+  secrets?: readonly string[]
   workspace?: WorkspaceConfig | ((ctx: Context) => WorkspaceConfig)
   output?: SkelmSchema<TOutput>
   permissions?: AgentPermissions
@@ -166,6 +167,7 @@ export function agent<TOutput>(def: {
     ...(def.system !== undefined && { system: def.system }),
     ...(def.mcp !== undefined && { mcp: def.mcp }),
     ...(def.skills !== undefined && { skills: def.skills }),
+    ...(def.secrets !== undefined && { secrets: def.secrets }),
     ...(def.workspace !== undefined && { workspace: def.workspace }),
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.permissions !== undefined && { permissions: def.permissions }),
