@@ -9,6 +9,7 @@ import {
   readBody,
 } from 'h3'
 import type { Gateway } from '../lifecycle/gateway.js'
+import { createSkillSource } from '../registries/skill-source.js'
 
 /**
  * Mount the gateway control surface on an h3 app via a method-aware router:
@@ -357,7 +358,10 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
         const handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
           runId,
           signal: controller.signal,
-          skillSource: (id) => Promise.resolve(gateway.registries.skills.get(id) ?? null),
+          skillSource: createSkillSource({
+            registry: gateway.registries.skills,
+            workflowPath: entry.path,
+          }),
         })
         const finalState = await handle.wait()
         if (idemKey !== null) idempotency.set(`${id}:${idemKey}`, finalState.runId)
@@ -427,7 +431,10 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       const handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
         runId,
         signal: controller.signal,
-        skillSource: (id) => Promise.resolve(gateway.registries.skills.get(id) ?? null),
+        skillSource: createSkillSource({
+          registry: gateway.registries.skills,
+          workflowPath: entry.path,
+        }),
       })
       // Fire and forget; cleanup on settle. Errors are still recorded by the
       // runner into the runStore, so callers polling GET /runs/:runId see
@@ -726,7 +733,10 @@ async function runPipelineSync(
     const handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
       runId,
       signal: controller.signal,
-      skillSource: (id) => Promise.resolve(gateway.registries.skills.get(id) ?? null),
+      skillSource: createSkillSource({
+        registry: gateway.registries.skills,
+        workflowPath: entry.path,
+      }),
     })
     const final = await handle.wait()
     return {

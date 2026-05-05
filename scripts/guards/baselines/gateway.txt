@@ -20,6 +20,7 @@ value:VaultSecretResolver
 value:WorkflowRegistry
 value:acquireLockfile
 value:createServer
+value:createSkillSource
 value:createTriggerDispatcher
 value:defaultAcpSessionStorePath
 value:readDiscovery
@@ -40,6 +41,7 @@ type:CodingAgentManagerOptions
 type:CodingAgentStatus
 type:CreateDispatcherOptions
 type:CreateSessionOptions
+type:CreateSkillSourceOptions
 type:DiscoveryRecord
 type:EphemeralRun
 type:FireContext
