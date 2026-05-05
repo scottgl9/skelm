@@ -206,6 +206,8 @@ export {
 export type { SkelmSchema } from './schema.js'
 export { formatSkillBlock, parseSkill, SkillParseError } from './skills.js'
 export type { Skill } from './skills.js'
+export { AgentDefinitionError, loadAgentDefinition } from './agent-def.js'
+export type { AgentDefinition, LoadAgentDefinitionOptions } from './agent-def.js'
 
 // Enforcement seams owned by the gateway in production
 export {

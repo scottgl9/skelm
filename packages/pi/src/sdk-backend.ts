@@ -187,6 +187,8 @@ function buildSystemContent(
 ): string | undefined {
   const parts: string[] = []
   if (systemBase !== undefined) parts.push(systemBase)
+  if (req.agentDef?.soul !== undefined) parts.push(req.agentDef.soul)
+  if (req.agentDef !== undefined) parts.push(req.agentDef.instructions)
   if (req.system) parts.push(req.system)
   for (const body of skillBodies) parts.push(body)
   return parts.length > 0 ? parts.join('\n\n---\n\n') : undefined

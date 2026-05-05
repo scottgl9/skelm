@@ -1,3 +1,4 @@
+value:AgentDefinitionError
 value:AgentProviderBase
 value:AgentRegistry
 value:ApprovalDeniedError
@@ -78,6 +79,7 @@ value:formatSkillBlock
 value:globalCapabilityRegistry
 value:idempotent
 value:llm
+value:loadAgentDefinition
 value:loop
 value:parallel
 value:parseSkill
@@ -90,6 +92,7 @@ value:selectProviderForTask
 value:serializeError
 value:terminalEventTypeFor
 value:wait
+type:AgentDefinition
 type:AgentMessage
 type:AgentPermissions
 type:AgentPlugin
@@ -132,6 +135,7 @@ type:InferRequest
 type:InferResponse
 type:LlmCompletion
 type:LlmStep
+type:LoadAgentDefinitionOptions
 type:LoopStep
 type:MatrixEvent
 type:MatrixMessageEvent

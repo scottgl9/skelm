@@ -118,6 +118,12 @@ export interface AgentRequest {
   mcpServers?: readonly McpServerConfig[]
   /** Skill IDs to load and inject into the agent context before the run. */
   skills?: readonly string[]
+  /**
+   * Loaded agent definition (instructions + optional persona) resolved
+   * from the step's `agentDef` spec. Backends prepend soul + instructions
+   * to the system prompt.
+   */
+  agentDef?: import('./agent-def.js').AgentDefinition
   /** When set, the runtime expects a structured value matching this schema. */
   outputSchema?: SkelmSchema
 }
