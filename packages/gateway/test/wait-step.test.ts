@@ -62,12 +62,14 @@ describe('wait() step — gateway HTTP integration', () => {
     const wf = pipeline<{ x: number }, { result: number }>({
       id: 'wait-test',
       steps: [
-        code({ id: 'prep', run: (ctx) => ({ prepped: (ctx.input as any).x }) }),
+        code({ id: 'prep', run: (ctx) => ({ prepped: (ctx.input as Record<string, unknown>).x }) }),
         wait({ id: 'gate', output: z.object({ approved: z.boolean() }) }),
         code({
           id: 'finish',
           run: (ctx) => ({
-            result: (ctx.steps.prep as any).prepped + ((ctx.steps.gate as any).approved ? 10 : 0),
+            result:
+              ((ctx.steps.prep as Record<string, unknown>).prepped as number) +
+              ((ctx.steps.gate as Record<string, unknown>).approved ? 10 : 0),
           }),
         }),
       ],
@@ -96,13 +98,13 @@ describe('wait() step — gateway HTTP integration', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ output: { approved: true } }),
-    }).then((r) => r.json())) as any
+    }).then((r) => r.json())) as { resumed: boolean }
     expect(resumeResp.resumed).toBe(true)
 
     // Await completion (race-safe — resume already happened)
     const result = await handle.wait()
     expect(result.status).toBe('completed')
-    expect((result.output as any)?.result).toBe(15) // 5 + 10
+    expect((result.output as Record<string, unknown>)?.result).toBe(15) // 5 + 10
 
     // GET /runs/:runId — now completed
     // (gateway stores run via runStore — check it persisted)

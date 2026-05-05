@@ -271,7 +271,9 @@ describe('ProviderPluginBase', () => {
       await provider.initialize({})
       const status = await provider.healthCheck()
       expect(status.lastCheck).toBeDefined()
-      expect(new Date(status.lastCheck!).getTime()).toBeLessThanOrEqual(Date.now())
+      if (status.lastCheck !== undefined) {
+        expect(new Date(status.lastCheck).getTime()).toBeLessThanOrEqual(Date.now())
+      }
     })
   })
 

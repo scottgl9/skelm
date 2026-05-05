@@ -171,8 +171,9 @@ function sortCandidates(
   registry: ProviderCapabilityRegistry,
 ): string[] {
   return candidates.sort((a, b) => {
-    const regA = registry.getProvider(a)!
-    const regB = registry.getProvider(b)!
+    const regA = registry.getProvider(a)
+    const regB = registry.getProvider(b)
+    if (!regA || !regB) return 0
 
     // Cost optimization
     if (requirements.costOptimized) {
@@ -252,8 +253,9 @@ function selectBestModel(models: ProviderModel[], requirements: TaskRequirements
   let candidates = [...models]
 
   if (requirements.minContextWindow) {
+    const minCtx = requirements.minContextWindow
     candidates = candidates.filter(
-      (m) => m.contextWindow === undefined || m.contextWindow >= requirements.minContextWindow!,
+      (m) => m.contextWindow === undefined || m.contextWindow >= minCtx,
     )
   }
 
