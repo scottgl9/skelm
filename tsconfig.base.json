@@ -15,8 +15,6 @@
     "verbatimModuleSyntax": true,
 
     "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
