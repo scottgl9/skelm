@@ -14,8 +14,8 @@
  * Backups live at packages/<name>/package.json.backup and are restored after publish.
  */
 
-import { readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync, statSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -35,7 +35,7 @@ function readPkg(file) {
 }
 
 function writePkg(file, pkg) {
-  writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n')
+  writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`)
 }
 
 function buildVersionMap(packages) {
@@ -87,7 +87,7 @@ function rewrite() {
       }
     }
     if (dirty) {
-      writeFileSync(file + '.backup', original)
+      writeFileSync(`${file}.backup`, original)
       writePkg(file, pkg)
       changedCount += 1
     }
@@ -127,7 +127,7 @@ function check() {
   }
   if (offenders.length > 0) {
     console.error('workspace:* dependencies still present:')
-    for (const line of offenders) console.error('  ' + line)
+    for (const line of offenders) console.error(`  ${line}`)
     process.exit(1)
   }
   console.log('no workspace:* dependencies found')
