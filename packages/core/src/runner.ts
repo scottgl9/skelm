@@ -350,7 +350,9 @@ export async function runPipeline<TInput, TOutput>(
 
   if (pipeline.inputSchema !== undefined) {
     try {
-      resolvedInput = await validate(pipeline.inputSchema, input, 'input')
+      resolvedInput = await validate(pipeline.inputSchema, input, 'input', {
+        pipelineId: pipeline.id,
+      })
     } catch (err) {
       runStatus = 'failed'
       runError = serializeError(err)
@@ -487,7 +489,9 @@ export async function runPipeline<TInput, TOutput>(
         finalOutput = adoptLastStepOutput<TOutput>(stepResults)
       }
       if (pipeline.outputSchema !== undefined && finalOutput !== undefined) {
-        finalOutput = await validate(pipeline.outputSchema, finalOutput, 'output')
+        finalOutput = await validate(pipeline.outputSchema, finalOutput, 'output', {
+          pipelineId: pipeline.id,
+        })
       }
       runStatus = 'completed'
     } catch (err) {
@@ -679,7 +683,10 @@ async function runStep(
       const response = await backend.infer!(req, { signal: ctx.signal })
       if (step.outputSchema !== undefined) {
         const candidate = response.structured ?? response.text
-        return await validate(step.outputSchema, candidate, 'output')
+        return await validate(step.outputSchema, candidate, 'output', {
+          stepId: step.id,
+          pipelineId: ctx.run.pipelineId,
+        })
       }
       return { text: response.text ?? '', usage: response.usage }
     }
@@ -825,11 +832,15 @@ async function runStep(
           })
           const candidate =
             step.outputSchema !== undefined
-              ? (response.structured ?? tryParseJson(response.text))
+              ? (response.structured ?? extractJsonFromText(response.text))
               : undefined
           const result =
             step.outputSchema !== undefined
-              ? await validate(step.outputSchema, candidate, 'output')
+              ? await validate(step.outputSchema, candidate, 'output', {
+                  stepId: step.id,
+                  pipelineId: ctx.run.pipelineId,
+                  rawValue: response.text,
+                })
               : {
                   text: response.text ?? '',
                   ...(response.usage !== undefined && { usage: response.usage }),
@@ -1075,7 +1086,10 @@ async function runWait(
     at: Date.now(),
   })
   if (step.outputSchema !== undefined) {
-    return await validate(step.outputSchema, resumed, 'output')
+    return await validate(step.outputSchema, resumed, 'output', {
+      stepId: step.id,
+      pipelineId: ctx.run.pipelineId,
+    })
   }
   return resumed
 }
@@ -1275,4 +1289,46 @@ function tryParseJson(text: string | undefined): unknown {
   } catch {
     return text
   }
+}
+
+/**
+ * Extract JSON from agent text that may contain markdown, explanations, or
+ * other non-JSON content. Looks for the first `{...}` or `[...]` block and
+ * attempts to parse it. Returns the parsed value or the original text if
+ * extraction fails.
+ */
+function extractJsonFromText(text: string | undefined): unknown {
+  if (text === undefined) return undefined
+  const trimmed = text.trim()
+  
+  // If it's already pure JSON, return it
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      return JSON.parse(trimmed)
+    } catch {
+      return text
+    }
+  }
+  
+  // Try to find JSON block within text
+  const objMatch = trimmed.match(/\{[\s\S]*\}/)
+  const arrMatch = trimmed.match(/\[[\s\S]*\]/)
+  
+  if (objMatch) {
+    try {
+      return JSON.parse(objMatch[0])
+    } catch {
+      // Fall through to try array
+    }
+  }
+  
+  if (arrMatch) {
+    try {
+      return JSON.parse(arrMatch[0])
+    } catch {
+      return text
+    }
+  }
+  
+  return text
 }
