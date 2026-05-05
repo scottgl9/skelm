@@ -275,7 +275,8 @@ export async function executeAgentStep(
   ctx: Context,
   registry: AgentRegistry,
 ): Promise<AgentResponse> {
-  const providerId = step.backend || (registry.getDefault()?.id as string | undefined)
+  const explicit = typeof step.backend === 'string' ? step.backend : step.backend?.[0]
+  const providerId = explicit || (registry.getDefault()?.id as string | undefined)
   if (!providerId) {
     throw new Error('No agent provider specified or available')
   }

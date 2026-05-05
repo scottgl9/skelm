@@ -4,8 +4,10 @@ value:ApprovalDeniedError
 value:AutoApproveGate
 value:AutoDenyGate
 value:BackendCapabilityError
+value:BackendChainExhaustedError
 value:BackendNotFoundError
 value:BackendRegistry
+value:BackendUnavailableError
 value:CronTrigger
 value:CustomTrigger
 value:DEFAULT_CONFIG
