@@ -1300,20 +1300,23 @@ function tryParseJson(text: string | undefined): unknown {
 function extractJsonFromText(text: string | undefined): unknown {
   if (text === undefined) return undefined
   const trimmed = text.trim()
-  
+
   // If it's already pure JSON, return it
-  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+  if (
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']'))
+  ) {
     try {
       return JSON.parse(trimmed)
     } catch {
       return text
     }
   }
-  
+
   // Try to find JSON block within text
   const objMatch = trimmed.match(/\{[\s\S]*\}/)
   const arrMatch = trimmed.match(/\[[\s\S]*\]/)
-  
+
   if (objMatch) {
     try {
       return JSON.parse(objMatch[0])
@@ -1321,7 +1324,7 @@ function extractJsonFromText(text: string | undefined): unknown {
       // Fall through to try array
     }
   }
-  
+
   if (arrMatch) {
     try {
       return JSON.parse(arrMatch[0])
@@ -1329,6 +1332,6 @@ function extractJsonFromText(text: string | undefined): unknown {
       return text
     }
   }
-  
+
   return text
 }
