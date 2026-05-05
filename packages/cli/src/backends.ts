@@ -237,7 +237,7 @@ function configuredBackendIds(config: SkelmConfig): Set<string> {
 }
 
 function pickDefaultBackend(config: SkelmConfig): string | undefined {
-  return readString(config.backends?.default) ?? config.backend
+  return readString(config.backends?.default) ?? config.backend ?? config.defaults?.backend
 }
 
 function readBackendEntry(config: SkelmConfig, backendId: string): Record<string, unknown> {
