@@ -42,6 +42,16 @@ pnpm build
 pnpm typecheck
 pnpm test
 
+# Rewrite workspace:* dependencies to concrete ranges before publish. pnpm
+# publish does this in-tarball, but we do it on-disk too so the result is
+# identical regardless of which publish CLI runs, and so a botched run leaves
+# audit-friendly evidence on disk. The trap restores the originals even if
+# publish fails midway.
+echo "==> rewrite workspace:* deps"
+node scripts/rewrite-workspace-deps.mjs rewrite
+trap 'echo "==> restore workspace:* deps"; node scripts/rewrite-workspace-deps.mjs restore' EXIT
+node scripts/rewrite-workspace-deps.mjs check
+
 echo "==> publish"
 for pkg in "${PUBLISH_ORDER[@]}"; do
   pkg_name="$(node -p "require('./packages/$pkg/package.json').name")"

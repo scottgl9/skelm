@@ -120,7 +120,7 @@ CI uses `npm publish --provenance`, which signs each tarball with a Sigstore cer
 
 **`E400 Bad Request: cannot publish over previously published version`** — the version already exists. Bump and retry; npm does not allow republishing the same version.
 
-**Workspace deps published as `workspace:*`** — pnpm rewrites `workspace:*` to a real version range during `npm publish`. If a published tarball still contains `workspace:*`, double-check that you ran `pnpm publish` or that pnpm is your `packageManager`.
+**Workspace deps published as `workspace:*`** — `npm publish` does **not** rewrite `workspace:*`; only `pnpm publish` does. If a tarball ships with literal `workspace:*` deps, consumers get `EUNSUPPORTEDPROTOCOL` on install. Always publish with `pnpm publish --no-git-checks` (or use `scripts/publish-npm.sh`, which does this for you). Once a broken tarball is on the registry the version is burnt — npm forbids re-publishing the same version, so bump and re-release.
 
 **ESM resolution failures after publish** — `package.json` `exports` must point at compiled `dist/*.js` files, not source. Confirm `pnpm build` ran before publish.
 

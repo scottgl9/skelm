@@ -68,11 +68,19 @@ jobs:
       - name: Run gates
         run: pnpm typecheck && pnpm test
 
+      # Rewrite workspace:* deps on disk before publishing. Without this step,
+      # `npm publish` ships the literal `workspace:*` and consumers fail with
+      # EUNSUPPORTEDPROTOCOL on install.
+      - name: Rewrite workspace:* deps
+        run: |
+          node scripts/rewrite-workspace-deps.mjs rewrite
+          node scripts/rewrite-workspace-deps.mjs check
+
       - name: Publish (dry run)
         if: inputs.dry-run == 'true'
         run: |
-          for pkg in core cli gateway scheduler integrations metrics opencode otel pi skelm; do
-            (cd "packages/$pkg" && npm publish --dry-run --access public)
+          for pkg in core scheduler integrations metrics otel opencode pi gateway cli skelm; do
+            (cd "packages/$pkg" && npm publish --access public --dry-run)
           done
 
       - name: Publish to npm
@@ -86,6 +94,10 @@ jobs:
               echo "Publishing $(node -p "require('./package.json').name")@$(node -p "require('./package.json').version")" && \
               npm publish --access public --provenance)
           done
+
+      - name: Restore workspace:* deps
+        if: always()
+        run: node scripts/rewrite-workspace-deps.mjs restore
 
       - name: Success summary
         if: inputs.dry-run != 'true'
