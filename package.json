@@ -21,7 +21,10 @@
     "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm guards && pnpm test",
     "clean": "pnpm -r clean && rm -rf node_modules",
     "release:dry": "DRY_RUN=1 ./scripts/publish-npm.sh",
-    "release": "./scripts/publish-npm.sh"
+    "release": "./scripts/publish-npm.sh",
+    "release:gh:dry": "DRY_RUN=1 ./scripts/publish-gh-packages.sh",
+    "release:gh": "./scripts/publish-gh-packages.sh",
+    "release:gh:check": "node scripts/check-gh-visibility.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
