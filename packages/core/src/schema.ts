@@ -62,7 +62,7 @@ function formatIssues(
   },
 ): string {
   const parts: string[] = []
-  
+
   // Add context header if available
   if (context?.stepId || context?.pipelineId) {
     const ctx = []
@@ -72,28 +72,30 @@ function formatIssues(
   } else {
     parts.push(`${where} validation failed`)
   }
-  
+
   if (issues.length === 0) return parts.join('\n')
-  
+
   const detail = issues
     .map((i) => {
       const path = i.path ? renderPath(i.path) : ''
       return path ? `${path}: ${i.message}` : i.message
     })
     .join('; ')
-  
+
   parts.push(detail)
-  
+
   // Add hint for common issues
   if (where === 'output' && context?.rawValue !== undefined) {
     if (typeof context.rawValue === 'string') {
       const trimmed = context.rawValue.trim()
       if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
-        parts.push('Hint: Agent returned plain text instead of JSON. Check that the agent was instructed to return valid JSON.')
+        parts.push(
+          'Hint: Agent returned plain text instead of JSON. Check that the agent was instructed to return valid JSON.',
+        )
       }
     }
   }
-  
+
   return parts.join('\n')
 }
 

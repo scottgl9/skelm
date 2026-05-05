@@ -19,8 +19,8 @@
  *                                              still uses `@skelm/*`
  */
 
-import { readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync, statSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -52,10 +52,10 @@ function apply() {
     const original = readFileSync(file, 'utf8')
     const pkg = JSON.parse(original)
     if (!RENAME[pkg.name]) continue
-    writeFileSync(file + '.gh-backup', original)
+    writeFileSync(`${file}.gh-backup`, original)
     pkg.name = RENAME[pkg.name]
     pkg.publishConfig = { registry: 'https://npm.pkg.github.com', access: 'public' }
-    writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n')
+    writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`)
     console.log(`  ${dir}: -> ${pkg.name}`)
   }
 }
@@ -78,7 +78,7 @@ function check() {
   }
   if (offenders.length > 0) {
     console.error('rescope incomplete:')
-    for (const line of offenders) console.error('  ' + line)
+    for (const line of offenders) console.error(`  ${line}`)
     process.exit(1)
   }
   console.log('rescope OK')

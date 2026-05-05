@@ -12,7 +12,7 @@ export default defineConfig({
   themeConfig: {
     logo: '/logo.svg',
     siteTitle: 'skelm',
-    
+
     nav: [
       { text: 'Guide', link: '/quickstart/' },
       { text: 'Recipes', link: '/recipes/' },
@@ -24,9 +24,7 @@ export default defineConfig({
       '/quickstart/': [
         {
           text: 'Getting Started',
-          items: [
-            { text: 'Quickstart', link: '/quickstart/' },
-          ],
+          items: [{ text: 'Quickstart', link: '/quickstart/' }],
         },
       ],
       '/concepts/': [
@@ -105,9 +103,7 @@ export default defineConfig({
       ],
     },
 
-    socialLinks: [
-      { icon: 'github', link: 'https://github.com/scottgl9/skelm' },
-    ],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/scottgl9/skelm' }],
 
     footer: {
       message: 'Released under the MIT License.',

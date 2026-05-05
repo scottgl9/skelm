@@ -12,14 +12,7 @@
   "bugs": {
     "url": "https://github.com/scottgl9/skelm/issues"
   },
-  "keywords": [
-    "skelm",
-    "scheduler",
-    "cron",
-    "webhook",
-    "trigger",
-    "workflow"
-  ],
+  "keywords": ["skelm", "scheduler", "cron", "webhook", "trigger", "workflow"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -29,11 +22,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
+  "files": ["dist", "README.md", "LICENSE"],
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
