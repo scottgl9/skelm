@@ -143,6 +143,7 @@ export function agent<TOutput>(def: {
   output?: SkelmSchema<TOutput>
   permissions?: AgentPermissions
   maxTurns?: number
+  timeoutMs?: number
   state?: StateConfig
   retry?: RetryPolicy
 }): AgentStep<TOutput> {
@@ -151,6 +152,9 @@ export function agent<TOutput>(def: {
   }
   if (def.prompt === undefined) {
     throw new Error(`agent(${def.id}): prompt is required`)
+  }
+  if (def.timeoutMs !== undefined && (!Number.isFinite(def.timeoutMs) || def.timeoutMs < 1)) {
+    throw new Error(`agent(${def.id}): timeoutMs must be a positive integer`)
   }
   assertValidRetryPolicy('agent', def.id, def.retry)
   return Object.freeze({
@@ -166,6 +170,7 @@ export function agent<TOutput>(def: {
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.permissions !== undefined && { permissions: def.permissions }),
     ...(def.maxTurns !== undefined && { maxTurns: def.maxTurns }),
+    ...(def.timeoutMs !== undefined && { timeoutMs: def.timeoutMs }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
   })

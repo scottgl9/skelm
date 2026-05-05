@@ -39,6 +39,7 @@ value:SkillParseError
 value:SlackTrigger
 value:SqliteRunStore
 value:StepError
+value:StepTimeoutError
 value:TriggerError
 value:TriggerInitializationError
 value:TriggerPluginBase
