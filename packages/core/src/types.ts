@@ -118,6 +118,19 @@ export interface Context<TInput = unknown> {
    * Typed as `unknown`; cast to your item type in the step's `run` function.
    */
   readonly item?: unknown
+  /**
+   * Typed accessor for prior step outputs. Equivalent to
+   * `ctx.steps[stepId] as T | undefined`, but self-documents the assertion
+   * at the call site:
+   *
+   *   const fetched = ctx.get<{ data: string[] }>('fetch')
+   *
+   * Use this in preference to `ctx.steps[id] as T` so reviewers can see the
+   * type assertion is intentional. Returns `undefined` when the step has
+   * not produced output yet (e.g. inside an idempotent cache lookup, or
+   * for an id that does not exist).
+   */
+  get<T = unknown>(stepId: StepId): T | undefined
 }
 
 /** Per-step retry policy applied by the runner around step execution. */
