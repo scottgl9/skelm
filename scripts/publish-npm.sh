@@ -61,7 +61,11 @@ for pkg in "${PUBLISH_ORDER[@]}"; do
     if [ "${DRY_RUN:-0}" = "1" ]; then
       npm publish --access public --dry-run
     else
-      npm publish --access public --provenance
+      if [ "${CI:-}" = "true" ]; then
+        npm publish --access public --provenance
+      else
+        npm publish --access public
+      fi
     fi
   )
 done
