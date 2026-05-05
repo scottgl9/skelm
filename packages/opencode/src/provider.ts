@@ -140,9 +140,9 @@ export class OpencodeProvider extends ProviderPluginBase {
       throw new Error('Provider must be initialized before creating backends')
     }
 
-    const config: OpencodeBackendOptions = {
-      apiKey: this.config.apiKey ?? process.env.OPENCODE_API_KEY!,
-    }
+    const config: OpencodeBackendOptions = {}
+    const apiKey = this.config.apiKey ?? process.env.OPENCODE_API_KEY
+    if (apiKey !== undefined) config.apiKey = apiKey
 
     if (this.config.apiUrl !== undefined) {
       config.apiUrl = this.config.apiUrl
