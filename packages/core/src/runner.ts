@@ -87,6 +87,14 @@ export interface RunOptions {
    * having to re-scan the registry.
    */
   workflowPath?: string
+  /**
+   * Optional skill source consulted when an agent step's resolved policy
+   * declares allowedSkills. The runner wraps this with canLoadSkill checks
+   * so each lookup is gated by the step's permission policy. If omitted,
+   * loadSkill on BackendContext is not set and native-skill backends receive
+   * no skill provider.
+   */
+  skillSource?: (skillId: string) => Promise<import('./skills.js').Skill | null>
 }
 
 export class ApprovalDeniedError extends Error {
@@ -124,6 +132,7 @@ interface ExecutionRuntime {
   readonly defaultPermissions?: AgentPermissions
   readonly permissionProfiles?: Readonly<Record<string, AgentPermissions>>
   readonly approvalGate?: ApprovalGate
+  readonly skillSource?: (skillId: string) => Promise<import('./skills.js').Skill | null>
   readonly currentWorkspace: Context['workspace']
   setCurrentWorkspace(workspace: Context['workspace']): void
   deferRunWorkspaceFinalizer(finalizer: (status: RunStatus) => Promise<void>): void
@@ -418,6 +427,7 @@ export async function runPipeline<TInput, TOutput>(
             permissionProfiles: options.permissionProfiles,
           }),
           ...(options.approvalGate !== undefined && { approvalGate: options.approvalGate }),
+          ...(options.skillSource !== undefined && { skillSource: options.skillSource }),
           currentWorkspace,
           ...(store !== undefined && { store }),
           setCurrentWorkspace: (workspace) => {
@@ -770,6 +780,13 @@ async function runStep(
             'mcp',
           )
         }
+        if (step.skills !== undefined && step.skills.length > 0 && !backend.capabilities.skills) {
+          throw new BackendCapabilityError(
+            `backend ${backend.id} does not support skill loading`,
+            backend.id,
+            'skills',
+          )
+        }
         const declaredPermissionDimensions = collectResolvedPermissionDimensions(policy, mcpServers)
         assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions)
         if (policy?.approval && runtime?.approvalGate !== undefined) {
@@ -793,6 +810,7 @@ async function runStep(
           ...(preparedWorkspace !== undefined && { cwd: preparedWorkspace.handle.path }),
           ...(policy !== undefined && { permissions: policy }),
           ...(mcpServers !== undefined && { mcpServers }),
+          ...(step.skills !== undefined && { skills: step.skills }),
           ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
         }
         const mcpHost =
@@ -823,12 +841,25 @@ async function runStep(
                     : undefined,
                 )
               : undefined
+          // Skill loader: gates each skill lookup through canLoadSkill so the
+          // allowedSkills policy fires even for backends with native skill support.
+          const loadSkill =
+            runtime?.skillSource !== undefined && policy !== undefined
+              ? makeSkillLoader(
+                  runtime.skillSource,
+                  new TrustEnforcer(policy),
+                  events,
+                  ctx.run.runId,
+                  step.id,
+                )
+              : undefined
           // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
           const response = await backend.run!(req, {
             signal: ctx.signal,
             ...(policy !== undefined && { permissions: policy }),
             ...(mcpHost !== undefined && { mcpHost }),
             ...(policyFetch !== undefined && { fetch: policyFetch }),
+            ...(loadSkill !== undefined && { loadSkill }),
           })
           const candidate =
             step.outputSchema !== undefined
@@ -1181,11 +1212,43 @@ function createDetachedWorkspaceRuntime(
     ...(runtime.permissionProfiles !== undefined && {
       permissionProfiles: runtime.permissionProfiles,
     }),
+    ...(runtime.skillSource !== undefined && { skillSource: runtime.skillSource }),
     currentWorkspace,
     setCurrentWorkspace: (workspace) => {
       currentWorkspace = workspace
     },
     deferRunWorkspaceFinalizer: runtime.deferRunWorkspaceFinalizer,
+  }
+}
+
+function makeSkillLoader(
+  source: (skillId: string) => Promise<import('./skills.js').Skill | null>,
+  enforcer: TrustEnforcer,
+  events: EventBus | undefined,
+  runId: string,
+  stepId: string,
+): (skillId: string) => Promise<import('./skills.js').Skill | null> {
+  const cache = new Map<string, Promise<import('./skills.js').Skill | null>>()
+  return (skillId) => {
+    const hit = cache.get(skillId)
+    if (hit !== undefined) return hit
+    const decision = enforcer.canLoadSkill(skillId)
+    if (!decision.allow) {
+      events?.publish({
+        type: 'permission.denied',
+        runId,
+        stepId,
+        dimension: 'skill',
+        detail: `skill "${skillId}" is not in allowedSkills (${decision.reason})`,
+        at: Date.now(),
+      })
+      const denied = Promise.resolve(null)
+      cache.set(skillId, denied)
+      return denied
+    }
+    const promise = source(skillId)
+    cache.set(skillId, promise)
+    return promise
   }
 }
 

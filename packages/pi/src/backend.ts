@@ -7,6 +7,7 @@
 // Pi does NOT speak ACP; this backend uses the native pi RPC protocol
 // documented in @mariozechner/pi-coding-agent/docs/rpc.md.
 
+import { formatSkillBlock } from '@skelm/core'
 import type {
   AgentRequest,
   AgentResponse,
@@ -46,7 +47,7 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
     streaming: true,
     sessionLifecycle: true,
     mcp: false, // pi manages its own tools; no external MCP wiring
-    skills: false,
+    skills: true,
     modelSelection: options.model !== undefined,
     toolPermissions: 'native', // pi enforces its own tool permissions
   }
@@ -92,7 +93,8 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
       try {
         await client.start()
 
-        const prompt = buildPrompt(request)
+        const skillBodies = await loadSkillBodies(request, context)
+        const prompt = buildPrompt(request, skillBodies)
         const result = await client.prompt(prompt, options.timeout ?? 300_000)
 
         return {
@@ -131,9 +133,22 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
  * Build the prompt string sent to pi, incorporating system prompt and
  * any multi-turn context from the request.
  */
-function buildPrompt(req: AgentRequest): string {
+async function loadSkillBodies(req: AgentRequest, ctx: BackendContext): Promise<string[]> {
+  if (!req.skills || req.skills.length === 0 || !ctx.loadSkill) return []
+  const bodies: string[] = []
+  for (const skillId of req.skills) {
+    const skill = await ctx.loadSkill(skillId)
+    if (skill !== null) bodies.push(formatSkillBlock(skill))
+  }
+  return bodies
+}
+
+function buildPrompt(req: AgentRequest, skillBodies: string[] = []): string {
   const parts: string[] = []
-  if (req.system) parts.push(`[System: ${req.system}]`)
+  const systemParts: string[] = []
+  if (req.system) systemParts.push(req.system)
+  for (const body of skillBodies) systemParts.push(body)
+  if (systemParts.length > 0) parts.push(`[System: ${systemParts.join('\n\n---\n\n')}]`)
   parts.push(req.prompt)
   return parts.join('\n\n')
 }

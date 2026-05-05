@@ -357,6 +357,7 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
         const handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
           runId,
           signal: controller.signal,
+          skillSource: (id) => Promise.resolve(gateway.registries.skills.get(id) ?? null),
         })
         const finalState = await handle.wait()
         if (idemKey !== null) idempotency.set(`${id}:${idemKey}`, finalState.runId)
@@ -426,6 +427,7 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       const handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
         runId,
         signal: controller.signal,
+        skillSource: (id) => Promise.resolve(gateway.registries.skills.get(id) ?? null),
       })
       // Fire and forget; cleanup on settle. Errors are still recorded by the
       // runner into the runStore, so callers polling GET /runs/:runId see
@@ -724,6 +726,7 @@ async function runPipelineSync(
     const handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
       runId,
       signal: controller.signal,
+      skillSource: (id) => Promise.resolve(gateway.registries.skills.get(id) ?? null),
     })
     const final = await handle.wait()
     return {

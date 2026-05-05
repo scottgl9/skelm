@@ -8,6 +8,7 @@ import type {
   SkelmBackend,
   Usage,
 } from '../backend.js'
+import { formatSkillBlock } from '../skills.js'
 
 export interface AnthropicBackendOptions {
   id?: string
@@ -24,7 +25,7 @@ export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): Skel
     streaming: false,
     sessionLifecycle: false,
     mcp: false,
-    skills: false,
+    skills: true,
     modelSelection: true,
     toolPermissions: 'unsupported',
   }
@@ -65,8 +66,18 @@ export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): Skel
         maxTokens: 1024,
         outputSchema: req.outputSchema !== undefined,
       }
-      if (req.system !== undefined) {
-        request.system = req.system
+      const systemParts: string[] = []
+      if (req.system !== undefined) systemParts.push(req.system)
+      if (req.skills !== undefined && req.skills.length > 0 && ctx.loadSkill !== undefined) {
+        for (const skillId of req.skills) {
+          const skill = await ctx.loadSkill(skillId)
+          if (skill !== null) {
+            systemParts.push(formatSkillBlock(skill))
+          }
+        }
+      }
+      if (systemParts.length > 0) {
+        request.system = systemParts.join('\n\n---\n\n')
       }
       const body = await requestMessage(request, ctx, opts)
       const text = extractText(body)

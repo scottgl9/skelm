@@ -71,6 +71,7 @@ value:describeStep
 value:executeAgentStep
 value:executeLlmStep
 value:forEach
+value:formatSkillBlock
 value:globalCapabilityRegistry
 value:idempotent
 value:llm

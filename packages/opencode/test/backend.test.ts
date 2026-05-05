@@ -49,5 +49,9 @@ describe('OpencodeBackend', () => {
     it('reports mcp: true', () => {
       expect(createOpencodeBackend({}).capabilities.mcp).toBe(true)
     })
+
+    it('reports skills: true', () => {
+      expect(createOpencodeBackend({}).capabilities.skills).toBe(true)
+    })
   })
 })

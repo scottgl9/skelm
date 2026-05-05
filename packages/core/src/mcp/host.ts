@@ -120,6 +120,25 @@ export async function createMcpHost(
             )
           }
         }
+
+        const fsAccess = requestedFsPath(toolName, args)
+        if (fsAccess !== undefined) {
+          const fsDecision = fsAccess.write
+            ? enforcer.canWrite(fsAccess.path)
+            : enforcer.canRead(fsAccess.path)
+          if (!fsDecision.allow) {
+            publishPermissionDenied(
+              opts,
+              toolId,
+              fsDecision.dimension,
+              fsDecision.reason,
+              `tool "${toolId}" requested ${fsAccess.write ? 'write' : 'read'} access to "${fsAccess.path}"`,
+            )
+            throw new PermissionDeniedError(
+              `tool "${toolId}" requested ${fsAccess.write ? 'write' : 'read'} access to "${fsAccess.path}" which is not allowed (${fsDecision.reason})`,
+            )
+          }
+        }
       }
 
       const startedAt = Date.now()
@@ -204,12 +223,27 @@ function publishPermissionDenied(
   })
 }
 
+// Tool names whose invocation constitutes running an arbitrary shell command.
+// Covers mcp-server-shell, mcp-server-commands, desktop-commander, and similar.
+const SHELL_TOOL_NAMES = new Set([
+  'bash',
+  'sh',
+  'shell',
+  'exec',
+  'execute',
+  'execute_command',
+  'run_command',
+  'run_shell_command',
+  'terminal',
+  'terminal_exec',
+  'spawn',
+])
+
 function requestedExecutable(toolName: string, args: unknown): string | undefined {
-  if (toolName === 'bash' || toolName === 'exec') {
-    if (toolName === 'bash') return 'bash'
-    return extractBinary(args)
-  }
-  return undefined
+  if (!SHELL_TOOL_NAMES.has(toolName)) return undefined
+  // bash and sh always resolve to themselves regardless of args content
+  if (toolName === 'bash' || toolName === 'sh') return toolName
+  return extractBinary(args)
 }
 
 function extractBinary(args: unknown): string | undefined {
@@ -242,6 +276,68 @@ function parseCommandBinary(command: string): string | undefined {
   const match = trimmed.match(/^(?:"([^"]+)"|'([^']+)'|(\S+))/)
   const token = match?.[1] ?? match?.[2] ?? match?.[3]
   return token === undefined ? undefined : basename(token)
+}
+
+// Write-indicating tool name suffixes used by common MCP filesystem servers
+// (mcp-server-filesystem, @modelcontextprotocol/server-filesystem, etc.)
+const FS_WRITE_NAMES = new Set([
+  'write_file',
+  'create_file',
+  'edit_file',
+  'delete_file',
+  'move_file',
+  'copy_file',
+  'create_directory',
+  'delete_directory',
+  'rename',
+  'overwrite',
+  'append_to_file',
+  'patch_file',
+])
+
+const FS_READ_NAMES = new Set([
+  'read_file',
+  'get_file',
+  'read_multiple_files',
+  'list_directory',
+  'list_files',
+  'search_files',
+  'stat_file',
+  'get_file_info',
+  'directory_tree',
+])
+
+/**
+ * Extract a filesystem path from tool arguments when the tool name matches a
+ * known filesystem-access pattern. Returns `{ path, write }` or undefined if
+ * the tool does not look like a filesystem tool or carries no extractable path.
+ * Path extraction is best-effort: unknown argument shapes return undefined.
+ */
+function requestedFsPath(
+  toolName: string,
+  args: unknown,
+): { path: string; write: boolean } | undefined {
+  const isWrite = FS_WRITE_NAMES.has(toolName)
+  const isRead = FS_READ_NAMES.has(toolName)
+  if (!isWrite && !isRead) return undefined
+
+  if (args === null || typeof args !== 'object') return undefined
+  const record = args as Record<string, unknown>
+
+  // Common path argument names from mcp-server-filesystem and similar servers
+  const path =
+    typeof record.path === 'string'
+      ? record.path
+      : typeof record.file_path === 'string'
+        ? record.file_path
+        : typeof record.filename === 'string'
+          ? record.filename
+          : typeof record.source === 'string'
+            ? record.source
+            : undefined
+
+  if (path === undefined) return undefined
+  return { path, write: isWrite }
 }
 
 async function awaitWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
