@@ -93,7 +93,7 @@ export function code<TOutput>(def: {
  */
 export function llm<TOutput>(def: {
   id: StepId
-  backend?: string
+  backend?: string | readonly string[]
   model?: string
   system?: string | ((ctx: Context) => string)
   prompt: string | ((ctx: Context) => string)
@@ -133,7 +133,7 @@ export function llm<TOutput>(def: {
  */
 export function agent<TOutput>(def: {
   id: StepId
-  backend?: string
+  backend?: string | readonly string[]
   agentDef?: string
   prompt: string | ((ctx: Context) => string)
   system?: string | ((ctx: Context) => string)

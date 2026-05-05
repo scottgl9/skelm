@@ -22,6 +22,7 @@ export {
   BackendCapabilityError,
   BackendNotFoundError,
   BackendRegistry,
+  BackendUnavailableError,
 } from './backend.js'
 export type {
   AgentRequest,
@@ -195,7 +196,13 @@ export type {
   ToolMatcher,
 } from './permissions.js'
 export type { RunHandle, RunOptions, WaitRequest } from './runner.js'
-export { ApprovalDeniedError, runPipeline, Runner, SchemaValidationError } from './runner.js'
+export {
+  ApprovalDeniedError,
+  BackendChainExhaustedError,
+  runPipeline,
+  Runner,
+  SchemaValidationError,
+} from './runner.js'
 export type { SkelmSchema } from './schema.js'
 export { formatSkillBlock, parseSkill, SkillParseError } from './skills.js'
 export type { Skill } from './skills.js'

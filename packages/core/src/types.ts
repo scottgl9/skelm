@@ -171,7 +171,7 @@ export interface CodeStep<TOutput = unknown> {
 export interface LlmStep<TOutput = unknown> {
   readonly kind: 'llm'
   readonly id: StepId
-  readonly backend?: string
+  readonly backend?: string | readonly string[]
   readonly model?: string
   readonly system?: string | ((ctx: Context) => string)
   readonly prompt: string | ((ctx: Context) => string)
@@ -186,7 +186,7 @@ export interface LlmStep<TOutput = unknown> {
 export interface AgentStep<TOutput = unknown> {
   readonly kind: 'agent'
   readonly id: StepId
-  readonly backend?: string
+  readonly backend?: string | readonly string[]
   readonly agentDef?: string
   readonly prompt: string | ((ctx: Context) => string)
   readonly system?: string | ((ctx: Context) => string)

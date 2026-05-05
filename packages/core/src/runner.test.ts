@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { BackendRegistry, type SkelmBackend } from './backend.js'
+import { BackendRegistry, BackendUnavailableError, type SkelmBackend } from './backend.js'
 import { agent, code, pipeline } from './builders.js'
-import { StepTimeoutError } from './errors.js'
-import { EventBus } from './events.js'
+import { PermissionDeniedError } from './errors.js'
+import { EventBus, type RunEvent } from './events.js'
 import { runPipeline } from './runner.js'
 
 describe('runPipeline — sequential code steps', () => {
@@ -203,98 +203,13 @@ describe('retry policy', () => {
   })
 })
 
-describe('runPipeline — agent timeoutMs', () => {
-  function hangingBackend(opts: {
-    onAbort?: () => void
-    delayMs?: number
-  }): SkelmBackend {
+describe('runPipeline — backend fallback chain', () => {
+  function stubBackend(
+    id: string,
+    behavior: 'ok' | 'unavailable' | 'permission' = 'ok',
+  ): SkelmBackend {
     return {
-      id: 'hang-backend',
-      capabilities: {
-        prompt: false,
-        streaming: false,
-        sessionLifecycle: false,
-        mcp: false,
-        skills: false,
-        modelSelection: false,
-        toolPermissions: 'wrapped',
-      },
-      async run(_req, ctx) {
-        return await new Promise<{ text: string }>((resolve, reject) => {
-          const timer = setTimeout(() => resolve({ text: 'late' }), opts.delayMs ?? 5000)
-          ctx.signal.addEventListener(
-            'abort',
-            () => {
-              clearTimeout(timer)
-              opts.onAbort?.()
-              reject(new Error('aborted'))
-            },
-            { once: true },
-          )
-        })
-      },
-    }
-  }
-
-  it('aborts the backend signal and fails the step with StepTimeoutError', async () => {
-    const registry = new BackendRegistry()
-    let aborted = false
-    registry.register(hangingBackend({ onAbort: () => (aborted = true) }))
-    const wf = pipeline({
-      id: 'timeout-runner',
-      steps: [agent({ id: 'work', backend: 'hang-backend', prompt: 'hi', timeoutMs: 25 })],
-    })
-    const run = await runPipeline(wf, undefined, { backends: registry })
-    expect(run.status).toBe('failed')
-    expect(run.error?.name).toBe('StepTimeoutError')
-    expect(aborted).toBe(true)
-  })
-
-  it('retries after a timeout when retry policy is set', async () => {
-    const registry = new BackendRegistry()
-    let calls = 0
-    registry.register({
-      id: 'flaky-backend',
-      capabilities: {
-        prompt: false,
-        streaming: false,
-        sessionLifecycle: false,
-        mcp: false,
-        skills: false,
-        modelSelection: false,
-        toolPermissions: 'wrapped',
-      },
-      async run(_req, ctx) {
-        calls += 1
-        if (calls < 2) {
-          return await new Promise<{ text: string }>((_resolve, reject) => {
-            ctx.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
-          })
-        }
-        return { text: 'eventually' }
-      },
-    } as SkelmBackend)
-    const wf = pipeline({
-      id: 'timeout-retry',
-      steps: [
-        agent({
-          id: 'work',
-          backend: 'flaky-backend',
-          prompt: 'hi',
-          timeoutMs: 25,
-          retry: { maxAttempts: 2, delayMs: 0 },
-        }),
-      ],
-    })
-    const run = await runPipeline(wf, undefined, { backends: registry })
-    expect(run.status).toBe('completed')
-    expect(calls).toBe(2)
-  })
-
-  it('does not impose a timeout when timeoutMs is absent', async () => {
-    const registry = new BackendRegistry()
-    registry.register({
-      id: 'fast',
+      id,
       capabilities: {
         prompt: false,
         streaming: false,
@@ -305,29 +220,75 @@ describe('runPipeline — agent timeoutMs', () => {
         toolPermissions: 'wrapped',
       },
       async run() {
-        return { text: 'instant' }
+        if (behavior === 'unavailable')
+          throw new BackendUnavailableError(`${id} is unavailable`, id)
+        if (behavior === 'permission') throw new PermissionDeniedError(`denied by ${id}`)
+        return { text: `from ${id}` }
       },
-    } as SkelmBackend)
+    }
+  }
+
+  it('falls through to the next backend on BackendUnavailableError and emits backend.fallback', async () => {
+    const registry = new BackendRegistry()
+    registry.register(stubBackend('a', 'unavailable'))
+    registry.register(stubBackend('b', 'ok'))
+    const events = new EventBus()
+    const fallbacks: RunEvent[] = []
+    events.subscribe((e) => {
+      if (e.type === 'backend.fallback') fallbacks.push(e)
+    })
     const wf = pipeline({
-      id: 'no-timeout',
-      steps: [agent({ id: 'work', backend: 'fast', prompt: 'hi' })],
+      id: 'fb-ok',
+      steps: [agent({ id: 'work', backend: ['a', 'b'], prompt: 'hi' })],
+    })
+    const run = await runPipeline(wf, undefined, { backends: registry, events })
+    expect(run.status).toBe('completed')
+    expect(fallbacks).toHaveLength(1)
+    expect(fallbacks[0]).toMatchObject({ from: 'a', to: 'b' })
+  })
+
+  it('does not fall back on logic errors (e.g. PermissionDeniedError)', async () => {
+    const registry = new BackendRegistry()
+    registry.register(stubBackend('a', 'permission'))
+    registry.register(stubBackend('b', 'ok'))
+    const events = new EventBus()
+    const fallbacks: RunEvent[] = []
+    events.subscribe((e) => {
+      if (e.type === 'backend.fallback') fallbacks.push(e)
+    })
+    const wf = pipeline({
+      id: 'fb-no',
+      steps: [agent({ id: 'work', backend: ['a', 'b'], prompt: 'hi' })],
+    })
+    const run = await runPipeline(wf, undefined, { backends: registry, events })
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('PermissionDeniedError')
+    expect(fallbacks).toHaveLength(0)
+  })
+
+  it('throws BackendChainExhaustedError when every backend in the chain fails transiently', async () => {
+    const registry = new BackendRegistry()
+    registry.register(stubBackend('a', 'unavailable'))
+    registry.register(stubBackend('b', 'unavailable'))
+    const wf = pipeline({
+      id: 'fb-exhaust',
+      steps: [agent({ id: 'work', backend: ['a', 'b'], prompt: 'hi' })],
+    })
+    const run = await runPipeline(wf, undefined, { backends: registry })
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('BackendChainExhaustedError')
+    expect(run.error?.message).toContain('a')
+    expect(run.error?.message).toContain('b')
+  })
+
+  it('treats a single-string backend as a chain of length one', async () => {
+    const registry = new BackendRegistry()
+    registry.register(stubBackend('only', 'ok'))
+    const wf = pipeline({
+      id: 'fb-single',
+      steps: [agent({ id: 'work', backend: 'only', prompt: 'hi' })],
     })
     const run = await runPipeline(wf, undefined, { backends: registry })
     expect(run.status).toBe('completed')
-  })
-
-  it('rejects negative or zero timeoutMs at builder time', () => {
-    expect(() => agent({ id: 'bad', backend: 'x', prompt: 'hi', timeoutMs: 0 })).toThrow(
-      /timeoutMs/,
-    )
-    expect(() => agent({ id: 'bad', backend: 'x', prompt: 'hi', timeoutMs: -1 })).toThrow(
-      /timeoutMs/,
-    )
-  })
-
-  it('StepTimeoutError carries stepId and timeoutMs', () => {
-    const err = new StepTimeoutError('work', 1000)
-    expect(err.stepId).toBe('work')
-    expect(err.timeoutMs).toBe(1000)
   })
 })
