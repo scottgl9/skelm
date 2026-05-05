@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { approvalsCommand } from './approvals.js'
 import { parseArgv } from './argv.js'
 import { auditCommand, secretsCommand } from './audit.js'
@@ -367,6 +370,11 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
 }
 
 function getVersion(): string {
-  // Bumped on release.
-  return '0.2.0'
+  try {
+    const here = dirname(fileURLToPath(import.meta.url))
+    const pkg = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8'))
+    return typeof pkg.version === 'string' ? pkg.version : '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
 }
