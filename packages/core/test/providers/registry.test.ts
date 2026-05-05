@@ -3,6 +3,7 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest'
+import type { PluginHealthStatus } from '../../src/plugins.js'
 import type { ProviderCapabilities } from '../../src/providers/base.js'
 import { ProviderCapabilityRegistry } from '../../src/providers/registry.js'
 
@@ -596,7 +597,7 @@ describe('ProviderCapabilityRegistry', () => {
       registry.registerProvider('provider-1', 'Provider 1', capabilities, [])
       registry.registerProvider('provider-2', 'Provider 2', capabilities, [])
 
-      const healthChecks = new Map<string, () => Promise<any>>()
+      const healthChecks = new Map<string, () => Promise<PluginHealthStatus>>()
       healthChecks.set('provider-1', async () => ({ healthy: true, status: 'healthy' }))
       healthChecks.set('provider-2', async () => ({ healthy: true, status: 'healthy' }))
 
@@ -630,7 +631,7 @@ describe('ProviderCapabilityRegistry', () => {
 
       registry.registerProvider('provider-1', 'Provider 1', capabilities, [])
 
-      const healthChecks = new Map<string, () => Promise<any>>()
+      const healthChecks = new Map<string, () => Promise<PluginHealthStatus>>()
       healthChecks.set('provider-1', async () => {
         throw new Error('Check failed')
       })

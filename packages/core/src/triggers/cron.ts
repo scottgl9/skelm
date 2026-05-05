@@ -45,7 +45,7 @@ function parseCronExpression(expression: string): {
     throw new Error(`Invalid cron expression: ${expression}. Expected 5 parts`)
   }
 
-  const [minute, hour, day, month, dayOfWeek] = parts
+  const [minute, hour, day, month, dayOfWeek] = parts as [string, string, string, string, string]
 
   // Simple parser - supports *, numbers, and ranges (e.g., 1-5)
   const parseField = (field: string, min: number, max: number): number[] => {
@@ -64,11 +64,11 @@ function parseCronExpression(expression: string): {
   }
 
   return {
-    minutes: parseField(minute!, 0, 59),
-    hours: parseField(hour!, 0, 23),
-    days: parseField(day!, 1, 31),
-    months: parseField(month!, 1, 12),
-    dayOfWeeks: parseField(dayOfWeek!, 0, 6),
+    minutes: parseField(minute, 0, 59),
+    hours: parseField(hour, 0, 23),
+    days: parseField(day, 1, 31),
+    months: parseField(month, 1, 12),
+    dayOfWeeks: parseField(dayOfWeek, 0, 6),
   }
 }
 

@@ -183,7 +183,11 @@ describe('CustomTrigger', () => {
       })
 
       trigger.onEvent(handler)
-      await (trigger as any).emitEvent({ data: 'test' }, { source: 'test' })
+      await (
+        trigger as unknown as {
+          emitEvent: (p: unknown, m?: Record<string, unknown>) => Promise<void>
+        }
+      ).emitEvent({ data: 'test' }, { source: 'test' })
 
       expect(handler).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -203,7 +207,11 @@ describe('CustomTrigger', () => {
       })
 
       trigger.onEvent(handler)
-      await (trigger as any).emitEvent({ data: 'test' })
+      await (
+        trigger as unknown as {
+          emitEvent: (p: unknown, m?: Record<string, unknown>) => Promise<void>
+        }
+      ).emitEvent({ data: 'test' })
 
       expect(handler).toHaveBeenCalledWith(
         expect.objectContaining({

@@ -9,6 +9,7 @@ import type { TriggerEvent } from '../../src/triggers/types.js'
 import { createWebhookTrigger } from '../../src/triggers/webhook.js'
 import { WorkflowExecutor } from '../../src/workflows/executor.js'
 import { WorkflowRegistry } from '../../src/workflows/registry.js'
+import type { WorkflowInvocation } from '../../src/workflows/types.js'
 
 // Port counter for unique ports in tests
 let portCounter = 3300
@@ -113,7 +114,7 @@ describe('Full-Stack Integration Tests', () => {
           id: 'slack-test',
           name: 'Slack Test',
           botToken: 'xoxb-test',
-        } as any),
+        } as Parameters<typeof trigger.initialize>[0]),
       ).rejects.toThrow(/signingSecret/)
 
       // Missing botToken
@@ -122,7 +123,7 @@ describe('Full-Stack Integration Tests', () => {
           id: 'slack-test',
           name: 'Slack Test',
           signingSecret: 'secret',
-        } as any),
+        } as Parameters<typeof trigger.initialize>[0]),
       ).rejects.toThrow(/botToken/)
 
       // Valid configuration
@@ -170,7 +171,7 @@ describe('Full-Stack Integration Tests', () => {
           name: 'Discord Test',
           clientId: 'client-123',
           channelIds: ['123'],
-        } as any),
+        } as Parameters<typeof trigger.initialize>[0]),
       ).rejects.toThrow(/botToken/)
 
       // Missing clientId
@@ -180,7 +181,7 @@ describe('Full-Stack Integration Tests', () => {
           name: 'Discord Test',
           botToken: 'token',
           channelIds: ['123'],
-        } as any),
+        } as Parameters<typeof trigger.initialize>[0]),
       ).rejects.toThrow(/clientId/)
 
       // Empty channelIds
@@ -219,7 +220,7 @@ describe('Full-Stack Integration Tests', () => {
           accessToken: 'token',
           userId: '@user:server.com',
           roomIds: ['!room:server.com'],
-        } as any),
+        } as Parameters<typeof trigger.initialize>[0]),
       ).rejects.toThrow(/homeserverUrl/)
 
       // Missing accessToken
@@ -230,7 +231,7 @@ describe('Full-Stack Integration Tests', () => {
           homeserverUrl: 'https://server.com',
           userId: '@user:server.com',
           roomIds: ['!room:server.com'],
-        } as any),
+        } as Parameters<typeof trigger.initialize>[0]),
       ).rejects.toThrow(/accessToken/)
 
       // Missing userId
@@ -241,7 +242,7 @@ describe('Full-Stack Integration Tests', () => {
           homeserverUrl: 'https://server.com',
           accessToken: 'token',
           roomIds: ['!room:server.com'],
-        } as any),
+        } as Parameters<typeof trigger.initialize>[0]),
       ).rejects.toThrow(/userId/)
 
       // Empty roomIds
@@ -306,7 +307,7 @@ describe('Full-Stack Integration Tests', () => {
 
   describe('Workflow Invocation Flow', () => {
     it('passes trigger event to workflow correctly', async () => {
-      let capturedInvocation: any = null
+      let capturedInvocation: WorkflowInvocation | null = null
 
       // Mock workflow that captures invocation
       class MockWorkflow extends (await import('../../src/workflows/base.js')).WorkflowPluginBase {
@@ -314,7 +315,7 @@ describe('Full-Stack Integration Tests', () => {
           return 'workflow'
         }
 
-        override async execute(invocation: any) {
+        override async execute(invocation: WorkflowInvocation) {
           capturedInvocation = invocation
           return {
             executionId: 'mock-exec',
@@ -359,7 +360,9 @@ describe('Full-Stack Integration Tests', () => {
         metadata: { source: 'cron' },
       }
 
-      await (trigger as any).emitEvent(mockEvent)
+      await (trigger as unknown as { emitEvent: (e: TriggerEvent) => Promise<void> }).emitEvent(
+        mockEvent,
+      )
 
       expect(capturedInvocation).not.toBeNull()
       expect(capturedInvocation?.workflowId).toBe('test-workflow')
