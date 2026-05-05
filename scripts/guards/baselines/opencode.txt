@@ -12,5 +12,6 @@ type:BackendAuthenticationError
 type:BackendRateLimitError
 type:BackendTimeoutError
 type:MappedPermissions
+type:OpencodeBackendConfig
 type:OpencodeBackendOptions
 type:OpencodePermissionConfig

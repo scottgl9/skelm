@@ -7,7 +7,7 @@ import {
   createAnthropicBackend,
   createOpenAIBackend,
 } from '@skelm/core'
-import { createOpencodeBackendFromConfig } from '@skelm/opencode'
+import { type OpencodeBackendConfig, createOpencodeBackendFromConfig } from '@skelm/opencode'
 import { createPiBackendFromConfig } from '@skelm/pi'
 
 export function applyConfiguredBackends<TInput, TOutput>(
@@ -182,16 +182,16 @@ function createBackend(backendId: string, config: SkelmConfig) {
       const agent = readString(entry.agent)
       const timeout = readNumber(entry.timeout)
       const maxRetries = readNumber(entry.maxRetries)
-      const logLevel = readString(entry.logLevel) as 'debug' | 'info' | 'warn' | 'error' | undefined
+      const logLevel = readString(entry.logLevel) as OpencodeBackendConfig['logLevel']
 
-      return createOpencodeBackendFromConfig({
-        ...(apiKey !== undefined && { apiKey }),
-        ...(apiUrl !== undefined && { apiUrl }),
-        ...(agent !== undefined && { agent }),
-        ...(timeout !== undefined && { timeout }),
-        ...(maxRetries !== undefined && { maxRetries }),
-        ...(logLevel !== undefined && { logLevel }),
-      } as any)
+      const cfg: OpencodeBackendConfig = {}
+      if (apiKey !== undefined) cfg.apiKey = apiKey
+      if (apiUrl !== undefined) cfg.apiUrl = apiUrl
+      if (agent !== undefined) cfg.agent = agent
+      if (timeout !== undefined) cfg.timeout = timeout
+      if (maxRetries !== undefined) cfg.maxRetries = maxRetries
+      if (logLevel !== undefined) cfg.logLevel = logLevel
+      return createOpencodeBackendFromConfig(cfg)
     }
     case 'pi': {
       const cmd = readString(entry.command)
