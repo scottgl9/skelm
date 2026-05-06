@@ -224,6 +224,18 @@ export class Runner {
             // audit writer failures must not poison the run.
           })
       }
+      if (event.type === 'secret.not_found') {
+        void this.enforcement.auditWriter
+          .write({
+            runId: event.runId,
+            actor: 'runtime',
+            action: 'secret.not_found',
+            details: { stepId: event.stepId, name: event.name, at: event.at },
+          })
+          .catch(() => {
+            // audit writer failures must not poison the run.
+          })
+      }
     })
   }
 
@@ -1328,6 +1340,13 @@ async function resolveDeclaredSecrets(
     }
     const value = await resolver.resolve(name)
     if (value === undefined) {
+      events?.publish({
+        type: 'secret.not_found',
+        runId,
+        stepId: step.id,
+        name,
+        at: Date.now(),
+      })
       throw new MissingSecretError(name)
     }
     resolved[name] = value

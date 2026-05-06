@@ -94,6 +94,7 @@ export type RunEvent =
   | { type: 'run.failed'; runId: RunId; error: SerializedError; at: number }
   | { type: 'run.cancelled'; runId: RunId; at: number }
   | { type: 'secret.accessed'; runId: RunId; stepId: string; name: string; at: number }
+  | { type: 'secret.not_found'; runId: RunId; stepId: string; name: string; at: number }
 
 export type RunEventType = RunEvent['type']
 
