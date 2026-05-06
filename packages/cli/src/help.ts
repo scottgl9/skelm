@@ -53,6 +53,13 @@ Gateway flags:
   skelm gateway uninstall --systemd        Remove the systemd unit file
   (pause|resume require the HTTP control surface — POST /gateway/pause|resume)
 
+Approvals config flags:
+  skelm approvals config show [--json]                Print the current effective policy
+  skelm approvals config validate [--json]            Static-check the policy file
+  skelm approvals config set <key> <value>            Set defaultTimeoutMs or stepKindsRequiringApproval
+  skelm approvals config approvers add|remove <id>    Manage the approver registry
+  (Reads / writes $SKELM_APPROVALS_CONFIG, defaulting to ~/.skelm/approvals.config.json)
+
 Audit flags:
   skelm audit query [--run <runId>] [--actor <name>] [--action <type>]
                       [--since <ISO8601>] [--until <ISO8601>] [--limit <n>] [--json]

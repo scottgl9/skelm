@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { approvalsConfigCommand } from './approvals-config.js'
 import { approvalsCommand } from './approvals.js'
 import { parseArgv } from './argv.js'
 import { auditCommand, secretsCommand } from './audit.js'
@@ -173,8 +174,52 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
       }
       case 'approvals': {
         const subcommand = parsed.positional[0]
+        if (subcommand === 'config') {
+          const action = parsed.positional[1]
+          if (action === 'show' || action === 'validate') {
+            const r = await approvalsConfigCommand(
+              { action, ...(parsed.flags.json === true && { json: true }) },
+              io,
+            )
+            return { exitCode: r.exitCode }
+          }
+          if (action === 'set') {
+            const r = await approvalsConfigCommand(
+              {
+                action: 'set',
+                ...(typeof parsed.positional[2] === 'string' && { key: parsed.positional[2] }),
+                ...(typeof parsed.positional[3] === 'string' && { value: parsed.positional[3] }),
+                ...(parsed.flags.json === true && { json: true }),
+              },
+              io,
+            )
+            return { exitCode: r.exitCode }
+          }
+          if (action === 'approvers') {
+            const op = parsed.positional[2]
+            if (op !== 'add' && op !== 'remove') {
+              io.stderr.write('error: skelm approvals config approvers requires add | remove\n')
+              return { exitCode: EXIT.CLI_ERROR }
+            }
+            const r = await approvalsConfigCommand(
+              {
+                action: op === 'add' ? 'approvers-add' : 'approvers-remove',
+                ...(typeof parsed.positional[3] === 'string' && {
+                  approverId: parsed.positional[3],
+                }),
+                ...(parsed.flags.json === true && { json: true }),
+              },
+              io,
+            )
+            return { exitCode: r.exitCode }
+          }
+          io.stderr.write(
+            'error: skelm approvals config requires show | validate | set | approvers\n',
+          )
+          return { exitCode: EXIT.CLI_ERROR }
+        }
         if (subcommand !== 'list' && subcommand !== 'approve' && subcommand !== 'deny') {
-          io.stderr.write('error: approvals requires list, approve, or deny\n')
+          io.stderr.write('error: approvals requires list, approve, deny, or config\n')
           return { exitCode: EXIT.CLI_ERROR }
         }
         const result = await approvalsCommand(
