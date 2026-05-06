@@ -35,13 +35,19 @@ export interface AuditEntry {
   readonly at: number
 }
 
-export interface RunStore {
+/** Persistence of run lifecycle: run records, step events, and optional audit rows. */
+export interface ExecutionStore {
   putRun(run: Run): Promise<void>
   updateRun(runId: RunId, patch: Partial<Run>): Promise<void>
   getRun(runId: RunId): Promise<Run | null>
   listRuns(filter?: RunFilter): AsyncIterable<RunSummary>
   appendEvent(event: RunEvent): Promise<void>
   listEvents(runId: RunId, opts?: { since?: number; limit?: number }): AsyncIterable<RunEvent>
+  putAudit?(entry: AuditEntry): Promise<void>
+}
+
+/** Key-value, compare-and-swap, and append-log state accessible via ctx.state. */
+export interface StateStore {
   getState<T>(namespace: string, key: string): Promise<T | undefined>
   setState<T>(namespace: string, key: string, value: T, opts?: StateSetOptions): Promise<void>
   deleteState(namespace: string, key: string): Promise<void>
@@ -49,8 +55,10 @@ export interface RunStore {
   casState<T>(namespace: string, key: string, expected: T | undefined, next: T): Promise<boolean>
   appendState(namespace: string, stream: string, entry: unknown): Promise<void>
   readState(namespace: string, stream: string, opts?: StateReadOptions): AsyncIterable<unknown>
-  putAudit?(entry: AuditEntry): Promise<void>
 }
+
+/** Combined store used by implementations that back both APIs with a single driver. */
+export type RunStore = ExecutionStore & StateStore
 
 export class MemoryRunStore implements RunStore {
   private readonly runs = new Map<RunId, Run>()
