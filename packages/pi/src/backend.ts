@@ -43,7 +43,9 @@ export class PiBackendTimeoutError extends PiBackendError {}
  */
 export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
   const capabilities: BackendCapabilities = {
-    prompt: false, // pi is agent-only; use a dedicated LLM backend for llm() steps
+    // RPC mode runs an agent loop; for single-shot inference (llm() steps)
+    // use the pi-sdk backend which can disable tools via noTools: 'all'.
+    prompt: false,
     streaming: true,
     sessionLifecycle: true,
     mcp: false, // pi manages its own tools; no external MCP wiring

@@ -251,7 +251,7 @@ export class BackendRegistry {
       }
       if (!found.capabilities.prompt || typeof found.infer !== 'function') {
         throw new BackendCapabilityError(
-          `backend ${opts.backendId} does not support llm() steps`,
+          `backend ${opts.backendId} does not support llm() steps. Use a backend with single-shot inference (e.g. anthropic, openai, pi-sdk), or rewrite as agent({ maxTurns: 1 }).`,
           opts.backendId,
           'prompt',
         )
