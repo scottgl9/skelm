@@ -18,36 +18,58 @@ You also need an Opencode runtime — the package speaks to a running Opencode s
 
 ## Quick Start
 
-```ts
-import { agent, pipeline } from 'skelm'
-import { createOpencodeBackend } from '@skelm/opencode'
+Register the backend in `skelm.config.ts`:
 
-const opencode = createOpencodeBackend({
-  serverUrl: 'http://127.0.0.1:4096',
-  // model, system prompt, tool allowlist, etc.
+```ts
+// skelm.config.ts
+import { defineConfig } from 'skelm'
+import { createOpencodeBackendFromConfig } from '@skelm/opencode'
+
+export default defineConfig({
+  backends: { agent: 'opencode' },
+  instances: [
+    createOpencodeBackendFromConfig({
+      id: 'opencode',
+      agent: 'build',                     // 'build', 'plan', or a custom opencode agent id
+      apiKey: { secret: 'OPENCODE_API_KEY' },
+    }),
+  ],
 })
+```
+
+A workflow that applies a fix to a codebase:
+
+```ts
+// workflows/fix-bug.workflow.ts
+import { agent, pipeline } from 'skelm'
+import { z } from 'zod'
 
 export default pipeline({
   id: 'fix-bug',
+  input:  z.object({ description: z.string() }),
+  output: z.object({ summary: z.string() }),
   steps: [
     agent({
       id: 'patch',
-      backend: opencode,
-      agentDef: './agents/coder',
+      backend: 'opencode',
+      prompt: (ctx) => `Fix the following bug and return a JSON summary {summary}:\n${ctx.input.description}`,
       permissions: {
-        allowedTools:    ['edit', 'bash'],
-        fsRead:          ['./src'],
-        fsWrite:         ['./src'],
-        execAllowlist:   ['npm', 'pnpm', 'tsc'],
-        networkEgress:   { allowHosts: ['registry.npmjs.org'] },
+        allowedTools:       [],
+        allowedExecutables: ['npm', 'pnpm', 'tsc'],
+        allowedMcpServers:  [],
+        allowedSkills:      [],
+        fsRead:             ['./src'],
+        fsWrite:            ['./src'],
+        networkEgress:      { allowHosts: ['registry.npmjs.org'] },
       },
+      output: z.object({ summary: z.string() }),
       maxTurns: 12,
     }),
   ],
 })
 ```
 
-For the gateway-managed flavor that supervises a long-running Opencode server, use `createOpencodeBackendFromConfig` and let `@skelm/gateway` own the lifecycle.
+`createOpencodeBackendFromConfig` lets `@skelm/gateway` supervise the Opencode server lifecycle. For a short-lived instance, use `createOpencodeBackend` and pass your own server URL.
 
 ## What's exported
 
