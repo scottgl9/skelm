@@ -54,3 +54,43 @@ describe('Runner — permission.denied → audit producer', () => {
     expect(writer.entries).toHaveLength(0)
   })
 })
+
+describe('Runner — secret.not_found → audit producer', () => {
+  it('writes an audit row when a secret resolves to undefined', async () => {
+    const writer = new CapturingAuditWriter()
+    const runner = new Runner({ auditWriter: writer })
+    runner.events.publish({
+      type: 'secret.not_found',
+      runId: 'r2',
+      stepId: 's2',
+      name: 'OPENAI_KEY',
+      at: 1700000000001,
+    })
+    await new Promise((r) => setImmediate(r))
+
+    expect(writer.entries).toHaveLength(1)
+    const row = writer.entries[0]
+    expect(row?.runId).toBe('r2')
+    expect(row?.actor).toBe('runtime')
+    expect(row?.action).toBe('secret.not_found')
+    expect(row?.details).toMatchObject({ stepId: 's2', name: 'OPENAI_KEY' })
+  })
+
+  it('does not include the secret value in the audit row', async () => {
+    const writer = new CapturingAuditWriter()
+    const runner = new Runner({ auditWriter: writer })
+    runner.events.publish({
+      type: 'secret.not_found',
+      runId: 'r3',
+      stepId: 's3',
+      name: 'DB_PASSWORD',
+      at: 1700000000002,
+    })
+    await new Promise((r) => setImmediate(r))
+
+    const row = writer.entries[0]
+    // details must carry only the name (the fact), never a value
+    const details = row?.details as Record<string, unknown>
+    expect(Object.keys(details)).not.toContain('value')
+  })
+})

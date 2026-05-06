@@ -4,8 +4,10 @@ import { dirname, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import {
   EventBus,
+  PermissionDeniedError,
   RunCancelledError,
   SchemaValidationError,
+  StepTimeoutError,
   type WaitRequest,
   WaitTimeoutError,
   runPipeline,
@@ -158,6 +160,12 @@ export async function runCommand(
   }
   if (run.error?.name === WaitTimeoutError.name) {
     return { exitCode: EXIT.WAIT_TIMEOUT, run }
+  }
+  if (run.error?.name === PermissionDeniedError.name) {
+    return { exitCode: EXIT.PERMISSION_DENIED, run }
+  }
+  if (run.error?.name === StepTimeoutError.name) {
+    return { exitCode: EXIT.STEP_TIMEOUT, run }
   }
   return { exitCode: EXIT.RUN_FAILED, run }
 }
