@@ -13,6 +13,7 @@ import {
   runPipeline,
 } from '@skelm/core'
 import type { Run } from '@skelm/core'
+import { SkillRegistry, createSkillSource } from '@skelm/gateway'
 import { applyAgentDefinitions } from './agent-defs.js'
 import { applyConfiguredBackends, buildBackendRegistry } from './backends.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
@@ -103,7 +104,7 @@ export async function runCommand(
   }
 
   const workflowDir = dirname(resolve(process.cwd(), workflowPath))
-  const { config } = await loadSkelmConfig({ fromDir: workflowDir })
+  const { config, projectRoot } = await loadSkelmConfig({ fromDir: workflowDir })
   const resolvedWorkflow = applyConfiguredBackends(
     applyAgentDefinitions(workflow, workflowDir),
     config,
@@ -113,6 +114,17 @@ export async function runCommand(
   const workspaceManager = createWorkspaceManager(config)
   const controller = new AbortController()
 
+  const skillRegistry = new SkillRegistry({
+    projectRoot,
+    glob: config.registries?.skills?.glob ?? 'skills/**/SKILL.md',
+  })
+  await skillRegistry.start()
+  const resolvedWorkflowPath = resolve(process.cwd(), workflowPath)
+  const skillSource = createSkillSource({
+    registry: skillRegistry,
+    workflowPath: resolvedWorkflowPath,
+  })
+
   const run = await (async () => {
     try {
       return await runPipeline(resolvedWorkflow, input, {
@@ -120,7 +132,7 @@ export async function runCommand(
         events: bus,
         store,
         stateStore: store,
-        workflowPath: resolve(process.cwd(), workflowPath),
+        workflowPath: resolvedWorkflowPath,
         ...(config.defaults?.permissions !== undefined && {
           defaultPermissions: config.defaults.permissions,
         }),
@@ -129,10 +141,12 @@ export async function runCommand(
         }),
         workspaceManager,
         ...(backends !== undefined && { backends }),
+        skillSource,
         waitForInput: async (request) => await promptForWaitInput(request, io),
       })
     } finally {
       closeRunStore(store)
+      await skillRegistry.close()
     }
   })()
 
