@@ -68,7 +68,7 @@ describe('skelm logs', () => {
     const r = await invoke(['logs', '--json', '--lines', '2'])
     const lines = r.stdout.trim().split('\n')
     expect(lines).toHaveLength(2)
-    expect(() => JSON.parse(lines[0]!)).not.toThrow()
+    expect(() => JSON.parse(lines[0] ?? '')).not.toThrow()
   })
 
   it('--filter narrows to substring matches', async () => {
