@@ -30,6 +30,11 @@ export { IntegrationBase } from './base.js'
 // Integration implementations
 export { GitHubIntegration } from './github.js'
 export { SlackIntegration } from './slack.js'
+export {
+  TelegramIntegration,
+  type TelegramSendMessageOptions,
+  type TelegramGetUpdatesOptions,
+} from './telegram.js'
 
 // Integration registry
 export { IntegrationRegistry } from './registry.js'
