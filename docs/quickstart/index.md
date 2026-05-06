@@ -221,4 +221,4 @@ curl http://127.0.0.1:4000/runs/<runId>
 
 **"Gateway not reachable"** — `skelm` CLI commands that need a running gateway look for one at `SKELM_GATEWAY_URL`, then `~/.skelm/gateway.json`, then `http://127.0.0.1:4000`. Start it with `skelm gateway start`, or run the workflow locally with no gateway running and skelm will spin up an in-process one for the duration.
 
-**"Schema validation failed"** — input did not match the workflow's `input` schema. Check `skelm describe <workflow>` for the expected shape.
+**"Schema validation failed"** — input did not match the workflow's `input` schema. Check `skelm describe` on the workflow for the expected shape.
