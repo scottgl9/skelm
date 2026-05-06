@@ -166,11 +166,17 @@ function inspectStep(step: Step, at: string, issues: ValidationIssue[]): void {
       return
     }
     case 'loop': {
+      // loop carries a single nested Step value (not a factory) so we
+      // recurse through it the same way we handle direct children.
       if (step.step) inspectStep(step.step, `${at}.step`, issues)
       return
     }
     case 'forEach': {
-      // step factory body is opaque without runtime context — nothing to check here.
+      // forEach's `step` is a factory `(item, index) => Step`, not a Step
+      // value. Without a real `items` array (and a Context to evaluate it),
+      // we cannot invoke the factory to materialize the children. Static
+      // analysis stops at the boundary; runtime catches malformed children
+      // when forEach actually runs.
       return
     }
     case 'pipelineStep': {
@@ -225,6 +231,9 @@ function finish(
     }
   }
   if (issues.length === 0) return { exitCode: EXIT.OK }
-  // Validation failures are CLI-level until we have a more granular code.
-  return { exitCode: EXIT.CLI_ERROR }
+  // Validation failures use the same exit code as schema-validation
+  // failures at runtime (EXIT.SCHEMA_VALIDATION = 2). Distinct from the
+  // generic CLI_ERROR (1) so CI scripts can tell "command failed" apart
+  // from "the workflow has issues" without parsing stderr.
+  return { exitCode: EXIT.SCHEMA_VALIDATION }
 }

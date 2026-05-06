@@ -90,7 +90,9 @@ Schedule flags:
 
 Validate flags:
   skelm validate <pipeline.ts>             Static workflow + permission preflight
-    --json                                 Emit issues as JSON; exit 0 on ok, 1 on issues
+    --json                                 Emit issues as JSON
+  Exits 0 when the pipeline is clean, 2 (schema validation) when issues are
+  found, 1 only for CLI-level argv errors. See exit codes below.
 
 Init flags:
   --force                 Allow scaffolding into a non-empty directory
