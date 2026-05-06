@@ -10,6 +10,7 @@ export const EXIT = {
   CANCELLED: 4,
   WAIT_TIMEOUT: 5,
   PERMISSION_DENIED: 6,
+  STEP_TIMEOUT: 7,
 } as const
 
 export type ExitCode = (typeof EXIT)[keyof typeof EXIT]
