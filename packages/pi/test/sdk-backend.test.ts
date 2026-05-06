@@ -131,6 +131,7 @@ describe('createPiSdkBackend', () => {
     const policy = makePolicy({
       allowedExecutables: new Set(['bash']),
       fsRead: new Set(['/project']),
+      networkEgress: 'allow',
     })
     await createPiSdkBackend().run?.({ prompt: 'go', permissions: policy }, makeCtx())
     expect(lastConstructorArgs()?.tools).toContain('bash')
@@ -165,16 +166,27 @@ describe('derivePiToolAllowlist', () => {
     expect(derivePiToolAllowlist(makePolicy())).toEqual([])
   })
 
-  it('includes bash when allowedExecutables has bash', () => {
-    const result = derivePiToolAllowlist(makePolicy({ allowedExecutables: new Set(['bash']) }))
+  it('includes bash when allowedExecutables has bash and networkEgress allows', () => {
+    const result = derivePiToolAllowlist(
+      makePolicy({ allowedExecutables: new Set(['bash']), networkEgress: 'allow' }),
+    )
     expect(result).toContain('bash')
     expect(result).not.toContain('read')
   })
 
-  it('includes bash when allowedExecutables has sh', () => {
-    expect(derivePiToolAllowlist(makePolicy({ allowedExecutables: new Set(['sh']) }))).toContain(
-      'bash',
+  it('includes bash when allowedExecutables has sh and networkEgress allows', () => {
+    expect(
+      derivePiToolAllowlist(
+        makePolicy({ allowedExecutables: new Set(['sh']), networkEgress: 'allow' }),
+      ),
+    ).toContain('bash')
+  })
+
+  it('drops bash from allowlist when networkEgress is deny', () => {
+    const result = derivePiToolAllowlist(
+      makePolicy({ allowedExecutables: new Set(['bash']), networkEgress: 'deny' }),
     )
+    expect(result).not.toContain('bash')
   })
 
   it('includes read tools when fsRead is non-empty', () => {
@@ -206,6 +218,7 @@ describe('derivePiToolAllowlist', () => {
         allowedExecutables: new Set(['bash']),
         fsRead: new Set(['/project']),
         fsWrite: new Set(['/project']),
+        networkEgress: 'allow',
       }),
     )
     expect(result).toContain('bash')
