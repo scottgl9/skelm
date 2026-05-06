@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Node 20+, pnpm or npm, and the `skelm` package installed globally or as a workspace dependency.
 metadata:
   homepage: https://github.com/scottgl9/skelm
-  version: "0.3.4"
+  version: "0.3.7"
 allowed-tools: Read Edit Write Bash(pnpm:*) Bash(skelm:*) Bash(node:*) Bash(git:*)
 ---
 
@@ -22,13 +22,14 @@ Activate when the user is working in a skelm project, wants to author or modify 
 A **pipeline** is a TypeScript file that exports a `pipeline()` call. It has:
 
 - `id` — stable string identifier
+- `description` — optional human-readable summary
 - `input` / `output` — Zod schemas (validated at run boundaries)
 - `steps` — ordered array of `Step` values
-- optional `finalize` — transforms the last step's output into the declared output shape
+- optional `finalize` — transforms accumulated step outputs into the declared output shape
 
 **Step kinds:** `code | llm | agent | parallel | forEach | branch | loop | wait | pipelineStep | idempotent`
 
-Import everything from `'skelm'` (or `'@skelm/core'` in library contexts).
+Import everything from `'skelm'` (or `'@skelm/core'` in library contexts — `'skelm'` re-exports `'@skelm/core'`).
 
 ---
 
@@ -50,7 +51,7 @@ export default pipeline({
       id: 'build-greeting',
       run: (ctx) => {
         const { name } = ctx.input as { name: string }
-        return { greeting: `Hello, ${name}!` }
+        return { greeting: `hello, ${name}` }
       },
     }),
   ],
@@ -63,9 +64,51 @@ For multi-step composition, LLM inference, and control flow, see [references/pip
 
 ---
 
+## Adding an LLM step
+
+`llm()` is for single-shot inference — chat-completion-style requests with optional structured output. The recommended backend is `'openai'` (the OpenAI factory talks to anything that exposes the OpenAI Chat Completions shape: hosted OpenAI, vLLM, llama.cpp, sglang, ollama with `/v1`):
+
+```ts
+import { llm, pipeline } from 'skelm'
+import { z } from 'zod'
+
+export default pipeline({
+  id: 'classify',
+  input: z.object({ text: z.string() }),
+  output: z.object({ label: z.string(), confidence: z.number() }),
+  steps: [
+    llm({
+      id: 'classify-text',
+      backend: 'openai',
+      prompt: (ctx) =>
+        `Classify the sentiment and return JSON { label, confidence }:\n${ctx.input.text}`,
+      output: z.object({ label: z.string(), confidence: z.number() }),
+      maxTokens: 1024,
+    }),
+  ],
+})
+```
+
+When `output` is supplied, the runtime requests structured output from the backend and validates the parsed JSON against the schema before recording it.
+
+---
+
 ## Adding an agent step
 
 > **Default-deny:** every `AgentPermissions` field defaults to deny when omitted. An agent with no `permissions` block cannot call tools, read files, execute binaries, attach MCP servers, or make network requests.
+
+The recommended agent backend is `'pi'` (the [pi coding-agent SDK](https://www.npmjs.com/package/@mariozechner/pi-coding-agent), via `@skelm/pi` → `createPiSdkBackend`). The CLI's `pi` config key wires up the **RPC** backend; for the SDK backend, register an instance.
+
+```ts
+// skelm.config.ts
+import { defineConfig } from 'skelm'
+import { createPiSdkBackend } from '@skelm/pi'
+
+export default defineConfig({
+  backends: { agent: 'pi' },
+  instances: [createPiSdkBackend({ id: 'pi' })],
+})
+```
 
 Minimal agent step with explicit permissions:
 
@@ -80,17 +123,21 @@ export default pipeline({
   steps: [
     agent({
       id: 'implement',
-      backend: 'opencode',
-      prompt: (ctx) => `Implement ticket ${(ctx.input as { ticketId: string }).ticketId}`,
+      backend: 'pi',
+      prompt: (ctx) =>
+        `Implement ticket ${(ctx.input as { ticketId: string }).ticketId}. Return JSON {prUrl}.`,
       permissions: {
-        allowedTools: ['gh.*'],          // GitHub CLI tools only
+        allowedTools:       ['gh.*'],                      // GitHub CLI tools (prefix match)
         allowedExecutables: ['git'],
-        allowedMcpServers: ['github'],
-        fsRead: ['./'],
-        fsWrite: ['./src/', '/tmp/'],
-        networkEgress: { allowHosts: ['api.github.com'] },
+        allowedMcpServers:  ['github'],
+        allowedSkills:      [],
+        fsRead:             ['./'],
+        fsWrite:            ['./src/', '/tmp/'],
+        networkEgress:      { allowHosts: ['api.github.com'] },
       },
+      output: z.object({ prUrl: z.string() }),
       workspace: { mode: 'ephemeral', cleanup: 'on-run-end' },
+      maxTurns: 8,
     }),
   ],
 })
@@ -102,17 +149,20 @@ For full `agent()` options, workspace modes, MCP wiring, and multi-turn control,
 
 ## Permissions are part of the API
 
-The permission model has **7 dimensions**. All default to deny.
+The permission model has these dimensions. Every field is optional and defaults to deny.
 
-| Dimension | Field | Description |
-|---|---|---|
-| Tool | `allowedTools` / `deniedTools` | Tool IDs the agent may call; prefix `gh.*` or `*` wildcard |
-| Executable | `allowedExecutables` | Binaries allowed for any exec/bash tool |
-| MCP server | `allowedMcpServers` | IDs from `skelm.config.ts` the agent may attach |
-| Skill | `allowedSkills` | Skill IDs the agent may load |
-| Network | `networkEgress` | `'allow'` \| `'deny'` \| `{ allowHosts: [...] }` |
-| FS read | `fsRead` | Path roots the agent may read |
-| FS write | `fsWrite` | Path roots the agent may write |
+| Dimension   | Field                              | Description                                          |
+|-------------|------------------------------------|------------------------------------------------------|
+| Profile     | `profile`                          | Named profile from `skelm.config.ts` to apply first  |
+| Tool        | `allowedTools` / `deniedTools`     | Tool ids; `'gh.*'` is sugar for prefix match; `'*'` allows everything |
+| Executable  | `allowedExecutables`               | Binaries allowed for any exec/bash tool              |
+| MCP server  | `allowedMcpServers`                | MCP server ids the agent may attach                  |
+| Skill       | `allowedSkills`                    | Skill ids the agent may load                         |
+| Secret      | `allowedSecrets`                   | Secret names the step may resolve via `SecretResolver` |
+| Network     | `networkEgress`                    | `'allow'` \| `'deny'` \| `{ allowHosts: [...] }`     |
+| FS read     | `fsRead`                           | Path roots the agent may read                        |
+| FS write    | `fsWrite`                          | Path roots the agent may write                       |
+| Approval    | `approval`                         | `{ on: PermissionDimension[], rememberFor?: number }` — gate dimensions on human approval |
 
 **Composition is intersection-only.** Project defaults → permission profile → step-level permissions. Each layer can only narrow, never widen. If a project default denies network and a step sets `networkEgress: 'allow'`, the resolved policy is still deny.
 
@@ -121,13 +171,13 @@ Named profiles in `skelm.config.ts`:
 ```ts
 defaults: {
   permissionProfiles: {
-    'read-only': { fsRead: ['./'], networkEgress: 'deny' },
+    'read-only':  { fsRead: ['./'], networkEgress: 'deny' },
     'full-write': { fsRead: ['./'], fsWrite: ['./'], networkEgress: 'allow' },
   },
 }
 ```
 
-Apply a profile in a step: `permissions: { profile: 'read-only', allowedTools: ['rg'] }` — tools are still intersected with the profile.
+Apply a profile in a step: `permissions: { profile: 'read-only', allowedTools: ['rg'] }` — the step's allowedTools are still intersected with the profile.
 
 See [references/permissions.md](references/permissions.md) for the full enforcement model.
 
@@ -138,12 +188,13 @@ See [references/permissions.md](references/permissions.md) for the full enforcem
 ```
 my-project/
 ├── skelm.config.ts          # Required for gateway and agent steps
-├── hello.pipeline.ts        # One pipeline per file; name matches pipeline id
-├── ticket-to-pr.pipeline.ts
-└── package.json             # { "dependencies": { "skelm": "^0.3.0", "zod": "^3" } }
+├── workflows/
+│   └── hello.workflow.ts    # One pipeline per file
+├── package.json             # { "dependencies": { "skelm": "^0.3.7", "zod": "^4" } }
+└── tsconfig.json
 ```
 
-Pipeline files may also be named `*.workflow.ts` — the two extensions are treated identically.
+Pipeline files may be named `*.workflow.ts` or `*.pipeline.ts` — the discovery glob in `skelm.config.ts` decides what gets registered.
 
 For `skelm.config.ts` shape and all config options, see [references/config.md](references/config.md).
 
@@ -153,17 +204,17 @@ For `skelm.config.ts` shape and all config options, see [references/config.md](r
 
 ```bash
 # Run once, pass input as JSON
-skelm run ./ticket-to-pr.pipeline.ts --input '{"ticketId":"PROJ-42"}'
+skelm run ./workflows/ticket-to-pr.workflow.ts --input '{"ticketId":"PROJ-42"}'
 
 # Run with input from file
-skelm run ./ticket-to-pr.pipeline.ts --input-file input.json
+skelm run ./workflows/ticket-to-pr.workflow.ts --input-file input.json
 
 # List discovered pipelines
 skelm list
 
 # Describe a pipeline (human-readable or mermaid diagram)
-skelm describe ticket-to-pr
-skelm describe ticket-to-pr --format mermaid
+skelm describe <workflow-id-or-path>
+skelm describe <workflow-id-or-path> --format mermaid
 
 # View run history
 skelm history --last 10 --json
@@ -178,9 +229,10 @@ Full CLI reference at [references/cli.md](references/cli.md). Exit codes: `0` ok
 The gateway owns all security-critical infrastructure: permission resolution, secret resolution, audit log, approval gating. **Never write permission enforcement in pipeline or step code** — call gateway helpers or use `TrustEnforcer` from `@skelm/core` only in tests and demos.
 
 ```bash
-skelm gateway start            # starts in background, writes pid file
+skelm gateway start            # foreground; SIGTERM/Ctrl-C drains and exits
 skelm gateway status           # shows pid / url / state
-skelm gateway stop
+skelm gateway stop             # stop a running gateway
+skelm gateway install --systemd  # install ~/.config/systemd/user/skelm-gateway.service
 ```
 
 Agent steps are enforced by the gateway at dispatch time. A step that declares `allowedMcpServers: ['github']` cannot attach any other server, regardless of what the backend requests. See [references/gateway.md](references/gateway.md).
@@ -207,9 +259,9 @@ Never claim a task done until `pnpm check` is green.
 
 - **Widening at step level** — setting `networkEgress: 'allow'` in a step when the project default is `deny` has no effect. Intersection always wins.
 - **Missing Zod schema** — `input` / `output` are validated at run boundaries; omitting them skips validation silently.
-- **`agent()` without a declared backend** — the step fails at runtime if `backend` is set but not declared in `skelm.config.ts` under `registries.agents`.
+- **`agent()` with an unregistered backend** — the step fails at runtime if `backend` references an id with no matching entry under `backends:` and no matching instance in `instances:`. The pi SDK backend in particular must be added to `instances:` (the CLI's `pi` shorthand wires the RPC variant only).
 - **Editing `dist/`** — generated files; never edit. Run `pnpm build` to regenerate.
-- **Step id collisions** — step ids must be unique within a `parallel()` block; the runtime tracks uniqueness globally per run.
+- **Step id collisions inside `parallel()`** — sibling ids must be unique; the runtime tracks uniqueness globally per run.
 
 ---
 
