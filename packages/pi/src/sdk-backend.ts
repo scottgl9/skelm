@@ -23,6 +23,8 @@ import type {
   AgentResponse,
   BackendCapabilities,
   BackendContext,
+  InferRequest,
+  InferResponse,
   ResolvedPolicy,
   SkelmBackend,
 } from '@skelm/core'
@@ -51,7 +53,7 @@ export class PiSdkBackendTimeoutError extends PiSdkBackendError {}
  */
 export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBackend {
   const capabilities: BackendCapabilities = {
-    prompt: false,
+    prompt: true,
     streaming: true,
     sessionLifecycle: true,
     mcp: false,
@@ -82,6 +84,59 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
     id: options.id ?? 'pi-sdk',
     label: options.label ?? 'Pi Coding Agent (SDK)',
     capabilities,
+
+    async infer(request: InferRequest, context: BackendContext): Promise<InferResponse> {
+      await acquire()
+      try {
+        const cwd = options.cwd
+        const promptText = buildInferPrompt(request)
+        const client = new PiSdkClient({
+          ...(cwd !== undefined && { cwd }),
+          // Pure inference: disable all built-in tools
+          tools: [],
+          noTools: 'all' as const,
+          ...(options.noExtensions !== undefined && { noExtensions: options.noExtensions }),
+          ...(options.noSkills !== undefined && { noSkills: options.noSkills }),
+          ...(options.noContextFiles !== undefined && { noContextFiles: options.noContextFiles }),
+          ...(request.system !== undefined && {
+            system: request.system,
+            replaceSystemPrompt: false,
+          }),
+        })
+
+        const result = await client.prompt(promptText, context.signal, options.timeout ?? 300_000)
+
+        const response: InferResponse = {
+          ...(result.usage !== undefined && {
+            usage: {
+              inputTokens: result.usage.inputTokens,
+              outputTokens: result.usage.outputTokens,
+            },
+          }),
+        }
+        if (request.outputSchema !== undefined) {
+          response.structured = parseStructured(result.text)
+        } else {
+          response.text = result.text
+        }
+        return response
+      } catch (err) {
+        if (err instanceof Error) {
+          if (err.message.includes('ENOENT') || err.message.includes('not installed')) {
+            throw new PiSdkBackendAuthenticationError(
+              'pi SDK not available. Install it: npm install @mariozechner/pi-coding-agent',
+              err,
+            )
+          }
+          if (err.message.includes('timed out')) {
+            throw new PiSdkBackendTimeoutError(err.message, err)
+          }
+        }
+        throw new PiSdkBackendError(`pi SDK inference failed: ${(err as Error).message}`, err)
+      } finally {
+        release()
+      }
+    },
 
     async run(request: AgentRequest, context: BackendContext): Promise<AgentResponse> {
       await acquire()
@@ -192,6 +247,58 @@ function buildSystemContent(
   if (req.system) parts.push(req.system)
   for (const body of skillBodies) parts.push(body)
   return parts.length > 0 ? parts.join('\n\n---\n\n') : undefined
+}
+
+/**
+ * Concatenate InferRequest messages into a single prompt string.
+ * Pi runs as a chat agent that takes one user prompt — for multi-turn
+ * histories we serialize the conversation into a labeled transcript.
+ */
+function buildInferPrompt(req: InferRequest): string {
+  if (req.messages.length === 1 && req.messages[0]?.role === 'user') {
+    return req.messages[0].content
+  }
+  return req.messages
+    .map(
+      (m) =>
+        `${m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : m.role}: ${m.content}`,
+    )
+    .join('\n\n')
+}
+
+/**
+ * Extract a JSON value from the model's text output. Tolerates ```json
+ * fenced blocks and surrounding prose. The runner validates the result
+ * against the step's output schema, so we only need to parse here.
+ */
+function parseStructured(text: string): unknown {
+  const candidate = extractJson(text)
+  if (candidate === null) {
+    throw new PiSdkBackendError(
+      `pi inference returned no parseable JSON. Output (first 200 chars): ${text.slice(0, 200)}`,
+    )
+  }
+  try {
+    return JSON.parse(candidate)
+  } catch (err) {
+    throw new PiSdkBackendError(
+      `pi inference output is not valid JSON: ${(err as Error).message}. Raw: ${text.slice(0, 200)}`,
+      err,
+    )
+  }
+}
+
+function extractJson(text: string): string | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (fenced?.[1]) return fenced[1].trim()
+  const start = text.search(/[{[]/)
+  if (start === -1) return null
+  // Greedy: take from first opener through last matching closer.
+  const opener = text[start]
+  const closer = opener === '{' ? '}' : ']'
+  const end = text.lastIndexOf(closer)
+  if (end <= start) return null
+  return text.slice(start, end + 1)
 }
 
 async function loadSkillBodies(req: AgentRequest, ctx: BackendContext): Promise<string[]> {

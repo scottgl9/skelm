@@ -54,6 +54,56 @@ describe('createPiSdkBackend', () => {
     expect(createPiSdkBackend().capabilities.toolPermissions).toBe('native')
   })
 
+  it('capabilities.prompt is true (supports llm() steps)', () => {
+    expect(createPiSdkBackend().capabilities.prompt).toBe(true)
+  })
+
+  it('exposes an infer() method for llm() steps', () => {
+    expect(typeof createPiSdkBackend().infer).toBe('function')
+  })
+
+  // --- infer (llm steps) ---
+
+  it('infer returns text when no outputSchema is set', async () => {
+    const backend = createPiSdkBackend()
+    const ctx = { signal: new AbortController().signal }
+    const result = await backend.infer?.({ messages: [{ role: 'user', content: 'hi' }] }, ctx)
+    expect(result?.text).toBe('agent output')
+    expect(result?.structured).toBeUndefined()
+  })
+
+  it('infer disables tools (noTools: all) for pure inference', async () => {
+    const backend = createPiSdkBackend()
+    const ctx = { signal: new AbortController().signal }
+    await backend.infer?.({ messages: [{ role: 'user', content: 'hi' }] }, ctx)
+    const args = lastConstructorArgs()
+    expect(args?.noTools).toBe('all')
+    expect(args?.tools).toEqual([])
+  })
+
+  it('infer parses structured JSON when outputSchema is provided', async () => {
+    ;(PiSdkClient as ReturnType<typeof vi.fn>).mockImplementationOnce(() => ({
+      prompt: vi.fn().mockResolvedValue({
+        text: '```json\n{"answer":"42"}\n```',
+        stopReason: 'stop',
+      }),
+    }))
+    const backend = createPiSdkBackend()
+    const ctx = { signal: new AbortController().signal }
+    const result = await backend.infer?.(
+      {
+        messages: [{ role: 'user', content: 'q' }],
+        outputSchema: {
+          // minimal Standard Schema stub — runner validates separately
+          '~standard': { validate: (v: unknown) => ({ value: v }) },
+        } as never,
+      },
+      ctx,
+    )
+    expect(result?.structured).toEqual({ answer: '42' })
+    expect(result?.text).toBeUndefined()
+  })
+
   it('returns agent text and usage from PiSdkClient', async () => {
     const backend = createPiSdkBackend()
     const result = await backend.run?.({ prompt: 'hello' }, makeCtx())
