@@ -200,10 +200,12 @@ export type {
 export { MemoryRunStore, SqliteRunStore } from './run-store.js'
 export type {
   AuditEntry,
+  ExecutionStore,
   RunFilter,
   RunStore,
   RunSummary,
   SqliteRunStoreOptions,
+  StateStore,
 } from './run-store.js'
 export { NotImplementedError, PostgresRunStore } from './run-store-postgres.js'
 export type { PostgresRunStoreOptions } from './run-store-postgres.js'

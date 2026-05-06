@@ -24,7 +24,7 @@ import { EventBus } from './events.js'
 import { createMcpHost } from './mcp/host.js'
 import type { AgentPermissions, PermissionDimension } from './permissions.js'
 import { TrustEnforcer, createPolicyFetch, resolvePermissions } from './permissions.js'
-import { MemoryRunStore, type RunStore } from './run-store.js'
+import { MemoryRunStore, type RunStore, type StateStore } from './run-store.js'
 import { SchemaValidationError, validate } from './schema.js'
 import { createStateHandle } from './state.js'
 import type {
@@ -53,7 +53,7 @@ export interface RunOptions {
   /** Optional durable run store that persists events and final run records. */
   store?: RunStore
   /** Optional state store used by ctx.state; defaults to store, then in-memory. */
-  stateStore?: RunStore
+  stateStore?: StateStore
   /** Optional default permissions applied to every agent() step. */
   defaultPermissions?: AgentPermissions
   /** Optional named permission profiles referenced by permissions.profile. */
@@ -152,7 +152,7 @@ export interface RunHandle<TInput = unknown, TOutput = unknown> {
 
 interface ExecutionRuntime {
   readonly workspaceManager: WorkspaceManager
-  readonly stateStore: RunStore
+  readonly stateStore: StateStore
   readonly store?: RunStore
   readonly defaultPermissions?: AgentPermissions
   readonly permissionProfiles?: Readonly<Record<string, AgentPermissions>>

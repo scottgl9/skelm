@@ -144,6 +144,7 @@ type:DiscordMessage
 type:DiscordTriggerConfig
 type:EnforceDecision
 type:EventListener
+type:ExecutionStore
 type:ForEachStep
 type:GitHubIssueCommentEvent
 type:GitHubPullRequestEvent
@@ -237,6 +238,7 @@ type:SlackCommand
 type:SlackEvent
 type:SlackTriggerConfig
 type:SqliteRunStoreOptions
+type:StateStore
 type:Step
 type:StepId
 type:StepKind
