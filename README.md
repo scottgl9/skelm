@@ -123,7 +123,8 @@ Customer-facing docs live under [`docs/`](./docs/) — quickstart, full CLI/API/
 - **Provider architecture:** [`docs/backends/README.md`](./docs/backends/README.md)
 - **Guides:** [`docs/guides/`](./docs/guides/) — testing, plugins, authoring tips
 - **Recipes:** [`docs/recipes/`](./docs/recipes/) — complete workflow examples
-- **Reference:** [`docs/reference/`](./docs/reference/) — API, CLI, HTTP, configuration schemas
+- **Reference:** [`docs/reference/`](./docs/reference/) — [CLI](./docs/reference/cli.md), [HTTP](./docs/reference/http.md), [OpenAPI](./docs/reference/openapi.yaml), [API](./docs/reference/api.md)
+- **Production hardening:** [`docs/guides/production-hardening.md`](./docs/guides/production-hardening.md) — checklist before exposing the gateway
 - **Deployment:** [`docs/deployment/`](./docs/deployment/) — systemd, reverse proxy, Postgres, secrets
 - **Contributors:** [`AGENTS.md`](./AGENTS.md) — workflow, code style, testing expectations
 - **Changelog:** [`CHANGELOG.md`](./CHANGELOG.md) — version history
