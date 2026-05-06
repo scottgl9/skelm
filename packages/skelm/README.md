@@ -63,10 +63,13 @@ skelm run my.workflow.ts --input '{"name":"world"}'
 skelm init                            # Scaffold a project
 skelm run workflow.ts                 # Run a workflow once
 skelm run workflow.ts --events json   # Stream JSON events to stderr
-skelm gateway start                   # Start the long-running orchestrator
-skelm gateway start --detach          # Fork the gateway in the background
+skelm schedule add workflow.ts --cron '0 9 * * 1-5'   # Schedule on a cron
+skelm schedule list                   # List schedules
+skelm history --last 20               # Recent runs
+skelm gateway start                   # Start the long-running orchestrator (foreground)
 skelm gateway status                  # Inspect a running gateway
 skelm gateway stop                    # Stop it
+skelm gateway install --systemd       # Install as a systemd user service
 ```
 
 ## What is exported

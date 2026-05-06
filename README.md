@@ -159,7 +159,41 @@ Customer-facing docs live under [`docs/`](./docs/) — quickstart, full CLI/API/
 
 ## A real workflow, end to end
 
-Here is a workflow that triages a GitHub issue: a deterministic `code()` step fetches it, then an `agent()` step classifies it under tight default-deny permissions. Agents run on the [pi coding-agent SDK](packages/pi); single-shot LLM calls (`llm()`) run on any OpenAI-compatible endpoint via `backend: 'openai'`.
+A workflow that triages a GitHub issue: a deterministic `code()` step fetches it, then an `agent()` step classifies it — guided by a **skill** that encodes your team's labeling criteria. Skills are reviewable Markdown files that skelm injects into the agent's context at runtime.
+
+```
+issue-triage/
+├── skills/
+│   └── triage-guide/
+│       └── SKILL.md                   ← label criteria the agent follows
+├── workflows/
+│   └── triage-issue.workflow.ts
+├── skelm.config.ts
+└── package.json
+```
+
+**`skills/triage-guide/SKILL.md`**
+
+```markdown
+---
+id: triage-guide
+description: Label definitions and triage criteria for issue classification
+---
+
+# Issue triage guide
+
+Apply exactly one label per issue:
+
+- **bug** — reproducible defect; something worked before and now does not.
+- **feature** — new capability request; nothing is broken.
+- **duplicate** — same problem already tracked elsewhere; include the existing issue number.
+- **security** — potential vulnerability; flag priority high regardless of other factors.
+- **docs** — documentation error or omission only; no code change needed.
+
+When the issue is ambiguous, prefer **bug** over **feature** and include your uncertainty in `reasoning`.
+```
+
+**`workflows/triage-issue.workflow.ts`**
 
 ```ts
 import { pipeline, code, agent } from 'skelm'
@@ -173,31 +207,38 @@ export default pipeline({
     code({
       id: 'fetch',
       run: async (ctx) => {
-        const res = await fetch(`https://api.github.com/repos/${ctx.input.repo}/issues/${ctx.input.issueNumber}`)
+        const res = await fetch(
+          `https://api.github.com/repos/${ctx.input.repo}/issues/${ctx.input.issueNumber}`,
+        )
         return await res.json()
       },
     }),
     agent({
       id: 'classify',
       backend: 'pi',
-      prompt: (ctx) => `Triage this issue and return JSON with {label, reasoning}:\n${JSON.stringify(ctx.steps.fetch)}`,
+      skills: ['triage-guide'],          // inject the skill into the agent's context
+      prompt: (ctx) =>
+        `Triage this issue and return JSON with {label, reasoning}:\n${JSON.stringify(ctx.steps.fetch)}`,
       permissions: {
         allowedTools:       [],
         allowedExecutables: [],
         allowedMcpServers:  [],
-        allowedSkills:      [],
+        allowedSkills:      ['triage-guide'],
         networkEgress:      'deny',
         fsRead:             [],
         fsWrite:            [],
       },
-      output: z.object({ label: z.enum(['bug','feature','duplicate']), reasoning: z.string() }),
-      maxTurns: 8,
+      output: z.object({
+        label:     z.enum(['bug', 'feature', 'duplicate', 'security', 'docs']),
+        reasoning: z.string(),
+      }),
+      maxTurns: 3,
     }),
   ],
 })
 ```
 
-Register the pi SDK backend in your `skelm.config.ts`:
+**`skelm.config.ts`**
 
 ```ts
 import { defineConfig } from 'skelm'
@@ -206,6 +247,9 @@ import { createPiSdkBackend } from '@skelm/pi'
 export default defineConfig({
   backends: { agent: 'pi' },
   instances: [createPiSdkBackend({ id: 'pi' })],
+  registries: {
+    skills: { glob: 'skills/**/SKILL.md' },  // where skelm discovers SKILL.md files
+  },
 })
 ```
 

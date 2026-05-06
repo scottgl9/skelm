@@ -24,10 +24,9 @@ npm install @skelm/gateway
 The gateway is normally driven through the `skelm` CLI:
 
 ```bash
-skelm gateway start --foreground   # Run the gateway in this process
-skelm gateway start --detach       # Fork a foreground gateway
+skelm gateway start                # Run the gateway (foreground; Ctrl-C drains and exits)
 skelm gateway status               # Inspect a running gateway
-skelm gateway stop                 # Stop it
+skelm gateway stop                 # Stop it (sends SIGTERM, waits for drain)
 skelm gateway install --systemd    # Install a user-level systemd unit
 ```
 
@@ -63,7 +62,7 @@ The HTTP API speaks JSON over `h3`, with SSE for run event streams.
 | `POST` | `/approvals/:id/{approve,deny}`     | Resolve a pending approval           |
 | `GET`  | `/audit`                            | Tamper-evident, hash-chained audit   |
 
-See [`docs/reference/`](https://github.com/scottgl9/skelm/blob/main/docs/reference/) for the full schema and [`docs/deployment/`](https://github.com/scottgl9/skelm/blob/main/docs/deployment/) for production deployment (reverse proxy, Postgres, secrets vaults).
+See [`docs/reference/`](https://github.com/scottgl9/skelm/blob/main/docs/reference/) for the full schema, and [`docs/guides/production-hardening.md`](https://github.com/scottgl9/skelm/blob/main/docs/guides/production-hardening.md) for the production deployment checklist (reverse proxy, Postgres, secrets).
 
 ## Why a separate package?
 
