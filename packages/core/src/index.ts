@@ -3,8 +3,31 @@
 
 export const VERSION = '0.1.0'
 
-export * from './acp/index.js'
-export * from './anthropic/index.js'
+export { createAcpBackend } from './acp/index.js'
+export type { AcpBackendOptions } from './acp/index.js'
+export { AcpClient, AcpProtocolError } from './acp/index.js'
+export type { AcpPromptResult, AcpSpawnOptions } from './acp/index.js'
+export { JsonRpcStdioTransport, PROTOCOL_VERSION } from './acp/index.js'
+export type {
+  AgentCapabilities,
+  ClientCapabilities,
+  ContentBlock,
+  InitializeRequest,
+  InitializeResponse,
+  JsonRpcNotification,
+  JsonRpcRequest,
+  JsonRpcResponse,
+  McpServerSpec,
+  SessionNewRequest,
+  SessionNewResponse,
+  SessionPromptRequest,
+  SessionPromptResponse,
+  SessionUpdate,
+  StopReason,
+} from './acp/index.js'
+
+export { createAnthropicBackend } from './anthropic/index.js'
+export type { AnthropicBackendOptions } from './anthropic/index.js'
 export { DEFAULT_CONFIG, defineConfig } from './config.js'
 export type {
   SkelmConfig,
@@ -143,8 +166,20 @@ export { describePipeline, describeStep } from './introspect.js'
 export type { DescribedStep, PipelineDescription } from './introspect.js'
 export { createRoutingBackend } from './routing-backend.js'
 export type { RoutingBackendOptions } from './routing-backend.js'
-export * from './mcp/index.js'
-export * from './openai/index.js'
+export { McpClient, McpProtocolError } from './mcp/index.js'
+export type { McpSpawnOptions } from './mcp/index.js'
+export { createMcpHost } from './mcp/index.js'
+export type { McpHost, McpHostedTool } from './mcp/index.js'
+export { JsonRpcLineTransport, MCP_PROTOCOL_VERSION } from './mcp/index.js'
+export type {
+  ToolCallResponse,
+  ToolContent,
+  ToolDefinition,
+  ToolsListResponse,
+} from './mcp/index.js'
+
+export { createOpenAIBackend } from './openai/index.js'
+export type { OpenAIBackendOptions } from './openai/index.js'
 export { ModelProviderBase, ModelRegistry, executeLlmStep } from './model-provider.js'
 export type {
   ModelProvider,
