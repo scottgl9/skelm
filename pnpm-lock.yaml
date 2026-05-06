@@ -144,6 +144,21 @@ importers:
         specifier: ^2.1.5
         version: 2.1.9(@types/node@22.19.17)
 
+  packages/ollama:
+    devDependencies:
+      '@skelm/core':
+        specifier: workspace:*
+        version: link:../core
+      '@types/node':
+        specifier: ^20.10.0
+        version: 20.19.39
+      typescript:
+        specifier: ^5.3.0
+        version: 5.9.3
+      vitest:
+        specifier: ^1.0.0
+        version: 1.6.1(@types/node@20.19.39)
+
   packages/opencode:
     dependencies:
       '@opencode-ai/sdk':
