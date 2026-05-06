@@ -13,6 +13,7 @@ Usage:
   skelm sessions <list|prune> [--expired] [--older-than-ms <ms>] [--json]
   skelm schedule <add|list|stop|fire> [args]
   skelm acp serve
+  skelm validate <pipeline.ts> [--json]
   skelm init [<dir>] [--force]
   skelm --version
   skelm --help
@@ -86,6 +87,10 @@ Schedule flags:
     --overlap skip|queue|cancel  Overlap policy (default: skip)
   skelm schedule stop <id> [--json]             Unregister a schedule
   skelm schedule fire <id> [--json]             Manually fire a schedule now
+
+Validate flags:
+  skelm validate <pipeline.ts>             Static workflow + permission preflight
+    --json                                 Emit issues as JSON; exit 0 on ok, 1 on issues
 
 Init flags:
   --force                 Allow scaffolding into a non-empty directory
