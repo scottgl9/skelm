@@ -1,20 +1,8 @@
-# @skelm/opencode Backend
+# `@skelm/opencode` backend
 
-Full integration with opencode.ai coding agent via the official SDK, with granular permission enforcement and multi-agent support.
+Drives an [opencode](https://opencode.ai) coding agent over its SDK, with skelm's permission policy enforced **before** any request is forwarded.
 
-> **Status:** In development (M4)
-
-## Overview
-
-The `@skelm/opencode` backend provides:
-
-- **Full permission enforcement** - skelm validates permissions before forwarding to opencode
-- **Multi-agent support** - Use build, plan, or custom agents per pipeline step
-- **Streaming responses** - Real-time token streaming with SSE
-- **Dynamic configuration** - Per-pipeline agent and permission selection
-- **Audit logging** - Full trace of permission decisions and executions
-
-## Installation
+## Install
 
 ```bash
 npm i @skelm/opencode
@@ -22,292 +10,131 @@ npm i @skelm/opencode
 
 ## Configuration
 
-### Basic Setup
+Two layers stack:
 
-```typescript
+1. **Backend-level options** (`OpencodeBackendOptions`) — agent id, model override, retries, server-level opencode defaults. Applied at backend construction.
+2. **Step-level permissions** (`AgentPermissions`) — set on each `agent()` step. The opencode backend translates these into an opencode tool allowlist before each session, and validates incoming requests against the resolved policy before forwarding.
+
+### Backend options in `skelm.config.ts`
+
+```ts
 // skelm.config.ts
 import { defineConfig } from 'skelm'
 
 export default defineConfig({
   backends: {
-    'opencode': {
-      type: 'opencode',
-      apiKey: process.env.OPENCODE_API_KEY,
-      agent: 'build' // Default agent (build, plan, or custom)
-    }
-  }
+    agent: 'opencode',
+    opencode: {
+      apiKey: { secret: 'OPENCODE_API_KEY' },
+      agent:  'build',                        // or 'plan' or any custom id from opencode.json
+      apiUrl: 'https://api.opencode.ai',      // override for self-hosted
+      timeout: 60_000,
+      maxRetries: 3,
+      logLevel: 'info',                       // 'debug' | 'info' | 'warn' | 'error' | 'off'
+    },
+  },
 })
 ```
 
-### Advanced Configuration
+The full type is `OpencodeBackendOptions` — see [`packages/opencode/src/types.ts`](../../packages/opencode/src/types.ts) for every accepted field, including `model`, `temperature`, `maxSteps`, and `serverPermissions` (which injects opencode-level allow/ask/deny defaults via `OPENCODE_CONFIG_CONTENT` at server start).
 
-```typescript
-{
-  type: 'opencode',
-  apiKey: process.env.OPENCODE_API_KEY,
-  
-  // Agent selection
-  agent: 'build', // 'build', 'plan', or custom agent ID
-  
-  // Permission defaults (can be overridden per pipeline)
-  permissions: {
-    edit: 'allow',
-    bash: 'ask',
-    read: 'allow',
-    glob: 'allow',
-    grep: 'allow',
-    list: 'allow',
-    task: 'allow'
-  },
-  
-  // Model override (optional)
-  model: 'anthropic/claude-sonnet-4-20250514',
-  
-  // Temperature (optional)
-  temperature: 0.7,
-  
-  // Max steps before forcing text response (optional)
-  maxSteps: 50,
-  
-  // API configuration
-  apiUrl: 'https://api.opencode.ai', // Override if using self-hosted
-  timeout: 60000, // Request timeout in ms
-  maxRetries: 3,
-  
-  // Logging
-  logLevel: 'info' // 'debug' | 'info' | 'warn' | 'error' | 'off'
-}
-```
+### Per-step permissions
+
+`agent()` steps take skelm's `AgentPermissions`. The opencode backend maps these to opencode's internal tool surface:
+
+| Skelm permission                       | What it allows in opencode                                  |
+|----------------------------------------|-------------------------------------------------------------|
+| `allowedExecutables` contains `'bash'` | The opencode `bash` tool                                    |
+| `fsRead` non-empty                     | `read`, `glob`, `grep`, `list`                              |
+| `fsWrite` non-empty                    | `write`, `edit` (read tools also enabled)                   |
+| `allowedTools`                         | Exact-match or prefix-match against opencode tool names     |
+| `allowedMcpServers`                    | Forwarded to opencode for MCP authorization                 |
+| `networkEgress: 'deny'`                | Drops `webfetch` and bash-spawned network                   |
+
+Anything not granted is denied. Skelm validates the request **before** forwarding to opencode and audits any denial.
 
 ## Usage
 
-### Basic Pipeline Step
-
-```typescript
-import { pipeline, agent } from 'skelm'
+```ts
+import { agent, pipeline } from 'skelm'
+import { z } from 'zod'
 
 export default pipeline({
   id: 'code-review',
+  input:  z.object({ pr: z.string() }),
+  output: z.object({ verdict: z.string(), notes: z.array(z.string()) }),
   steps: [
     agent({
       id: 'reviewer',
       backend: 'opencode',
-      agentDef: './agents/code-reviewer',
+      prompt: (ctx) => `Review this PR and return JSON {verdict, notes}:\n${ctx.input.pr}`,
       permissions: {
-        edit: 'deny',    // Read-only
-        bash: 'deny',    // No shell access
-        read: 'allow'    // Can read files
+        allowedTools:       [],
+        allowedExecutables: [],          // no shell — read-only review
+        allowedMcpServers:  [],
+        allowedSkills:      [],
+        fsRead:             ['./'],      // grants read/glob/grep/list inside cwd
+        fsWrite:            [],          // editing denied
+        networkEgress:      'deny',
       },
-      prompt: (ctx) => `Review this PR:\n${ctx.steps.fetch.pr}`
-    })
-  ]
-})
-```
-
-### Multi-Agent Workflow
-
-```typescript
-import { pipeline, agent, parallel } from 'skelm'
-
-export default pipeline({
-  id: 'full-cycle',
-  steps: [
-    agent({
-      id: 'builder',
-      backend: 'opencode',
-      agentDef: './agents/developer',
-      permissions: {
-        edit: 'allow',
-        bash: 'ask'
-      },
-      prompt: 'Implement the feature'
+      output: z.object({ verdict: z.string(), notes: z.array(z.string()) }),
+      maxTurns: 6,
     }),
-    parallel([
-      agent({
-        id: 'reviewer',
-        backend: 'opencode',
-        agentDef: './agents/reviewer',
-        permissions: { edit: 'deny', bash: 'deny' },
-        prompt: 'Review the implementation'
-      }),
-      agent({
-        id: 'tester',
-        backend: 'opencode',
-        agentDef: './agents/qa',
-        permissions: { edit: 'deny', bash: 'allow' },
-        prompt: 'Write tests for the feature'
-      })
-    ])
-  ]
-})
-```
-
-### Custom Agent Configuration
-
-```typescript
-// Define a custom agent in your opencode config
-// opencode.json
-{
-  "agent": {
-    "security-auditor": {
-      "mode": "subagent",
-      "model": "anthropic/claude-sonnet-4-20250514",
-      "prompt": "{file:./prompts/security-auditor.txt}",
-      "permission": {
-        "edit": "deny",
-        "bash": "deny",
-        "read": "allow"
-      }
-    }
-  }
-}
-
-// Use it in your pipeline
-agent({
-  id: 'auditor',
-  backend: 'opencode',
-  agent: 'security-auditor', // Custom agent ID
-  permissions: {
-    edit: 'deny',
-    bash: 'deny',
-    read: 'allow'
-  }
-})
-```
-
-## Permission Mapping
-
-The opencode backend maps skelm permissions to opencode's permission system:
-
-| skelm Permission | Opencode Permission | Description |
-|-----------------|---------------------|-------------|
-| `edit` | `edit` | File writes, patches, edits |
-| `bash` | `bash` | Shell command execution |
-| `read` | `read` | File reading |
-| `glob` | `glob` | File pattern matching |
-| `grep` | `grep` | Text search |
-| `list` | `list` | Directory listing |
-| `task` | `task` | Subagent invocation |
-| `external_*` | `external_*` | External tool/MCP servers |
-
-### Permission Values
-
-- **`allow`** - Permission granted, no approval needed
-- **`ask`** - Request user approval before execution
-- **`deny`** - Permission denied, execution fails
-
-## Features
-
-### Streaming Responses
-
-The backend supports real-time streaming via Server-Sent Events (SSE):
-
-```typescript
-// Streaming is automatic - events are emitted to your event handler
-// Listen for token events in your pipeline runner
-```
-
-### Error Handling
-
-The backend maps opencode errors to skelm's error types:
-
-| Opencode Error | skelm Error |
-|---------------|-------------|
-| `APIError` | `BackendError` |
-| `AuthenticationError` | `BackendError` (auth failed) |
-| `PermissionDeniedError` | `PermissionDeniedError` |
-| `NotFoundError` | `BackendError` |
-| `RateLimitError` | `BackendError` (retryable) |
-| `InternalServerError` | `BackendError` (retryable) |
-
-### Retry Logic
-
-Built-in retry for transient errors:
-
-- Connection errors: 3 retries with exponential backoff
-- Rate limits: 3 retries with Retry-After header
-- Server errors: 3 retries with exponential backoff
-- Timeout: Configurable (default 60s)
-
-## MCP Server Passthrough
-
-MCP servers configured in your pipeline are forwarded to opencode:
-
-```typescript
-agent({
-  id: 'agent',
-  backend: 'opencode',
-  mcp: [
-    { 
-      id: 'github', 
-      transport: 'stdio', 
-      command: 'mcp-github',
-      args: ['--token', process.env.GH_TOKEN]
-    }
   ],
-  permissions: {
-    allowedMcpServers: ['github']
-  }
 })
 ```
 
-## Audit Logging
+### Multi-agent
 
-All permission decisions are logged:
+A single workflow can dispatch to multiple opencode personas by overriding the agent id at the step level (when supported by your `OpencodeBackendOptions.agent` plumbing) or by registering separate backend instances:
 
-```typescript
-// In your audit log
-{
-  "runId": "run_abc123",
-  "stepId": "builder",
-  "timestamp": "2026-05-03T16:00:00Z",
-  "event": "permission_check",
-  "details": {
-    "tool": "edit",
-    "path": "/path/to/file.ts",
-    "decision": "allow",
-    "backend": "opencode"
-  }
-}
+```ts
+import { defineConfig } from 'skelm'
+import { createOpencodeBackendFromConfig } from '@skelm/opencode'
+
+export default defineConfig({
+  instances: [
+    createOpencodeBackendFromConfig({ id: 'opencode-build', agent: 'build' }),
+    createOpencodeBackendFromConfig({ id: 'opencode-plan',  agent: 'plan'  }),
+  ],
+})
 ```
+
+Then reference `backend: 'opencode-build'` or `backend: 'opencode-plan'` per step.
+
+## Capabilities
+
+The opencode backend declares:
+
+- `prompt: false` — `agent()` only; for single-shot inference use the OpenAI or Anthropic backend.
+- `streaming: true`
+- `mcp: true`
+- `skills: true`
+- `toolPermissions: 'native'` — opencode itself enforces the allowlist; skelm pre-validates and audits.
+
+Capability gaps fail the step at start; nothing degrades silently.
+
+## Errors
+
+| Source                              | Skelm error                |
+|-------------------------------------|----------------------------|
+| Auth failure                        | `BackendError` (auth)      |
+| Permission denial                   | `PermissionDeniedError`    |
+| API/rate-limit/server               | `BackendError` (retryable) |
+| Timeout                             | `BackendTimeoutError`      |
+
+Retries: 3 attempts with exponential backoff for transient errors (connection, rate-limit, server). Configure with `maxRetries`, `timeout`.
 
 ## Troubleshooting
 
-### Authentication Errors
+- **"Authentication failed"** — set `OPENCODE_API_KEY` or pass `{ secret: 'OPENCODE_API_KEY' }` in config.
+- **"Permission denied: <tool>"** — the step's `AgentPermissions` did not grant the tool. Review the mapping table above and widen the policy if it's safe.
+- **"Agent 'X' not found"** — agent id missing from your opencode workspace config (`opencode.json`). Use `'build'`, `'plan'`, or a custom id you've defined.
+- **Connection timeout** — raise `timeout` in the backend config or check network reachability to `apiUrl`.
 
-```
-Error: Authentication failed - check OPENCODE_API_KEY
-```
+## See also
 
-**Solution:** Set `OPENCODE_API_KEY` environment variable or configure in backend config.
-
-### Permission Denied
-
-```
-Error: Permission denied - edit not allowed for this agent
-```
-
-**Solution:** Check pipeline permissions and ensure the agent has `edit: 'allow'`.
-
-### Connection Timeout
-
-```
-Error: Request timeout after 60000ms
-```
-
-**Solution:** Increase timeout in backend config or check network connectivity.
-
-### Agent Not Found
-
-```
-Error: Agent 'custom-agent' not found
-```
-
-**Solution:** Ensure the agent is defined in your `opencode.json` config or use a built-in agent ('build' or 'plan').
-
-## See Also
-
-- [Opencode Documentation](https://opencode.ai/docs)
-- [Opencode SDK](https://github.com/anomalyco/opencode-sdk-js)
-- [Backends Overview](./README.md)
-- [Permission System](../architecture/permissions.md)
+- [Backends overview](./README.md)
+- [Permissions](../concepts/permissions.md)
+- [Writing a backend](../guides/writing-a-backend.md)
+- [opencode docs](https://opencode.ai/docs)
