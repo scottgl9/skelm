@@ -97,6 +97,8 @@ Build **agents**, along with deterministic steps and one-shot LLM calls, into ro
 
 If your workflow has any combination of triggers, branching, retries, agents, tools, audit, or scheduling — skelm is the substrate.
 
+Runnable starting points live under [`examples/`](./examples/) — including [`examples/telegram-bot/`](./examples/telegram-bot/README.md), a long-poll Telegram bot driving an `agent()` step on the pi backend.
+
 ## Three tenets, in this order
 
 1. **Security.** Default-deny everywhere. A backend that cannot enforce a declared permission fails at step start instead of bypassing it. The gateway is the single trust boundary; nothing privileged happens outside it.

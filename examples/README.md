@@ -9,6 +9,7 @@ Runnable workflow examples. Each subdirectory is a self-contained workflow you c
 | `permissions-demo/`      | `TrustEnforcer` usage in a `code()` step against a deny-all policy.        |
 | `multi-step-pipeline/`   | Sequential composition with branching/control flow.                        |
 | `matrix-coding-agent/`   | Coding agent triggered from a Matrix room; demonstrates `agent()` + MCP.   |
+| `telegram-bot/`          | Long-poll Telegram bot driving an `agent()` step on the pi backend.        |
 
 ## Run
 
@@ -25,3 +26,5 @@ node packages/skelm/dist/bin.js run examples/multi-step-pipeline/multi-step.work
 Once `skelm` is installed globally (`npm i -g skelm`), the same commands shorten to `skelm run examples/...`.
 
 `matrix-coding-agent/` ships its own `skelm.config.ts` and requires a Matrix server plus an MCP tool stack — see its README for setup.
+
+`telegram-bot/` is a standalone runner that long-polls the Telegram Bot API and drives the pipeline directly — see [`telegram-bot/README.md`](./telegram-bot/README.md) for the bot token + pi setup.

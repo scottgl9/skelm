@@ -2,6 +2,7 @@ value:GitHubIntegration
 value:IntegrationBase
 value:IntegrationRegistry
 value:SlackIntegration
+value:TelegramIntegration
 type:EmailTrigger
 type:GitHubConfig
 type:GitHubIssueTrigger
@@ -16,6 +17,8 @@ type:RateLimitConfig
 type:SlackConfig
 type:SlackWebhookEvent
 type:TelegramConfig
+type:TelegramGetUpdatesOptions
 type:TelegramMessageTrigger
+type:TelegramSendMessageOptions
 type:TelegramWebhookEvent
 type:WebhookConfig
