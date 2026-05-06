@@ -1,0 +1,369 @@
+openapi: 3.1.0
+info:
+  title: skelm gateway
+  description: |
+    Control plane and runs surface for the skelm gateway. The gateway is the
+    trust boundary — every privileged action is enforced and audited here.
+  version: 0.3.6
+  license:
+    name: MIT
+servers:
+  - url: http://127.0.0.1:7878
+    description: Default local gateway
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Liveness probe
+      security: []
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok] }
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      security: []
+      responses:
+        '200':
+          description: text/plain Prometheus exposition format
+
+  /gateway/pause:
+    post:
+      summary: Stop accepting new runs
+      responses:
+        '204': { description: Paused }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /gateway/resume:
+    post:
+      summary: Resume accepting new runs
+      responses:
+        '204': { description: Resumed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /gateway/reload:
+    post:
+      summary: Re-read pipelines and config
+      responses:
+        '204': { description: Reloaded }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /pipelines:
+    get:
+      summary: List registered pipelines
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PipelineSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /pipelines/{id}:
+    get:
+      summary: Describe one pipeline
+      parameters:
+        - $ref: '#/components/parameters/PipelineId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PipelineDescription' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /pipelines/{id}/run:
+    post:
+      summary: Run a pipeline synchronously
+      parameters:
+        - $ref: '#/components/parameters/PipelineId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input: {}
+      responses:
+        '200':
+          description: Run completed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+        '422':
+          description: Schema validation failure
+        '500':
+          description: Run failed at runtime
+
+  /pipelines/{id}/start:
+    post:
+      summary: Start an asynchronous run
+      parameters:
+        - $ref: '#/components/parameters/PipelineId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input: {}
+      responses:
+        '202':
+          description: Run accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runId: { type: string }
+
+  /runs/{runId}:
+    get:
+      summary: Get run record
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /runs/{runId}/events:
+    get:
+      summary: Stream events for a run
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: text/event-stream of run events
+
+  /runs/{runId}/resume:
+    post:
+      summary: Resume a waiting run
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: {} }
+      responses:
+        '200': { description: Resumed }
+
+  /runs/{runId}/approve:
+    post:
+      summary: Approve a paused approval gate
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200': { description: Approved }
+
+  /runs/{runId}/deny:
+    post:
+      summary: Deny a paused approval gate
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200': { description: Denied }
+
+  /approvals:
+    get:
+      summary: List pending approvals
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Approval' }
+
+  /triggers:
+    get:
+      summary: List triggers
+      responses:
+        '200': { description: OK }
+
+  /triggers/{id}/fire:
+    post:
+      summary: Fire a trigger manually
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Fired }
+
+  /schedules:
+    get:
+      summary: List schedules
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Add a schedule
+      responses:
+        '201': { description: Created }
+
+  /schedules/{id}:
+    delete:
+      summary: Remove a schedule
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Removed }
+
+  /sessions:
+    get:
+      summary: List ACP sessions
+      responses:
+        '200': { description: OK }
+
+  /sessions/{id}:
+    get:
+      summary: Get one session
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+    delete:
+      summary: Drop a session
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Dropped }
+
+  /sessions/{id}/resume:
+    post:
+      summary: Resume a session
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Resumed }
+
+  /sessions/prune:
+    post:
+      summary: Prune expired or old sessions
+      responses:
+        '200': { description: Pruned }
+
+  /debug/breakpoints:
+    get:
+      summary: List active breakpoints
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Add a breakpoint
+      responses:
+        '201': { description: Created }
+
+  /debug/breakpoints/{stepId}:
+    delete:
+      summary: Remove a breakpoint
+      parameters:
+        - in: path
+          name: stepId
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Removed }
+
+  /debug/runs:
+    get:
+      summary: List runs paused at breakpoints
+      responses:
+        '200': { description: OK }
+
+  /debug/runs/{runId}/release:
+    post:
+      summary: Release a paused run
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200': { description: Released }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+
+  parameters:
+    PipelineId:
+      in: path
+      name: id
+      required: true
+      schema: { type: string }
+    RunId:
+      in: path
+      name: runId
+      required: true
+      schema: { type: string }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+    NotFound:
+      description: Resource not found
+
+  schemas:
+    PipelineSummary:
+      type: object
+      properties:
+        id: { type: string }
+        version: { type: string }
+    PipelineDescription:
+      type: object
+      properties:
+        id: { type: string }
+        steps:
+          type: array
+          items: { type: object }
+    Run:
+      type: object
+      properties:
+        runId: { type: string }
+        pipelineId: { type: string }
+        status:
+          type: string
+          enum: [queued, running, waiting, completed, failed, cancelled]
+        output: {}
+        error:
+          type: object
+          properties:
+            message: { type: string }
+            code: { type: string }
+    Approval:
+      type: object
+      properties:
+        runId: { type: string }
+        stepId: { type: string }
+        message: { type: string }
+        createdAt: { type: string, format: date-time }
