@@ -16,6 +16,7 @@ import { CliError } from './load-workflow.js'
 import { runCommand } from './run.js'
 import { scheduleCommand } from './schedule.js'
 import { sessionsCommand } from './sessions.js'
+import { validateCommand } from './validate.js'
 import { workspaceCommand } from './workspace.js'
 
 export interface MainIO {
@@ -341,6 +342,15 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
           },
           io,
         )
+      }
+      case 'validate': {
+        const path = parsed.positional[0]
+        if (!path) {
+          io.stderr.write('error: skelm validate requires <pipeline-path>\n')
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        const result = await validateCommand({ path, json: parsed.flags.json === true }, io)
+        return { exitCode: result.exitCode }
       }
       case 'acp': {
         // P5.2 — ACP serve placeholder. Reserves the CLI flag namespace for

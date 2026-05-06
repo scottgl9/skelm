@@ -20,6 +20,7 @@ export interface ParsedArgv {
     | 'sessions'
     | 'acp'
     | 'schedule'
+    | 'validate'
     | 'version'
     | 'help'
     | 'unknown'
@@ -83,6 +84,9 @@ export function parseArgv(argv: readonly string[]): ParsedArgv {
   if (first === 'schedule') {
     return parseSubcommand('schedule', argv.slice(1))
   }
+  if (first === 'validate') {
+    return parseSubcommand('validate', argv.slice(1))
+  }
   return { command: 'unknown', positional: [first], flags: {} }
 }
 
@@ -101,7 +105,8 @@ function parseSubcommand(
     | 'debug'
     | 'sessions'
     | 'acp'
-    | 'schedule',
+    | 'schedule'
+    | 'validate',
   rest: readonly string[],
 ): ParsedArgv {
   const positional: string[] = []
