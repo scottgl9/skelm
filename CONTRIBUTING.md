@@ -78,7 +78,7 @@ Before opening a PR:
    - CLI commands spawn the bin against a fixture and assert exit code + stdout + stderr.
    - Server endpoints have happy-path + auth-failure + validation-failure tests each.
 3. **Docs are updated.** Public API changes update the relevant `docs/` page and the package README.
-4. **CHANGELOG `[Unreleased]` is updated** with a one-line summary under the right category.
+4. **A changeset is included.** Run `pnpm changeset` and commit the generated `.md` under `.changeset/`. Trivial / docs-only PRs may opt out by adding `[skip changeset]` to the PR body. The `changelog-present` guard enforces this.
 
 PR description template:
 
