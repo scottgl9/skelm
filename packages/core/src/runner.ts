@@ -1221,6 +1221,8 @@ async function runPipelineStep(
       permissionProfiles: runtime.permissionProfiles,
     }),
     ...(runtime?.workspaceManager !== undefined && { workspaceManager: runtime.workspaceManager }),
+    ...(runtime?.skillSource !== undefined && { skillSource: runtime.skillSource }),
+    ...(runtime?.secretResolver !== undefined && { secretResolver: runtime.secretResolver }),
     ...(waitForInput !== undefined && { waitForInput }),
   })
   if (nestedRun.status === 'completed') {
