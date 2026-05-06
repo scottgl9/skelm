@@ -128,7 +128,7 @@ Retries: 3 attempts with exponential backoff for transient errors (connection, r
 ## Troubleshooting
 
 - **"Authentication failed"** — set `OPENCODE_API_KEY` or pass `{ secret: 'OPENCODE_API_KEY' }` in config.
-- **"Permission denied: <tool>"** — the step's `AgentPermissions` did not grant the tool. Review the mapping table above and widen the policy if it's safe.
+- **"Permission denied: `<tool>`"** — the step's `AgentPermissions` did not grant the tool. Review the mapping table above and widen the policy if it's safe.
 - **"Agent 'X' not found"** — agent id missing from your opencode workspace config (`opencode.json`). Use `'build'`, `'plan'`, or a custom id you've defined.
 - **Connection timeout** — raise `timeout` in the backend config or check network reachability to `apiUrl`.
 
