@@ -15,32 +15,34 @@ describe('skelm validate', () => {
 
   it('flags an agent step that omits permissions{}', async () => {
     const r = await invoke(['validate', join(FIX, 'agent-no-permissions.workflow.ts')])
-    expect(r.exitCode).toBe(EXIT.CLI_ERROR)
+    expect(r.exitCode).toBe(EXIT.SCHEMA_VALIDATION)
     expect(r.stderr).toMatch(/agent-missing-permissions/)
   })
 
   it('flags a non-identifier secret name', async () => {
     const r = await invoke(['validate', join(FIX, 'agent-bad-secret-name.workflow.ts')])
-    expect(r.exitCode).toBe(EXIT.CLI_ERROR)
+    expect(r.exitCode).toBe(EXIT.SCHEMA_VALIDATION)
     expect(r.stderr).toMatch(/agent-secret-name-shape/)
   })
 
   it('flags a file whose default export is not a pipeline', async () => {
     const r = await invoke(['validate', join(FIX, 'not-a-pipeline.ts')])
-    expect(r.exitCode).toBe(EXIT.CLI_ERROR)
+    expect(r.exitCode).toBe(EXIT.SCHEMA_VALIDATION)
     expect(r.stderr).toMatch(/no-default-export|load-failed/)
   })
 
   it('--json emits a structured report and stays exit 1 on issues', async () => {
     const r = await invoke(['validate', join(FIX, 'agent-no-permissions.workflow.ts'), '--json'])
-    expect(r.exitCode).toBe(EXIT.CLI_ERROR)
+    expect(r.exitCode).toBe(EXIT.SCHEMA_VALIDATION)
     const parsed = JSON.parse(r.stdout)
     expect(parsed.ok).toBe(false)
     expect(Array.isArray(parsed.issues)).toBe(true)
     expect(parsed.issues[0].code).toBe('agent-missing-permissions')
   })
 
-  it('errors with exit 1 and a usage hint when no path is given', async () => {
+  it('errors with EXIT.CLI_ERROR and a usage hint when no path is given', async () => {
+    // Argv-level error caught by main before validateCommand runs; that's a
+    // generic CLI_ERROR, not a workflow validation failure.
     const r = await invoke(['validate'])
     expect(r.exitCode).toBe(EXIT.CLI_ERROR)
     expect(r.stderr).toMatch(/requires <pipeline-path>/)
@@ -48,7 +50,7 @@ describe('skelm validate', () => {
 
   it('errors when the file does not exist', async () => {
     const r = await invoke(['validate', join(FIX, 'does-not-exist.ts')])
-    expect(r.exitCode).toBe(EXIT.CLI_ERROR)
+    expect(r.exitCode).toBe(EXIT.SCHEMA_VALIDATION)
     expect(r.stderr).toMatch(/load-failed|not found/)
   })
 })
