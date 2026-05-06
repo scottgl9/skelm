@@ -12,87 +12,86 @@ Three layers, in priority order:
 
 Customer workflows ship to production with all three layers covered or they should not ship.
 
-## The in-process runner
+## Running a workflow in a test
 
-`@skelm/core` exports a factory for running workflows in tests without a gateway service:
+`@skelm/core` ships two ways to run workflows without a gateway service.
+
+The simpler one — `runPipeline` — is best for end-to-end assertions:
 
 ```ts
-import { createInProcessContext, Runner } from '@skelm/core'
+import { BackendRegistry, runPipeline } from '@skelm/core'
 import workflow from './my.workflow.ts'
+// import fixture backends as needed (see below)
 
-const context = await createInProcessContext({
-  inMemory: true,                  // run store + state in memory; no SQLite
-  backends: [
-    /* fixture backends — see below */
-  ],
-})
-const runner = new Runner(context)
+const backends = new BackendRegistry()
+// backends.register(...)
 
-const run = await runner.start(workflow, { /* input */ }).wait()
+const run = await runPipeline(workflow, { /* input */ }, { backends })
 expect(run.status).toBe('completed')
 expect(run.output).toMatchObject({ /* expected */ })
 ```
 
-`createInProcessContext({ inMemory: true })` builds the same `RuntimeContext` the gateway builds, with two differences:
+For finer control (custom enforcement, event subscription, manual `start` + `wait`), construct a `Runner` directly:
 
-- The run store is in-memory; nothing persists.
-- No HTTP listener, no scheduler.
+```ts
+import { Runner, BackendRegistry } from '@skelm/core'
 
-The trust boundary is the same. Permission enforcement runs in tests just like in production.
+const runner = new Runner({
+  backends: new BackendRegistry(),
+  // auditWriter, secretResolver, approvalGate — defaults are test-friendly
+})
+const run = await runner.start(workflow, { /* input */ }).wait()
+```
+
+Both paths run the same trust-boundary code that the gateway uses; permission enforcement fires in tests just like in production.
 
 ## Fixture backends
 
-For LLM and agent steps, real backends in tests are slow, flaky, and expensive. Skelm exports `fixtureBackend` for deterministic tests:
+For LLM and agent steps, real backends in tests are slow, flaky, and expensive. `@skelm/core/testing` exports `fixtureBackend` for deterministic tests:
 
 ```ts
 import { fixtureBackend } from '@skelm/core/testing'
 
-const fakeAnthropic = fixtureBackend({
-  id: 'anthropic',
-  capabilities: { /* matches real backend */ },
-  responses: {
-    'classify-one': (req) => ({
-      output: { label: 'bug', reasoning: 'crash report' },
+const fakeOpenAI = fixtureBackend({
+  id: 'openai',
+  // capabilities defaults to { prompt: true, ... }; pass overrides to widen.
+  respond: (req) => {
+    // Inspect req.messages, req.system, req.outputSchema to branch.
+    return {
+      structured: { label: 'bug', reasoning: 'crash report' },
       usage: { inputTokens: 100, outputTokens: 20 },
-    }),
+    }
   },
 })
+
+// fakeOpenAI.calls is a readonly array of every InferRequest received,
+// useful for asserting prompt content.
+expect(fakeOpenAI.calls).toHaveLength(1)
+expect(fakeOpenAI.calls[0]?.messages[0]?.content).toContain('bug')
 ```
 
 The fixture backend:
 
-- Implements `SkelmBackend` with `infer` (and optionally `run`) returning controlled outputs.
-- Matches by step `id` so each step gets its scripted response.
-- Validates the request matches what the step's prompt would produce (catches prompt drift).
+- Implements `SkelmBackend.infer` and returns whatever `respond(req)` produces.
 - Records every call so tests can assert on inputs.
-
-For `agent()` steps, fixture backends script multi-turn behavior:
-
-```ts
-const fakeAcp = fixtureBackend({
-  id: 'copilot-acp',
-  capabilities: { /* ... */ },
-  agentRuns: {
-    'classify': [
-      { tool: 'gh.list_issues', args: { repo: 'acme/x' }, response: [/* mocked */] },
-      { final: { label: 'bug', reasoning: 'crash report' } },
-    ],
-  },
-})
-```
+- For `agent()` steps that need multi-turn behaviour, write a real backend stub: implement `run(request, context)` and return an `AgentResponse` directly.
 
 ## Asserting on events
 
-Every run emits a typed event stream. Tests can subscribe:
+Every run emits a typed event stream via `Runner.events` (an `EventBus`):
 
 ```ts
+import { Runner, type RunEvent } from '@skelm/core'
+
+const runner = new Runner({ backends })
 const events: RunEvent[] = []
+const unsub = runner.events.subscribe((e) => events.push(e))
+
 const handle = runner.start(workflow, input)
-const unsub = context.events.forRun(handle.runId, (e) => events.push(e))
 const run = await handle.wait()
 unsub()
 
-const stepStarts = events.filter((e) => e.type === 'step.start')
+const stepStarts = events.filter((e) => e.type === 'step.started')
 expect(stepStarts.map((e) => e.stepId)).toEqual(['fetch', 'classify', 'route', 'notify'])
 
 const denials = events.filter((e) => e.type === 'permission.denied')
@@ -118,11 +117,12 @@ test('agent cannot exec arbitrary binaries', async () => {
     },
   })
 
-  const ctx = await createInProcessContext({ inMemory: true, backends: [malicious] })
-  const runner = new Runner(ctx)
+  const backends = new BackendRegistry()
+  backends.register(malicious)
+  const runner = new Runner({ backends })
   const events: RunEvent[] = []
+  runner.events.subscribe((e) => events.push(e))
   const handle = runner.start(myWorkflow, sampleInput)
-  ctx.events.forRun(handle.runId, (e) => events.push(e))
 
   await handle.wait()
 
@@ -134,13 +134,13 @@ This pattern catches accidental permission widening when the workflow is edited 
 
 ## Snapshot the inspectable graph
 
-Workflows have a static graph (`Pipeline.graph`). Snapshot it in tests so adding/removing/reordering steps is a visible diff:
+Workflows have an introspectable description; snapshot it in tests so adding/removing/reordering steps is a visible diff:
 
 ```ts
-import { renderGraph } from '@skelm/core/graph'
+import { describePipeline } from '@skelm/core'
 
 test('workflow shape is stable', () => {
-  expect(renderGraph(workflow.graph, 'mermaid')).toMatchSnapshot()
+  expect(describePipeline(workflow)).toMatchSnapshot()
 })
 ```
 
@@ -153,38 +153,22 @@ Useful when a workflow grows over time and you want PRs that change shape to req
 ```ts
 const handle = runner.start(workflow, input)
 
-// Wait until the run reaches the wait step
-await waitForEvent(ctx.events, handle.runId, 'run.waiting')
-
-// Provide the resume input
-await runner.resume(handle.runId, { approved: true })
+// Drive the run forward until it suspends; subscribe to events to know when.
+runner.events.subscribe((e) => {
+  if (e.type === 'step.suspended') {
+    void runner.resume(handle.runId, { approved: true })
+  }
+})
 
 const run = await handle.wait()
 expect(run.status).toBe('completed')
 ```
 
-`waitForEvent` is a small helper exported from `@skelm/core/testing`.
-
 ## Testing scheduler-driven workflows
 
-If your workflow only makes sense under a schedule (cron, webhook, poll), test the workflow logic separately from the schedule. The workflow is a pure function of input → output; the schedule is a separate concern handled by integration tests against a real gateway.
+If your workflow only makes sense under a schedule (cron, webhook, poll), test the workflow logic separately from the schedule. The workflow is a pure function of input → output; the schedule is a separate concern.
 
-For schedule integration tests:
-
-```ts
-import { createTestGateway } from '@skelm/gateway/testing'
-
-test('cron schedule fires the workflow at the expected time', async () => {
-  const gateway = await createTestGateway({ time: 'mock' })
-  await gateway.scheduleAdd({ workflowId: 'foo', trigger: { kind: 'cron', expression: '0 * * * *' } })
-  await gateway.advanceClock('1 hour')
-  const runs = await gateway.runs.list({ workflowId: 'foo' })
-  expect(runs).toHaveLength(1)
-  await gateway.stop()
-})
-```
-
-Test gateways spin up in under 100ms because they use the in-memory run store and a mockable clock.
+For schedule integration tests, drive the gateway directly via its public types in `@skelm/gateway` and the trigger primitives from `@skelm/scheduler` — there is no separate "test gateway" factory.
 
 ## CI integration
 
@@ -223,6 +207,5 @@ my-skelm-project/
 
 ## Cross-references
 
-- [API → testing](../reference/api.md#testing) — `createInProcessContext`, `fixtureBackend`, `createTestGateway`.
+- [API → testing](../reference/api.md) — `runPipeline`, `Runner`, `BackendRegistry`, `fixtureBackend`.
 - [Concepts → permissions](../concepts/permissions.md) — what default-deny means in practice.
-- [Concepts → runs](../concepts/runs.md) — event stream and lifecycle the tests assert against.

@@ -6,8 +6,10 @@ machine-readable source of truth.
 
 ## Auth
 
-All routes require a bearer token unless explicitly noted. Configure tokens
-via gateway config or environment. Unauthenticated requests get `401`.
+By default the gateway listens on `127.0.0.1:4000` with `auth.mode: 'none'`.
+Set `server.auth = { mode: 'bearer' }` in `skelm.config.ts` to require a
+bearer token; unauthenticated requests then get `401`. Tokens are read from
+the environment.
 
 ## Health & metrics
 
@@ -26,28 +28,31 @@ via gateway config or environment. Unauthenticated requests get `401`.
 
 ## Pipelines
 
-| Method | Path                        | Description                          |
-| ------ | --------------------------- | ------------------------------------ |
-| GET    | `/pipelines`                | List registered pipelines            |
-| GET    | `/pipelines/:id`            | Describe one pipeline                |
-| POST   | `/pipelines/:id/run`        | Run a pipeline synchronously         |
-| POST   | `/pipelines/:id/start`      | Start an async run; returns runId    |
+| Method | Path                        | Description                                      |
+| ------ | --------------------------- | ------------------------------------------------ |
+| GET    | `/pipelines`                | List registered pipelines                        |
+| GET    | `/pipelines/:id`            | Describe one pipeline (graph + JSON schemas)     |
+| POST   | `/pipelines/:id/run`        | Run synchronously; returns final state           |
+| POST   | `/pipelines/:id/start`      | Start an async run; returns runId                |
+
+Both `/run` and `/start` accept an optional `Idempotency-Key` header; the same
+key for the same pipeline returns the cached run.
 
 ## Runs
 
-| Method | Path                          | Description                          |
-| ------ | ----------------------------- | ------------------------------------ |
-| GET    | `/runs/:runId`                | Get run record                       |
-| GET    | `/runs/:runId/events`         | SSE/JSONL event stream for a run     |
-| POST   | `/runs/:runId/resume`         | Resume a waiting run                 |
-| POST   | `/runs/:runId/approve`        | Approve a paused approval gate       |
-| POST   | `/runs/:runId/deny`           | Deny a paused approval gate          |
+| Method | Path                          | Description                                      |
+| ------ | ----------------------------- | ------------------------------------------------ |
+| DELETE | `/runs/:runId`                | Cancel an in-flight run                          |
+| POST   | `/runs/:runId/resume`         | Resume a `wait()` step; body `{ output? }`        |
+| GET    | `/runs/:runId/events`         | Return persisted events (`{ runId, events }`); accepts `?since` and `?limit` |
 
 ## Approvals
 
-| Method | Path             | Description                          |
-| ------ | ---------------- | ------------------------------------ |
-| GET    | `/approvals`     | List pending approvals               |
+| Method | Path                          | Description                                      |
+| ------ | ----------------------------- | ------------------------------------------------ |
+| GET    | `/approvals`                  | List pending approvals                           |
+| POST   | `/runs/:runId/approve`        | Approve a paused approval gate; body `{ stepId, approver?, reason? }` |
+| POST   | `/runs/:runId/deny`           | Deny a paused approval gate; body `{ stepId, approver?, reason? }` |
 
 ## Triggers
 

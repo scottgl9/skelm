@@ -4,11 +4,11 @@ info:
   description: |
     Control plane and runs surface for the skelm gateway. The gateway is the
     trust boundary — every privileged action is enforced and audited here.
-  version: 0.3.6
+  version: 0.3.7
   license:
     name: MIT
 servers:
-  - url: http://127.0.0.1:7878
+  - url: http://127.0.0.1:4000
     description: Default local gateway
 security:
   - bearerAuth: []
