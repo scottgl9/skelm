@@ -37,29 +37,58 @@ npm install @mariozechner/pi-coding-agent
 
 ## SDK backend (recommended)
 
+Register the backend via `instances:` in `skelm.config.ts` and reference it by id on each step:
+
 ```ts
-import { agent, pipeline } from 'skelm'
+// skelm.config.ts
+import { defineConfig } from 'skelm'
 import { createPiSdkBackend } from '@skelm/pi'
 
-const pi = createPiSdkBackend({
-  // All options are optional
-  cwd: './workspace',          // working directory; defaults to process.cwd()
-  timeout: 300_000,            // ms; default 5 min
-  maxConcurrent: 4,            // queued beyond this; 0 = unlimited
+export default defineConfig({
+  backends: { agent: 'pi' },
+  instances: [
+    createPiSdkBackend({
+      id: 'pi',
+      // cwd: './workspace',  // defaults to process.cwd()
+      // timeout: 300_000,    // ms; default 5 min
+      // maxConcurrent: 4,    // queued beyond this; 0 = unlimited
+    }),
+  ],
+  registries: {
+    skills: { glob: 'skills/**/SKILL.md' },
+  },
 })
+```
+
+A workflow that reviews a PR using a **skill** that encodes your team's style guide:
+
+```ts
+// workflows/review-pr.workflow.ts
+import { agent, pipeline } from 'skelm'
+import { z } from 'zod'
 
 export default pipeline({
-  id: 'refactor',
+  id: 'review-pr',
+  input:  z.object({ diff: z.string() }),
+  output: z.object({ verdict: z.string(), notes: z.array(z.string()) }),
   steps: [
     agent({
-      id: 'pi-step',
-      backend: pi,
-      prompt: 'Refactor the auth module to use async/await throughout.',
+      id: 'reviewer',
+      backend: 'pi',
+      skills: ['style-guide'],             // injected from skills/style-guide/SKILL.md
+      prompt: (ctx) =>
+        `Review this diff against the style guide and return JSON {verdict, notes}:\n\n${ctx.input.diff}`,
       permissions: {
-        allowedExecutables: ['bash'],
-        fsRead:  ['./src'],
-        fsWrite: ['./src'],
+        allowedTools:       [],            // read-only — no tools needed
+        allowedExecutables: [],
+        allowedMcpServers:  [],
+        allowedSkills:      ['style-guide'],
+        networkEgress:      'deny',
+        fsRead:             [],
+        fsWrite:            [],
       },
+      output: z.object({ verdict: z.string(), notes: z.array(z.string()) }),
+      maxTurns: 3,
     }),
   ],
 })

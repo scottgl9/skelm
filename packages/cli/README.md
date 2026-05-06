@@ -26,12 +26,25 @@ npm install @skelm/cli
 ## Commands
 
 ```
-skelm init [dir]                                Scaffold a new project
-skelm run <workflow.ts> [--input <json>]        Run a workflow once
-skelm gateway start [--foreground|--detach]     Run the long-running orchestrator
-skelm gateway status                            Inspect a running gateway
-skelm gateway stop                              Stop a running gateway
-skelm gateway install --systemd                 Install a systemd user unit
+skelm init [dir]                      Scaffold a new project
+skelm run <workflow.ts>               Run a workflow once
+skelm validate <workflow.ts>          Type-check a workflow without running it
+skelm describe <workflow.ts>          Print the workflow's step graph
+skelm history                         List recent runs
+skelm schedule add <workflow.ts>      Register a trigger (cron / webhook / interval / poll)
+skelm schedule list                   List active schedules
+skelm schedule stop <id>              Stop a schedule
+skelm secrets get <name>              Read a secret from the configured driver
+skelm secrets set <name>              Write a secret
+skelm audit query                     Query the hash-chained audit log
+skelm approvals list                  List pending approval requests
+skelm approvals approve <id>          Approve a suspended step
+skelm approvals deny <id>             Deny a suspended step
+skelm logs                            Tail gateway logs
+skelm gateway start                   Run the gateway (foreground; Ctrl-C drains and exits)
+skelm gateway status                  Inspect a running gateway
+skelm gateway stop                    Stop a running gateway
+skelm gateway install --systemd       Install a user-level systemd unit
 skelm --version
 skelm --help
 ```
@@ -45,8 +58,6 @@ skelm --help
 --events <fmt>          human (default) | json | none
 ```
 
-Subsequent milestones add `skelm schedule`, `skelm history`, `skelm secrets`, `skelm audit`.
-
 ## Exit codes
 
 | Code | Meaning                                                    |
@@ -58,6 +69,7 @@ Subsequent milestones add `skelm schedule`, `skelm history`, `skelm secrets`, `s
 | `4`  | run was cancelled (SIGINT)                                 |
 | `5`  | wait() timed out                                           |
 | `6`  | security policy violation (denied tool, exec, network, fs) |
+| `7`  | step timed out (`timeoutMs` exceeded)                      |
 
 stdout receives the workflow's final output as JSON. Everything else (progress, JSON events when `--events json`, error messages, prompts) goes to stderr — making `skelm run foo.ts > result.json 2> events.log` work without a parser.
 
