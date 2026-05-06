@@ -36,8 +36,8 @@ describe('createPiBackend', () => {
     expect(b.label).toBe('My Pi')
   })
 
-  it('reports native toolPermissions', () => {
-    expect(createPiBackend().capabilities.toolPermissions).toBe('native')
+  it('reports unsupported toolPermissions (RPC cannot enforce in subprocess)', () => {
+    expect(createPiBackend().capabilities.toolPermissions).toBe('unsupported')
   })
 
   it('reports modelSelection:true when model is set', () => {

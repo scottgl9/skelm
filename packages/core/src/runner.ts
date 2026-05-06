@@ -869,7 +869,21 @@ async function runAgentStep(
       )
     }
     const declaredPermissionDimensions = collectResolvedPermissionDimensions(policy, mcpServers)
-    assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions)
+    try {
+      assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions)
+    } catch (err) {
+      if (err instanceof BackendCapabilityError) {
+        events?.publish({
+          type: 'permission.denied',
+          runId: ctx.run.runId,
+          stepId: step.id,
+          dimension: 'tool',
+          detail: err.message,
+          at: Date.now(),
+        })
+      }
+      throw err
+    }
     if (policy?.approval && runtime?.approvalGate !== undefined) {
       const decision = await runtime.approvalGate.request({
         runId: ctx.run.runId,

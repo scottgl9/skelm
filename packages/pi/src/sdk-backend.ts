@@ -204,14 +204,21 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
  *
  * Returns `undefined` when no policy is set (pi uses its defaults).
  * Returns a string[] (possibly empty) when a policy is present.
+ *
+ * networkEgress: 'deny' suppresses the bash tool entirely — pi has no native
+ * fetch tool, so the only way an agent can reach the network is via
+ * `curl`/`wget`/etc. spawned through bash. Dropping bash from the allowlist
+ * is a coarse but reliable enforcement of network-deny.
  */
 export function derivePiToolAllowlist(policy: ResolvedPolicy | undefined): string[] | undefined {
   if (policy === undefined) return undefined
 
+  const networkDenied = policy.networkEgress === 'deny'
+
   const allowed: string[] = []
 
   const execs = policy.allowedExecutables
-  if (execs.has('bash') || execs.has('sh')) {
+  if (!networkDenied && (execs.has('bash') || execs.has('sh'))) {
     allowed.push('bash')
   }
 
