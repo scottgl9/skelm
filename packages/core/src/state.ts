@@ -1,8 +1,8 @@
-import type { RunStore } from './run-store.js'
+import type { StateStore } from './run-store.js'
 import type { State, StateConfig, StateReadOptions, StateSetOptions } from './types.js'
 
 export function createStateHandle(
-  store: RunStore,
+  store: StateStore,
   params: { pipelineId: string; stepId?: string; config?: StateConfig },
 ): State {
   const namespace = resolveStateNamespace(params)
