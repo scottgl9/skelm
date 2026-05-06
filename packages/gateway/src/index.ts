@@ -33,6 +33,10 @@ export {
 // Audit + secrets
 export { ChainAuditWriter } from './audit/chain.js'
 export type { ChainEntry } from './audit/chain.js'
+
+// Operational logs (distinct from audit + run events)
+export { FileLogSink, RingBufferLogSink, TeeLogSink, redact } from './logs/sink.js'
+export type { LogEntry, LogSink } from './logs/sink.js'
 export { FileSecretResolver } from './secrets/file-driver.js'
 export { VaultNotImplementedError, VaultSecretResolver } from './secrets/vault-driver.js'
 export type { VaultSecretResolverOptions } from './secrets/vault-driver.js'

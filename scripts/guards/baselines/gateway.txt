@@ -4,6 +4,7 @@ value:BaseRegistry
 value:BreakpointRegistry
 value:ChainAuditWriter
 value:CodingAgentManager
+value:FileLogSink
 value:FileSecretResolver
 value:FsWatcher
 value:GATEWAY_PACKAGE_VERSION
@@ -12,8 +13,10 @@ value:InMemoryQueueDriver
 value:LockfileError
 value:McpServerManager
 value:McpServerRegistry
+value:RingBufferLogSink
 value:SkillRegistry
 value:SuspendApprovalGate
+value:TeeLogSink
 value:TriggerCoordinator
 value:VaultNotImplementedError
 value:VaultSecretResolver
@@ -25,6 +28,7 @@ value:createTriggerDispatcher
 value:defaultAcpSessionStorePath
 value:readDiscovery
 value:readLockfile
+value:redact
 value:releaseLockfile
 value:removeDiscovery
 value:walkGlob
@@ -53,6 +57,8 @@ type:GatewayRegistries
 type:GatewayState
 type:GatewayTriggerRegistration
 type:LockfileContents
+type:LogEntry
+type:LogSink
 type:McpServerEntry
 type:McpServerHandle
 type:McpServerManagerOptions

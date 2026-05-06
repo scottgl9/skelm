@@ -14,6 +14,7 @@ Usage:
   skelm schedule <add|list|stop|fire> [args]
   skelm acp serve
   skelm validate <pipeline.ts> [--json]
+  skelm logs [--lines <n>] [--since <iso>] [--level <lvl>] [--filter <s>] [--json]
   skelm init [<dir>] [--force]
   skelm --version
   skelm --help
@@ -93,6 +94,14 @@ Validate flags:
     --json                                 Emit issues as JSON
   Exits 0 when the pipeline is clean, 2 (schema validation) when issues are
   found, 1 only for CLI-level argv errors. See exit codes below.
+
+Logs flags:
+  --lines <n>             Print only the last N lines
+  --since <iso>           Drop entries strictly older than this ISO-8601 timestamp
+  --level <lvl>           Minimum level: debug | info | warn | error (default debug)
+  --filter <substring>    Substring filter applied to the rendered line
+  --json                  Emit raw JSON-Lines (still respects filters)
+  (Reads $SKELM_GATEWAY_LOG, defaulting to ~/.skelm/gateway.log)
 
 Init flags:
   --force                 Allow scaffolding into a non-empty directory

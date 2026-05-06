@@ -13,6 +13,7 @@ import { historyCommand } from './history.js'
 import { initCommand } from './init.js'
 import { listCommand } from './list.js'
 import { CliError } from './load-workflow.js'
+import { logsCommand } from './logs.js'
 import { runCommand } from './run.js'
 import { scheduleCommand } from './schedule.js'
 import { sessionsCommand } from './sessions.js'
@@ -350,6 +351,32 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
           return { exitCode: EXIT.CLI_ERROR }
         }
         const result = await validateCommand({ path, json: parsed.flags.json === true }, io)
+        return { exitCode: result.exitCode }
+      }
+      case 'logs': {
+        const linesFlag = parsed.flags.lines
+        const lines =
+          typeof linesFlag === 'string' && /^\d+$/.test(linesFlag)
+            ? Number.parseInt(linesFlag, 10)
+            : undefined
+        const levelFlag = parsed.flags.level
+        const level =
+          levelFlag === 'debug' ||
+          levelFlag === 'info' ||
+          levelFlag === 'warn' ||
+          levelFlag === 'error'
+            ? levelFlag
+            : undefined
+        const result = await logsCommand(
+          {
+            ...(lines !== undefined && { lines }),
+            ...(typeof parsed.flags.since === 'string' && { since: parsed.flags.since }),
+            ...(level !== undefined && { level }),
+            ...(typeof parsed.flags.filter === 'string' && { filter: parsed.flags.filter }),
+            ...(parsed.flags.json === true && { json: true }),
+          },
+          io,
+        )
         return { exitCode: result.exitCode }
       }
       case 'acp': {
