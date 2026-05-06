@@ -6,7 +6,7 @@ export default defineConfig({
   //   openai, anthropic, opencode, copilot-acp, acp, pi (RPC variant)
   // Use `instances:` (below) for the pi SDK backend or any custom backend.
   backends: {
-    default: 'openai',         // used by llm() and agent() unless overridden
+    default: 'openai', // used by llm() and agent() unless overridden
     // llm:    'openai',
     // agent:  'pi',
     // openai: {
@@ -27,7 +27,7 @@ export default defineConfig({
 
   registries: {
     workflows: { glob: 'workflows/**/*.workflow.ts' },
-    skills:    { glob: 'skills/**/SKILL.md' },
+    skills: { glob: 'skills/**/SKILL.md' },
 
     // MCP servers the gateway hosts; steps reference them by id.
     mcpServers: [
@@ -75,13 +75,13 @@ export default defineConfig({
   secrets: { driver: 'env' },
 
   storage: {
-    runs:  { driver: 'sqlite', path: '.skelm/runs.sqlite' },
+    runs: { driver: 'sqlite', path: '.skelm/runs.sqlite' },
     state: { driver: 'sqlite', path: '.skelm/state.sqlite' },
   },
 
   server: {
-    port: 4000,                 // default gateway port
+    port: 4000, // default gateway port
     host: '127.0.0.1',
-    auth: { mode: 'none' },     // set to 'bearer' with an env-resolved token for remote access
+    auth: { mode: 'none' }, // set to 'bearer' with an env-resolved token for remote access
   },
 })

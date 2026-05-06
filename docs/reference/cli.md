@@ -22,6 +22,7 @@ skelm --help
 | 4    | run cancelled        |
 | 5    | wait step timed out  |
 | 6    | permission denied    |
+| 7    | step timed out       |
 
 `stdout` receives the workflow's final output (JSON when present); `stderr`
 receives human progress lines unless `--events json` is set, in which case
@@ -85,11 +86,15 @@ every privileged action is enforced and audited there.
 `pause` and `resume` are exposed via the HTTP control surface
 (`POST /gateway/pause|resume`); see the [HTTP reference](./http.md).
 
-### `skelm approvals <list|grant|deny>`
+### `skelm approvals <list|approve|deny>`
 
-Inspect and resolve pending approval gates. See also: the proposed
-[`skelm approvals config`](https://github.com/scottgl9/skelm/issues/43)
-subcommand for managing the policy itself.
+Inspect and resolve pending approval gates.
+
+```
+skelm approvals list [--json]
+skelm approvals approve <id> [--reason <text>] [--approver <name>] [--json]
+skelm approvals deny    <id> [--reason <text>] [--approver <name>] [--json]
+```
 
 ### `skelm audit query`
 
@@ -151,9 +156,28 @@ skelm schedule fire <id> [--json]
 
 ### `skelm init [<dir>]`
 
-Scaffold a new skelm project. `--force` allows scaffolding into a non-empty
-directory.
+Scaffold a new skelm project under `<dir>` (defaults to `.`). Creates
+`package.json`, `tsconfig.json`, `skelm.config.ts`,
+`workflows/hello.workflow.ts`, `.gitignore`, and `README.md`. `--force` allows
+scaffolding into a non-empty directory.
+
+### `skelm validate <pipeline.ts>`
+
+Static check that the pipeline imports cleanly and its declared schemas/steps
+are well-formed. No runtime side effects.
+
+```
+skelm validate <pipeline.ts> [--json]
+```
+
+### `skelm logs`
+
+Stream structured logs from a running gateway.
+
+```
+skelm logs [--lines <n>] [--since <iso>] [--level <lvl>] [--filter <s>] [--json]
+```
 
 ### `skelm acp serve`
 
-Reserved for M4. Currently emits a "not yet implemented" notice and exits 1.
+Reserved. Currently emits a "not yet implemented" notice and exits 1.

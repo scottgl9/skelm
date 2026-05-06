@@ -202,28 +202,28 @@ The contract test asserts:
 
 If the contract suite fails, your backend is not ready. Do not register it.
 
-## Packaging as a plugin
+## Distributing your backend
 
-Backends are distributed as plugins:
+The simplest distribution path is an npm package whose default export is a factory (e.g. `createMyBackend(opts)`). Consumers then wire it into their own `skelm.config.ts` via `instances:`:
 
 ```ts
-// my-backend/src/plugin.ts
-import { definePlugin } from 'skelm/plugin'
-import { createMyBackend } from './index.ts'
+// consumer's skelm.config.ts
+import { defineConfig } from 'skelm'
+import { createMyBackend } from 'skelm-mycorp'
 
-export default definePlugin({
-  id: 'skelm-mycorp',
-  version: '0.1.0',
-  contributes: {
-    backends: [
-      createMyBackend({
-        endpoint: process.env.MYCORP_LLM_ENDPOINT ?? 'https://llm.mycorp.internal',
-        apiKeySecret: 'MYCORP_API_KEY',
-      }),
-    ],
-  },
+export default defineConfig({
+  backends: { default: 'mycorp' },
+  instances: [
+    createMyBackend({
+      endpoint: process.env.MYCORP_LLM_ENDPOINT ?? 'https://llm.mycorp.internal',
+      apiKey:   { secret: 'MYCORP_API_KEY' },
+      id:       'mycorp',
+    }),
+  ],
 })
 ```
+
+If you need lifecycle hooks (init / start / stop / health), implement the `SkelmPlugin` interface from `@skelm/core` and ship the package name in the consumer's `plugins:` config — see [`packages/core/src/plugins.ts`](../../packages/core/src/plugins.ts) for the canonical interface.
 
 ```json
 // my-backend/package.json
