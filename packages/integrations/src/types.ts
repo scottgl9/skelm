@@ -204,3 +204,48 @@ export interface TelegramMessageTrigger {
   entities?: Array<{ type: string; offset: number; length: number }>
   date: number
 }
+
+/** Discord-specific types */
+export interface DiscordConfig extends IntegrationConfig {
+  id: 'discord'
+  credentials: {
+    /** Bot token from the Discord developer portal. */
+    botToken: string
+    /** Application id, used for slash-command registration. */
+    applicationId?: string
+    /** Public key for webhook signature verification (Ed25519). */
+    publicKey?: string
+    /** Default channel id used by sendNotification when not overridden. */
+    channelId?: string
+  }
+}
+
+/**
+ * Inbound Discord webhook payload. Discord posts to your interaction
+ * endpoint with a `type` discriminator (1=PING, 2=APPLICATION_COMMAND,
+ * 3=MESSAGE_COMPONENT, 4=APPLICATION_COMMAND_AUTOCOMPLETE,
+ * 5=MODAL_SUBMIT). Subset typed below; the rest is opaque.
+ */
+export interface DiscordWebhookEvent {
+  type: number
+  id?: string
+  application_id?: string
+  channel_id?: string
+  guild_id?: string
+  member?: { user?: { id: string; username?: string } }
+  user?: { id: string; username?: string }
+  data?: {
+    name?: string
+    options?: ReadonlyArray<{ name: string; value?: string | number | boolean }>
+    custom_id?: string
+  }
+  token?: string
+}
+
+export interface DiscordMessageTrigger {
+  channelId: string
+  userId: string
+  username?: string
+  content: string
+  receivedAt: Date
+}

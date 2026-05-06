@@ -1,7 +1,11 @@
+value:DiscordIntegration
 value:GitHubIntegration
 value:IntegrationBase
 value:IntegrationRegistry
 value:SlackIntegration
+type:DiscordConfig
+type:DiscordMessageTrigger
+type:DiscordWebhookEvent
 type:EmailTrigger
 type:GitHubConfig
 type:GitHubIssueTrigger
