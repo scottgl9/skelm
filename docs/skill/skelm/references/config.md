@@ -1,4 +1,6 @@
-# Config Reference (`skelm.config.ts`)
+# Config reference (`skelm.config.ts`)
+
+The CLI walks up from `cwd` to find `skelm.config.ts` (or `.js` / `.mjs`). When none is found, the gateway uses [`DEFAULT_CONFIG`](../../../packages/core/src/config.ts).
 
 ## Shape
 
@@ -6,48 +8,111 @@
 import { defineConfig } from 'skelm'
 
 export default defineConfig({
+  // ── Backends ────────────────────────────────────────────────────────
+  backend?: string,                          // legacy single-backend selector; prefer `backends.default`
+  backends?: {
+    default?: string,                        // used by both llm() and agent() unless overridden
+    llm?:     string,                        // optional override for llm()
+    agent?:   string,                        // optional override for agent()
+    [id: string]: SkelmConfigBackendEntry | string | undefined,
+  },
+  /**
+   * Pre-built `SkelmBackend` instances. Use this when the string-keyed
+   * `backends:` form is insufficient — e.g. the pi SDK backend, custom
+   * ACP backends, or a backend you wrote yourself.
+   */
+  instances?: readonly SkelmBackend[],
+
+  // ── Workflow discovery ──────────────────────────────────────────────
+  pipelines?: {
+    discovery?: 'auto' | 'explicit',
+    glob?:      string,                      // e.g. 'workflows/**/*.workflow.ts'
+    explicit?:  readonly string[],
+  },
+
+  // ── Gateway-managed registries ──────────────────────────────────────
   registries?: {
-    workflows?: { glob: string }           // glob for *.pipeline.ts / *.workflow.ts
-    agents?: SkelmConfigAgentEntry[]       // coding agent definitions
-    mcpServers?: SkelmConfigMcpServerEntry[]
-    skills?: { glob: string }              // skill SKILL.md directories
+    workflows?:  { glob?: string },          // file-system discovery for *.workflow.ts / *.pipeline.ts
+    skills?:     { glob?: string },          // skill SKILL.md directories
+    mcpServers?: readonly SkelmConfigMcpServerEntry[],
+    agents?:     readonly SkelmConfigAgentEntry[],   // gateway-supervised agent runtimes
   },
+
+  // ── Defaults & profiles ─────────────────────────────────────────────
   defaults?: {
-    backend?: string                       // default backend id for llm/agent steps
-    model?: string
-    permissions?: AgentPermissions         // project-wide permission defaults
-    permissionProfiles?: Record<string, AgentPermissions>  // named profiles
+    backend?:            string,             // alias for backends.default
+    permissions?:        AgentPermissions,   // project-wide permission baseline
+    permissionProfiles?: Record<string, AgentPermissions>,
   },
-  server?: {
-    port?: number                          // gateway HTTP port (default: 2318)
-    host?: string
-    auth?: { mode: 'none' | 'bearer'; token?: string }
+
+  // ── Operational surfaces ────────────────────────────────────────────
+  secrets?: {
+    driver?: 'env' | 'file',
+    file?:   string,                         // path to JSON secrets file when driver === 'file'
   },
   storage?: {
-    runs?: { driver: 'sqlite' | 'memory'; path?: string }
-    audit?: { driver: 'sqlite' | 'memory'; path?: string }
+    runs?:       { driver?: 'sqlite' | 'memory', path?: string },
+    state?:      { driver?: 'sqlite' | 'memory', path?: string },
+    workspaces?: { base?: string, ephemeralBase?: string },
   },
-  secrets?: {
-    driver: 'env' | 'vault'
-    prefix?: string
+  server?: {
+    port?:              number,              // default: 4000
+    host?:              string,              // default: 127.0.0.1
+    auth?:              { mode: 'none' | 'bearer' },
+    maxConcurrentRuns?: number,              // default: 10
   },
+  plugins?: readonly string[],               // package names imported at gateway startup
 })
 ```
 
-## Agent entries
+`SkelmConfigBackendEntry` is a free-form record forwarded to the matching factory. Strings allowed for keys like `backends.default` (selectors), record values for backend-specific config (`apiKey`, `model`, `baseUrl`, …).
+
+## Backends
+
+The CLI knows these ids and wires them automatically:
+
+| id              | factory                                | notes                                  |
+|-----------------|----------------------------------------|----------------------------------------|
+| `openai`        | `createOpenAIBackend`                  | OpenAI-compatible HTTP endpoint        |
+| `anthropic`     | `createAnthropicBackend`               | Direct Anthropic API                   |
+| `opencode`      | `createOpencodeBackendFromConfig`      | opencode SDK                           |
+| `copilot-acp`   | `createAcpBackend`                     | GitHub Copilot ACP subprocess          |
+| `acp`           | `createAcpBackend`                     | Generic ACP; `command` required        |
+| `pi`            | `createPiBackendFromConfig` (RPC)      | RPC variant only — for SDK use `instances:` |
+
+For the **pi SDK** backend, register an instance:
+
+```ts
+import { defineConfig } from 'skelm'
+import { createPiSdkBackend } from '@skelm/pi'
+
+export default defineConfig({
+  backends: { agent: 'pi' },
+  instances: [createPiSdkBackend({ id: 'pi' })],
+})
+```
+
+API keys can be inlined (`apiKey: 'sk-...'`) or resolved from env (`apiKey: { secret: 'OPENAI_API_KEY' }`). The runtime resolves the secret at gateway start.
+
+## Agent registry entries
+
+`registries.agents` declares agent runtimes the **gateway** supervises (process lifecycle, command, env). This is separate from the `backends:` map (which registers `SkelmBackend` instances directly).
 
 ```ts
 interface SkelmConfigAgentEntry {
   id: string
   runtime: 'claude-code' | 'opencode' | 'pi' | 'acp' | string
   lifecycle: 'ephemeral' | 'resident'
-  command: string                    // executable to spawn
-  args?: string[]
-  env?: Record<string, string>
+  command?: string                    // spawn command for ephemeral, or `serve` for resident
+  args?: readonly string[]
+  url?: string                        // when the agent is reachable as a long-lived server
+  env?: Readonly<Record<string, string>>
+  permissions?: AgentPermissions      // applied to every step that uses this agent
+  metadata?: Readonly<Record<string, unknown>>
 }
 ```
 
-- `ephemeral` — spawned per agent step, exits when done.
+- `ephemeral` — spawned per step, exits when done.
 - `resident` — gateway keeps the process alive, reuses across steps.
 
 ## MCP server entries
@@ -56,11 +121,11 @@ interface SkelmConfigAgentEntry {
 interface SkelmConfigMcpServerEntry {
   id: string
   transport: 'stdio' | 'http' | 'sse'
-  // for stdio:
+  // stdio:
   command?: string
-  args?: string[]
-  env?: Record<string, string>
-  // for http/sse:
+  args?: readonly string[]
+  env?: Readonly<Record<string, string>>
+  // http / sse:
   url?: string
 }
 ```
@@ -69,24 +134,31 @@ interface SkelmConfigMcpServerEntry {
 
 ```ts
 import { defineConfig } from 'skelm'
+import { createPiSdkBackend } from '@skelm/pi'
 
 export default defineConfig({
+  backends: {
+    default: 'openai',
+    agent:   'pi',
+    openai: {
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey:  { secret: 'OPENAI_API_KEY' },
+      model:   'gpt-4o-mini',
+    },
+  },
+  instances: [createPiSdkBackend({ id: 'pi' })],
+
+  pipelines: { discovery: 'auto', glob: 'workflows/**/*.workflow.ts' },
+
   registries: {
-    workflows: { glob: './*.pipeline.ts' },
-    agents: [
-      {
-        id: 'claude-code',
-        runtime: 'claude-code',
-        lifecycle: 'ephemeral',
-        command: 'claude',
-        args: ['--print'],
-      },
-    ],
+    workflows:  { glob: 'workflows/**/*.workflow.ts' },
+    skills:     { glob: 'skills/**/SKILL.md' },
     mcpServers: [
       { id: 'github',     transport: 'http',  url: 'http://127.0.0.1:9100' },
       { id: 'filesystem', transport: 'stdio', command: 'mcp-server-filesystem', args: ['.'] },
     ],
   },
+
   defaults: {
     permissions: {
       allowedExecutables: [],
@@ -100,27 +172,33 @@ export default defineConfig({
     permissionProfiles: {
       'github-write': {
         allowedExecutables: ['git'],
-        allowedTools: ['gh.*'],
-        allowedMcpServers: ['github'],
-        fsRead: ['./'],
-        fsWrite: ['./'],
-        networkEgress: { allowHosts: ['api.github.com'] },
+        allowedTools:       ['gh.*'],
+        allowedMcpServers:  ['github'],
+        fsRead:             ['./'],
+        fsWrite:            ['./'],
+        networkEgress:      { allowHosts: ['api.github.com'] },
       },
     },
   },
-  server: {
-    port: 2318,
-    auth: { mode: 'none' },
-  },
+
+  secrets: { driver: 'env' },
+
   storage: {
-    runs:  { driver: 'sqlite', path: '.skelm/runs.db' },
-    audit: { driver: 'sqlite', path: '.skelm/audit.db' },
+    runs:  { driver: 'sqlite', path: '.skelm/runs.sqlite' },
+    state: { driver: 'sqlite', path: '.skelm/state.sqlite' },
+  },
+
+  server: {
+    port: 4000,
+    host: '127.0.0.1',
+    auth: { mode: 'none' },
   },
 })
 ```
 
 ## Notes
 
-- The config file is hot-reloaded when the gateway receives `SIGHUP` or when `skelm gateway reload` is called.
-- `permissionProfiles` entries are resolved before step-level permissions; they cannot widen above project `defaults.permissions`.
-- If `registries.workflows` is omitted, the gateway uses `**/*.pipeline.ts` and `**/*.workflow.ts` from the project root.
+- Config is hot-reloaded when the gateway receives `SIGHUP` or `skelm gateway reload`.
+- `permissionProfiles` entries narrow `defaults.permissions`; profiles cannot widen the project baseline.
+- When `registries.workflows.glob` is omitted, the gateway uses the value from `pipelines.glob` (or the default `workflows/**/*.workflow.ts`).
+- `secrets.driver: 'file'` reads JSON from `secrets.file`; the gateway never logs secret values.

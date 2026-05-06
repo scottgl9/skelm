@@ -4,7 +4,7 @@
 
 Every `AgentPermissions` field defaults to `undefined`, which the runtime treats as **deny**. An agent step with no `permissions` block cannot do anything privileged.
 
-## The 7 dimensions
+## The dimensions
 
 ```ts
 interface AgentPermissions {
@@ -14,12 +14,24 @@ interface AgentPermissions {
   allowedExecutables?: readonly string[]      // binaries for exec/bash
   allowedMcpServers?: readonly string[]       // MCP server ids from config
   allowedSkills?: readonly string[]           // skill ids agent may load
+  allowedSecrets?: readonly string[]          // secret names the step may resolve
   networkEgress?: NetworkPolicy               // 'allow' | 'deny' | { allowHosts }
   fsRead?: readonly string[]                  // path roots agent may read
   fsWrite?: readonly string[]                 // path roots agent may write
-  approval?: ApprovalPolicy                   // (deferred — carried for forward-compat)
+  approval?: ApprovalPolicy                   // gates dimensions on human approval
 }
 ```
+
+`ApprovalPolicy` looks like:
+
+```ts
+interface ApprovalPolicy {
+  on: readonly PermissionDimension[]    // which dimensions need approval
+  rememberFor?: number                  // ms to cache an approval decision
+}
+```
+
+The runtime calls `runtime.approvalGate.request(...)` at the start of every agent step whose resolved policy declares `approval`; a denial fails the step with `ApprovalDeniedError`.
 
 ## ToolMatcher
 

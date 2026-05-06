@@ -1,93 +1,124 @@
-# Agent Step Reference
+# Agent step reference
 
 ## Full `agent()` signature
 
 ```ts
 agent({
   id: string                                          // required
-  backend?: string                                    // backend id from skelm.config.ts; default from config
-  agentDef?: string                                   // named agent definition from config registries.agents
+  backend?: string | readonly string[]                // backend id(s) — first match wins
+  agentDef?: string                                   // path to a directory holding AGENTS.md / SOUL.md
   prompt: string | ((ctx: Context) => string)         // required
   system?: string | ((ctx: Context) => string)
   mcp?: McpServerConfig[] | ((ctx: Context) => McpServerConfig[])
+  skills?: readonly string[]                          // skill ids the agent should load
+  secrets?: readonly string[]                         // secret names resolved before the run
   workspace?: WorkspaceConfig | ((ctx: Context) => WorkspaceConfig)
-  output?: ZodSchema<TOutput>                         // validates agent's final output
+  output?: SkelmSchema<TOutput>                       // validates agent's final output
   permissions?: AgentPermissions                      // default-deny; all fields optional
   maxTurns?: number                                   // cap on agent tool-call turns
+  timeoutMs?: number                                  // wall-clock cap; positive integer
+  state?: StateConfig
   retry?: RetryPolicy
 })
 ```
 
 ## Backends
 
-Declare backends in `skelm.config.ts` and reference them by id:
+Two ways to register a backend:
+
+1. **`backends:` map** — string-keyed; the CLI wires the standard factories from your config.
+   ```ts
+   // skelm.config.ts
+   import { defineConfig } from 'skelm'
+
+   export default defineConfig({
+     backends: {
+       default: 'openai',
+       opencode: { apiKey: { secret: 'OPENCODE_API_KEY' }, agent: 'build' },
+     },
+   })
+   ```
+2. **`instances:` array** — pre-built `SkelmBackend` values. Use this for the pi SDK backend or any custom backend.
+   ```ts
+   import { defineConfig } from 'skelm'
+   import { createPiSdkBackend } from '@skelm/pi'
+
+   export default defineConfig({
+     backends: { agent: 'pi' },
+     instances: [createPiSdkBackend({ id: 'pi' })],
+   })
+   ```
+
+Reference by id at the step level:
 
 ```ts
-// skelm.config.ts
-registries: {
-  agents: [
-    { id: 'claude-code', runtime: 'claude-code', lifecycle: 'ephemeral', command: 'claude', args: ['--print'] },
-    { id: 'opencode',    runtime: 'opencode',    lifecycle: 'ephemeral', command: 'opencode' },
-  ],
-}
-
-// in a pipeline
-agent({ id: 'implement', backend: 'opencode', prompt: '...' })
+agent({ id: 'implement', backend: 'pi', prompt: '...' })
 ```
 
-If `backend` is omitted, the config `defaults.backend` is used (or the first declared agent).
+If `backend` is omitted on the step, the runtime resolves it from (in order): `config.backends.agent`, `config.backends.default`, `config.backend`, `config.defaults.backend`. If none of those is set the step fails at start.
 
 ### Pi backends (`@skelm/pi`)
 
-Two pi backends ship in `@skelm/pi`. Prefer the SDK backend for new work.
+Two pi backends ship in `@skelm/pi`. Prefer the **SDK** backend — it gives you native enforcement of the skelm permission policy and supports both `agent()` and `llm()` steps.
 
 | | `createPiBackend` (RPC) | `createPiSdkBackend` (SDK) |
 |---|---|---|
 | Tool enforcement | Advisory | **Native** — pi hard-enforces the allowlist |
-| System prompt | Not controllable | Pi's default; `req.system` appended; optional full replace |
-| Peer dep | `pi` CLI on `$PATH` | `@mariozechner/pi-coding-agent` npm package |
+| `llm()` support  | No                      | Yes                          |
+| System prompt    | Not controllable        | Pi's default; `req.system` appended; optional full replace |
+| Peer dep         | `pi` CLI on `$PATH`     | `@mariozechner/pi-coding-agent` npm package |
+
+Wiring:
 
 ```ts
+import { defineConfig } from 'skelm'
 import { createPiSdkBackend } from '@skelm/pi'
 
-// skelm.config.ts
-backends: [createPiSdkBackend({ maxConcurrent: 4 })]
+export default defineConfig({
+  backends: { agent: 'pi' },
+  instances: [
+    createPiSdkBackend({ id: 'pi', maxConcurrent: 4 }),
+  ],
+})
 ```
 
-The SDK backend defaults to `noExtensions: true` and `noSkills: true` so project-local pi extensions and skills don't expand the tool surface or duplicate skelm's skill injection. Set `noContextFiles: false` (the default) to keep AGENTS.md and `.pi/context/` loaded.
+The SDK backend defaults to `noExtensions: true` and `noSkills: true` so project-local pi extensions and skills don't expand the tool surface or duplicate skelm's skill injection. `noContextFiles: false` (default) keeps `AGENTS.md` and `.pi/context/` loaded.
 
 Permission → pi tool mapping:
 - `allowedExecutables` has `bash`/`sh` → `bash`
-- `fsRead.size > 0` → `read`, `grep`, `find`, `ls`
-- `fsWrite.size > 0` → `write`, `edit` (+ read tools)
+- `fsRead` non-empty → `read`, `grep`, `find`, `ls`
+- `fsWrite` non-empty → `write`, `edit` (+ read tools)
+- `networkEgress: 'deny'` → drops `bash` (pi has no native fetch tool, so removing shell is the only way to deny network)
 
-⚠ **Permission semantics with the SDK backend differ from MCP-host backends.** Pi has one `bash` tool (not per-binary) — enabling `bash` lets the agent run any executable. Filesystem paths are advisory: `fsRead`/`fsWrite` unlock the tool category but don't constrain paths. Use the SDK backend inside an already-bounded workspace (ephemeral cwd, sandbox, container); use MCP-host backends (claude-code, opencode) when you need per-call binary/path enforcement.
+⚠ **Permission semantics with the SDK backend differ from MCP-host backends.** Pi has one `bash` tool (not per-binary) — granting `bash` lets the agent run any executable. Filesystem paths are advisory: `fsRead`/`fsWrite` unlock the tool *category* but don't constrain paths. Use the SDK backend inside an already-bounded workspace (ephemeral cwd, OS sandbox, container); use MCP-host backends (opencode) when you need per-call binary/path enforcement.
 
 ## MCP servers
 
-Attach MCP servers by id (must be declared in config):
+Attach MCP servers declared in `skelm.config.ts`:
 
 ```ts
 // skelm.config.ts
 registries: {
   mcpServers: [
-    { id: 'github', transport: 'http', url: 'http://127.0.0.1:9100' },
+    { id: 'github',     transport: 'http',  url: 'http://127.0.0.1:9100' },
     { id: 'filesystem', transport: 'stdio', command: 'mcp-server-filesystem', args: ['.'] },
   ],
 }
+```
 
-// in a step
+In a step, the server must be both attached (`mcp:`) **and** allowed (`permissions.allowedMcpServers:`):
+
+```ts
 agent({
   id: 'research',
-  prompt: 'Investigate the issue',
-  permissions: {
-    allowedMcpServers: ['github'],    // also required in permissions
-  },
-  mcp: [{ id: 'github' }],           // attach by id
+  backend: 'pi',
+  prompt: 'Investigate the issue.',
+  permissions: { allowedMcpServers: ['github'] },
+  mcp: [{ id: 'github' }],
 })
 ```
 
-An MCP server attached via `mcp` but absent from `allowedMcpServers` will be denied at dispatch time.
+A server attached via `mcp:` but absent from `allowedMcpServers` is denied at dispatch.
 
 ## Workspace modes
 
@@ -96,9 +127,9 @@ An MCP server attached via `mcp` but absent from `allowedMcpServers` will be den
 ```ts
 workspace: {
   mode: 'ephemeral',
-  prefix?: string                     // directory prefix
-  cleanup?: 'on-step-end' | 'on-run-end' | 'on-success'  // default: 'on-run-end'
-  seed?: { copy: string[] }           // paths copied in before step starts
+  prefix?: string,                                       // directory prefix
+  cleanup?: 'on-step-end' | 'on-run-end' | 'on-success', // default: 'on-run-end'
+  seed?: { copy: readonly string[] },                    // paths copied in before step starts
 }
 ```
 
@@ -107,11 +138,11 @@ workspace: {
 ```ts
 workspace: {
   mode: 'persistent',
-  name: string                        // workspace name; unique per pipeline id
-  base?: string                       // base directory (default: ~/.skelm/workspaces)
-  gitRoot?: boolean                   // initialize a git repo in the workspace
-  cleanup?: 'never' | 'on-success'   // default: 'never'
-  seed?: { copy: string[] }
+  name: string,                        // workspace name; unique per pipeline id
+  base?: string,                       // base directory
+  gitRoot?: boolean,                   // initialize a git repo in the workspace
+  cleanup?: 'never' | 'on-success',    // default: 'never'
+  seed?: { copy: readonly string[] },
 }
 ```
 
@@ -120,16 +151,14 @@ workspace: {
 ```ts
 workspace: {
   mode: 'mounted',
-  path: string                        // absolute or cwd-relative path
-  seed?: { copy: string[] }
+  path: string,                        // absolute or cwd-relative path
+  seed?: { copy: readonly string[] },
 }
 ```
 
-The workspace path is available in the agent's working directory at runtime. For coding agents, this is where they read and write source files.
+The workspace path becomes the agent's cwd; coding agents read/write source files there.
 
 ## Seed files
-
-Copy project files into the workspace before the agent runs:
 
 ```ts
 workspace: {
@@ -138,7 +167,7 @@ workspace: {
 }
 ```
 
-Paths are resolved relative to `process.cwd()` at step execution time.
+Paths are resolved relative to `process.cwd()` when the step executes.
 
 ## Full example
 
@@ -154,14 +183,20 @@ export default pipeline({
   steps: [
     agent({
       id: 'implement',
-      backend: 'opencode',
+      backend: 'pi',
       prompt: (ctx) => {
         const { ticketId, description } = ctx.input as { ticketId: string; description: string }
-        return `Implement ticket ${ticketId}: ${description}. Open a PR when done.`
+        return `Implement ticket ${ticketId}: ${description}. Open a PR when done. Return JSON {prUrl}.`
       },
       permissions: {
-        profile: 'github-write',              // from skelm.config.ts profiles
-        allowedTools: ['gh.list_issues', 'gh.create_pr', 'bash'],
+        profile: 'github-write',                              // from skelm.config.ts profiles
+        allowedTools:       ['gh.list_issues', 'gh.create_pr'],
+        allowedExecutables: ['git', 'bash'],
+        allowedMcpServers:  ['github'],
+        allowedSkills:      [],
+        fsRead:             ['./'],
+        fsWrite:            ['./src/'],
+        networkEgress:      { allowHosts: ['api.github.com'] },
       },
       workspace: {
         mode: 'ephemeral',

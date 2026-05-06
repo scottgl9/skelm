@@ -8,7 +8,7 @@ The gateway is a long-running process that is the **trust boundary** for all ske
 - **Permission enforcement** — `TrustEnforcer` is called before any privileged action (tool call, exec, MCP attach, network request, fs access).
 - **Secret resolution** — resolves secret references before passing values to backends.
 - **Audit log** — writes a tamper-evident, hash-chained audit trail for every privileged action.
-- **Approval gating** — queues actions for human approval (deferred to M3; currently auto-approve/deny stubs).
+- **Approval gating** — queues actions for human approval; the runtime calls `runtime.approvalGate.request(...)` at the start of every agent step whose policy declares `approval`.
 - **Trigger dispatch** — receives cron, webhook, interval, and queue triggers; starts runs accordingly.
 - **Registry management** — watches workflow, skill, and MCP server directories; hot-reloads on change.
 - **ACP session persistence** — survives gateway restarts; sessions are re-attached on startup.
@@ -18,12 +18,14 @@ The gateway is a long-running process that is the **trust boundary** for all ske
 ## Starting the gateway
 
 ```bash
-skelm gateway start               # background; writes pid to .skelm/gateway.pid
-skelm gateway start --foreground  # foreground; Ctrl-C to stop
+skelm gateway start               # foreground; SIGTERM/Ctrl-C drains and exits
 skelm gateway status              # pid, URL, state
-skelm gateway stop                # SIGTERM
+skelm gateway stop                # SIGTERM a running gateway
 skelm gateway reload              # SIGHUP — hot-reloads skelm.config.ts
+skelm gateway install --systemd   # install ~/.config/systemd/user/skelm-gateway.service
 ```
+
+`skelm gateway start` always runs in the foreground; pass `--detach` and the CLI will tell you to spawn it via systemd or a shell wrapper instead. For long-running deployments, install the systemd unit.
 
 The gateway is required for:
 - Agent steps (permission enforcement, backend lifecycle)
@@ -48,7 +50,7 @@ The gateway is required for:
 | POST | `/approvals/:id/deny` | Deny a gated action |
 | GET | `/audit` | Query audit log |
 
-Default port: `2318`. Configure via `server.port` in `skelm.config.ts`.
+Default port: `4000`, default host: `127.0.0.1`. Configure via `server.port` and `server.host` in `skelm.config.ts`.
 
 ## Run events (SSE)
 
