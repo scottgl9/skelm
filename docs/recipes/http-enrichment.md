@@ -31,9 +31,14 @@ No `agents/` directory — agent definitions are not needed for an LLM-only flow
 import { defineConfig } from 'skelm'
 
 export default defineConfig({
-  backend: 'anthropic',
   backends: {
-    anthropic: { apiKey: { secret: 'ANTHROPIC_API_KEY' } },
+    default: 'openai',
+    openai: {
+      // Hosted OpenAI by default. Point baseUrl at any OpenAI-compatible URL
+      // (vLLM, llama.cpp, sglang, ollama with /v1, etc.) to use a local model.
+      apiKey: { secret: 'OPENAI_API_KEY' },
+      model:  'gpt-4o-mini',
+    },
   },
   defaults: {
     permissions: {
@@ -93,7 +98,7 @@ export default pipeline({
     }),
     llm({
       id: 'classify',
-      backend: 'anthropic',
+      backend: 'openai',
       prompt: (ctx) => `
         Classify the following repository event as notable, routine, or noise.
         notable = ops/security/release relevance; team should see it.
@@ -184,8 +189,8 @@ curl -X POST http://gateway-host:4000/pipelines/enrich-and-post/start \
 # Poll for completion
 curl -H "Authorization: Bearer $TOKEN" http://gateway-host:4000/runs/abc
 
-# Or stream events
-curl -H "Authorization: Bearer $TOKEN" http://gateway-host:4000/runs/abc/stream
+# Or fetch the persisted event log (use ?since=<index> to tail)
+curl -H "Authorization: Bearer $TOKEN" http://gateway-host:4000/runs/abc/events
 ```
 
 ## Why each piece is here
@@ -219,8 +224,8 @@ skelm_tokens_total{workflow="enrich-and-post",direction="output"}
 ## Production checklist
 
 1. `SKELM_TOKEN` is set, length ≥ 32 chars, not committed.
-2. The gateway is behind a reverse proxy with TLS (see [Deployment → reverse proxy](../deployment/reverse-proxy.md)).
-3. `ANTHROPIC_API_KEY` is in the secrets driver, not a config file.
+2. The gateway is behind a reverse proxy with TLS — terminate TLS in your fronting proxy (nginx, caddy, traefik, ALB).
+3. `OPENAI_API_KEY` is in the secrets driver, not a config file.
 4. `defaults.permissions` is verified default-deny.
 5. A Prometheus scrape is configured against `/metrics` (gated by auth).
 6. Audit retention policy is set (default forever; M3+).

@@ -74,7 +74,7 @@ export default pipeline({
       concurrency: 4,
       step: (item) => llm({
         id: 'classify-one',
-        backend: 'anthropic',
+        backend: 'openai',
         prompt: (ctx) => `
           Classify this email as one of: important, informational, ignore.
           Important = needs my attention within 24 hours.
@@ -164,7 +164,7 @@ export default pipeline({
     }),
     llm({
       id: 'compose',
-      backend: 'anthropic',
+      backend: 'openai',
       prompt: (ctx) => `
         Compose a brief digest of today's informational emails.
         One bullet per email, grouped by sender. No more than 250 words total.
