@@ -1,339 +1,128 @@
-# ACP Backends
+# ACP backends
 
-Agent Client Protocol (ACP) backends for skelm, providing integration with ACP-compatible coding agents.
+[Agent Client Protocol](https://agentclientprotocol.com) (ACP) backends spawn a subprocess that speaks ACP over stdio. They are the broadest-compatibility option in skelm: any agent that exposes an ACP mode (Copilot, Claude Code, Gemini CLI, opencode) plugs in with one config block.
 
-> **Status:** Stable (M1)
+> **Status:** stable for development workflows.
 
-## Overview
+## What they're good for
 
-ACP backends spawn a subprocess that communicates with skelm over the Agent Client Protocol via stdio. This provides:
+- **Broad compatibility.** Any ACP-compatible agent works.
+- **No additional API key.** The agent handles its own authentication (editor login or its own env var).
+- **Same agents you use in editors.** No separate SDK to install.
 
-- **Broad compatibility** - Works with any ACP-compatible agent
-- **Simple setup** - No API keys required (agent handles authentication)
-- **Editor integration** - Same agents used in editors work in skelm
-- **Local execution** - All code runs locally, no external API calls
+## ⚠ Permission enforcement is advisory
 
-## Limitations
+ACP forwards permission metadata to the subprocess. The subprocess decides whether to comply. Skelm cannot intercept individual tool calls and cannot block execution of denied tools.
 
-**Important:** ACP backends have limited permission enforcement:
+| Capability         | Advisory ACP backend | Native SDK backend                         |
+|--------------------|----------------------|--------------------------------------------|
+| Permission enforced| ❌                   | ✅ (`@skelm/opencode`, `@skelm/pi` SDK)    |
+| Tool denial logged | At request time only | Per call                                   |
+| Audit completeness | Partial              | Full                                       |
 
-- ⚠️ **Permissions are advisory only** - Forwarded as metadata to the agent
-- ⚠️ **No enforcement at skelm layer** - Agent decides whether to comply
-- ⚠️ **No audit of denials** - Cannot track what the agent refused
-- ⚠️ **No tool filtering** - All tools available to agent are accessible
+For production workflows that depend on default-deny actually blocking, use the opencode or pi SDK backends.
 
-**Recommendation:** Use ACP backends for development and testing. For production workflows requiring strict permission enforcement, use SDK backends like `@skelm/opencode`.
+## Configuring ACP backends
 
-## Supported ACP Backends
+The CLI knows two ACP keys directly:
 
-### GitHub Copilot
+- **`copilot-acp`** — defaults to `command: 'copilot'`, `args: ['--acp']`. Override either field if you need to.
+- **`acp`** — generic ACP backend; `command` is required.
 
-```typescript
+```ts
 // skelm.config.ts
-export default defineConfig({
-  backends: {
-    'copilot': {
-      type: 'acp',
-      command: 'copilot-acp',
-      args: [] // Optional additional arguments
-    }
-  }
-})
-```
-
-**Requirements:**
-- GitHub Copilot installed in your editor
-- `copilot-acp` command available in PATH
-- Authentication via editor session
-
-### Claude Code
-
-```typescript
-// skelm.config.ts
-export default defineConfig({
-  backends: {
-    'claude': {
-      type: 'acp',
-      command: 'claude',
-      args: ['--acp'] // Claude Code ACP mode
-    }
-  }
-})
-```
-
-**Requirements:**
-- Claude Code CLI installed: `npm install -g @anthropic-ai/claude-code`
-- `CLAUDE_API_KEY` environment variable
-- `--acp` flag for ACP mode
-
-### Gemini CLI
-
-```typescript
-// skelm.config.ts
-export default defineConfig({
-  backends: {
-    'gemini': {
-      type: 'acp',
-      command: 'gemini',
-      args: ['--acp'] // Gemini CLI ACP mode
-    }
-  }
-})
-```
-
-**Requirements:**
-- Gemini CLI installed: `brew install gemini` or via Homebrew
-- `GOOGLE_API_KEY` environment variable
-- `--acp` flag for ACP mode
-
-### OpenCode
-
-```typescript
-// skelm.config.ts
-export default defineConfig({
-  backends: {
-    'opencode': {
-      type: 'acp',
-      command: 'opencode',
-      args: ['acp'] // OpenCode ACP mode
-    }
-  }
-})
-```
-
-**Requirements:**
-- OpenCode installed: `brew install anomalyco/tap/opencode`
-- `OPENCODE_API_KEY` environment variable (or use OpenCode Zen)
-- `acp` subcommand for ACP mode
-
-## Configuration
-
-### Basic Setup
-
-```typescript
-{
-  type: 'acp',
-  command: 'copilot-acp',
-  args: [],           // Optional additional arguments
-  cwd: process.cwd(), // Working directory for subprocess
-  env: {}            // Environment variables for subprocess
+backends: {
+  agent: 'copilot-acp',
+  'copilot-acp': {
+    command: 'copilot',          // optional; default: 'copilot'
+    args:    ['--acp'],          // optional; default: ['--acp']
+    cwd:     './workspace',      // optional
+  },
+  acp: {
+    command: 'claude',
+    args:    ['--acp'],
+  },
 }
 ```
 
-### Advanced Setup
+For more than one ACP-flavoured backend in the same project — e.g. one Copilot and one Gemini — register them via `instances:` so each gets its own id:
 
-```typescript
-{
-  type: 'acp',
-  command: 'claude',
-  args: ['--acp', '--model', 'claude-sonnet-4'],
-  cwd: '/path/to/workspace',
-  env: {
-    CLAUDE_API_KEY: process.env.CLAUDE_API_KEY,
-    CUSTOM_VAR: 'value'
-  }
-}
+```ts
+import { defineConfig, createAcpBackend } from 'skelm'
+
+export default defineConfig({
+  instances: [
+    createAcpBackend({ id: 'claude-code-acp', command: 'claude',  args: ['--acp'] }),
+    createAcpBackend({ id: 'gemini-acp',      command: 'gemini',  args: ['--acp'] }),
+    createAcpBackend({ id: 'opencode-acp',    command: 'opencode', args: ['acp']  }),
+  ],
+})
 ```
 
-## Usage
+### Authentication per agent
 
-### Basic Pipeline Step
+| Agent                | How it auths                                              |
+|----------------------|-----------------------------------------------------------|
+| GitHub Copilot       | Editor sign-in or `GH_TOKEN` (depends on copilot version) |
+| Claude Code          | `ANTHROPIC_API_KEY` or `claude` editor login              |
+| Gemini CLI           | `GOOGLE_API_KEY` (or whatever `gemini --acp` consumes)    |
+| opencode (ACP mode)  | `OPENCODE_API_KEY`                                        |
 
-```typescript
-import { pipeline, agent } from 'skelm'
+Skelm doesn't touch any of these — they're consumed by the subprocess.
+
+## Step-level usage
+
+```ts
+import { agent, pipeline } from 'skelm'
+import { z } from 'zod'
 
 export default pipeline({
-  id: 'code-review',
+  id: 'review',
+  input:  z.object({ pr: z.string() }),
+  output: z.object({ verdict: z.string() }),
   steps: [
     agent({
       id: 'reviewer',
-      backend: 'copilot', // Uses ACP backend
-      agentDef: './agents/reviewer',
-      // Note: These permissions are advisory only
+      backend: 'copilot-acp',
+      prompt: (ctx) => `Review and return JSON {verdict}:\n${ctx.input.pr}`,
       permissions: {
-        edit: 'allow',
-        bash: 'deny',
-        read: 'allow'
+        allowedTools:       [],
+        allowedExecutables: [],
+        allowedMcpServers:  [],
+        allowedSkills:      [],
+        fsRead:             ['./'],
+        fsWrite:            [],
+        networkEgress:      'deny',
       },
-      prompt: 'Review this code'
-    })
-  ]
-})
-```
-
-### Multi-Agent Workflow
-
-```typescript
-import { pipeline, agent, parallel } from 'skelm'
-
-export default pipeline({
-  id: 'full-cycle',
-  steps: [
-    agent({
-      id: 'builder',
-      backend: 'claude',
-      agentDef: './agents/developer',
-      permissions: { edit: 'allow', bash: 'ask' },
-      prompt: 'Implement the feature'
+      output: z.object({ verdict: z.string() }),
+      maxTurns: 4,
     }),
-    parallel([
-      agent({
-        id: 'reviewer',
-        backend: 'gemini',
-        agentDef: './agents/reviewer',
-        permissions: { edit: 'deny', bash: 'deny' },
-        prompt: 'Review the implementation'
-      }),
-      agent({
-        id: 'tester',
-        backend: 'opencode',
-        agentDef: './agents/qa',
-        permissions: { edit: 'deny', bash: 'allow' },
-        prompt: 'Write tests'
-      })
-    ])
-  ]
+  ],
 })
 ```
 
-## Permission Behavior
+The step's permissions are forwarded to the subprocess as metadata. They are *not* enforced at the skelm layer — the subprocess decides whether to honour them.
 
-### What Happens with ACP Backends
+## Capabilities
 
-1. **Pipeline declares permissions** - Your pipeline specifies `AgentPermissions`
-2. **Backend forwards as metadata** - Permissions sent to ACP agent as advisory info
-3. **Agent decides** - Agent may or may not respect the permissions
-4. **No enforcement at skelm layer** - skelm doesn't block execution
+ACP backends declare:
 
-### Example Flow
-
-```typescript
-// Pipeline declares: bash: 'deny'
-agent({
-  id: 'agent',
-  backend: 'copilot',
-  permissions: { bash: 'deny' },
-  prompt: 'Run a bash command'
-})
-
-// What actually happens:
-// 1. skelm sends prompt + permissions (as metadata) to copilot-acp
-// 2. copilot-acp receives the request
-// 3. copilot-acp MAY respect the bash: 'deny' permission
-// 4. copilot-acp MAY ignore it and execute anyway
-// 5. skelm has no way to know or enforce
-```
-
-### Audit Logging Limitations
-
-With ACP backends:
-- ✅ Permission checks are logged
-- ❌ Actual execution decisions are NOT logged
-- ❌ Denials by the agent are NOT tracked
-- ❌ Cannot query "what was denied" in audit logs
+- `prompt: false` — `agent()` only.
+- `streaming: true`
+- `mcp: true` (advisory only — see above)
+- `skills: false`
+- `toolPermissions: 'unsupported'`
 
 ## Troubleshooting
 
-### Subprocess Fails to Start
+- **"command not found"** — verify the binary is on `$PATH` (`which copilot`, `which claude`, etc.). Use an absolute `command:` path if needed.
+- **"Authentication failed"** — log into the agent through its own mechanism; skelm cannot help here.
+- **"Timeout waiting for ACP response"** — the subprocess is unresponsive. Check that it works standalone (`claude --acp` then send a prompt manually).
+- **"Agent ignored my permission"** — ACP enforcement is advisory; switch to an SDK backend (`@skelm/opencode` or `@skelm/pi` SDK) for native enforcement.
 
-```
-Error: Failed to start ACP subprocess: command not found
-```
+## See also
 
-**Solution:** Ensure the ACP command is in your PATH. Test with:
-```bash
-which copilot-acp
-which claude
-which gemini
-which opencode
-```
-
-### Authentication Errors
-
-```
-Error: Authentication failed
-```
-
-**Solution:** Authenticate with the underlying agent:
-- **Copilot:** Sign in via your editor
-- **Claude:** Set `CLAUDE_API_KEY`
-- **Gemini:** Set `GOOGLE_API_KEY`
-- **OpenCode:** Set `OPENCODE_API_KEY` or use OpenCode Zen
-
-### No Response from Agent
-
-```
-Error: Timeout waiting for ACP response
-```
-
-**Solution:**
-- Check agent logs for errors
-- Verify the agent works in your editor
-- Increase timeout in backend config
-- Check for subprocess resource limits
-
-### Permissions Not Being Respected
-
-```
-Agent executed bash command despite bash: 'deny'
-```
-
-**Solution:** This is expected behavior with ACP backends. The permissions are advisory only. For enforcement, use an SDK backend like `@skelm/opencode`.
-
-## Migration to SDK Backends
-
-If you need strict permission enforcement, migrate from ACP to SDK backends:
-
-### From Copilot ACP to Copilot SDK
-
-```typescript
-// Before
-{
-  type: 'acp',
-  command: 'copilot-acp'
-}
-
-// After
-{
-  type: 'copilot-sdk',
-  apiKey: process.env.GITHUB_TOKEN
-}
-```
-
-### From OpenCode ACP to OpenCode SDK
-
-```typescript
-// Before
-{
-  type: 'acp',
-  command: 'opencode',
-  args: ['acp']
-}
-
-// After
-{
-  type: 'opencode',
-  apiKey: process.env.OPENCODE_API_KEY,
-  agent: 'build'
-}
-```
-
-## Comparison: ACP vs SDK
-
-| Feature | ACP Backend | SDK Backend |
-|---------|-------------|-------------|
-| Setup | Simple (command only) | Requires API key |
-| Permission Enforcement | Advisory only | Enforced |
-| Audit Logging | Limited | Full |
-| Subprocess Management | Required | None |
-| Local Execution | Yes | Depends on agent |
-| Editor Integration | Same agents | Separate SDK |
-| Production Ready | Development only | Yes |
-
-## See Also
-
+- [Backends overview](./README.md)
 - [Agent Client Protocol](https://agentclientprotocol.com)
-- [ACP Support Report](https://github.com/acp-progress/report)
-- [SDK Backends](./README.md#sdk-backends)
-- [Opencode Backend](./opencode.md)
-- [Copilot SDK Backend](./copilot-sdk.md)
+- [Opencode backend](./opencode.md)
+- [Pi backend](./pi.md)

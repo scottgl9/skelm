@@ -1,320 +1,159 @@
-# skelm Providers and Backends
+# Backends
 
-## Architecture Overview
+A **backend** in skelm is anything that satisfies the `SkelmBackend` interface from `@skelm/core`. The runtime calls `infer()` for `llm()` steps and `run()` for `agent()` steps; nothing else is special-cased.
 
-skelm separates provider abstractions into two distinct types:
+There is one interface, one registry. The split between "model" and "agent" is a *capability* the backend declares, not a parallel class hierarchy.
 
-### ModelProvider (LLM Endpoints)
+```ts
+interface SkelmBackend {
+  id: string
+  label?: string
+  capabilities: BackendCapabilities
+  infer?(req: InferRequest, ctx: BackendContext): Promise<InferResponse>
+  run?(req: AgentRequest, ctx: BackendContext): Promise<AgentResponse>
+}
+```
 
-Model providers handle direct LLM API interactions for `llm()` steps in workflows. They support:
+Capabilities (`prompt`, `streaming`, `mcp`, `skills`, `modelSelection`, `toolPermissions`, `sessionLifecycle`) tell the runtime what the backend can do; the runtime fails closed when a step asks for something the backend doesn't support.
 
-- Multiple LLM endpoints (OpenAI, Anthropic, vllm, sglang, ollama, gemini)
-- Chat completion with system prompts
-- Streaming responses
-- Token usage tracking
-- Model discovery
+## Built-in backends
 
-**Use ModelProvider for:**
-- Direct LLM inference without agent loops
-- Cost optimization with specific models
-- Simple text generation tasks
+| Backend                 | Factory                            | Package          | `llm()` | `agent()` | Tool enforcement |
+|-------------------------|------------------------------------|------------------|:-------:|:---------:|------------------|
+| OpenAI / OpenAI-compat  | `createOpenAIBackend`              | `@skelm/core`    |   ✅    |    —      | n/a              |
+| Anthropic               | `createAnthropicBackend`           | `@skelm/core`    |   ✅    |    —      | n/a              |
+| ACP (generic)           | `createAcpBackend`                 | `@skelm/core`    |   —     |    ✅     | advisory         |
+| Routing backend         | `createRoutingBackend`             | `@skelm/core`    |   ✅    |    ✅     | delegated        |
+| Pi (RPC)                | `createPiBackendFromConfig`        | `@skelm/pi`      |   —     |    ✅     | advisory         |
+| Pi (SDK)                | `createPiSdkBackend`               | `@skelm/pi`      |   ✅    |    ✅     | native           |
+| Opencode                | `createOpencodeBackendFromConfig`  | `@skelm/opencode`|   —     |    ✅     | native           |
 
-### AgentProvider (Coding Agent SDKs)
+The CLI (`packages/cli/src/backends.ts`) wires the OpenAI, Anthropic, generic ACP, Copilot ACP, opencode, and pi-RPC backends from `skelm.config.ts` automatically. To use the **pi SDK backend** or any other backend not listed above, register it via `instances:` (see "Registering a custom backend" below).
 
-Agent providers integrate with coding agent SDKs for `agent()` steps. They support:
+## Configuring built-in backends from `skelm.config.ts`
 
-- Full agent loop execution with tool calls
-- Permission enforcement at the skelm layer
-- MCP server negotiation
-- Workspace management
-- Streaming and error handling
+The `backends` map keys each entry by id. The CLI reads each entry and calls the matching factory.
 
-**Use AgentProvider for:**
-- Complex coding workflows
-- Multi-turn agent interactions
-- Production deployments with strict permissions
-
-### SkelmBackend Interface
-
-The `SkelmBackend` interface is implemented by AgentProviders and represents the bridge between skelm's `agent()` step and an AI coding agent.
-
-## Provider Types
-
-### Model Providers
-
-| Provider | Type | Status |
-|----------|------|--------|
-| OpenAI | Direct API | ✅ Available |
-| Anthropic | Direct API | ✅ Available |
-| vllm | Local inference | ✅ Available |
-| sglang | Local inference | ✅ Available |
-| Ollama | Local inference | ✅ Available |
-| Google Gemini | Direct API | 🚧 In Development |
-
-### Agent Providers
-
-| Provider | Type | Status | Recommendation |
-|----------|------|--------|----------------|
-| Opencode | SDK | ✅ Available | ⭐ Recommended |
-| ACP (Copilot) | Subprocess | ✅ Available | Development only |
-| ACP (Claude Code) | Subprocess | ✅ Available | Development only |
-| ACP (Gemini CLI) | Subprocess | ✅ Available | Development only |
-| GitHub Copilot SDK | SDK | 🚧 In Development | - |
-| Pi | SDK | 🔜 Pending | - |
-
-## Configuration
-
-### ModelProvider Configuration
-
-```typescript
+```ts
 // skelm.config.ts
-import { defineConfig, ModelRegistry } from 'skelm'
+import { defineConfig } from 'skelm'
 
 export default defineConfig({
-  providers: {
-    models: {
-      'openai': {
-        provider: 'openai',
-        model: 'gpt-4o',
-        apiKey: process.env.OPENAI_API_KEY,
-        temperature: 0.7,
-        maxTokens: 4096
-      },
-      'ollama': {
-        provider: 'ollama',
-        model: 'llama3',
-        endpoint: 'http://localhost:11434'
-      }
-    }
-  }
+  backends: {
+    // Selectors
+    default: 'openai',     // used by both llm() and agent() if not overridden
+    llm:     'openai',     // optional — default for llm() steps
+    agent:   'opencode',   // optional — default for agent() steps
+
+    // Backend definitions
+    openai: {
+      baseUrl: 'https://api.openai.com/v1',  // or any OpenAI-compatible URL
+      apiKey:  { secret: 'OPENAI_API_KEY' },
+      model:   'gpt-4o-mini',
+    },
+    anthropic: {
+      apiKey: { secret: 'ANTHROPIC_API_KEY' },
+      model:  'claude-3-7-sonnet-latest',
+    },
+    opencode: {
+      apiKey: { secret: 'OPENCODE_API_KEY' },
+      agent:  'build',
+    },
+    'copilot-acp': {
+      command: 'copilot',
+      args:    ['--acp'],
+    },
+  },
 })
 ```
 
-### AgentProvider Configuration
+`{ secret: 'NAME' }` resolves to `process.env.NAME` at gateway start. Plain strings are taken verbatim — useful for local URLs but not for keys.
 
-```typescript
-// skelm.config.ts
-import { defineConfig, AgentRegistry } from 'skelm'
+## Using a backend in a workflow
 
-export default defineConfig({
-  providers: {
-    agents: {
-      'opencode': {
-        provider: 'opencode',
-        apiKey: process.env.OPENCODE_API_KEY,
-        agent: 'build', // or 'plan', or custom agent ID
-        permissions: {
-          edit: 'allow',
-          bash: 'ask',
-          read: 'allow'
-        },
-        timeoutMs: 300000 // 5 minutes
-      },
-      'copilot-dev': {
-        provider: 'acp',
-        command: 'copilot-acp',
-        // Permissions are advisory only for ACP
-      }
-    }
-  }
-})
-```
+Step-level `backend:` overrides the config-level default.
 
-## Using Providers in Workflows
-
-### ModelProvider with `llm()` Step
-
-```typescript
-import { pipeline, llm } from 'skelm'
+```ts
+import { agent, llm, pipeline } from 'skelm'
+import { z } from 'zod'
 
 export default pipeline({
-  id: 'text-processing',
+  id: 'summarize-and-act',
+  input:  z.object({ text: z.string() }),
+  output: z.object({ summary: z.string(), action: z.string() }),
   steps: [
     llm({
       id: 'summarize',
-      backend: 'openai', // Uses ModelProvider
-      system: 'You are a helpful summarizer.',
-      prompt: 'Summarize: {{previous_step_output}}',
-      temperature: 0.5
-    })
-  ]
-})
-```
-
-### AgentProvider with `agent()` Step
-
-```typescript
-import { pipeline, agent } from 'skelm'
-
-export default pipeline({
-  id: 'coding-workflow',
-  steps: [
+      backend: 'openai',
+      prompt: (ctx) => `Summarize in one sentence:\n${ctx.input.text}`,
+      output: z.object({ summary: z.string() }),
+    }),
     agent({
-      id: 'coder',
-      backend: 'opencode', // Uses AgentProvider
-      agentDef: './agents/developer',
+      id: 'decide',
+      backend: 'pi',
+      prompt: (ctx) => `Given the summary, propose an action and return JSON {action}:\n${ctx.steps.summarize.summary}`,
       permissions: {
-        edit: 'allow',
-        bash: 'ask'
+        allowedTools: [], allowedExecutables: [], allowedMcpServers: [],
+        allowedSkills: [], fsRead: [], fsWrite: [], networkEgress: 'deny',
       },
-      mcp: [
-        { name: 'filesystem', url: 'http://localhost:3000' }
-      ]
-    })
-  ]
+      output: z.object({ action: z.string() }),
+      maxTurns: 4,
+    }),
+  ],
 })
 ```
 
-## Creating Custom Providers
+## Registering a custom (or unwired) backend
 
-### ModelProvider Implementation
+For any backend the CLI doesn't know how to construct from a `backends:` entry — including the **pi SDK backend** — pre-build the instance and pass it via `instances:`. The runtime registers it directly under its `id`.
 
-```typescript
-import { ModelProviderBase, ChatMessage, LlmCompletion } from 'skelm'
+```ts
+import { defineConfig } from 'skelm'
+import { createPiSdkBackend } from '@skelm/pi'
 
-export class MyModelProvider extends ModelProviderBase {
-  readonly id = 'my-provider'
-  readonly name = 'My Custom Model Provider'
-  
-  async doInitialize(config: ModelProviderConfig): Promise<void> {
-    // Initialize your provider (API clients, etc.)
-  }
-  
-  async doComplete(
-    messages: ChatMessage[],
-    options?: Partial<ModelProviderConfig>
-  ): Promise<LlmCompletion> {
-    // Implement completion logic
-    return {
-      content: 'response',
-      model: config.model,
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 }
-    }
-  }
+export default defineConfig({
+  backends: { agent: 'pi' },
+  instances: [createPiSdkBackend({ id: 'pi' })],
+})
+```
+
+The same pattern works for backends you write yourself — see [Writing a backend](../guides/writing-a-backend.md).
+
+## Picking a backend for `llm()`
+
+For `llm()` you almost always want a model provider (`createOpenAIBackend` or `createAnthropicBackend`). The OpenAI backend talks to anything that exposes the OpenAI `/v1/chat/completions` shape — vLLM, llama.cpp, sglang, ollama (with `/v1`), and the cloud OpenAI endpoint all work behind the same factory:
+
+```ts
+openai: {
+  baseUrl: 'http://localhost:8000/v1',
+  apiKey:  'unused-but-required',
+  model:   'whatever-your-server-serves',
 }
 ```
 
-### AgentProvider Implementation
+`OPENAI_BASE_URL` and `OPENAI_API_KEY` are read as fallbacks when the config omits them.
 
-```typescript
-import { AgentProviderBase, AgentRequest, AgentResponse } from 'skelm'
-import type { SkelmBackend } from 'skelm'
+## Picking a backend for `agent()`
 
-export class MyAgentProvider extends AgentProviderBase {
-  readonly id = 'my-agent-provider'
-  readonly name = 'My Custom Agent Provider'
-  
-  async doInitialize(config: AgentProviderConfig): Promise<void> {
-    // Initialize your provider (SDK clients, etc.)
-  }
-  
-  async doCreateBackend(config?: Partial<AgentProviderConfig>): Promise<SkelmBackend> {
-    // Return a SkelmBackend implementation
-    return {
-      id: 'my-backend',
-      capabilities: {
-        prompt: true,
-        streaming: true,
-        toolPermissions: 'enforced'
-      },
-      async run(request, context) {
-        // Implement agent logic
-        return { text: 'response', stopReason: 'complete' }
-      }
-    }
-  }
-  
-  async doExecute(request: AgentRequest): Promise<AgentResponse> {
-    // Execute agent request
-    const backend = await this.createBackend()
-    return backend.run(request, {})
-  }
-}
-```
+For `agent()` you want a coding-agent backend that can drive multi-turn tool use under skelm's permission model. The recommended choices are:
 
-## Provider Registry
+- **`@skelm/pi` SDK** (`createPiSdkBackend`) — native enforcement of the skelm permission policy; pi resolves the underlying model from its own settings (`~/.pi/auth.json`, `~/.pi/models.json`).
+- **`@skelm/opencode`** (`createOpencodeBackendFromConfig`) — native enforcement; reaches the opencode agent service.
+- **ACP backends** (`createAcpBackend`) — works with any agent that speaks the [Agent Communication Protocol](https://agentcommprotocol.dev) (Copilot, Claude Code, Gemini CLI). Tool enforcement is **advisory** — the subprocess can ignore the allowlist; skelm logs the violation but cannot prevent it.
 
-Both ModelProvider and AgentProvider implement registry patterns for managing multiple providers:
+Per-backend pages cover configuration in detail:
+- [pi](./pi.md)
+- [opencode](./opencode.md)
+- [ACP backends](./acp-backends.md)
 
-```typescript
-import { ModelRegistry, AgentRegistry } from 'skelm'
+## Failure model
 
-// Model Registry
-const modelRegistry = new ModelRegistry()
-modelRegistry.register(new OpenAIModelProvider())
-modelRegistry.setDefault('openai')
+- **Capability gap.** Step requires a capability (`prompt`, `mcp`, `skills`, native tool enforcement) the backend does not declare → fail at step start with a typed error. The runtime never silently degrades.
+- **Permission denial.** Backend with `toolPermissions: 'native'` enforces the resolved policy; backend with `toolPermissions: 'advisory'` reports violations the runtime then audits. Either way the run journals the denial.
+- **Transport error.** Backends throw typed errors (`PiSdkBackendError`, `PiSdkBackendTimeoutError`, `AcpProtocolError`, …); the runtime maps them to `step.failed` events.
 
-// Initialize all models
-await modelRegistry.initializeAll({
-  'openai': { provider: 'openai', model: 'gpt-4o', apiKey: '...' },
-  'ollama': { provider: 'ollama', model: 'llama3', endpoint: '...' }
-})
+## See also
 
-// Health check
-const health = await modelRegistry.healthCheckAll()
-
-// Agent Registry
-const agentRegistry = new AgentRegistry()
-agentRegistry.register(new OpencodeProvider())
-agentRegistry.setDefault('opencode')
-
-// Initialize all agents
-await agentRegistry.initializeAll({
-  'opencode': { provider: 'opencode', apiKey: '...', agent: 'build' }
-})
-```
-
-## Migration Guide
-
-### From Monolithic Provider to Separated Architecture
-
-If you're using an older provider system that combined LLM and agent capabilities:
-
-1. **Identify usage patterns:**
-   - `llm()` steps → ModelProvider
-   - `agent()` steps → AgentProvider
-
-2. **Split configurations:**
-   - Move LLM endpoint configs to `providers.models`
-   - Move agent SDK configs to `providers.agents`
-
-3. **Update imports:**
-   ```typescript
-   // Before
-   import { ProviderPlugin } from 'skelm'
-   
-   // After
-   import { ModelProviderBase } from 'skelm' // for LLM endpoints
-   import { AgentProviderBase } from 'skelm' // for agent SDKs
-   ```
-
-4. **Update workflows:**
-   - Ensure `llm()` steps reference `backend` from ModelProvider
-   - Ensure `agent()` steps reference `backend` from AgentProvider
-
-## Troubleshooting
-
-### Provider not found
-
-- Verify provider is registered: `registry.get('provider-id')`
-- Check provider ID matches workflow configuration
-- Review initialization logs for errors
-
-### Model/Agent selection fails
-
-- Set a default provider: `registry.setDefault('provider-id')`
-- Ensure at least one provider is registered
-- Check provider health: `registry.healthCheckAll()`
-
-### Permission enforcement not working
-
-- Use SDK-based AgentProvider (not ACP/subprocess)
-- Verify `capabilities.toolPermissions = 'enforced'`
-- Check audit logs for denial entries
-
-## See Also
-
-- [Architecture: Providers](../architecture/providers.md)
-- [API Reference: ModelProvider](../api/model-provider.md)
-- [API Reference: AgentProvider](../api/agent-provider.md)
-- [Tutorial: Creating a Provider](../tutorials/custom-provider.md)
+- [Writing a backend](../guides/writing-a-backend.md) — how to implement `SkelmBackend` end-to-end
+- [Permissions](../concepts/permissions.md) — how permission policy interacts with backend capabilities
+- [`packages/core/src/backend.ts`](../../packages/core/src/backend.ts) — the canonical `SkelmBackend` interface
