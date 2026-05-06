@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   BackendRegistry,
   EventBus,
+  PermissionDeniedError,
   type RunEvent,
   type SkelmBackend,
   agent,
@@ -71,6 +72,65 @@ describe('permission enforcement — adversarial', () => {
           type: 'permission.denied',
           stepId: 'work',
           dimension: 'executable',
+        }),
+      ]),
+    )
+  })
+
+  it('emits permission.denied when the backend defense-in-depth guard throws PermissionDeniedError', async () => {
+    // Simulates a backend like Pi RPC that cannot enforce policies itself and
+    // rejects any non-undefined ResolvedPolicy from within its own run() method.
+    const registry = new BackendRegistry()
+    const backend: SkelmBackend = {
+      id: 'self-enforcing',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'unsupported',
+      },
+      async run(_req, ctx) {
+        if (ctx.permissions !== undefined) {
+          throw new PermissionDeniedError(
+            'self-enforcing backend cannot enforce permission policies',
+          )
+        }
+        return { text: 'ok' }
+      },
+    }
+    registry.register(backend)
+
+    const events = new EventBus()
+    const seen: RunEvent[] = []
+    events.subscribe((ev) => seen.push(ev))
+
+    const run = await runPipeline(
+      pipeline({
+        id: 'defense-in-depth',
+        steps: [
+          agent({
+            id: 'step',
+            backend: 'self-enforcing',
+            prompt: 'go',
+            permissions: { allowedTools: [], networkEgress: 'deny' },
+          }),
+        ],
+      }),
+      undefined,
+      { backends: registry, events },
+    )
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('PermissionDeniedError')
+    expect(seen).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'permission.denied',
+          stepId: 'step',
+          dimension: 'tool',
         }),
       ]),
     )

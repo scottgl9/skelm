@@ -997,6 +997,19 @@ async function runAgentStep(
     if (!finishedWorkspace) {
       await preparedWorkspace?.finishStep('failed')
     }
+    // PermissionDeniedError from the backend's own guard (e.g. Pi RPC defense-in-depth)
+    // is not caught by the assertBackendSupportsPermissions block above, so it would
+    // silently reach step.error without an auditable permission.denied event.
+    if (error instanceof PermissionDeniedError && !(error instanceof BackendCapabilityError)) {
+      events?.publish({
+        type: 'permission.denied',
+        runId: ctx.run.runId,
+        stepId: step.id,
+        dimension: 'tool',
+        detail: error.message,
+        at: Date.now(),
+      })
+    }
     throw error
   }
 }
