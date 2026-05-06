@@ -11,12 +11,14 @@ pipeline({
   id: string                                  // required; stable, kebab-case
   description?: string
   version?: string
-  input: ZodSchema<TInput>                    // validated at run start
-  output: ZodSchema<TOutput>                  // validated after finalize
+  input?: SkelmSchema<TInput>                 // optional; validated at run start when present
+  output?: SkelmSchema<TOutput>               // optional; validated after finalize
   steps: Step[]                               // ordered; run sequentially
   finalize?: (ctx: Context<TInput>) => TOutput | Promise<TOutput>
 })
 ```
+
+`SkelmSchema` is structurally compatible with Zod schemas; importing zod and passing `z.object({...})` works.
 
 ### `code(def)` — deterministic step
 
@@ -172,7 +174,7 @@ export default pipeline({
 ```ts
 interface RetryPolicy {
   maxAttempts: number             // total attempts including first
-  backoffMs?: number              // base delay between retries (ms)
+  delayMs?: number                // base delay between retries (ms)
   backoffMultiplier?: number      // exponential multiplier; default 1 (linear)
 }
 ```

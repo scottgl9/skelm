@@ -148,16 +148,33 @@ skelm approvals deny    <id> [--reason <text>] [--approver <name>] [--json]
 skelm init [<dir>] [--force]
 ```
 
-Scaffolds a new project: `hello.workflow.ts`, `skelm.config.ts`, `package.json`. `--force` allows init into a non-empty directory.
+Scaffolds a new project under `<dir>` (defaults to `.`). Creates `package.json`, `tsconfig.json`, `skelm.config.ts`, `workflows/hello.workflow.ts`, `.gitignore`, and `README.md`. `--force` allows init into a non-empty directory.
+
+## `skelm validate`
+
+```
+skelm validate <pipeline.ts> [--json]
+```
+
+Static check that the pipeline imports cleanly and its declared schemas/steps are well-formed. No runtime side effects.
+
+## `skelm logs`
+
+```
+skelm logs [--lines <n>] [--since <iso>] [--level <lvl>] [--filter <s>] [--json]
+```
+
+Streams structured logs from a running gateway.
 
 ## Exit codes
 
-| Code | Meaning |
-|------|---------|
-| 0 | ok |
-| 1 | CLI error |
-| 2 | schema validation failure |
-| 3 | run failed (step error) |
-| 4 | cancelled |
-| 5 | wait timeout |
-| 6 | permission denied |
+| Code | Meaning                    |
+|------|----------------------------|
+| 0    | ok                         |
+| 1    | CLI error                  |
+| 2    | schema validation failure  |
+| 3    | run failed (step error)    |
+| 4    | cancelled                  |
+| 5    | wait timeout               |
+| 6    | permission denied          |
+| 7    | step timeout               |

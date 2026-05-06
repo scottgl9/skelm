@@ -1,24 +1,50 @@
 import { defineConfig } from 'skelm'
+// import { createPiSdkBackend } from '@skelm/pi'
 
 export default defineConfig({
+  // Backend selectors and definitions. The CLI wires these by id automatically:
+  //   openai, anthropic, opencode, copilot-acp, acp, pi (RPC variant)
+  // Use `instances:` (below) for the pi SDK backend or any custom backend.
+  backends: {
+    default: 'openai',         // used by llm() and agent() unless overridden
+    // llm:    'openai',
+    // agent:  'pi',
+    // openai: {
+    //   baseUrl: 'https://api.openai.com/v1',  // or any OpenAI-compatible URL
+    //   apiKey:  { secret: 'OPENAI_API_KEY' },
+    //   model:   'gpt-4o-mini',
+    // },
+  },
+
+  // Pre-built backend instances. Useful for the pi SDK backend (which the
+  // string-keyed `backends:` form does not wire up) or custom backends.
+  instances: [
+    // createPiSdkBackend({ id: 'pi' }),
+  ],
+
+  // Workflow discovery.
+  pipelines: { discovery: 'auto', glob: 'workflows/**/*.workflow.ts' },
+
   registries: {
-    workflows: { glob: './*.pipeline.ts' },
+    workflows: { glob: 'workflows/**/*.workflow.ts' },
+    skills:    { glob: 'skills/**/SKILL.md' },
 
-    // Declare coding agent backends here. Each step references one by id.
-    agents: [
-      // { id: 'opencode',    runtime: 'opencode',    lifecycle: 'ephemeral', command: 'opencode' },
-      // { id: 'claude-code', runtime: 'claude-code', lifecycle: 'ephemeral', command: 'claude', args: ['--print'] },
-    ],
-
-    // Declare MCP servers here. Steps reference them by id in agent({ mcp: [{ id }] }).
+    // MCP servers the gateway hosts; steps reference them by id.
     mcpServers: [
       // { id: 'github',     transport: 'http',  url: 'http://127.0.0.1:9100' },
       // { id: 'filesystem', transport: 'stdio', command: 'mcp-server-filesystem', args: ['.'] },
     ],
+
+    // Gateway-supervised agents (lifecycle/command/env). Optional — only
+    // needed when the gateway should manage the agent process itself.
+    agents: [
+      // { id: 'claude-code', runtime: 'claude-code', lifecycle: 'ephemeral',
+      //   command: 'claude', args: ['--print'] },
+    ],
   },
 
   defaults: {
-    // Project-wide permission baseline. All agent steps start here and can only narrow.
+    // Project-wide permission baseline. Step-level permissions intersect with these.
     permissions: {
       allowedExecutables: [],
       allowedTools: [],
@@ -29,7 +55,7 @@ export default defineConfig({
       networkEgress: 'deny',
     },
 
-    // Named profiles that steps can reference via permissions: { profile: '...' }
+    // Named profiles steps can apply via permissions: { profile: '...' }
     permissionProfiles: {
       // 'read-only': {
       //   fsRead: ['./'],
@@ -46,13 +72,16 @@ export default defineConfig({
     },
   },
 
-  server: {
-    port: 2318,
-    auth: { mode: 'none' }, // set to 'bearer' with a token for remote access
-  },
+  secrets: { driver: 'env' },
 
   storage: {
-    runs: { driver: 'sqlite', path: '.skelm/runs.db' },
-    audit: { driver: 'sqlite', path: '.skelm/audit.db' },
+    runs:  { driver: 'sqlite', path: '.skelm/runs.sqlite' },
+    state: { driver: 'sqlite', path: '.skelm/state.sqlite' },
+  },
+
+  server: {
+    port: 4000,                 // default gateway port
+    host: '127.0.0.1',
+    auth: { mode: 'none' },     // set to 'bearer' with an env-resolved token for remote access
   },
 })

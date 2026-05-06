@@ -1,9 +1,9 @@
 import { agent, code, pipeline } from 'skelm'
 import { z } from 'zod'
 
-// Requires skelm.config.ts with a backend declared under registries.agents
-// and an MCP server declared under registries.mcpServers (if mcp is used).
-// See docs/skill/skelm/references/config.md for the full config shape.
+// Requires skelm.config.ts with the agent backend declared under `backends`
+// (or pre-built and registered via `instances`), and any MCP server under
+// `registries.mcpServers` if used. See references/config.md for the full shape.
 
 export default pipeline({
   id: '{{ID}}',
@@ -26,7 +26,7 @@ export default pipeline({
     }),
     agent({
       id: 'execute',
-      // backend: 'opencode',  // uncomment and set to your backend id
+      // backend: 'pi',  // uncomment and set to your backend id (recommended: pi SDK)
       prompt: (ctx) => (ctx.steps.prepare as { prompt: string }).prompt,
       permissions: {
         // profile: 'my-profile',   // optional: named profile from skelm.config.ts
@@ -34,6 +34,7 @@ export default pipeline({
         allowedTools: [], // e.g. ['gh.*'] or ['bash', 'rg']
         allowedExecutables: [], // e.g. ['git', 'node']
         allowedMcpServers: [], // ids from skelm.config.ts registries.mcpServers
+        allowedSkills: [], // skill ids the agent may load
         fsRead: ['./'], // path roots agent may read
         fsWrite: [], // path roots agent may write
         networkEgress: 'deny', // 'allow' | 'deny' | { allowHosts: [...] }
