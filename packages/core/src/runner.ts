@@ -713,244 +713,10 @@ async function runStep(
   switch (step.kind) {
     case 'code':
       return await step.run(ctx)
-    case 'llm': {
-      if (!backends) {
-        throw new BackendNotFoundError(
-          `step "${step.id}" requires a backend registry but none was provided to runPipeline()`,
-        )
-      }
-      const backend = backends.resolveForLlm({ backendId: step.backend as string | undefined })
-      const promptText = typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt
-      const systemText =
-        step.system === undefined
-          ? undefined
-          : typeof step.system === 'function'
-            ? step.system(ctx)
-            : step.system
-      const req = {
-        messages: [{ role: 'user' as const, content: promptText }],
-        ...(systemText !== undefined && { system: systemText }),
-        ...(step.model !== undefined && { model: step.model }),
-        ...(step.temperature !== undefined && { temperature: step.temperature }),
-        ...(step.maxTokens !== undefined && { maxTokens: step.maxTokens }),
-        ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
-      }
-      // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForLlm
-      const response = await backend.infer!(req, { signal: ctx.signal })
-      if (step.outputSchema !== undefined) {
-        const candidate = response.structured ?? response.text
-        return await validate(step.outputSchema, candidate, 'output', {
-          stepId: step.id,
-          pipelineId: ctx.run.pipelineId,
-        })
-      }
-      return { text: response.text ?? '', usage: response.usage }
-    }
-    case 'agent': {
-      if (!backends) {
-        throw new BackendNotFoundError(
-          `step "${step.id}" requires a backend registry but none was provided to runPipeline()`,
-        )
-      }
-      const backend = backends.resolveForAgent({ backendId: step.backend as string | undefined })
-      let preparedWorkspace: Awaited<ReturnType<WorkspaceManager['prepare']>> | undefined
-      let finishedWorkspace = false
-      try {
-        const workspaceConfig =
-          step.workspace === undefined
-            ? undefined
-            : typeof step.workspace === 'function'
-              ? step.workspace(ctx)
-              : step.workspace
-        preparedWorkspace =
-          workspaceConfig === undefined
-            ? undefined
-            : await runtime?.workspaceManager.prepare({
-                pipelineId: ctx.run.pipelineId,
-                runId: ctx.run.runId,
-                workspace: workspaceConfig,
-              })
-        const workspaceCtx =
-          preparedWorkspace === undefined
-            ? ctx
-            : freezeContext({
-                ...ctx,
-                workspace: preparedWorkspace.handle,
-              })
-        const resolvedPromptText =
-          typeof step.prompt === 'function' ? step.prompt(workspaceCtx) : step.prompt
-        const resolvedSystemText =
-          step.system === undefined
-            ? undefined
-            : typeof step.system === 'function'
-              ? step.system(workspaceCtx)
-              : step.system
-        const mcpServers =
-          step.mcp === undefined
-            ? undefined
-            : typeof step.mcp === 'function'
-              ? step.mcp(workspaceCtx)
-              : step.mcp
-        const policy =
-          step.permissions !== undefined ||
-          mcpServers !== undefined ||
-          preparedWorkspace !== undefined
-            ? resolvePermissions(
-                runtime?.defaultPermissions,
-                applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
-                runtime?.permissionProfiles,
-              )
-            : undefined
-        if (policy !== undefined && mcpServers !== undefined) {
-          const enforcer = new TrustEnforcer(policy)
-          for (const server of mcpServers) {
-            const decision = enforcer.canAttachMcpServer(server.id)
-            if (!decision.allow) {
-              const detail = `step "${step.id}" is not allowed to attach MCP server "${server.id}" (${decision.reason})`
-              events?.publish({
-                type: 'permission.denied',
-                runId: ctx.run.runId,
-                stepId: step.id,
-                dimension: 'mcp',
-                detail,
-                at: Date.now(),
-              })
-              throw new PermissionDeniedError(detail)
-            }
-          }
-        }
-        if (mcpServers !== undefined && mcpServers.length > 0 && !backend.capabilities.mcp) {
-          throw new BackendCapabilityError(
-            `backend ${backend.id} does not support per-step MCP attachments`,
-            backend.id,
-            'mcp',
-          )
-        }
-        if (step.skills !== undefined && step.skills.length > 0 && !backend.capabilities.skills) {
-          throw new BackendCapabilityError(
-            `backend ${backend.id} does not support skill loading`,
-            backend.id,
-            'skills',
-          )
-        }
-        const declaredPermissionDimensions = collectResolvedPermissionDimensions(policy, mcpServers)
-        assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions)
-        if (policy?.approval && runtime?.approvalGate !== undefined) {
-          const decision = await runtime.approvalGate.request({
-            runId: ctx.run.runId,
-            stepId: step.id,
-            action: 'agent.start',
-            context: Object.freeze({
-              dimensions: Array.from(policy.approval.on),
-              mcpServers: mcpServers?.map((m) => m.id) ?? [],
-            }),
-          })
-          if (!decision.approved) {
-            throw new ApprovalDeniedError(step.id, decision.approver, decision.reason)
-          }
-        }
-        const resolvedSecrets = await resolveDeclaredSecrets(
-          step,
-          policy,
-          runtime?.secretResolver,
-          events,
-          ctx.run.runId,
-        )
-        const req: AgentRequest = {
-          prompt: resolvedPromptText,
-          ...(resolvedSystemText !== undefined && { system: resolvedSystemText }),
-          ...(step.maxTurns !== undefined && { maxTurns: step.maxTurns }),
-          ...(preparedWorkspace !== undefined && { cwd: preparedWorkspace.handle.path }),
-          ...(policy !== undefined && { permissions: policy }),
-          ...(mcpServers !== undefined && { mcpServers }),
-          ...(step.skills !== undefined && { skills: step.skills }),
-          ...(resolvedSecrets !== undefined && { secrets: resolvedSecrets }),
-          ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
-        }
-        const mcpHost =
-          mcpServers !== undefined &&
-          mcpServers.length > 0 &&
-          backend.capabilities.toolPermissions === 'wrapped'
-            ? await createMcpHost(mcpServers, {
-                ...(policy !== undefined && { enforcer: new TrustEnforcer(policy) }),
-                ...(events !== undefined && { events }),
-                runId: ctx.run.runId,
-                stepId: step.id,
-              })
-            : undefined
-        try {
-          // Policy-enforcing fetch wrapper: if the step declares a network
-          // policy, wrap globalThis.fetch so outbound requests are checked
-          // against the allowedHosts / deny setting before they go out.
-          const policyFetch =
-            policy !== undefined
-              ? createPolicyFetch(
-                  new TrustEnforcer(policy),
-                  events !== undefined
-                    ? {
-                        publish: (ev) => events.publish(ev),
-                        runId: ctx.run.runId,
-                        stepId: step.id,
-                      }
-                    : undefined,
-                )
-              : undefined
-          // Skill loader: gates each skill lookup through canLoadSkill so the
-          // allowedSkills policy fires even for backends with native skill support.
-          const loadSkill =
-            runtime?.skillSource !== undefined && policy !== undefined
-              ? makeSkillLoader(
-                  runtime.skillSource,
-                  new TrustEnforcer(policy),
-                  events,
-                  ctx.run.runId,
-                  step.id,
-                )
-              : undefined
-          // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
-          const response = await backend.run!(req, {
-            signal: ctx.signal,
-            ...(policy !== undefined && { permissions: policy }),
-            ...(mcpHost !== undefined && { mcpHost }),
-            ...(policyFetch !== undefined && { fetch: policyFetch }),
-            ...(loadSkill !== undefined && { loadSkill }),
-          })
-          const candidate =
-            step.outputSchema !== undefined
-              ? (response.structured ?? extractJsonFromText(response.text))
-              : undefined
-          const result =
-            step.outputSchema !== undefined
-              ? await validate(step.outputSchema, candidate, 'output', {
-                  stepId: step.id,
-                  pipelineId: ctx.run.pipelineId,
-                  rawValue: response.text,
-                })
-              : {
-                  text: response.text ?? '',
-                  ...(response.usage !== undefined && { usage: response.usage }),
-                  ...(response.stopReason !== undefined && { stopReason: response.stopReason }),
-                }
-          await preparedWorkspace?.finishStep('completed')
-          finishedWorkspace = true
-          if (preparedWorkspace !== undefined) {
-            const finalizedWorkspace = preparedWorkspace
-            runtime?.setCurrentWorkspace(
-              finalizedWorkspace.exposeAfterStep ? finalizedWorkspace.handle : undefined,
-            )
-            runtime?.deferRunWorkspaceFinalizer((status) => finalizedWorkspace.finishRun(status))
-          }
-          return result
-        } finally {
-          await mcpHost?.dispose()
-        }
-      } catch (error) {
-        if (!finishedWorkspace) {
-          await preparedWorkspace?.finishStep('failed')
-        }
-        throw error
-      }
-    }
+    case 'llm':
+      return await runLlmStep(step, ctx, backends)
+    case 'agent':
+      return await runAgentStep(step, ctx, backends, waitForInput, events, runtime)
     case 'idempotent':
       return await runIdempotent(step, ctx, backends, waitForInput, events, runtime)
     case 'parallel':
@@ -969,6 +735,255 @@ async function runStep(
       const exhaustive: never = step
       throw new Error(`unknown step kind: ${(exhaustive as { kind: string }).kind}`)
     }
+  }
+}
+
+async function runLlmStep(
+  step: Extract<Step, { kind: 'llm' }>,
+  ctx: Context,
+  backends: BackendRegistry | undefined,
+): Promise<unknown> {
+  if (!backends) {
+    throw new BackendNotFoundError(
+      `step "${step.id}" requires a backend registry but none was provided to runPipeline()`,
+    )
+  }
+  const backend = backends.resolveForLlm({ backendId: step.backend as string | undefined })
+  const promptText = typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt
+  const systemText =
+    step.system === undefined
+      ? undefined
+      : typeof step.system === 'function'
+        ? step.system(ctx)
+        : step.system
+  const req = {
+    messages: [{ role: 'user' as const, content: promptText }],
+    ...(systemText !== undefined && { system: systemText }),
+    ...(step.model !== undefined && { model: step.model }),
+    ...(step.temperature !== undefined && { temperature: step.temperature }),
+    ...(step.maxTokens !== undefined && { maxTokens: step.maxTokens }),
+    ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
+  }
+  // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForLlm
+  const response = await backend.infer!(req, { signal: ctx.signal })
+  if (step.outputSchema !== undefined) {
+    const candidate = response.structured ?? response.text
+    return await validate(step.outputSchema, candidate, 'output', {
+      stepId: step.id,
+      pipelineId: ctx.run.pipelineId,
+    })
+  }
+  return { text: response.text ?? '', usage: response.usage }
+}
+
+async function runAgentStep(
+  step: Extract<Step, { kind: 'agent' }>,
+  ctx: Context,
+  backends: BackendRegistry | undefined,
+  waitForInput: RunOptions['waitForInput'],
+  events: EventBus | undefined,
+  runtime: ExecutionRuntime | undefined,
+): Promise<unknown> {
+  if (!backends) {
+    throw new BackendNotFoundError(
+      `step "${step.id}" requires a backend registry but none was provided to runPipeline()`,
+    )
+  }
+  const backend = backends.resolveForAgent({ backendId: step.backend as string | undefined })
+  let preparedWorkspace: Awaited<ReturnType<WorkspaceManager['prepare']>> | undefined
+  let finishedWorkspace = false
+  try {
+    const workspaceConfig =
+      step.workspace === undefined
+        ? undefined
+        : typeof step.workspace === 'function'
+          ? step.workspace(ctx)
+          : step.workspace
+    preparedWorkspace =
+      workspaceConfig === undefined
+        ? undefined
+        : await runtime?.workspaceManager.prepare({
+            pipelineId: ctx.run.pipelineId,
+            runId: ctx.run.runId,
+            workspace: workspaceConfig,
+          })
+    const workspaceCtx =
+      preparedWorkspace === undefined
+        ? ctx
+        : freezeContext({
+            ...ctx,
+            workspace: preparedWorkspace.handle,
+          })
+    const resolvedPromptText =
+      typeof step.prompt === 'function' ? step.prompt(workspaceCtx) : step.prompt
+    const resolvedSystemText =
+      step.system === undefined
+        ? undefined
+        : typeof step.system === 'function'
+          ? step.system(workspaceCtx)
+          : step.system
+    const mcpServers =
+      step.mcp === undefined
+        ? undefined
+        : typeof step.mcp === 'function'
+          ? step.mcp(workspaceCtx)
+          : step.mcp
+    const policy =
+      step.permissions !== undefined || mcpServers !== undefined || preparedWorkspace !== undefined
+        ? resolvePermissions(
+            runtime?.defaultPermissions,
+            applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
+            runtime?.permissionProfiles,
+          )
+        : undefined
+    if (policy !== undefined && mcpServers !== undefined) {
+      const enforcer = new TrustEnforcer(policy)
+      for (const server of mcpServers) {
+        const decision = enforcer.canAttachMcpServer(server.id)
+        if (!decision.allow) {
+          const detail = `step "${step.id}" is not allowed to attach MCP server "${server.id}" (${decision.reason})`
+          events?.publish({
+            type: 'permission.denied',
+            runId: ctx.run.runId,
+            stepId: step.id,
+            dimension: 'mcp',
+            detail,
+            at: Date.now(),
+          })
+          throw new PermissionDeniedError(detail)
+        }
+      }
+    }
+    if (mcpServers !== undefined && mcpServers.length > 0 && !backend.capabilities.mcp) {
+      throw new BackendCapabilityError(
+        `backend ${backend.id} does not support per-step MCP attachments`,
+        backend.id,
+        'mcp',
+      )
+    }
+    if (step.skills !== undefined && step.skills.length > 0 && !backend.capabilities.skills) {
+      throw new BackendCapabilityError(
+        `backend ${backend.id} does not support skill loading`,
+        backend.id,
+        'skills',
+      )
+    }
+    const declaredPermissionDimensions = collectResolvedPermissionDimensions(policy, mcpServers)
+    assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions)
+    if (policy?.approval && runtime?.approvalGate !== undefined) {
+      const decision = await runtime.approvalGate.request({
+        runId: ctx.run.runId,
+        stepId: step.id,
+        action: 'agent.start',
+        context: Object.freeze({
+          dimensions: Array.from(policy.approval.on),
+          mcpServers: mcpServers?.map((m) => m.id) ?? [],
+        }),
+      })
+      if (!decision.approved) {
+        throw new ApprovalDeniedError(step.id, decision.approver, decision.reason)
+      }
+    }
+    const resolvedSecrets = await resolveDeclaredSecrets(
+      step,
+      policy,
+      runtime?.secretResolver,
+      events,
+      ctx.run.runId,
+    )
+    const req: AgentRequest = {
+      prompt: resolvedPromptText,
+      ...(resolvedSystemText !== undefined && { system: resolvedSystemText }),
+      ...(step.maxTurns !== undefined && { maxTurns: step.maxTurns }),
+      ...(preparedWorkspace !== undefined && { cwd: preparedWorkspace.handle.path }),
+      ...(policy !== undefined && { permissions: policy }),
+      ...(mcpServers !== undefined && { mcpServers }),
+      ...(step.skills !== undefined && { skills: step.skills }),
+      ...(resolvedSecrets !== undefined && { secrets: resolvedSecrets }),
+      ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
+    }
+    const mcpHost =
+      mcpServers !== undefined &&
+      mcpServers.length > 0 &&
+      backend.capabilities.toolPermissions === 'wrapped'
+        ? await createMcpHost(mcpServers, {
+            ...(policy !== undefined && { enforcer: new TrustEnforcer(policy) }),
+            ...(events !== undefined && { events }),
+            runId: ctx.run.runId,
+            stepId: step.id,
+          })
+        : undefined
+    try {
+      // Policy-enforcing fetch wrapper: if the step declares a network
+      // policy, wrap globalThis.fetch so outbound requests are checked
+      // against the allowedHosts / deny setting before they go out.
+      const policyFetch =
+        policy !== undefined
+          ? createPolicyFetch(
+              new TrustEnforcer(policy),
+              events !== undefined
+                ? {
+                    publish: (ev) => events.publish(ev),
+                    runId: ctx.run.runId,
+                    stepId: step.id,
+                  }
+                : undefined,
+            )
+          : undefined
+      // Skill loader: gates each skill lookup through canLoadSkill so the
+      // allowedSkills policy fires even for backends with native skill support.
+      const loadSkill =
+        runtime?.skillSource !== undefined && policy !== undefined
+          ? makeSkillLoader(
+              runtime.skillSource,
+              new TrustEnforcer(policy),
+              events,
+              ctx.run.runId,
+              step.id,
+            )
+          : undefined
+      // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
+      const response = await backend.run!(req, {
+        signal: ctx.signal,
+        ...(policy !== undefined && { permissions: policy }),
+        ...(mcpHost !== undefined && { mcpHost }),
+        ...(policyFetch !== undefined && { fetch: policyFetch }),
+        ...(loadSkill !== undefined && { loadSkill }),
+      })
+      const candidate =
+        step.outputSchema !== undefined
+          ? (response.structured ?? extractJsonFromText(response.text))
+          : undefined
+      const result =
+        step.outputSchema !== undefined
+          ? await validate(step.outputSchema, candidate, 'output', {
+              stepId: step.id,
+              pipelineId: ctx.run.pipelineId,
+              rawValue: response.text,
+            })
+          : {
+              text: response.text ?? '',
+              ...(response.usage !== undefined && { usage: response.usage }),
+              ...(response.stopReason !== undefined && { stopReason: response.stopReason }),
+            }
+      await preparedWorkspace?.finishStep('completed')
+      finishedWorkspace = true
+      if (preparedWorkspace !== undefined) {
+        const finalizedWorkspace = preparedWorkspace
+        runtime?.setCurrentWorkspace(
+          finalizedWorkspace.exposeAfterStep ? finalizedWorkspace.handle : undefined,
+        )
+        runtime?.deferRunWorkspaceFinalizer((status) => finalizedWorkspace.finishRun(status))
+      }
+      return result
+    } finally {
+      await mcpHost?.dispose()
+    }
+  } catch (error) {
+    if (!finishedWorkspace) {
+      await preparedWorkspace?.finishStep('failed')
+    }
+    throw error
   }
 }
 
