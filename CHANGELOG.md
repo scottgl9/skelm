@@ -6,6 +6,74 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-05-06
+
+### Added
+- **`skelm logs` command** — operational log sink with ring-buffer and file backend; `skelm logs [--lines N] [--since iso] [--level lvl] [--filter substring] [--json]` reads `~/.skelm/gateway.log`. Logs are redacted of secrets at write time.
+- **`skelm validate`** — static workflow analysis that catches permission gaps, missing step IDs, bad secret names, and schema errors before runtime. Emits structured `--json` output; exits 1 on any issue.
+- **`timeoutMs` on `agent()` steps** — per-step deadline with `AbortController` propagation to backends; cooperative with the existing retry policy.
+- **`ctx.get<T>(stepId)`** — typed step-output accessor as a self-documenting alternative to `ctx.steps[id] as T`.
+- **Backend fallback chains** — `backend: ['primary', 'fallback']` on `agent()` and `llm()` steps; falls through on `BackendUnavailableError`, `BackendNotFoundError`, and `BackendCapabilityError`; emits `backend.fallback` audit events; raises `BackendChainExhaustedError` on full exhaustion.
+- **`agentDef` on `agent()` steps** — `agentDef: './agents/<name>'` resolves `AGENTS.md` + optional `SOUL.md`; path-traversal outside the root is rejected; backends prepend soul + instructions to the system prompt.
+- **Declared secrets on `agent()` steps** — `secrets: ['NAME']` declares what a step needs; the runner gates each name through `canAccessSecret`, resolves via `RunOptions.secretResolver`, and passes the record to backends. A `secret.accessed` event records name and timestamp (never value). Missing secrets raise `MissingSecretError`.
+- **Layered skill resolver** — gateway resolves skills via registry → workflow-relative `skills/<id>/SKILL.md` → configured `skillsDir`; `createSkillSource` helper exported from `@skelm/gateway`.
+- **`secret.not_found` audit event** — emitted when `resolveDeclaredSecrets` gets `undefined` from the resolver; value is never included.
+- **`EXIT.STEP_TIMEOUT (7)`** exit code; `PermissionDeniedError` maps to `EXIT.PERMISSION_DENIED` and `StepTimeoutError` to `EXIT.STEP_TIMEOUT`.
+- **Changesets + changelog-present guard** — `pnpm guards:changeset` fails CI when a source-touching PR omits a `.changeset/` entry (opt out with `[skip changeset]` in the PR body).
+- **`docs/reference/`** — CLI reference, HTTP surface index, OpenAPI 3.1 spec, and a production hardening checklist.
+- **Control-flow property tests** — sweeps `parallel`, `forEach`, `branch`, and `loop` across varied cardinalities; resolves previously skipped `wait`/resume event-ordering case.
+- **Audit-chain adversarial tests** — tamper, drop, reorder, and re-sign cases against `ChainAuditWriter`.
+
+### Changed
+- **`RunStore` split into `ExecutionStore` + `StateStore`** — two focused interfaces; `RunStore` is now a type alias for backward compat.
+- **Runner step-dispatch refactor** — `runLlmStep` and `runAgentStep` extracted from an inline switch; dispatcher is now ~20 lines.
+- **Wildcard re-exports replaced with explicit named exports** — 39 previously invisible symbols are now tracked by the public-export baseline guard.
+- **Gateway HTTP routes split** — `control-routes.ts` (951 LOC) decomposed into 11 per-resource modules under `http/routes/`; no behavior change.
+- **`skelm run` wires `skillSource`** — `SkillRegistry` is instantiated from `config.registries?.skills?.glob` and passed into `runPipeline`; `skillSource` and `secretResolver` now propagate through nested pipeline steps.
+- **`dispatchEvent()` propagates errors** — integration handler errors no longer swallowed as `{ error: string }` results.
+- **`drop sourceMap`/`declarationMap`** from published tarballs — smaller install footprint.
+- **README restructured** — features grouped into Authoring / Security & isolation / Integrations / Operations; project logo added.
+
+### Fixed
+- **`permission.denied` on backend defense-in-depth `PermissionDeniedError`** — backends that throw `PermissionDeniedError` from their own `run()` guard now emit a `permission.denied` event before the error propagates, making them auditable.
+- **Pi RPC honest enforcement** — Pi RPC backend now declares `toolPermissions: 'unsupported'`; any step with permissions against it fails closed at capability-check time. Defense-in-depth guard in `run()` rejects any non-`undefined` `ResolvedPolicy`.
+- **Pi SDK `llm()` support** — `pi-sdk` backend now implements `infer()` with `noTools: 'all'`; supports `outputSchema` by parsing fenced JSON from the response.
+- **`skelm run` skill loading** — `skillSource` was never passed to `runPipeline`; agent steps with `skills: [...]` silently had no skill content. Fixed, with propagation through nested pipeline steps.
+- **Pi SDK `networkEgress: 'deny'`** — drops `bash` from the Pi tool allowlist when `networkEgress` is `deny`, blocking `curl`/`wget` as the only network path available to Pi agents.
+- **Integration error propagation** — `dispatchEvent()` auth failures and handler errors now surface to callers instead of being silenced.
+- **`eventToRunInput` type-safety** — changed from a `typeof` duck-check to the typed optional method on the `Integration` interface.
+
+### Security
+- Pi RPC backend now fails closed (`toolPermissions: 'unsupported'`) — workflows with any permission declaration against Pi RPC get a capability error before any backend runs. Switch to `pi-sdk` for permission-scoped Pi workflows.
+- `permission.denied` event and audit entry are now emitted for `BackendCapabilityError` (capability-check denial) and for `PermissionDeniedError` thrown from inside `backend.run()`, closing two audit-blind spots.
+- Pi SDK enforces `networkEgress: 'deny'` by dropping `bash` from the tool allowlist (Pi's only outbound network path).
+
+## [0.3.6] - 2026-05-05
+
+Publish-pipeline fixes on top of 0.3.5.
+
+### Fixed
+- **`skelm init` scaffolds correct version** — the generated `package.json` now stamps the current skelm version instead of a hardcoded `^0.1.0`.
+- **Publish: provenance, visibility, and bin permissions** — `npm publish --provenance` is skipped in local environments; `@skelm/cli` visibility corrected; the `skelm` bin is `chmod +x` on publish.
+
+## [0.3.5] - 2026-05-05
+
+### Added
+- **Pi SDK backend** — `pi-sdk` backend with native tool allowlist enforcement via Pi's `tools[]`/`noTools` API; system prompt injection and per-agent sandbox defaults.
+- **opencode backend improvements** — non-blocking `promptAsync`+SSE streaming; `OPENCODE_CONFIG_CONTENT` injection at spawn time for model/logLevel config; `serverPermissions` field for server-level bash/edit/webfetch defaults.
+- **Core permission enforcement wired** — runtime call sites for `canLoadSkill`, `canRead`, `canWrite`, and expanded `canExec` are now active.
+- **skelm Agent Skill** — published at `docs/skill/skelm` for use as a Claude Code skill.
+- **VitePress documentation site** — scaffolded at `docs/`; `PUBLISHING.md` and publish scripts added.
+
+### Changed
+- **`@skelm/cli` is private** — the meta-package `skelm` is the only published bin entry point.
+
+### Fixed
+- **`skelm --version`** reads from `package.json` instead of a hardcoded constant.
+- **opencode message filtering** — user message text no longer leaks into the collected response; assistant messages are tracked by role-filtered message ID allowlist.
+- **opencode system prompt** — `request.system` is now forwarded to `session.promptAsync`.
+- **Pi peer dep and permission semantics** — tightened peer dependency range; sdk-client test coverage; `defaults.backend` corrected.
+
 ## [0.3.4] - 2026-05-05
 
 Republish of 0.3.3 with workspace-dependency rewriting fixed.
@@ -45,5 +113,9 @@ First public release on npmjs.com. Versions of all published packages are aligne
 
 Pre-public releases distributed via GitHub Packages and git tags. See `git log` for full history.
 
-[Unreleased]: https://github.com/scottgl9/skelm/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/scottgl9/skelm/compare/v0.3.7...HEAD
+[0.3.7]: https://github.com/scottgl9/skelm/compare/v0.3.6...v0.3.7
+[0.3.6]: https://github.com/scottgl9/skelm/compare/v0.3.5...v0.3.6
+[0.3.5]: https://github.com/scottgl9/skelm/compare/v0.3.4...v0.3.5
+[0.3.4]: https://github.com/scottgl9/skelm/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/scottgl9/skelm/releases/tag/v0.3.3
