@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/public/logo.svg" alt="skelm logo" width="120" height="120" />
+</p>
+
 <h1 align="center">skelm</h1>
 
 <p align="center">
@@ -52,30 +56,47 @@ skelm gateway start                                                # long-runnin
 
 ## Main features
 
-- **TypeScript-native workflows.** Real `.ts` modules — refactor, test, type-check, version like any other code. No DSL, no JSON config.
+A workflow is a typed TypeScript module made of three step kinds (`code`, `llm`, `agent`). The gateway hosts workflows, drives the scheduler, enforces default-deny permissions, and brokers everything privileged — backends, MCP servers, integrations.
+
+### Authoring
+
+- **TypeScript-native workflows.** Real `.ts` modules — refactor, test, type-check, and version like any other code. No DSL, no JSON config.
 - **Three step kinds, none wrapping another.** `code()` for deterministic logic, `llm()` for single inference calls, `agent()` for full multi-turn loops.
-- **Default-deny security.** Every agent step declares the tools, MCP servers, network hosts, and filesystem roots it may use. Anything undeclared is denied.
+- **Native control flow.** `parallel`, `forEach`, `branch`, `loop`, `wait`, and nested pipelines are core primitives, not add-ons.
+- **Markdown agent definitions.** `AGENTS.md` for role, `SOUL.md` for persona, `SKILL.md` for capabilities — reviewable in PRs.
+
+### Security & isolation
+
+- **Default-deny everywhere.** Every agent step declares the tools, MCP servers, network hosts, and filesystem roots it may use. Anything undeclared is denied at step start.
+- **Per-agent workspaces.** Each agent step gets its own filesystem root — persistent or ephemeral — locked against cross-step corruption.
+- **Persistent state and tamper-evident audit.** Typed KV store, append-only decision journals, idempotency primitives, and a hash-chained audit log.
+
+### Integrations
+
 - **Multi-backend agents.** Opencode, ACP (Copilot, Claude Code, Gemini), OpenAI, Anthropic, Pi — plus a provider SPI for custom backends.
 - **MCP-native.** Model Context Protocol servers are first-class registry citizens, lifecycle-managed by the gateway.
-- **Native control flow.** `parallel`, `forEach`, `branch`, `loop`, `wait`, and nested pipelines are core, not add-ons.
+- **CLI tools as first-class tools.** Agents can shell out to any CLI binary (`gh`, `kubectl`, `psql`, `ffmpeg`, your own scripts) — declared in `allowedTools`, scoped to the agent's workspace, and gated by the same default-deny permissions as everything else.
+
+### Operations
+
 - **Scheduler-native.** Every run is a schedule — immediate, cron, interval, webhook, poll, or queue.
-- **Per-agent workspaces.** Each agent step gets its own filesystem root, persistent or ephemeral, locked against corruption.
-- **Persistent state and audit.** Typed KV store, append-only decision journals, idempotency primitives, and a hash-chained tamper-evident audit log.
 - **Long-running gateway.** Hosts workflows over HTTP + SSE, drives the scheduler, owns the trust boundary.
 - **Local-first.** SQLite by default; Postgres + vault drivers for production. No managed cloud, no telemetry.
-- **Markdown agent definitions.** `AGENTS.md` for role, `SOUL.md` for persona, `SKILL.md` for capabilities — reviewable in PRs.
 
 ## What you can build
 
-If you have written any of these as a hand-rolled script, you have felt skelm-shaped pain:
+Build **agents**, along with deterministic steps and one-shot LLM calls, into robust workflows on any trigger or schedule. Here are a few examples:
 
 - A coding assistant reachable on chat that opens PRs in a persistent repo workspace.
 - A queue worker that watches Jira and tries to ship the ticket.
 - An email-triage agent that classifies, summarizes, and journals decisions you can audit.
 - A nightly digest that fans out, enriches with an LLM, and posts to Slack.
 - An HTTP endpoint that runs a typed workflow with three deterministic steps and one LLM call.
+- A long-lived research agent that polls sources, stores findings in typed KV, and resumes after restart.
+- A compliance bot that watches an S3 bucket via webhook and runs deterministic checks before escalating to an agent.
+- An on-call responder that fans out to multiple LLM backends in parallel and reconciles their answers.
 
-skelm gives you one substrate for all five.
+If your workflow has any combination of triggers, branching, retries, agents, tools, audit, or scheduling — skelm is the substrate.
 
 ## Three tenets, in this order
 
@@ -201,6 +222,6 @@ Scott Glover — `scottgl@gmail.com`
 
 ## License
 
-[MIT](LICENSE). Copyright © Scott Glover.
+[MIT](LICENSE).
 
 If you build something interesting on skelm, we want to hear about it — open an issue with the `showcase` label.
