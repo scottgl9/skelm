@@ -87,22 +87,16 @@ export class IntegrationRegistry {
   }
 
   /**
-   * Dispatch an event to all handlers for an integration
+   * Dispatch an event to all handlers for an integration.
+   * Errors from handlers are not swallowed — they propagate to the caller
+   * so auth failures and misconfiguration are surfaced rather than hidden.
    */
   async dispatchEvent(integrationId: string, event: unknown): Promise<unknown[]> {
-    const handlers = this.eventHandlers.get(integrationId) || []
+    const handlers = this.eventHandlers.get(integrationId) ?? []
     const results: unknown[] = []
-
     for (const handler of handlers) {
-      try {
-        const result = await handler(event)
-        results.push(result)
-      } catch (error) {
-        console.error(`Event handler error for ${integrationId}:`, error)
-        results.push({ error: String(error) })
-      }
+      results.push(await handler(event))
     }
-
     return results
   }
 
@@ -131,8 +125,10 @@ export class IntegrationRegistry {
       throw new Error(`Integration ${integrationId} is not enabled`)
     }
 
-    // Try to convert event to RunInput if the integration supports it
-    if ('eventToRunInput' in integration && typeof integration.eventToRunInput === 'function') {
+    // Try to convert event to RunInput if the integration supports it.
+    // Use the typed optional method from the Integration interface rather than
+    // a duck-type check, so only the declared interface contract is exercised.
+    if (integration.eventToRunInput !== undefined) {
       const runInput = await integration.eventToRunInput(event)
       if (runInput) {
         return { type: 'run_input', data: runInput }

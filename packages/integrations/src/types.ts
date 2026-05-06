@@ -20,7 +20,11 @@ export interface IntegrationConfig {
   name: string
   /** Whether the integration is enabled */
   enabled: boolean
-  /** Authentication credentials (encrypted at rest) */
+  /**
+   * Authentication credentials. Values must be resolved from a SecretResolver
+   * before being placed here — do not log, serialize to audit, or expose in
+   * health-check output.
+   */
   credentials: Record<string, string | number | boolean>
   /** Optional webhook configuration */
   webhook?: WebhookConfig
