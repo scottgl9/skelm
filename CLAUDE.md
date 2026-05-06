@@ -119,20 +119,6 @@ When you are about to write code that touches a privileged action (exec, network
 
 A guard script (`scripts/guards/default-deny-permissions.ts`) checks 1–3 mechanically and runs as part of `pnpm guards`. See `scripts/guards/README.md`.
 
-### Self-review before PR
-
-There is an internal `branch-review` pipeline:
-
-```
-skelm run pipelines/internal/branch-review.pipeline.ts --input '{"branch":"<my-branch>"}'
-```
-
-It produces a structured review with sections for security, design alignment, robustness, maintenance, and follow-ups. Run it before opening a PR. Address actionable findings or note why you are deferring them.
-
-### Self-test generation is a draft, not a merge
-
-The `pipelines/internal/test-gen.pipeline.ts` pipeline can propose unit tests for changed code. It writes proposals to a draft branch and stops. **Never** merge generated tests without reading them. The generator is for filling whitespace, not for replacing thoughtful test design.
-
 ## When you are uncertain, ask
 
 If you are unsure whether a change is in scope, whether a test is sufficient, whether a permission default is right, or whether a public-API change is intended — ask the user. The cost of a one-line clarification is low; the cost of an unwanted change is high.
@@ -151,8 +137,8 @@ pnpm dev                    # vitest watch on the workspace
 skelm run path/to/foo.pipeline.ts
 skelm run path/to/foo.pipeline.ts --events json 2> events.log > result.json
 
-skelm gateway start         # foreground gateway
-skelm gateway start --detach
+skelm gateway start         # foreground; SIGTERM/Ctrl-C drains and exits
+skelm gateway install --systemd   # install user systemd unit for cross-reboot
 skelm gateway status
 skelm gateway stop
 ```

@@ -6,7 +6,8 @@ Build, run, and schedule your first skelm workflow in five minutes.
 
 - Node.js 20+
 - A terminal
-- (Optional, for the agent example) An Anthropic API key in `ANTHROPIC_API_KEY`
+- (Optional, for the LLM example) An OpenAI-compatible endpoint and API key (any vendor that speaks the OpenAI Chat Completions protocol)
+- (Optional, for the agent example) The pi coding-agent SDK: `npm install @mariozechner/pi-coding-agent`. Pi reads its provider/model from `~/.pi/auth.json` and `~/.pi/models.json` — see [pi's docs](https://github.com/mariozechner/pi) to point it at your model
 
 ## 1. Install
 
@@ -20,6 +21,7 @@ skelm --version
 ```sh
 skelm init my-bot
 cd my-bot
+npm install
 ```
 
 This scaffolds:
@@ -29,28 +31,28 @@ my-bot/
 ├── skelm.config.ts          # default-deny permissions, env-driven secrets
 ├── workflows/
 │   └── hello.workflow.ts    # example: prints a greeting
-├── agents/                  # empty; populated when you add an agent step
-├── skills/                  # empty
 ├── package.json
-└── tsconfig.json
+├── tsconfig.json
+├── .gitignore
+└── README.md
 ```
 
 ## 3. Look at the example workflow
 
 ```ts
 // workflows/hello.workflow.ts
-import { pipeline, code } from 'skelm'
+import { code, pipeline } from 'skelm'
 import { z } from 'zod'
 
 export default pipeline({
   id: 'hello',
-  description: 'Greet someone.',
-  input:  z.object({ name: z.string() }),
+  description: 'Greets someone by name.',
+  input: z.object({ name: z.string().min(1) }),
   output: z.object({ greeting: z.string() }),
   steps: [
     code({
       id: 'greet',
-      run: (ctx) => ({ greeting: `Hello, ${ctx.input.name}!` }),
+      run: (ctx) => ({ greeting: `hello, ${(ctx.input as { name: string }).name}` }),
     }),
   ],
 })
@@ -65,7 +67,7 @@ skelm run workflows/hello.workflow.ts --input '{"name":"world"}'
 Output:
 
 ```json
-{ "greeting": "Hello, world!" }
+{"greeting":"hello, world"}
 ```
 
 `skelm run` is sugar for "register an immediate-schedule, run it, deregister." Every workflow run goes through the scheduler; `run` is the convenient one-shot form.
@@ -79,37 +81,42 @@ cat events.log
 
 ## 5. Add an agent step
 
-Create `agents/greeter/AGENTS.md`:
+Agents in skelm run on the [pi coding-agent SDK](https://www.npmjs.com/package/@mariozechner/pi-coding-agent). Install it and register it as a backend in `skelm.config.ts`:
 
-```markdown
----
-name: greeter
-description: Generates a friendly, personalized greeting.
-version: 1
----
+```sh
+npm install @mariozechner/pi-coding-agent @skelm/pi
+```
 
-# Greeter
+```ts
+// skelm.config.ts
+import { defineConfig } from 'skelm'
+import { createPiSdkBackend } from '@skelm/pi'
 
-You are a warm but concise greeter. When given a name, produce one sentence of greeting tailored to that name. Avoid emojis.
+export default defineConfig({
+  backends: { agent: 'pi' },
+  instances: [createPiSdkBackend({ id: 'pi' })],
+  pipelines: { discovery: 'auto', glob: 'workflows/**/*.workflow.ts' },
+  secrets: { driver: 'env' },
+})
 ```
 
 Update `workflows/hello.workflow.ts`:
 
 ```ts
-import { pipeline, agent } from 'skelm'
+import { agent, pipeline } from 'skelm'
 import { z } from 'zod'
 
 export default pipeline({
   id: 'hello',
-  description: 'Greet someone with an LLM-generated message.',
+  description: 'Greet someone with an agent-generated message.',
   input:  z.object({ name: z.string() }),
   output: z.object({ greeting: z.string() }),
   steps: [
     agent({
       id: 'greet',
-      backend: 'anthropic',
-      agentDef: './agents/greeter',
-      prompt: (ctx) => `Greet ${ctx.input.name}.`,
+      backend: 'pi',
+      prompt: (ctx) =>
+        `Greet ${ctx.input.name} in one short sentence. Return JSON of the form {"greeting": "..."} and nothing else.`,
       permissions: {
         allowedTools:       [],          // no tools needed
         allowedExecutables: [],
@@ -183,8 +190,6 @@ systemctl --user enable --now skelm-gateway
 systemctl --user status skelm-gateway
 ```
 
-See [Deployment → systemd](../deployment/systemd.md) for the full unit reference.
-
 ## 8. Inspect runs
 
 ```sh
@@ -202,11 +207,11 @@ curl http://127.0.0.1:4000/runs/<runId>
 
 ## What's next
 
-- [Concepts → Workflows](../concepts/workflows.md) — how steps compose, what the typed context gives you. <!-- @planned -->
 - [Concepts → Permissions](../concepts/permissions.md) — the default-deny model, how to widen safely with profiles.
-- [Concepts → Agents](../concepts/agents.md) — agent definitions in markdown. <!-- @planned -->
-- [Recipes](../recipes/) — complete examples of long-running and HTTP-triggered patterns.
-- [CLI reference](../reference/cli.md) <!-- @planned --> and [HTTP reference](../reference/http.md). <!-- @planned -->
+- [Concepts → Coding agents](../concepts/coding-agents.md) — how skelm's agent runtime composes with backends.
+- [Concepts → Registries](../concepts/registries.md) — workflow, skill, agent, and MCP-server registries.
+- [Recipes](../recipes/index.md) — complete examples of long-running and HTTP-triggered patterns.
+- [CLI reference](../reference/cli.md) and [HTTP reference](../reference/http.md).
 
 ## Common gotchas
 
