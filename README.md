@@ -31,21 +31,20 @@ npm install -g skelm
 **2. Scaffold a project.**
 
 ```bash
-skelm init my-bot && cd my-bot
+skelm init my-bot && cd my-bot && npm install
 ```
 
-You get a working project: one example workflow, an `AGENTS.md` agent definition, a `SKILL.md` skill package, and a `skelm.config.ts` with default-deny permissions.
+You get a working project: an example `hello` workflow under `workflows/`, a `skelm.config.ts` with default-deny permissions, a `package.json`, a `tsconfig.json`, and a `.gitignore`.
 
 **3. Run your first workflow.**
 
 ```bash
-skelm run workflows/hello.workflow.ts
+skelm run workflows/hello.workflow.ts --input '{"name":"world"}'
 ```
 
 That's it. From here you can edit the workflow, add steps, schedule it, or stand up the gateway:
 
 ```bash
-skelm run workflows/hello.workflow.ts --input '{"name":"world"}'   # one-off run
 skelm schedule add workflows/hello.workflow.ts --cron '0 * * * *'  # cron
 skelm gateway start                                                # long-running service
 ```
@@ -146,7 +145,6 @@ Customer-facing docs live under [`docs/`](./docs/) — quickstart, full CLI/API/
 - **Recipes:** [`docs/recipes/`](./docs/recipes/) — complete workflow examples
 - **Reference:** [`docs/reference/`](./docs/reference/) — [CLI](./docs/reference/cli.md), [HTTP](./docs/reference/http.md), [OpenAPI](./docs/reference/openapi.yaml), [API](./docs/reference/api.md)
 - **Production hardening:** [`docs/guides/production-hardening.md`](./docs/guides/production-hardening.md) — checklist before exposing the gateway
-- **Deployment:** [`docs/deployment/`](./docs/deployment/) — systemd, reverse proxy, Postgres, secrets
 - **Contributors:** [`AGENTS.md`](./AGENTS.md) — workflow, code style, testing expectations
 - **Changelog:** [`CHANGELOG.md`](./CHANGELOG.md) — version history
 - **Security policy:** [`SECURITY.md`](./SECURITY.md) — reporting vulnerabilities
@@ -157,13 +155,11 @@ Customer-facing docs live under [`docs/`](./docs/) — quickstart, full CLI/API/
 - [Issues](https://github.com/scottgl9/skelm/issues) — bug reports and feature requests
 - [Contributing](CONTRIBUTING.md) — PRs welcome
 
-The framework dogfoods itself: skelm's own pre-merge review and unit-test generation run as skelm workflows under [`pipelines/internal/`](./pipelines/internal/). Reading those is a good way to learn the API and see how the security tenet works in practice.
-
 ---
 
 ## A real workflow, end to end
 
-Here is a workflow that triages a GitHub issue: a deterministic `code()` step fetches it, then an `agent()` step classifies it under tight default-deny permissions.
+Here is a workflow that triages a GitHub issue: a deterministic `code()` step fetches it, then an `agent()` step classifies it under tight default-deny permissions. Agents run on the [pi coding-agent SDK](packages/pi); single-shot LLM calls (`llm()`) run on any OpenAI-compatible endpoint via `backend: 'openai'`.
 
 ```ts
 import { pipeline, code, agent } from 'skelm'
@@ -183,23 +179,33 @@ export default pipeline({
     }),
     agent({
       id: 'classify',
-      backend: 'anthropic',
-      agentDef: './agents/triager',
-      skills:  ['github-readonly'],
-      mcp:     [{ id: 'gh', transport: 'stdio', command: 'mcp-github' }],
+      backend: 'pi',
+      prompt: (ctx) => `Triage this issue and return JSON with {label, reasoning}:\n${JSON.stringify(ctx.steps.fetch)}`,
       permissions: {
-        allowedTools:      ['gh.add_label'],
-        allowedMcpServers: ['gh'],
-        allowedSkills:     ['github-readonly'],
-        networkEgress:     { allowHosts: ['api.github.com'] },
-        fsRead:            ['./'],
-        fsWrite:           [],
+        allowedTools:       [],
+        allowedExecutables: [],
+        allowedMcpServers:  [],
+        allowedSkills:      [],
+        networkEgress:      'deny',
+        fsRead:             [],
+        fsWrite:            [],
       },
-      prompt: (ctx) => `Triage this issue:\n${JSON.stringify(ctx.steps.fetch)}`,
       output: z.object({ label: z.enum(['bug','feature','duplicate']), reasoning: z.string() }),
       maxTurns: 8,
     }),
   ],
+})
+```
+
+Register the pi SDK backend in your `skelm.config.ts`:
+
+```ts
+import { defineConfig } from 'skelm'
+import { createPiSdkBackend } from '@skelm/pi'
+
+export default defineConfig({
+  backends: { agent: 'pi' },
+  instances: [createPiSdkBackend({ id: 'pi' })],
 })
 ```
 
