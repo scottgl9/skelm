@@ -15,6 +15,31 @@ export interface NetworkEgressEvent {
   decision: 'allow' | 'deny'
   reason?: 'egress-denied' | 'not-in-allowlist' | 'unknown-token' | 'unknown'
   timestamp: string
+  /**
+   * Remote peer of the proxy connection (the agent subprocess, a probe,
+   * or an unexpected lateral mover). Populated whenever the proxy can
+   * read the socket's peer info. Lets an operator correlate an
+   * `runId: "unknown"` deny back to a process via `ss` / `lsof`.
+   */
+  source?: {
+    address: string
+    port: number
+  }
+  /**
+   * True when the request carried *any* kind of `Authorization` /
+   * `Proxy-Authorization` header (Basic, Bearer, anything). Distinguishes
+   * "no token at all" (typical of a port-scan or misrouted client) from
+   * "token sent but the proxy's store didn't recognise it" (often a
+   * configuration drift between the gateway and a long-lived subprocess).
+   */
+  tokenPresent?: boolean
+  /**
+   * Cumulative count of unknown-token deny events seen since the proxy
+   * started. Useful for spotting spikes in untokened probes when a
+   * spiked-but-otherwise-quiet audit log is the only signal.
+   * Only set on entries that themselves are unknown-token denials.
+   */
+  unknownTokenDenials?: number
 }
 
 /**
@@ -38,6 +63,11 @@ export async function emitEgressAudit(
       host: event.host,
       decision: event.decision,
       reason: event.reason,
+      ...(event.source !== undefined && { source: event.source }),
+      ...(event.tokenPresent !== undefined && { tokenPresent: event.tokenPresent }),
+      ...(event.unknownTokenDenials !== undefined && {
+        unknownTokenDenials: event.unknownTokenDenials,
+      }),
     },
   })
 }

@@ -244,6 +244,66 @@ describe('egress-proxy', () => {
       expect(allow?.details?.stepId).toBe('cohort:a')
     })
   })
+
+  describe('untokened-deny observability (F010)', () => {
+    test('records source remoteAddress/remotePort for untokened denies', async () => {
+      const port = await startProxyWithPolicy('allow')
+      // Make a CONNECT with no Authorization header at all → unknown-token deny.
+      await makeConnectRequest(port, 'example.com:443', undefined)
+      const deny = auditWriter.events.find((e) => e.action === 'network.egress:deny')
+      expect(deny).toBeDefined()
+      const source = deny?.details?.source as { address?: string; port?: number } | undefined
+      expect(source?.address).toMatch(/^(?:127\.0\.0\.1|::ffff:127\.0\.0\.1)$/)
+      expect(typeof source?.port).toBe('number')
+      expect(source?.port).toBeGreaterThan(0)
+    })
+
+    test('reports tokenPresent: false when no auth header was sent', async () => {
+      const port = await startProxyWithPolicy('allow')
+      await makeConnectRequest(port, 'example.com:443', undefined)
+      const deny = auditWriter.events.find((e) => e.action === 'network.egress:deny')
+      expect(deny?.details?.tokenPresent).toBe(false)
+      expect(deny?.details?.reason).toBe('unknown-token')
+    })
+
+    test('reports tokenPresent: true when an unrecognised auth header was sent', async () => {
+      const port = await startProxyWithPolicy('allow')
+      // Bearer token that the proxy can extract but won't find in the store.
+      await makeConnectRequest(port, 'example.com:443', 'made-up-token')
+      const deny = auditWriter.events.find((e) => e.action === 'network.egress:deny')
+      expect(deny?.details?.tokenPresent).toBe(true)
+    })
+
+    test('cumulative unknownTokenDenials counter increments per untokened deny', async () => {
+      const port = await startProxyWithPolicy('allow')
+      await makeConnectRequest(port, 'example.com:443', undefined)
+      await makeConnectRequest(port, 'example.com:443', undefined)
+      await makeConnectRequest(port, 'example.com:443', undefined)
+      const denies = auditWriter.events.filter((e) => e.action === 'network.egress:deny')
+      const counts = denies.map(
+        (e) => (e.details as { unknownTokenDenials?: number })?.unknownTokenDenials,
+      )
+      expect(counts).toEqual([1, 2, 3])
+    })
+
+    test('does NOT emit unknownTokenDenials counter for non-unknown-token denies', async () => {
+      // allowHosts policy → host not in list → policy reason is "not-in-allowlist", not "unknown-token".
+      const port = await startProxyWithPolicy({ allowHosts: ['example.com'] })
+      await makeConnectRequest(port, 'api.github.com:443', 'run1:step1')
+      const deny = auditWriter.events.find((e) => e.action === 'network.egress:deny')
+      expect(deny?.details?.reason).toBe('not-in-allowlist')
+      expect(
+        (deny?.details as { unknownTokenDenials?: number })?.unknownTokenDenials,
+      ).toBeUndefined()
+    })
+
+    test('source is also captured on allow decisions', async () => {
+      const port = await startProxyWithPolicy('allow')
+      await makeConnectRequest(port, 'example.com:443', 'run1:step1')
+      const allow = auditWriter.events.find((e) => e.action === 'network.egress:allow')
+      expect(allow?.details?.source).toBeDefined()
+    })
+  })
 })
 
 // Helper to make a CONNECT request
