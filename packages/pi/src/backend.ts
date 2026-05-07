@@ -9,6 +9,7 @@
 
 import { PermissionDeniedError, formatSkillBlock } from '@skelm/core'
 import type {
+  AgentPermissions,
   AgentRequest,
   AgentResponse,
   BackendCapabilities,
@@ -90,13 +91,25 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
 
     async run(request: AgentRequest, context: BackendContext): Promise<AgentResponse> {
       const policy = context.permissions ?? request.permissions
-      if (policy !== undefined && hasNonNetworkConstraints(policy)) {
-        // The caller declared a permission policy that constrains a dimension
-        // Pi RPC cannot enforce in-subprocess. Fail-closed instead of letting
-        // the agent run unconstrained — networkEgress alone is fine because
-        // the gateway egress proxy enforces it outside the subprocess.
+      // Defense-in-depth: Pi RPC cannot enforce tool / executable /
+      // filesystem / MCP / skill permissions inside the pi subprocess. We
+      // refuse when the workflow *explicitly declared* one of those
+      // dimensions. networkEgress alone is fine because the gateway egress
+      // proxy enforces it out-of-band, and a fully-defaulted policy
+      // (everything intersected to the deny-all empty set, e.g. from
+      // project defaults) is policy resolution — not user intent.
+      //
+      // When `declaredPermissions` is supplied (the canonical runner path)
+      // we use it directly; otherwise fall back to inspecting the resolved
+      // policy so callers that hand-build a ResolvedPolicy still get the
+      // refusal.
+      const refuse =
+        context.declaredPermissions !== undefined
+          ? declaresNonNetworkDimension(context.declaredPermissions)
+          : policy !== undefined && resolvedPolicyHasNonNetworkConstraints(policy)
+      if (refuse) {
         throw new PermissionDeniedError(
-          'pi RPC backend cannot enforce tool, executable, filesystem, MCP, or skill permissions in-subprocess. Use the pi-sdk backend for tool-level enforcement, or remove the policy if only networkEgress is required (the gateway egress proxy enforces that out-of-band).',
+          'pi RPC backend cannot enforce tool, executable, filesystem, MCP, or skill permissions in-subprocess. Use the pi-sdk backend for tool-level enforcement, or remove those dimensions and rely on networkEgress + the gateway egress proxy.',
         )
       }
       await acquire()
@@ -108,6 +121,9 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
         ...((request.cwd ?? options.cwd) !== undefined && { cwd: request.cwd ?? options.cwd }),
         ...(options.egressProxyUrl !== undefined && { egressProxyUrl: options.egressProxyUrl }),
         ...(context.egressToken !== undefined && { egressToken: context.egressToken }),
+        // Per-step proxy env from the runtime (canonical path; takes precedence
+        // over options.egressProxyUrl).
+        ...(context.proxyEnv !== undefined && { proxyEnv: context.proxyEnv }),
         persistSession: false,
       })
 
@@ -168,12 +184,18 @@ async function loadSkillBodies(req: AgentRequest, ctx: BackendContext): Promise<
 }
 
 /**
- * True if the policy constrains any dimension Pi RPC cannot enforce in-subprocess.
- * networkEgress is enforceable via the gateway egress proxy (HTTP_PROXY env +
- * SKELM_EGRESS_TOKEN) and is therefore allowed without triggering the
- * defense-in-depth refusal.
+ * True iff the workflow author explicitly declared at least one non-network
+ * dimension on the step. Walks the raw `AgentPermissions` input, NOT the
+ * resolved `ResolvedPolicy` (which always has every dimension populated by
+ * intersection — so we cannot tell user intent from defaulted deny-all).
  */
-function hasNonNetworkConstraints(policy: {
+/**
+ * Fallback for callers that don't populate `BackendContext.declaredPermissions`
+ * (older test harnesses, hand-built ResolvedPolicy instances). Mirrors the
+ * pre-`declaredPermissions` heuristic: any non-default shape on a non-network
+ * dimension counts as a constraint Pi RPC cannot enforce.
+ */
+function resolvedPolicyHasNonNetworkConstraints(policy: {
   allowedTools?: { exact: ReadonlySet<string>; prefixes: readonly string[]; star: boolean }
   allowedExecutables?: ReadonlySet<string>
   allowedMcpServers?: ReadonlySet<string>
@@ -184,16 +206,29 @@ function hasNonNetworkConstraints(policy: {
 }): boolean {
   const tools = policy.allowedTools
   if (tools !== undefined && !tools.star) return true
-  if ((policy.allowedExecutables?.size ?? 0) === 0 && policy.allowedExecutables !== undefined) {
-    // empty set means deny-all → constrains
-    return true
-  }
+  if (policy.allowedExecutables !== undefined && policy.allowedExecutables.size === 0) return true
   if (policy.allowedMcpServers !== undefined && policy.allowedMcpServers.size === 0) return true
   if (policy.allowedSkills !== undefined && policy.allowedSkills.size === 0) return true
   if (policy.fsRead !== undefined && policy.fsRead.size === 0) return true
   if (policy.fsWrite !== undefined && policy.fsWrite.size === 0) return true
   if (policy.approval !== undefined && policy.approval !== null) return true
   return false
+}
+
+function declaresNonNetworkDimension(declared: AgentPermissions | undefined): boolean {
+  if (declared === undefined) return false
+  return (
+    declared.allowedTools !== undefined ||
+    declared.deniedTools !== undefined ||
+    declared.allowedExecutables !== undefined ||
+    declared.allowedMcpServers !== undefined ||
+    declared.allowedSkills !== undefined ||
+    declared.allowedSecrets !== undefined ||
+    declared.fsRead !== undefined ||
+    declared.fsWrite !== undefined ||
+    declared.approval !== undefined ||
+    declared.profile !== undefined
+  )
 }
 
 function buildPrompt(req: AgentRequest, skillBodies: string[] = []): string {

@@ -24,6 +24,13 @@ export interface PiRpcClientOptions {
   egressProxyUrl?: string
   /** Optional egress token to inject into subprocess environment */
   egressToken?: string
+  /**
+   * Optional pre-encoded proxy env (HTTP_PROXY/HTTPS_PROXY/SKELM_EGRESS_TOKEN)
+   * supplied by the runtime per-step. When set, overrides the legacy
+   * `egressProxyUrl`/`egressToken` fields. The HTTP_PROXY value already has
+   * the token embedded as Basic credentials.
+   */
+  proxyEnv?: Record<string, string>
 }
 
 export interface PiRpcResponse {
@@ -61,21 +68,22 @@ export class PiRpcClient {
     const env: Record<string, string> = Object.fromEntries(
       Object.entries(process.env).filter(([, v]) => v !== undefined),
     ) as Record<string, string>
-    if (this.options.egressProxyUrl !== undefined) {
-      // Encode the egress token (when set) as the credential field of the
-      // proxy URL so any HTTP client (Node http/https, undici, fetch, curl)
-      // automatically sends `Proxy-Authorization: Basic <base64(...)>`.
-      // Without this the proxy never receives the token and falls back to
-      // its default-deny policy. SKELM_EGRESS_TOKEN is also emitted as a
-      // backup for clients that read it directly.
+    // Inject proxy env. Three sources, in priority order:
+    //   1. options.proxyEnv (per-step env from BackendContext.proxyEnv when
+    //      the gateway runtime provides one — this is the canonical path).
+    //   2. options.egressProxyUrl + options.egressToken — legacy
+    //      construction-time fields kept for back-compat.
+    if (this.options.proxyEnv !== undefined) {
+      Object.assign(env, this.options.proxyEnv)
+    } else if (this.options.egressProxyUrl !== undefined) {
       env.HTTP_PROXY = encodeProxyUrlWithToken(
         this.options.egressProxyUrl,
         this.options.egressToken,
       )
       env.HTTPS_PROXY = env.HTTP_PROXY
-    }
-    if (this.options.egressToken !== undefined) {
-      env.SKELM_EGRESS_TOKEN = this.options.egressToken
+      if (this.options.egressToken !== undefined) {
+        env.SKELM_EGRESS_TOKEN = this.options.egressToken
+      }
     }
 
     const proc = spawn(command, args, {

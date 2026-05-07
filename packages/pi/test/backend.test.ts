@@ -50,4 +50,29 @@ describe('createPiBackend (RPC)', () => {
     const result = await backend.run?.({ prompt: 'go' }, makeCtx())
     expect(result?.text).toBe('ok')
   })
+
+  it('runs when only declaredPermissions.networkEgress is set (Pi can rely on the egress proxy)', async () => {
+    const backend = createPiBackend()
+    const result = await backend.run?.(
+      { prompt: 'go', permissions: makePolicy({ networkEgress: 'allow' }) },
+      makeCtx({
+        permissions: makePolicy({ networkEgress: 'allow' }),
+        declaredPermissions: { networkEgress: 'allow' },
+      }),
+    )
+    expect(result?.text).toBe('ok')
+  })
+
+  it('refuses when declaredPermissions includes a non-network dimension', async () => {
+    const backend = createPiBackend()
+    await expect(
+      backend.run?.(
+        { prompt: 'go', permissions: makePolicy() },
+        makeCtx({
+          permissions: makePolicy(),
+          declaredPermissions: { networkEgress: 'allow', allowedExecutables: ['curl'] },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(PermissionDeniedError)
+  })
 })
