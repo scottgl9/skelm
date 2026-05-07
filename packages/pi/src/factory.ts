@@ -29,6 +29,8 @@ export interface PiBackendConfig {
   timeout?: number
   /** Max concurrent pi processes */
   maxConcurrent?: number
+  /** Egress proxy URL to inject into pi subprocess (for network egress enforcement) */
+  egressProxyUrl?: string
 }
 
 /**
@@ -49,5 +51,8 @@ export function createPiBackendFromConfig(
       createPiBackend({ ...config, command: cmd }),
     )
   }
-  return createPiBackend(config)
+  return createPiBackend({
+    ...config,
+    ...(config.egressProxyUrl !== undefined && { egressProxyUrl: config.egressProxyUrl }),
+  })
 }

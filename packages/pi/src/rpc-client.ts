@@ -60,7 +60,7 @@ export class PiRpcClient {
     // Build environment with optional egress proxy injection
     const env: Record<string, string> = Object.fromEntries(
       Object.entries(process.env).filter(([, v]) => v !== undefined),
-    )
+    ) as Record<string, string>
     if (this.options.egressProxyUrl !== undefined) {
       env.HTTP_PROXY = this.options.egressProxyUrl
       env.HTTPS_PROXY = this.options.egressProxyUrl
