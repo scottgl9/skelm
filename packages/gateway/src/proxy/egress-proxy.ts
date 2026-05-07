@@ -1,191 +1,383 @@
 /**
- * Embedded CONNECT proxy for skelm gateway egress enforcement.
+ * Embedded CONNECT proxy for network egress enforcement.
  *
- * ## How it works
- *
- * Every agent subprocess is spawned with:
- *   HTTP_PROXY=http://127.0.0.1:<proxyPort>
- *   HTTPS_PROXY=http://127.0.0.1:<proxyPort>
- *   SKELM_EGRESS_TOKEN=<per-step-unique-token>
- *
- * Node.js `http`/`https`, `fetch`, and every SDK that wraps them honour
- * these env vars automatically.
- *
- * For HTTPS the client sends a CONNECT request before TLS:
- *   CONNECT api.openai.com:443 HTTP/1.1
- *   Proxy-Authorization: Bearer <token>
- *
- * The proxy reads the hostname in plaintext (no TLS interception needed),
- * looks up the step policy via the token, and either tunnels the connection
- * or closes it with a 407 response.
- *
- * For plain HTTP the proxy reads the Host header from the first request line.
- *
- * Unknown / missing token → deny (safe default).
+ * This proxy:
+ * - Listens on a configurable port (default: server.port + 1)
+ * - Handles CONNECT requests for HTTPS tunneling
+ * - Handles HTTP requests (for non-TLS traffic)
+ * - Enforces networkEgress policies per-agent-step via token-based auth
+ * - Emits audit events for every allow/deny decision
  */
 
-import { createServer, type Server, type Socket } from 'node:net'
-import { randomBytes } from 'node:crypto'
+import { createServer, type Server, type Socket, createConnection } from 'node:net'
 import type { AuditWriter } from '@skelm/core'
-import { evaluate, EgressPolicyRegistry } from './egress-policy.js'
-import { writeEgressAudit } from './egress-audit.js'
+import type { NetworkPolicy } from '@skelm/core'
+import {
+  type PolicyCheckResult,
+  checkHostPolicy,
+  extractHostnameFromConnectTarget,
+  extractHostnameFromHostHeader,
+  type TokenPolicyMap,
+} from './egress-policy.js'
+import { emitEgressAudit, type NetworkEgressEvent } from './egress-audit.js'
 
+/**
+ * Proxy configuration.
+ */
 export interface EgressProxyOptions {
-  /** Host to listen on. Defaults to 127.0.0.1. */
-  host?: string
-  /** Port to listen on. Defaults to 14739. */
+  /** Port to listen on. Default: 14739 (server.port + 1). */
   port?: number
-  /** Audit writer for egress events. Defaults to no-op. */
-  auditWriter?: AuditWriter
+  /** Host to bind to. Default: 127.0.0.1 */
+  host?: string
+  /** Token-to-policy mapping store. */
+  tokenStore: TokenPolicyMap
+  /** Audit writer for logging decisions. */
+  auditWriter: AuditWriter
+  /** Default policy when token is unknown/missing. Default: 'deny'. */
+  defaultPolicy?: NetworkPolicy
 }
 
+/**
+ * Embedded CONNECT proxy server.
+ */
 export class EgressProxy {
   private server: Server | null = null
-  readonly registry = new EgressPolicyRegistry()
-  private readonly host: string
   private readonly port: number
-  private readonly audit: AuditWriter
+  private readonly host: string
+  private readonly tokenStore: TokenPolicyMap
+  private readonly auditWriter: AuditWriter
+  private readonly defaultPolicy: NetworkPolicy
 
-  constructor(opts: EgressProxyOptions = {}) {
-    this.host = opts.host ?? '127.0.0.1'
-    this.port = opts.port ?? 14739
-    this.audit = opts.auditWriter ?? { write: async () => {} }
+  constructor(private readonly options: EgressProxyOptions) {
+    this.port = options.port ?? 14739
+    this.host = options.host ?? '127.0.0.1'
+    this.tokenStore = options.tokenStore
+    this.auditWriter = options.auditWriter
+    this.defaultPolicy = options.defaultPolicy ?? 'deny'
   }
 
-  get proxyUrl(): string {
-    return `http://${this.host}:${this.port}`
-  }
+  /**
+   * Start the proxy server.
+   */
+  async start(): Promise<void> {
+    if (this.server) {
+      throw new Error('proxy is already running')
+    }
 
-  /** Generate a unique token and return it. Caller registers it with a policy. */
-  static generateToken(): string {
-    return randomBytes(24).toString('hex')
-  }
-
-  start(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.server = createServer((socket) => {
-        socket.once('data', (chunk) => this.handleFirstChunk(socket, chunk))
-        socket.on('error', () => socket.destroy())
+      this.server = createServer()
+
+      this.server.on('connection', (socket) => this.handleConnection(socket))
+
+      this.server.on('error', (err) => {
+        reject(err)
       })
-      this.server.on('error', reject)
-      this.server.listen(this.port, this.host, () => resolve())
+
+      this.server.listen(this.port, this.host, () => {
+        resolve()
+      })
     })
   }
 
-  stop(): Promise<void> {
+  /**
+   * Stop the proxy server.
+   */
+  async stop(): Promise<void> {
+    if (!this.server) {
+      return
+    }
+
     return new Promise((resolve) => {
-      if (this.server === null) return resolve()
-      this.server.close(() => resolve())
-      this.server = null
+      this.server?.close(() => {
+        this.server = null
+        resolve()
+      })
     })
   }
 
-  // ── Internal ──────────────────────────────────────────────────────────────
-
-  private handleFirstChunk(socket: Socket, chunk: Buffer): void {
-    const text = chunk.toString('utf8')
-    const firstLine = text.split('\r\n')[0] ?? ''
-
-    if (firstLine.startsWith('CONNECT ')) {
-      this.handleConnect(socket, text, firstLine)
-    } else {
-      this.handleHttp(socket, text, firstLine)
+  /**
+   * Get the bound port (useful when port 0 was requested).
+   */
+  getPort(): number {
+    if (!this.server) {
+      throw new Error('proxy is not running')
     }
+    const addr = this.server.address()
+    if (addr === null || typeof addr === 'string') {
+      throw new Error('proxy address is unknown')
+    }
+    return addr.port
   }
 
-  private handleConnect(socket: Socket, raw: string, firstLine: string): void {
-    // CONNECT api.openai.com:443 HTTP/1.1
-    const hostPort = firstLine.split(' ')[1] ?? ''
-    const host = hostPort.split(':')[0] ?? ''
-    const port = parseInt(hostPort.split(':')[1] ?? '443', 10)
+  /**
+   * Handle incoming connection.
+   */
+  private handleConnection(socket: Socket): void {
+    // Read the first line to determine request type
+    let buffer = ''
 
-    const token = extractToken(raw)
-    const policy = token ? this.registry.resolve(token) : undefined
-    const decision = policy
-      ? evaluate(policy, host)
-      : { allow: false as const, reason: 'no-policy' as const }
+    const onData = (chunk: Buffer): void => {
+      buffer += chunk.toString()
 
-    void writeEgressAudit(this.audit, host, policy, decision)
+      // Check if we have a complete request line
+      const lines = buffer.split('\r\n')
+      if (lines.length < 2) {
+        return // Need more data
+      }
 
-    if (!decision.allow) {
-      socket.write('HTTP/1.1 407 Proxy Authorization Required\r\n\r\n')
-      socket.destroy()
+      const firstLine = lines[0]
+      if (!firstLine) {
+        return // Need more data
+      }
+      const parts = firstLine.split(' ')
+
+      if (parts[0] === 'CONNECT' && parts[1]) {
+        // CONNECT request for HTTPS tunneling
+        this.handleConnect(socket, buffer, parts[1])
+      } else if (parts[0] === 'GET' || parts[0] === 'POST') {
+        // HTTP request (non-TLS)
+        this.handleHttp(socket, buffer)
+      } else {
+        // Unknown request type
+        this.rejectConnection(socket, '501 Not Implemented', 'Unknown request type')
+        socket.end()
+      }
+
+      socket.removeListener('data', onData)
+    }
+
+    socket.on('data', onData)
+
+    // Handle socket errors
+    socket.on('error', (err) => {
+      // Connection error, nothing we can do
+    })
+
+    // Handle socket close
+    socket.on('close', () => {
+      socket.removeListener('data', onData)
+    })
+  }
+
+  /**
+   * Handle CONNECT request.
+   */
+  private handleConnect(socket: Socket, request: string, target: string): void {
+    const hostname = extractHostnameFromConnectTarget(target)
+    const authHeader = this.extractAuthHeader(request)
+    const token = this.extractTokenFromAuth(authHeader)
+
+    // Get policy for this token
+    const policy = token ? this.tokenStore.get(token) : undefined
+    const effectivePolicy = policy ?? this.defaultPolicy
+
+    // Check policy
+    const result = checkHostPolicy(effectivePolicy, hostname)
+
+    // Emit audit event
+    const event: NetworkEgressEvent = {
+      event: 'network.egress',
+      runId: this.extractRunIdFromToken(token),
+      stepId: this.extractStepIdFromToken(token),
+      host: hostname,
+      decision: result.allowed ? 'allow' : 'deny',
+      reason: result.reason ?? 'unknown-token',
+      timestamp: new Date().toISOString(),
+    }
+
+    void emitEgressAudit(this.auditWriter, event).catch(() => {
+      // Audit failure doesn't block the connection
+    })
+
+    if (!result.allowed) {
+      this.rejectConnection(socket, '403 Forbidden', `Egress denied: ${result.reason ?? 'unknown'}`)
+      socket.end()
       return
     }
 
-    // Tunnel
-    const target = createConnection(host, port, socket)
-    target.on('connect', () => {
-      socket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
-      target.pipe(socket)
-      socket.pipe(target)
+    // Allowed - establish tunnel
+    socket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
+
+    // Now we need to forward data between the client and the destination
+    // We'll use net.connect to create the destination connection
+    const parts = target.split(':')
+    const destHost = parts[0]
+    const destPortStr = parts[1]
+    if (!destHost) {
+      socket.end()
+      return
+    }
+    const destPort = parseInt(destPortStr || '443', 10) || 443
+
+    const destSocket = connectToHost(destHost, destPort, () => {
+      // Start bidirectional forwarding
+      socket.pipe(destSocket)
+      destSocket.pipe(socket)
     })
-    target.on('error', () => {
-      socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n')
-      socket.destroy()
+
+    destSocket.on('error', () => {
+      socket.end()
     })
-    socket.on('error', () => target.destroy())
+
+    socket.on('error', () => {
+      destSocket.end()
+    })
+
+    socket.on('close', () => {
+      destSocket.end()
+    })
   }
 
-  private handleHttp(socket: Socket, raw: string, firstLine: string): void {
-    // GET http://example.com/path HTTP/1.1
-    const host = extractHttpHost(raw, firstLine)
-
-    const token = extractToken(raw)
-    const policy = token ? this.registry.resolve(token) : undefined
-    const decision = policy
-      ? evaluate(policy, host)
-      : { allow: false as const, reason: 'no-policy' as const }
-
-    void writeEgressAudit(this.audit, host, policy, decision)
-
-    if (!decision.allow) {
-      socket.write('HTTP/1.1 407 Proxy Authorization Required\r\n\r\n')
-      socket.destroy()
+  /**
+   * Handle HTTP request (non-TLS).
+   */
+  private handleHttp(socket: Socket, request: string): void {
+    // Extract Host header
+    const hostMatch = request.match(/Host:\s*([^\r\n]+)/i)
+    if (!hostMatch) {
+      this.rejectConnection(socket, '400 Bad Request', 'Missing Host header')
+      socket.end()
       return
     }
 
-    // Re-assemble and forward plain HTTP
-    const urlMatch = firstLine.match(/^[A-Z]+ (https?:\/\/[^/\s]+)(\/[^\s]*)/)
-    const targetHost = host
-    const targetPort = 80
-    const path = urlMatch?.[2] ?? '/'
-    const rewritten = raw.replace(firstLine, firstLine.replace(/https?:\/\/[^/\s]+/, ''))
+    const hostValue = hostMatch[1]
+    if (!hostValue) {
+      this.rejectConnection(socket, '400 Bad Request', 'Invalid host header')
+      socket.end()
+      return
+    }
+    const hostname = extractHostnameFromHostHeader(hostValue.trim())
+    const authHeader = this.extractAuthHeader(request)
+    const token = this.extractTokenFromAuth(authHeader)
 
-    const target = createConnection(targetHost, targetPort, socket)
-    target.on('connect', () => {
-      target.write(rewritten)
-      target.pipe(socket)
-      socket.pipe(target)
+    // Get policy for this token
+    const policy = token ? this.tokenStore.get(token) : undefined
+    const effectivePolicy = policy ?? this.defaultPolicy
+
+    // Check policy
+    const result = checkHostPolicy(effectivePolicy, hostname)
+
+    // Emit audit event
+    const event: NetworkEgressEvent = {
+      event: 'network.egress',
+      runId: this.extractRunIdFromToken(token),
+      stepId: this.extractStepIdFromToken(token),
+      host: hostname,
+      decision: result.allowed ? 'allow' : 'deny',
+      reason: result.reason ?? 'unknown-token',
+      timestamp: new Date().toISOString(),
+    }
+
+    void emitEgressAudit(this.auditWriter, event).catch(() => {
+      // Audit failure doesn't block the connection
     })
-    target.on('error', () => {
-      socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n')
-      socket.destroy()
+
+    if (!result.allowed) {
+      this.rejectConnection(socket, '403 Forbidden', `Egress denied: ${result.reason ?? 'unknown'}`)
+      socket.end()
+      return
+    }
+
+    // For HTTP, we need to forward the request to the destination
+    const hostParts = hostname.split(':')
+    const destHost = hostParts[0]
+    const destPortStr = hostParts[1]
+    if (!destHost) {
+      this.rejectConnection(socket, '400 Bad Request', 'Invalid host')
+      socket.end()
+      return
+    }
+    const destPort = parseInt(destPortStr || '80', 10) || 80
+
+    // Reconstruct the request to send to the destination
+    const lines = request.split('\r\n')
+    const firstLine = lines[0]
+    if (!firstLine) {
+      this.rejectConnection(socket, '400 Bad Request', 'Invalid request')
+      socket.end()
+      return
+    }
+    const destRequest = lines.map((line, i) => {
+      if (i === 0) {
+        return firstLine
+      }
+      // Replace Host header with actual destination
+      if (line.toLowerCase().startsWith('host:')) {
+        return `Host: ${destHost}`
+      }
+      return line
+    }).join('\r\n')
+
+    const destSocket = connectToHost(destHost, destPort, () => {
+      destSocket.write(destRequest)
+      socket.pipe(destSocket)
+      destSocket.pipe(socket)
     })
-    socket.on('error', () => target.destroy())
+
+    destSocket.on('error', () => {
+      socket.end()
+    })
+
+    socket.on('error', () => {
+      destSocket.end()
+    })
+  }
+
+  /**
+   * Reject a connection with an HTTP error response.
+   */
+  private rejectConnection(socket: Socket, statusCode: string, statusMessage: string): void {
+    socket.write(`HTTP/1.1 ${statusCode} ${statusMessage}\r\n`)
+    socket.write('Content-Length: 0\r\n')
+    socket.write('Connection: close\r\n')
+    socket.write('\r\n')
+  }
+
+  /**
+   * Extract Authorization or Proxy-Authorization header from request.
+   */
+  private extractAuthHeader(request: string): string | undefined {
+    // Check Proxy-Authorization first (standard for CONNECT requests)
+    let match = request.match(/Proxy-Authorization:\s*([^\r\n]+)/i)
+    if (match?.[1]) return match[1].trim()
+    // Fall back to Authorization for compatibility
+    match = request.match(/Authorization:\s*([^\r\n]+)/i)
+    return match?.[1]?.trim()
+  }
+
+  /**
+   * Extract token from Bearer authorization.
+   */
+  private extractTokenFromAuth(authHeader: string | undefined): string | undefined {
+    if (!authHeader) return undefined
+    const match = authHeader.match(/^Bearer\s+(.+)$/i)
+    return match?.[1]?.trim()
+  }
+
+  /**
+   * Extract runId from token (token format: runId:stepId).
+   */
+  private extractRunIdFromToken(token: string | undefined): string {
+    if (!token) return 'unknown'
+    const parts = token.split(':')
+    return parts[0] || 'unknown'
+  }
+
+  /**
+   * Extract stepId from token (token format: runId:stepId).
+   */
+  private extractStepIdFromToken(token: string | undefined): string {
+    if (!token) return 'unknown'
+    const parts = token.split(':')
+    return parts[1] || 'unknown'
   }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-import { connect } from 'node:net'
-
-function createConnection(host: string, port: number, client: Socket): Socket {
-  const target = connect({ host, port })
-  client.on('close', () => target.destroy())
-  return target
-}
-
-function extractToken(raw: string): string | undefined {
-  const match = raw.match(/Proxy-Authorization:\s*Bearer\s+([^\r\n]+)/i)
-  return match?.[1]?.trim()
-}
-
-function extractHttpHost(raw: string, firstLine: string): string {
-  // Try Host header first
-  const hostHeader = raw.match(/^Host:\s*([^\r\n]+)/im)
-  if (hostHeader?.[1]) return hostHeader[1].trim().split(':')[0] ?? ''
-  // Fall back to URL in first line
-  const urlMatch = firstLine.match(/https?:\/\/([^/:]+)/)
-  return urlMatch?.[1] ?? ''
+/**
+ * Create a TCP connection to a host:port.
+ */
+function connectToHost(host: string, port: number, onConnect: () => void): Socket {
+  const socket = createConnection(port, host)
+  socket.once('connect', onConnect)
+  return socket
 }

@@ -12,6 +12,7 @@ import {
   type SecretResolver,
   type SkelmConfig,
   SqliteRunStore,
+  type NetworkPolicy,
 } from '@skelm/core'
 import { SuspendApprovalGate } from '../approvals/suspend-gate.js'
 import { ChainAuditWriter } from '../audit/chain.js'
@@ -29,9 +30,13 @@ import {
 import { FileSecretResolver } from '../secrets/file-driver.js'
 import { TriggerCoordinator } from '../triggers/coordinator.js'
 import { createTriggerDispatcher } from '../triggers/dispatcher.js'
+import {
+  EgressProxy,
+  InMemoryTokenPolicyStore,
+  type TokenPolicyMap,
+} from '../proxy/index.js'
 import { type DiscoveryRecord, removeDiscovery, writeDiscovery } from './discovery.js'
 import { type LockfileContents, acquireLockfile, releaseLockfile } from './lockfile.js'
-import { EgressProxy } from '../proxy/index.js'
 
 export type GatewayState = 'stopped' | 'starting' | 'running' | 'paused' | 'stopping'
 
@@ -65,8 +70,6 @@ export interface GatewayOptions {
   /** Bound URL the HTTP server should advertise; defaults to http://127.0.0.1:14738. */
   httpHost?: string
   httpPort?: number
-  /** Override the http proxy port; defaults to httpPort + 1. */
-  httpProxyPort?: number
   /**
    * Optional loader the HTTP /pipelines/:id route uses to import a workflow
    * module from its registered path so its graph can be serialized.
@@ -136,6 +139,7 @@ export class Gateway {
   private runStoreInternal: RunStore | null = null
   private httpServer: SkelmServer | null = null
   private egressProxy: EgressProxy | null = null
+  private tokenPolicyStore: TokenPolicyMap | null = null
   private readonly inFlightRuns = new Map<string, AbortController>()
   private readonly inFlightRunners = new Map<string, import('@skelm/core').Runner>()
   private metricsInternal: import('@skelm/metrics').MetricsCollector | null = null
@@ -276,6 +280,44 @@ export class Gateway {
     return this.managersInternal
   }
 
+  /**
+   * Register a token-to-policy mapping for an agent step.
+   * The token is passed to the subprocess as SKELM_EGRESS_TOKEN.
+   */
+  registerEgressToken(runId: string, stepId: string, policy: NetworkPolicy): string {
+    if (this.tokenPolicyStore === null) {
+      throw new Error('egress proxy is not available — start() the gateway first')
+    }
+    const token = `${runId}:${stepId}`
+    this.tokenPolicyStore.set(token, policy)
+    return token
+  }
+
+  /**
+   * Unregister a token when the step completes.
+   */
+  unregisterEgressToken(runId: string, stepId: string): void {
+    if (this.tokenPolicyStore === null) return
+    const token = `${runId}:${stepId}`
+    this.tokenPolicyStore.delete(token)
+  }
+
+  /**
+   * Get proxy environment variables to inject into agent subprocesses.
+   * Returns undefined if the proxy is disabled or not running.
+   */
+  getProxyEnvVars(): Record<string, string> | undefined {
+    if (this.egressProxy === null) return undefined
+    const config = this.getConfig()
+    const proxyConfig = config.server?.proxy
+    if (proxyConfig?.enabled === false) return undefined
+    const port = this.egressProxy.getPort()
+    return {
+      HTTP_PROXY: `http://127.0.0.1:${port}`,
+      HTTPS_PROXY: `http://127.0.0.1:${port}`,
+    }
+  }
+
   async start(): Promise<void> {
     if (this.state !== 'stopped') {
       throw new Error(`cannot start gateway in state ${this.state}`)
@@ -308,10 +350,11 @@ export class Gateway {
         const { MetricsCollector } = await import('@skelm/metrics')
         this.metricsInternal = new MetricsCollector()
       }
+      // Start the egress proxy before HTTP server
+      await this.startEgressProxy()
       if (this.options.enableHttp) {
         await this.startHttp()
       }
-      await this.startEgressProxy()
       if (this.options.installSignalHandlers) this.attachSignals()
       this.state = 'running'
     } catch (err) {
@@ -322,6 +365,8 @@ export class Gateway {
       this.enforcementInternal = null
       this.managersInternal = null
       this.runStoreInternal = null
+      this.egressProxy = null
+      this.tokenPolicyStore = null
       throw err
     }
   }
@@ -371,13 +416,11 @@ export class Gateway {
     this.state = 'stopping'
     try {
       this.detachSignals()
+      // Stop the egress proxy before HTTP server
+      await this.stopEgressProxy()
       if (this.httpServer !== null) {
         await this.httpServer.stop()
         this.httpServer = null
-      }
-      if (this.egressProxy !== null) {
-        await this.egressProxy.stop()
-        this.egressProxy = null
       }
       if (this.managersInternal !== null) {
         await this.managersInternal.triggers.stop()
@@ -405,6 +448,8 @@ export class Gateway {
       this.enforcementInternal = null
       this.managersInternal = null
       this.runStoreInternal = null
+      this.egressProxy = null
+      this.tokenPolicyStore = null
     }
   }
 
@@ -435,44 +480,36 @@ export class Gateway {
   }
 
   private async startEgressProxy(): Promise<void> {
-    // Only start the proxy when the HTTP server is also running (production mode).
-    // Test gateways set enableHttp: false and should not bind the proxy port.
-    if (!this.options.enableHttp) return
-    const serverPort = this.options.httpPort ?? this.config.server?.port ?? 14738
-    const proxyCfg = this.config.server?.proxy
-    if (proxyCfg?.enabled === false) return
-    const proxyPort = this.options.httpProxyPort ?? proxyCfg?.port ?? serverPort + 1
-    const host = this.options.httpHost ?? this.config.server?.host ?? '127.0.0.1'
-    const auditWriter = this.enforcementInternal?.auditWriter
+    const proxyConfig = this.config.server?.proxy
+    const enabled = proxyConfig?.enabled ?? true
+    if (!enabled) return
+
+    if (this.enforcementInternal === null) {
+      throw new Error('enforcement must be built before egress proxy starts')
+    }
+
+    this.tokenPolicyStore = new InMemoryTokenPolicyStore()
+    const serverPort = this.config.server?.port ?? 14738
+    const proxyPort = proxyConfig?.port ?? serverPort + 1
+
     this.egressProxy = new EgressProxy({
-      host,
       port: proxyPort,
-      ...(auditWriter !== undefined && { auditWriter }),
+      host: '127.0.0.1',
+      tokenStore: this.tokenPolicyStore,
+      auditWriter: this.enforcementInternal.auditWriter,
+      defaultPolicy: 'deny',
     })
+
     await this.egressProxy.start()
   }
 
-  /**
-   * The egress proxy registry. Use this to register per-step policies
-   * before spawning agent subprocesses, and to revoke them after the step
-   * completes. Returns null when the proxy is disabled.
-   */
-  get egressRegistry() {
-    return this.egressProxy?.registry ?? null
-  }
-
-  /**
-   * Returns the env vars that must be injected into an agent subprocess
-   * for the egress proxy to enforce network policy for the given token.
-   * Returns an empty object when the proxy is disabled.
-   */
-  egressEnv(token: string): Record<string, string> {
-    if (this.egressProxy === null) return {}
-    const url = this.egressProxy.proxyUrl
-    return {
-      HTTP_PROXY: url,
-      HTTPS_PROXY: url,
-      SKELM_EGRESS_TOKEN: token,
+  private async stopEgressProxy(): Promise<void> {
+    if (this.egressProxy !== null) {
+      await this.egressProxy.stop()
+      this.egressProxy = null
+    }
+    if (this.tokenPolicyStore !== null) {
+      this.tokenPolicyStore = null
     }
   }
 
@@ -488,7 +525,9 @@ export class Gateway {
 
   private async buildManagers(): Promise<GatewayManagers> {
     const mcp = new McpServerManager()
-    const codingAgents = new CodingAgentManager()
+    const codingAgents = new CodingAgentManager({
+      getProxyEnv: () => this.getProxyEnvVars(),
+    })
     const acpSessions = new AcpSessionManager({
       storePath: defaultAcpSessionStorePath(this.stateDir),
     })

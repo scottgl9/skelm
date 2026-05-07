@@ -52,6 +52,30 @@ The gateway is required for:
 
 Default port: `14738`, default host: `127.0.0.1`. Configure via `server.port` and `server.host` in `skelm.config.ts`.
 
+## Network egress proxy
+
+The gateway hosts an embedded CONNECT proxy (default port `server.port + 1` = 14739) that enforces `networkEgress` permissions. See the [Gateway guide](../../guides/gateway.md#network-egress-proxy) for details.
+
+Configure in `skelm.config.ts`:
+
+```ts
+server: {
+  port: 14738,
+  proxy: {
+    enabled: true,     // default: true
+    port: 14739,       // default: server.port + 1
+  },
+}
+```
+
+Agent subprocesses receive these environment variables:
+
+```bash
+HTTP_PROXY=http://127.0.0.1:14739
+HTTPS_PROXY=http://127.0.0.1:14739
+SKELM_EGRESS_TOKEN=<runId>:<stepId>
+```
+
 ## Run events (SSE)
 
 Connect to `GET /runs/:id/events` for a server-sent event stream. Events include:

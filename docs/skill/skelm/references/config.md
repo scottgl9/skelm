@@ -61,8 +61,8 @@ export default defineConfig({
     auth?:              { mode: 'none' | 'bearer' },
     maxConcurrentRuns?: number,              // default: 10
     proxy?: {
-      port?:    number,  // default: server.port + 1 (14739)
-      enabled?: boolean, // default: true
+      enabled?: boolean,                     // default: true
+      port?: number,                         // default: server.port + 1
     },
   },
   plugins?: readonly string[],               // package names imported at gateway startup

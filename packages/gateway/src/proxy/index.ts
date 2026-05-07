@@ -1,9 +1,14 @@
+/**
+ * Network egress proxy exports.
+ */
+
 export { EgressProxy, type EgressProxyOptions } from './egress-proxy.js'
 export {
-  EgressPolicyRegistry,
-  evaluate,
-  type EgressDecision,
-  type EgressPolicy,
-  type NetworkPolicy,
+  checkHostPolicy,
+  extractHostnameFromConnectTarget,
+  extractHostnameFromHostHeader,
+  type PolicyCheckResult,
+  type TokenPolicyMap,
+  InMemoryTokenPolicyStore,
 } from './egress-policy.js'
-export { writeEgressAudit } from './egress-audit.js'
+export { emitEgressAudit, type NetworkEgressEvent } from './egress-audit.js'

@@ -74,6 +74,10 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         runId,
         signal: controller.signal,
         workflowPath: entry.path,
+        registerEgressToken: (runId, stepId, policy) =>
+          opts.gateway.registerEgressToken(runId, stepId, policy),
+        unregisterEgressToken: (runId, stepId) =>
+          opts.gateway.unregisterEgressToken(runId, stepId),
         beforeStep: async (info) => {
           if (breakpoints.has(info.stepId)) {
             await breakpoints.pause({ runId: info.runId, stepId: info.stepId, kind: info.kind })
