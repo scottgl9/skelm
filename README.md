@@ -68,6 +68,7 @@ A workflow is a typed TypeScript module made of three step kinds (`code`, `llm`,
 ### Security & isolation
 
 - **Default-deny everywhere.** Every agent step declares the tools, MCP servers, network hosts, and filesystem roots it may use. Anything undeclared is denied at step start.
+- **Real network egress enforcement.** The gateway runs an embedded CONNECT proxy (default port 14739). Agent subprocesses receive `HTTP_PROXY`/`HTTPS_PROXY` automatically — outbound connections to undeclared hosts are blocked at the proxy before they leave the machine. Wildcard patterns, per-step token scoping, and a full audit trail included.
 - **Per-agent workspaces.** Each agent step gets its own filesystem root — persistent or ephemeral — locked against cross-step corruption.
 - **Persistent state and tamper-evident audit.** Typed KV store, append-only decision journals, idempotency primitives, and a hash-chained audit log.
 

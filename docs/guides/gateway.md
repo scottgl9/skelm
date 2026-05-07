@@ -53,6 +53,8 @@ When started with signal handlers attached (the default for `skelm gateway start
 
 When started with `skelm gateway start --foreground` the gateway also binds an HTTP server (`server.host` / `server.port` from `skelm.config.ts`, default `127.0.0.1:14738`). Auth defaults to loopback-only (`auth.mode: 'none'`); set `auth.mode: 'bearer'` and `SKELM_TOKEN` for remote use.
 
+The gateway also starts an embedded **egress proxy** on `server.port + 1` (default `14739`). Every agent subprocess receives `HTTP_PROXY`, `HTTPS_PROXY`, and `SKELM_EGRESS_TOKEN` environment variables automatically, making `networkEgress` enforcement real rather than advisory. Set `server.proxy.enabled: false` to disable it, or `server.proxy.port` to use a custom port.
+
 Routes:
 
 | Route | Method | Purpose |

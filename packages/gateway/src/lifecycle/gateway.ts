@@ -31,6 +31,7 @@ import { TriggerCoordinator } from '../triggers/coordinator.js'
 import { createTriggerDispatcher } from '../triggers/dispatcher.js'
 import { type DiscoveryRecord, removeDiscovery, writeDiscovery } from './discovery.js'
 import { type LockfileContents, acquireLockfile, releaseLockfile } from './lockfile.js'
+import { EgressProxy } from '../proxy/index.js'
 
 export type GatewayState = 'stopped' | 'starting' | 'running' | 'paused' | 'stopping'
 
@@ -64,6 +65,8 @@ export interface GatewayOptions {
   /** Bound URL the HTTP server should advertise; defaults to http://127.0.0.1:14738. */
   httpHost?: string
   httpPort?: number
+  /** Override the http proxy port; defaults to httpPort + 1. */
+  httpProxyPort?: number
   /**
    * Optional loader the HTTP /pipelines/:id route uses to import a workflow
    * module from its registered path so its graph can be serialized.
@@ -132,6 +135,7 @@ export class Gateway {
   private managersInternal: GatewayManagers | null = null
   private runStoreInternal: RunStore | null = null
   private httpServer: SkelmServer | null = null
+  private egressProxy: EgressProxy | null = null
   private readonly inFlightRuns = new Map<string, AbortController>()
   private readonly inFlightRunners = new Map<string, import('@skelm/core').Runner>()
   private metricsInternal: import('@skelm/metrics').MetricsCollector | null = null
@@ -307,6 +311,7 @@ export class Gateway {
       if (this.options.enableHttp) {
         await this.startHttp()
       }
+      await this.startEgressProxy()
       if (this.options.installSignalHandlers) this.attachSignals()
       this.state = 'running'
     } catch (err) {
@@ -370,6 +375,10 @@ export class Gateway {
         await this.httpServer.stop()
         this.httpServer = null
       }
+      if (this.egressProxy !== null) {
+        await this.egressProxy.stop()
+        this.egressProxy = null
+      }
       if (this.managersInternal !== null) {
         await this.managersInternal.triggers.stop()
         await this.managersInternal.mcp.stopAll()
@@ -422,6 +431,48 @@ export class Gateway {
     if (this.discovery !== null) {
       this.discovery = { ...this.discovery, url: `http://${host}:${port}` }
       await writeDiscovery(this.discoveryPath, this.discovery)
+    }
+  }
+
+  private async startEgressProxy(): Promise<void> {
+    // Only start the proxy when the HTTP server is also running (production mode).
+    // Test gateways set enableHttp: false and should not bind the proxy port.
+    if (!this.options.enableHttp) return
+    const serverPort = this.options.httpPort ?? this.config.server?.port ?? 14738
+    const proxyCfg = this.config.server?.proxy
+    if (proxyCfg?.enabled === false) return
+    const proxyPort = this.options.httpProxyPort ?? proxyCfg?.port ?? serverPort + 1
+    const host = this.options.httpHost ?? this.config.server?.host ?? '127.0.0.1'
+    const auditWriter = this.enforcementInternal?.auditWriter
+    this.egressProxy = new EgressProxy({
+      host,
+      port: proxyPort,
+      ...(auditWriter !== undefined && { auditWriter }),
+    })
+    await this.egressProxy.start()
+  }
+
+  /**
+   * The egress proxy registry. Use this to register per-step policies
+   * before spawning agent subprocesses, and to revoke them after the step
+   * completes. Returns null when the proxy is disabled.
+   */
+  get egressRegistry() {
+    return this.egressProxy?.registry ?? null
+  }
+
+  /**
+   * Returns the env vars that must be injected into an agent subprocess
+   * for the egress proxy to enforce network policy for the given token.
+   * Returns an empty object when the proxy is disabled.
+   */
+  egressEnv(token: string): Record<string, string> {
+    if (this.egressProxy === null) return {}
+    const url = this.egressProxy.proxyUrl
+    return {
+      HTTP_PROXY: url,
+      HTTPS_PROXY: url,
+      SKELM_EGRESS_TOKEN: token,
     }
   }
 

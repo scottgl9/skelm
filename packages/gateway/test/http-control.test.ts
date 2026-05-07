@@ -21,11 +21,13 @@ afterEach(async () => {
 describe('Gateway HTTP control surface', () => {
   it('exposes /health, /gateway/pause|resume, /approvals, /sessions, /triggers', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
     })
     await gw.start()
 
@@ -81,11 +83,13 @@ describe('Gateway HTTP control surface', () => {
 
   it('persists the approval queue snapshot to <stateDir>/approvals.json', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
     })
     await gw.start()
     try {
@@ -110,6 +114,7 @@ describe('Gateway HTTP control surface', () => {
 describe('Gateway HTTP /runs/:runId/events', () => {
   it('returns persisted run events from the run store', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     // config: {} is no longer required for stateDir isolation since the
     // DEFAULT_CONFIG storage path was removed; left here as an explicit
     // marker that this test owns its storage scope.
@@ -118,6 +123,7 @@ describe('Gateway HTTP /runs/:runId/events', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: {},
     })
     await gw.start()
@@ -166,11 +172,13 @@ describe('Gateway HTTP /runs/:runId/events', () => {
 
   it('returns 404 when the run does not exist', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: {},
     })
     await gw.start()
@@ -186,11 +194,13 @@ describe('Gateway HTTP /runs/:runId/events', () => {
 describe('Gateway HTTP DELETE /runs/:runId', () => {
   it('aborts the run AbortController and 404s for unknown / completed runs', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: {},
     })
     await gw.start()
@@ -225,11 +235,13 @@ describe('Gateway HTTP DELETE /runs/:runId', () => {
 describe('Gateway HTTP webhook trigger dispatch', () => {
   it('forwards POST to a registered webhook path to the trigger coordinator', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: {},
     })
     await gw.start()
@@ -277,11 +289,13 @@ describe('Gateway HTTP webhook trigger dispatch', () => {
 describe('Gateway HTTP /schedules', () => {
   it('POST /schedules registers a trigger via the coordinator and GET lists them', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: {},
     })
     await gw.start()
@@ -315,11 +329,13 @@ describe('Gateway HTTP /schedules', () => {
 
   it('POST /schedules with kind=queue registers when the driver is known', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: {},
     })
     await gw.start()
@@ -356,11 +372,13 @@ describe('Gateway HTTP /schedules', () => {
 
   it('POST /schedules validates required fields', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: {},
     })
     await gw.start()
@@ -413,12 +431,14 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
     })
 
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       projectRoot,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       loadWorkflow: async () => wf,
       config: {
         registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } },
@@ -465,12 +485,14 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
     })
 
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       projectRoot,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       loadWorkflow: async () => wf,
       config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
     })
@@ -522,12 +544,14 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
       ],
     })
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       projectRoot,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       loadWorkflow: async () => wf,
       config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
     })
@@ -574,12 +598,14 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
     })
 
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       projectRoot,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       loadWorkflow: async () => wf,
       config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
     })
@@ -620,11 +646,13 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
 
   it('POST /runs/:runId/resume 404s for unknown runId', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: {},
     })
     await gw.start()
@@ -645,12 +673,14 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
     await fs.writeFile(join(projectRoot, 'workflows/r.workflow.ts'), 'export default {}')
 
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       projectRoot,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
     })
     await gw.start()
@@ -688,12 +718,14 @@ describe('Gateway HTTP OpenAI-compat surface', () => {
     })
 
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       projectRoot,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       loadWorkflow: async () => wf,
       config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
     })
@@ -725,11 +757,13 @@ describe('Gateway HTTP OpenAI-compat surface', () => {
 
   it('POST /v1/chat/completions 404s when the named model has no pipeline', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: {},
     })
     await gw.start()
@@ -763,12 +797,14 @@ describe('Gateway HTTP OpenAI-compat surface', () => {
       ],
     })
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       projectRoot,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       loadWorkflow: async () => wf,
       config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
     })
@@ -806,12 +842,14 @@ describe('Gateway HTTP /pipelines', () => {
     )
 
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       projectRoot,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: {
         registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } },
       },
@@ -850,12 +888,14 @@ describe('Gateway HTTP /pipelines', () => {
     })
 
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       projectRoot,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       loadWorkflow: async () => wf,
       config: {
         registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } },
@@ -900,12 +940,14 @@ describe('Gateway HTTP /pipelines', () => {
     await fs.writeFile(join(projectRoot, 'workflows/y.workflow.ts'), 'export default {}')
 
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       projectRoot,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       // no loadWorkflow
       config: {
         registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } },
@@ -928,11 +970,13 @@ describe('Gateway HTTP /pipelines', () => {
 
   it('GET /pipelines/:id 404s for unknown ids', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: {},
     })
     await gw.start()
@@ -950,11 +994,13 @@ describe('Gateway HTTP /pipelines', () => {
 describe('Gateway HTTP /metrics', () => {
   it('404s when metrics are not enabled', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: {},
     })
     await gw.start()
@@ -968,12 +1014,14 @@ describe('Gateway HTTP /metrics', () => {
 
   it('renders Prometheus metrics when enabled', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       enableMetrics: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: {},
     })
     await gw.start()
@@ -995,11 +1043,13 @@ describe('Gateway HTTP /metrics', () => {
 describe('Gateway HTTP /debug breakpoints', () => {
   it('add, list, delete breakpoints; list and release paused runs', async () => {
     const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
+      httpProxyPort: proxyPort,
       config: {},
     })
     await gw.start()
@@ -1122,11 +1172,13 @@ describe('Gateway runStore', () => {
 
 it('DELETE /schedules/:id unregisters a schedule; 404 for unknown', async () => {
   const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
   const gw = new Gateway({
     stateDir,
     watchRegistries: false,
     enableHttp: true,
     httpPort: port,
+      httpProxyPort: proxyPort,
     config: {},
   })
   await gw.start()
