@@ -266,12 +266,21 @@ describe('egress-proxy', () => {
       expect(deny?.details?.reason).toBe('unknown-token')
     })
 
-    test('reports tokenPresent: true when an unrecognised auth header was sent', async () => {
+    test('classifies a well-formed-but-unknown token as unknown-token (was: misclassified as egress-denied)', async () => {
+      // Operationally identical to a stale subprocess that's holding a token
+      // the gateway has already unregistered. Pre-fix this misclassified as
+      // egress-denied and the counter never advanced.
       const port = await startProxyWithPolicy('allow')
       // Bearer token that the proxy can extract but won't find in the store.
       await makeConnectRequest(port, 'example.com:443', 'made-up-token')
       const deny = auditWriter.events.find((e) => e.action === 'network.egress:deny')
       expect(deny?.details?.tokenPresent).toBe(true)
+      expect(deny?.details?.reason).toBe('unknown-token')
+      expect((deny?.details as { unknownTokenDenials?: number })?.unknownTokenDenials).toBe(1)
+      // runId / stepId still extracted from the (parseable) bearer string
+      // so an operator can correlate the offending subprocess if the token
+      // was once issued and is now stale.
+      expect(deny?.details?.runId).toBe('made-up-token')
     })
 
     test('cumulative unknownTokenDenials counter increments per untokened deny', async () => {
@@ -284,6 +293,21 @@ describe('egress-proxy', () => {
         (e) => (e.details as { unknownTokenDenials?: number })?.unknownTokenDenials,
       )
       expect(counts).toEqual([1, 2, 3])
+    })
+
+    test('counter increments for both no-token and stale-token denies (mixed)', async () => {
+      const port = await startProxyWithPolicy('allow')
+      await makeConnectRequest(port, 'example.com:443', undefined) // no token
+      await makeConnectRequest(port, 'example.com:443', 'stale-1') // unknown token
+      await makeConnectRequest(port, 'example.com:443', undefined) // no token
+      await makeConnectRequest(port, 'example.com:443', 'stale-2') // unknown token
+      const denies = auditWriter.events.filter((e) => e.action === 'network.egress:deny')
+      const counts = denies.map(
+        (e) => (e.details as { unknownTokenDenials?: number })?.unknownTokenDenials,
+      )
+      expect(counts).toEqual([1, 2, 3, 4])
+      // Every entry classified as unknown-token regardless of header presence.
+      expect(denies.every((e) => e.details?.reason === 'unknown-token')).toBe(true)
     })
 
     test('does NOT emit unknownTokenDenials counter for non-unknown-token denies', async () => {
