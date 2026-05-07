@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { code, pipeline } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Gateway, TriggerCoordinator, createTriggerDispatcher } from '../src/index.js'
+import {
+  Gateway,
+  InMemoryQueueDriver,
+  TriggerCoordinator,
+  createTriggerDispatcher,
+} from '../src/index.js'
 
 let projectRoot: string
 let stateDir: string
@@ -63,6 +68,60 @@ describe('createTriggerDispatcher', () => {
 
     expect(ran).toEqual(['step'])
     await coordinator.stop()
+    await gw.stop()
+  })
+
+  it('passes payload as the pipeline input and invokes onResult with the run output', async () => {
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+    })
+    await gw.start()
+
+    const seenInputs: unknown[] = []
+    const fakePipeline = pipeline({
+      id: 'echo',
+      steps: [
+        code({
+          id: 'step',
+          run: (ctx) => {
+            seenInputs.push(ctx.input)
+            return {}
+          },
+        }),
+      ],
+      finalize: (ctx) => ({ echoed: ctx.input }),
+    })
+
+    const dispatcher = createTriggerDispatcher({
+      gateway: gw,
+      loadWorkflow: async () => ({ default: fakePipeline }),
+    })
+    gw.managers.triggers.setOnFire(dispatcher)
+
+    const driver = new InMemoryQueueDriver()
+    const onResultSeen: Array<{ payload: unknown; output: unknown }> = []
+    driver.onResult = (payload, output) => {
+      onResultSeen.push({ payload, output })
+    }
+
+    gw.managers.triggers.registerQueueDriver('memq', driver)
+    gw.managers.triggers.register({
+      kind: 'queue',
+      id: 'q',
+      workflowId: 'workflows/hello.workflow.ts',
+      driver: 'memq',
+    })
+
+    driver.push({ msg: 'hello' })
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(seenInputs).toEqual([{ msg: 'hello' }])
+    expect(onResultSeen).toEqual([
+      { payload: { msg: 'hello' }, output: { echoed: { msg: 'hello' } } },
+    ])
     await gw.stop()
   })
 

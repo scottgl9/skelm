@@ -3,6 +3,8 @@ value:IntegrationBase
 value:IntegrationRegistry
 value:SlackIntegration
 value:TelegramIntegration
+value:telegramUpdateToInput
+type:CreateTelegramTriggerSourceOptions
 type:EmailTrigger
 type:GitHubConfig
 type:GitHubIssueTrigger
@@ -18,7 +20,9 @@ type:SlackConfig
 type:SlackWebhookEvent
 type:TelegramConfig
 type:TelegramGetUpdatesOptions
+type:TelegramMessageInput
 type:TelegramMessageTrigger
 type:TelegramSendMessageOptions
+type:TelegramTriggerSource
 type:TelegramWebhookEvent
 type:WebhookConfig

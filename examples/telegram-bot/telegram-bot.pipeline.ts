@@ -3,9 +3,13 @@ import { z } from 'zod'
 
 /**
  * Telegram-bot pipeline: takes an inbound message, generates a reply via the
- * pi backend, returns the reply text. The standalone runner (run.ts) is
- * responsible for actually sending the reply back to Telegram — keeping I/O
- * out of the pipeline keeps it pure and testable.
+ * pi backend, returns the reply text.
+ *
+ * The pipeline declares a queue trigger bound to the `telegram` source
+ * configured in `skelm.config.ts`. The gateway drives the long-poll loop,
+ * runs this pipeline per inbound text message, and posts the reply back to
+ * the chat via the trigger source's `onResult` hook — keeping I/O out of
+ * the pipeline.
  */
 
 export const TelegramInputSchema = z.object({
@@ -29,6 +33,7 @@ export default pipeline({
   description: 'Generate a chat reply for an inbound Telegram message via pi.',
   input: TelegramInputSchema,
   output: TelegramOutputSchema,
+  triggers: [{ kind: 'queue', sourceId: 'telegram' }],
   steps: [
     agent({
       id: 'reply',

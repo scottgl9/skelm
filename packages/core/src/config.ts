@@ -3,6 +3,28 @@
 
 import type { AgentPermissions } from './permissions.js'
 
+/**
+ * Minimal duck-typed contract for queue-style trigger sources registered in
+ * skelm.config.ts. Mirrors @skelm/gateway's QueueDriver — declared here so
+ * @skelm/core has no dependency on the gateway package. The gateway accepts
+ * any object satisfying this shape.
+ */
+export interface SkelmTriggerSource {
+  start(opts: {
+    config?: Record<string, unknown>
+    onMessage: (payload?: unknown) => Promise<void>
+  }): Promise<void> | void
+  stop(): Promise<void> | void
+  onResult?(payload: unknown, output: unknown): Promise<void> | void
+}
+
+export interface SkelmConfigTriggerSourceEntry {
+  /** Identifier referenced by pipeline-declared `{ kind: 'queue', sourceId }` triggers. */
+  id: string
+  /** Pre-built source instance. */
+  driver: SkelmTriggerSource
+}
+
 export interface SkelmConfigBackendEntry {
   /** Backend-specific configuration. The runtime forwards this to the backend factory. */
   [k: string]: unknown
@@ -107,6 +129,13 @@ export interface SkelmConfig {
   server?: SkelmConfigServer
   /** Plugin package names loaded at gateway startup. */
   plugins?: readonly string[]
+  /**
+   * Pre-built trigger sources (e.g. Telegram, Slack, an internal queue
+   * client). Each entry's `id` is the value pipelines reference via
+   * `triggers: [{ kind: 'queue', sourceId: '<id>' }]`. The gateway registers
+   * these with the trigger coordinator at startup.
+   */
+  triggerSources?: readonly SkelmConfigTriggerSourceEntry[]
 }
 
 /**

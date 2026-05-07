@@ -191,6 +191,31 @@ describe('TriggerCoordinator', () => {
     await c.stop()
   })
 
+  it("'queue' driver payload is forwarded onto FireContext", async () => {
+    const payloads: unknown[] = []
+    const c = new TriggerCoordinator({ onFire: async (ctx) => void payloads.push(ctx.payload) })
+    const driver = new InMemoryQueueDriver()
+    c.registerQueueDriver('memq', driver)
+    c.register({ kind: 'queue', id: 't-q', workflowId: 'wf', driver: 'memq' }, 'queue')
+    driver.push({ chatId: '1', text: 'hi' })
+    driver.push({ chatId: '2', text: 'bye' })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(payloads).toEqual([
+      { chatId: '1', text: 'hi' },
+      { chatId: '2', text: 'bye' },
+    ])
+    await c.stop()
+  })
+
+  it('manual fire(id, when, payload) propagates payload to onFire', async () => {
+    const seen: unknown[] = []
+    const c = new TriggerCoordinator({ onFire: async (ctx) => void seen.push(ctx.payload) })
+    c.register({ kind: 'manual', id: 'm', workflowId: 'wf' })
+    await c.fire('m', undefined, { hello: 'world' })
+    expect(seen).toEqual([{ hello: 'world' }])
+    await c.stop()
+  })
+
   it("'queue' records lastError when the named driver is not registered", async () => {
     const c = new TriggerCoordinator({ onFire: async () => {} })
     const reg = c.register({ kind: 'queue', id: 't', workflowId: 'wf', driver: 'missing' })

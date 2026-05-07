@@ -68,21 +68,33 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
       runId = crypto.randomUUID()
       opts.gateway.registerRun(runId, controller, runner)
       const breakpoints = opts.gateway.breakpoints
-      const handle = runner.start(
-        pipeline as Parameters<Runner['start']>[0],
-        { triggerId: ctx.triggerId, firedAt: ctx.firedAt },
-        {
-          runId,
-          signal: controller.signal,
-          workflowPath: entry.path,
-          beforeStep: async (info) => {
-            if (breakpoints.has(info.stepId)) {
-              await breakpoints.pause({ runId: info.runId, stepId: info.stepId, kind: info.kind })
-            }
-          },
+      const pipelineInput =
+        ctx.payload !== undefined ? ctx.payload : { triggerId: ctx.triggerId, firedAt: ctx.firedAt }
+      const handle = runner.start(pipeline as Parameters<Runner['start']>[0], pipelineInput, {
+        runId,
+        signal: controller.signal,
+        workflowPath: entry.path,
+        beforeStep: async (info) => {
+          if (breakpoints.has(info.stepId)) {
+            await breakpoints.pause({ runId: info.runId, stepId: info.stepId, kind: info.kind })
+          }
         },
-      )
-      await handle.wait()
+      })
+      const result = await handle.wait()
+      // If the trigger came from a queue driver that wants to react to the
+      // run's output (e.g. post a reply), invoke its onResult hook.
+      const reg = opts.gateway.managers.triggers.get(ctx.triggerId)
+      if (reg !== undefined && reg.spec.kind === 'queue' && ctx.payload !== undefined) {
+        const driverId = reg.spec.driver
+        const driver = opts.gateway.managers.triggers.getQueueDriver(driverId)
+        if (driver?.onResult !== undefined) {
+          try {
+            await driver.onResult(ctx.payload, (result as { output?: unknown }).output)
+          } catch (err) {
+            opts.onError?.(err as Error, ctx)
+          }
+        }
+      }
     } catch (err) {
       opts.onError?.(err as Error, ctx)
       throw err

@@ -39,6 +39,8 @@ export type {
   SkelmConfigSecrets,
   SkelmConfigServer,
   SkelmConfigStorage,
+  SkelmConfigTriggerSourceEntry,
+  SkelmTriggerSource,
 } from './config.js'
 
 export {
@@ -277,6 +279,7 @@ export type {
   ParallelWaitFor,
   Pipeline,
   PipelineStep,
+  PipelineTrigger,
   RetryPolicy,
   Run,
   RunId,

@@ -91,9 +91,50 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
   })
   gateway.managers.triggers.setOnFire(dispatcher)
 
+  // Register config-declared trigger sources (Telegram, Slack, etc.) as
+  // queue drivers. Pipelines reference these by `sourceId` in their
+  // `triggers: [{ kind: 'queue', sourceId }]` declarations.
+  for (const entry of config.triggerSources ?? []) {
+    gateway.managers.triggers.registerQueueDriver(entry.id, entry.driver)
+  }
+
+  // Eagerly import each registered workflow once at startup so its
+  // declared `triggers` can be wired through the coordinator. Failures on
+  // a single workflow are logged and don't block boot.
+  let declaredCount = 0
+  for (const entry of gateway.registries.workflows.list()) {
+    try {
+      const mod = (await tsImport(pathToFileURL(entry.path).href, import.meta.url)) as {
+        default?: { triggers?: readonly Record<string, unknown>[] }
+      }
+      const triggers = mod.default?.triggers ?? []
+      for (const [i, t] of triggers.entries()) {
+        const spec = pipelineTriggerToSpec(entry.id, t, i)
+        if (spec === undefined) {
+          io.stderr.write(
+            `gateway: workflow ${entry.id} declares an unknown trigger kind, skipping\n`,
+          )
+          continue
+        }
+        const reg = gateway.managers.triggers.register(spec)
+        if (reg.lastError !== undefined) {
+          io.stderr.write(
+            `gateway: failed to register trigger ${spec.id} for ${entry.id}: ${reg.lastError}\n`,
+          )
+        } else {
+          declaredCount++
+        }
+      }
+    } catch (err) {
+      io.stderr.write(
+        `gateway: failed to load workflow ${entry.id} for trigger discovery: ${(err as Error).message}\n`,
+      )
+    }
+  }
+
   const discovery = gateway.getDiscovery()
   io.stdout.write(
-    `skelm gateway started\n  pid: ${process.pid}\n  url: ${discovery?.url ?? '(unbound)'}\n  state-dir: ${gateway.stateDir}\n  workflows: ${gateway.registries.workflows.list().length}\n  agents:    ${gateway.registries.agents.list().length}\n`,
+    `skelm gateway started\n  pid: ${process.pid}\n  url: ${discovery?.url ?? '(unbound)'}\n  state-dir: ${gateway.stateDir}\n  workflows: ${gateway.registries.workflows.list().length}\n  agents:    ${gateway.registries.agents.list().length}\n  triggers:  ${declaredCount}\n`,
   )
 
   await new Promise<void>((resolve) => {
@@ -181,6 +222,50 @@ async function installSystemd(args: GatewayArgs, io: MainIO): Promise<MainResult
   // Touch defaultStateDir so PrivateTmp + ReadWritePaths land cleanly when the unit runs.
   await fs.mkdir(defaultStateDir(), { recursive: true })
   return { exitCode: EXIT.OK }
+}
+
+/**
+ * Translate a pipeline-declared trigger into a full TriggerSpec. The
+ * pipeline file omits `workflowId` (filled here from the registry id) and
+ * may omit `id` (defaulted to `<workflowId>#<kind>[-i]`). Returns undefined
+ * when the kind is unrecognized.
+ */
+function pipelineTriggerToSpec(
+  workflowId: string,
+  trigger: Record<string, unknown>,
+  index: number,
+): import('@skelm/gateway').TriggerSpec | undefined {
+  const kind = trigger.kind as string | undefined
+  const explicitId = typeof trigger.id === 'string' ? trigger.id : undefined
+  const defaultId = `${workflowId}#${kind ?? 'trigger'}${index === 0 ? '' : `-${index}`}`
+  const id = explicitId ?? defaultId
+  switch (kind) {
+    case 'queue':
+      return {
+        kind: 'queue',
+        id,
+        workflowId,
+        driver: trigger.sourceId as string,
+        ...(trigger.config !== undefined && {
+          config: trigger.config as Record<string, unknown>,
+        }),
+      }
+    case 'webhook':
+      return {
+        kind: 'webhook',
+        id,
+        workflowId,
+        path: trigger.path as string,
+        ...(trigger.method !== undefined && { method: trigger.method as string }),
+        ...(trigger.secret !== undefined && { secret: trigger.secret as string }),
+      }
+    case 'cron':
+      return { kind: 'cron', id, workflowId, cron: trigger.cron as string }
+    case 'interval':
+      return { kind: 'interval', id, workflowId, everyMs: trigger.everyMs as number }
+    default:
+      return undefined
+  }
 }
 
 async function uninstallSystemd(io: MainIO): Promise<MainResult> {

@@ -97,7 +97,7 @@ Build **agents**, along with deterministic steps and one-shot LLM calls, into ro
 
 If your workflow has any combination of triggers, branching, retries, agents, tools, audit, or scheduling — skelm is the substrate.
 
-Runnable starting points live under [`examples/`](./examples/) — including [`examples/telegram-bot/`](./examples/telegram-bot/README.md), a long-poll Telegram bot driving an `agent()` step on the pi backend.
+Runnable starting points live under [`examples/`](./examples/) — including [`examples/telegram-bot/`](./examples/telegram-bot/README.md), a Telegram chat bot whose pipeline declares a queue trigger; the gateway drives the long-poll loop and dispatches each message into a run.
 
 ## Three tenets, in this order
 

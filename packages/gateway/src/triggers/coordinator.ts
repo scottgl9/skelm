@@ -226,8 +226,8 @@ export class TriggerCoordinator {
         try {
           const startResult = driver.start({
             ...(spec.config !== undefined && { config: spec.config }),
-            onMessage: async () => {
-              await this.fire(spec.id)
+            onMessage: async (payload?: unknown) => {
+              await this.fire(spec.id, undefined, payload)
             },
           })
           if (startResult instanceof Promise) {
@@ -288,7 +288,7 @@ export class TriggerCoordinator {
     this.queues.delete(id)
   }
 
-  async fire(id: string, when?: Date): Promise<void> {
+  async fire(id: string, when?: Date, payload?: unknown): Promise<void> {
     if (this.stopping) return
     const reg = this.registrations.get(id)
     if (reg === undefined) return
@@ -296,6 +296,7 @@ export class TriggerCoordinator {
       triggerId: id,
       workflowId: reg.spec.workflowId,
       firedAt: (when ?? new Date()).toISOString(),
+      ...(payload !== undefined && { payload }),
     }
     if (reg.inflight) {
       switch (reg.overlap) {

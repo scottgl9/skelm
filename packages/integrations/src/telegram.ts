@@ -1,6 +1,81 @@
 import { IntegrationBase } from './base.js'
 import type { TelegramConfig, TelegramMessageTrigger, TelegramWebhookEvent } from './types.js'
 
+/**
+ * Flat shape suitable for use as a pipeline input. Mirrors the runtime
+ * input the example pipelines accept and is what the trigger source emits
+ * per inbound update.
+ */
+export interface TelegramMessageInput {
+  updateId: number
+  messageId: number
+  chatId: string
+  from: string
+  text: string
+}
+
+/**
+ * Convert a raw Telegram update into the flat input shape pipelines
+ * consume. Returns null for updates that don't carry text content (those
+ * are skipped by the trigger source).
+ */
+export function telegramUpdateToInput(update: unknown): TelegramMessageInput | null {
+  const u = update as { update_id?: number; message?: Record<string, unknown> }
+  const msg = u.message
+  if (
+    msg === undefined ||
+    typeof u.update_id !== 'number' ||
+    typeof msg.message_id !== 'number' ||
+    typeof msg.text !== 'string'
+  ) {
+    return null
+  }
+  const chat = msg.chat as { id: number | string }
+  const from = msg.from as { username?: string; first_name?: string; id?: number } | undefined
+  return {
+    updateId: u.update_id,
+    messageId: msg.message_id as number,
+    chatId: String(chat.id),
+    from: from?.username ?? from?.first_name ?? 'user',
+    text: msg.text,
+  }
+}
+
+/**
+ * QueueDriver-shaped contract the trigger source returned from
+ * `createTriggerSource()` satisfies. Declared structurally here so this
+ * file has no dependency on @skelm/gateway.
+ */
+export interface TelegramTriggerSource {
+  start(opts: {
+    config?: Record<string, unknown>
+    onMessage: (payload?: unknown) => Promise<void>
+  }): Promise<void> | void
+  stop(): Promise<void> | void
+  onResult?(payload: unknown, output: unknown): Promise<void> | void
+}
+
+export interface CreateTelegramTriggerSourceOptions {
+  /**
+   * Drop any pending updates queued before the bot started. Recommended
+   * when the gateway is restarted, to avoid replying to stale messages.
+   * Default: true.
+   */
+  dropPending?: boolean
+  /** Long-poll timeout in seconds. Default: 25. */
+  longPollSeconds?: number
+  /**
+   * `allowed_updates` forwarded to getUpdates(). Default: `['message']`.
+   */
+  allowedUpdates?: string[]
+  /**
+   * If true, the source's `onResult` posts `output.reply` back to the
+   * originating chat. Default: true. The pipeline returns
+   * `{ reply: string }` for the default behavior to apply.
+   */
+  postReply?: boolean
+}
+
 const TELEGRAM_API_BASE = 'https://api.telegram.org'
 
 interface TelegramApiResponse<T> {
@@ -223,6 +298,105 @@ export class TelegramIntegration extends IntegrationBase {
     if (updates.length > 0) {
       const last = updates[updates.length - 1]
       await this.getUpdates({ offset: last.update_id + 1, timeoutSeconds: 0, limit: 1 })
+    }
+  }
+
+  /**
+   * Build a queue-style trigger source that long-polls Telegram and emits
+   * one `onMessage(payload)` per inbound text-bearing update. The payload
+   * is a flat `TelegramMessageInput` ready to use as a pipeline input.
+   *
+   * Register the returned object as a triggerSource in `skelm.config.ts`,
+   * then have a pipeline declare
+   * `triggers: [{ kind: 'queue', sourceId: '<id>' }]`. The gateway wires
+   * the rest — runs the workflow per message and (when `postReply` is on)
+   * sends `output.reply` back to the chat via `onResult`.
+   */
+  createTriggerSource(options: CreateTelegramTriggerSourceOptions = {}): TelegramTriggerSource {
+    const dropPending = options.dropPending ?? true
+    const longPollSeconds = options.longPollSeconds ?? 25
+    const allowedUpdates = options.allowedUpdates ?? ['message']
+    const postReply = options.postReply ?? true
+    const integration = this
+    let stopping = false
+    let abortCtl: AbortController | null = null
+    const seen = new Set<number>()
+    let offset: number | undefined
+    let loopPromise: Promise<void> | null = null
+
+    const loop = async (onMessage: (payload?: unknown) => Promise<void>): Promise<void> => {
+      if (dropPending) {
+        try {
+          await integration.clearPendingUpdates()
+        } catch {
+          // best-effort
+        }
+      }
+      while (!stopping) {
+        abortCtl = new AbortController()
+        let updates: TelegramRawUpdate[]
+        try {
+          updates = await integration.getUpdates({
+            ...(offset !== undefined && { offset }),
+            timeoutSeconds: longPollSeconds,
+            allowedUpdates,
+            signal: abortCtl.signal,
+          })
+        } catch (err) {
+          if (stopping) break
+          const msg = err instanceof Error ? err.message : String(err)
+          // Telegram returns 409 Conflict for ~30s after a previous
+          // long-poll dies; back off harder than for a generic failure.
+          const backoff = msg.includes('Conflict') ? 5000 : 1000
+          await new Promise((r) => setTimeout(r, backoff))
+          continue
+        }
+        for (const update of updates) {
+          if (stopping) break
+          offset = update.update_id + 1
+          if (seen.has(update.update_id)) continue
+          seen.add(update.update_id)
+          const input = telegramUpdateToInput(update)
+          if (input === null) continue
+          try {
+            await onMessage(input)
+          } catch {
+            // Coordinator records lastError on its own; keep the loop alive.
+          }
+        }
+      }
+    }
+
+    return {
+      start({ onMessage }: { onMessage: (payload?: unknown) => Promise<void> }): void {
+        stopping = false
+        loopPromise = loop(onMessage)
+      },
+      async stop(): Promise<void> {
+        stopping = true
+        abortCtl?.abort()
+        try {
+          await loopPromise
+        } catch {
+          // ignore
+        }
+      },
+      ...(postReply && {
+        async onResult(payload: unknown, output: unknown): Promise<void> {
+          const input = payload as TelegramMessageInput | undefined
+          const reply = (output as { reply?: unknown } | undefined)?.reply
+          if (input === undefined || typeof reply !== 'string' || reply === '') return
+          try {
+            await integration.sendMessage({
+              chatId: input.chatId,
+              text: reply,
+              replyToMessageId: input.messageId,
+            })
+          } catch {
+            // best-effort; gateway audit will record the run, the loop continues.
+          }
+        },
+      }),
     }
   }
 

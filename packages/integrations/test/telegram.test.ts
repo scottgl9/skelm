@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { TelegramIntegration } from '../src/telegram.js'
+import { TelegramIntegration, telegramUpdateToInput } from '../src/telegram.js'
 import type { TelegramConfig } from '../src/types.js'
 
 const validToken = '123456:AAEPSM2FNFp4ux-rWo9d97UNybRhJ4TffBU'
@@ -159,6 +159,120 @@ describe('TelegramIntegration', () => {
     })
     await tg.init()
     expect(tg.verifyWebhookSecret('anything')).toBe(false)
+  })
+
+  it('telegramUpdateToInput extracts the flat input shape', () => {
+    const out = telegramUpdateToInput({
+      update_id: 7,
+      message: {
+        message_id: 99,
+        chat: { id: 42 },
+        from: { username: 'alice' },
+        text: 'hi',
+        date: 1,
+      },
+    })
+    expect(out).toEqual({ updateId: 7, messageId: 99, chatId: '42', from: 'alice', text: 'hi' })
+  })
+
+  it('telegramUpdateToInput returns null for non-text updates', () => {
+    expect(telegramUpdateToInput({ update_id: 7 })).toBeNull()
+    expect(
+      telegramUpdateToInput({
+        update_id: 7,
+        message: { message_id: 1, chat: { id: 1 }, date: 0 },
+      }),
+    ).toBeNull()
+  })
+
+  it('createTriggerSource long-polls and emits one onMessage per text update, then stops', async () => {
+    // First call: clearPendingUpdates probe (returns 1 stale update).
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        result: [
+          {
+            update_id: 50,
+            message: { message_id: 1, chat: { id: 1 }, date: 0, text: 'old' },
+          },
+        ],
+      }),
+    )
+    // Second call: clearPendingUpdates skips ahead to offset=51.
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true, result: [] }))
+    // Third call: real long-poll batch with two text updates.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        result: [
+          {
+            update_id: 100,
+            message: {
+              message_id: 10,
+              chat: { id: 2 },
+              from: { username: 'a' },
+              date: 0,
+              text: 'one',
+            },
+          },
+          {
+            update_id: 101,
+            message: {
+              message_id: 11,
+              chat: { id: 2 },
+              from: { username: 'a' },
+              date: 0,
+              text: 'two',
+            },
+          },
+        ],
+      }),
+    )
+    // Subsequent calls: empty until stop.
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true, result: [] }))
+
+    const tg = new TelegramIntegration(makeConfig(), {
+      fetch: fetchMock as unknown as typeof fetch,
+    })
+    await tg.init()
+    const source = tg.createTriggerSource({ longPollSeconds: 0 })
+
+    const seen: unknown[] = []
+    source.start({
+      onMessage: async (payload) => {
+        seen.push(payload)
+      },
+    })
+
+    // Let the poll loop run a couple of iterations.
+    await new Promise((r) => setTimeout(r, 30))
+    await source.stop()
+
+    expect(seen).toHaveLength(2)
+    expect((seen[0] as { text: string }).text).toBe('one')
+    expect((seen[1] as { text: string }).text).toBe('two')
+  })
+
+  it('createTriggerSource onResult posts output.reply via sendMessage', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ ok: true, result: { message_id: 999, chat: { id: 1 }, date: 0 } }),
+    )
+    const tg = new TelegramIntegration(makeConfig(), {
+      fetch: fetchMock as unknown as typeof fetch,
+    })
+    await tg.init()
+    const source = tg.createTriggerSource({ dropPending: false, postReply: true })
+
+    await source.onResult?.(
+      { updateId: 1, messageId: 10, chatId: '5', from: 'u', text: 'hi' },
+      { reply: 'pong' },
+    )
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
+    expect(body).toEqual({
+      chat_id: '5',
+      text: 'pong',
+      reply_to_message_id: 10,
+    })
   })
 
   it('getUpdates passes offset and timeout to the API', async () => {

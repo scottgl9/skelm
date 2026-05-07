@@ -37,6 +37,7 @@ export function pipeline<TInput, TOutput>(def: {
   output?: SkelmSchema<TOutput>
   steps: readonly Step[]
   finalize?: (ctx: Context<TInput>) => TOutput | Promise<TOutput>
+  triggers?: readonly import('./types.js').PipelineTrigger[]
 }): Pipeline<TInput, TOutput> {
   if (!def.id) {
     throw new Error('pipeline(): id is required')
@@ -54,6 +55,7 @@ export function pipeline<TInput, TOutput>(def: {
     ...(def.input !== undefined && { inputSchema: def.input }),
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.finalize !== undefined && { finalize: def.finalize }),
+    ...(def.triggers !== undefined && { triggers: Object.freeze([...def.triggers]) }),
   }
   return Object.freeze(out)
 }

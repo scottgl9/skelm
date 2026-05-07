@@ -309,6 +309,20 @@ export type Step =
   | WaitStep
   | PipelineStep
 
+/**
+ * Trigger declared on a pipeline. The gateway reads these at startup and
+ * registers them with the trigger coordinator, filling in `workflowId` from
+ * the workflow's registry id. This is a customer-facing subset of the
+ * gateway's full TriggerSpec — the pipeline file declares the *intent*; the
+ * gateway resolves source ids against config.triggerSources to bind a
+ * concrete driver.
+ */
+export type PipelineTrigger =
+  | { kind: 'queue'; id?: string; sourceId: string; config?: Record<string, unknown> }
+  | { kind: 'webhook'; id?: string; path: string; method?: string; secret?: string }
+  | { kind: 'cron'; id?: string; cron: string }
+  | { kind: 'interval'; id?: string; everyMs: number }
+
 /** A pipeline value produced by `pipeline()`. */
 export interface Pipeline<TInput = unknown, TOutput = unknown> {
   readonly id: string
@@ -320,6 +334,12 @@ export interface Pipeline<TInput = unknown, TOutput = unknown> {
   readonly inputSchema?: import('./schema.js').SkelmSchema<TInput>
   /** Optional output schema; validated after finalize before returning. */
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
+  /**
+   * Optional triggers that bind this pipeline to external event sources.
+   * The gateway auto-registers these on startup. Pipelines run via
+   * `runPipeline()` or `skelm run` ignore this field.
+   */
+  readonly triggers?: readonly PipelineTrigger[]
   /** Phantom marker for the pipeline's input type; carried for inference. */
   readonly _input?: TInput
   /** Phantom marker for the pipeline's output type. */

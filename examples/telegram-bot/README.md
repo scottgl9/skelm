@@ -2,10 +2,27 @@
 
 A minimal Telegram chat bot built on skelm + the pi backend.
 
-- Long-polls Telegram's `getUpdates` (no public webhook URL needed).
-- Each inbound text message starts one `telegram-bot` pipeline run.
-- The pipeline calls the pi backend (default: `qwen36` on `llamacpp`) and the
-  reply text is sent back to the originating chat.
+The example shows how to wire a long-running event source — Telegram's
+`getUpdates` long-poll — into the gateway as a first-class trigger. The
+pipeline declares its own trigger; the gateway runs the loop, dispatches
+each message into a workflow run, and posts the agent's reply back to the
+chat. There is no script to run — just `skelm gateway start`.
+
+## How it fits together
+
+- `telegram-bot.pipeline.ts` declares
+  `triggers: [{ kind: 'queue', sourceId: 'telegram' }]`. That binds the
+  pipeline to the trigger source named `telegram` in the config.
+- `skelm.config.ts` builds a `TelegramIntegration` with the bot token and
+  registers `telegram.createTriggerSource()` under that id.
+- On `skelm gateway start`, the gateway:
+  1. Loads the config and registers the trigger source as a queue driver.
+  2. Discovers the pipeline file via the workflows glob and reads its
+     `triggers` field.
+  3. Starts the source's long-poll loop. Each inbound text update fires
+     the pipeline with the message as input.
+  4. After the run completes, the source's `onResult` hook posts
+     `output.reply` back to the originating chat.
 
 ## Setup
 
@@ -19,10 +36,17 @@ A minimal Telegram chat bot built on skelm + the pi backend.
 
 ## Run
 
+From the repo root:
+
 ```sh
 TELEGRAM_BOT_TOKEN=123456:AA... \
-  pnpm tsx examples/telegram-bot/run.ts
+  skelm gateway start --foreground
 ```
+
+Make sure `examples/telegram-bot/skelm.config.ts` is the config the gateway
+resolves (run from the example dir, or symlink/copy it into your project
+root). The startup banner reports `triggers: 1` once the queue trigger is
+registered.
 
 Optional env vars:
 
@@ -37,16 +61,24 @@ should reply within a few seconds.
 
 ## Files
 
-- `telegram-bot.pipeline.ts` — pure pipeline (input → agent → reply text).
-- `run.ts` — standalone long-poll loop that drives the pipeline and sends
-  replies via `TelegramIntegration.sendMessage`.
+- `telegram-bot.pipeline.ts` — pure pipeline (input → agent → reply text),
+  with a queue trigger declaration bound to the `telegram` source.
+- `skelm.config.ts` — registers the pi backend instance and the Telegram
+  trigger source, points the workflows glob at the pipeline file.
 
 ## Notes
 
-- The runner drops any pending updates on startup (`clearPendingUpdates`) so
-  it won't reply to messages received while the bot was offline.
-- Only `text` messages are handled; photos, voice, callbacks, etc. are
-  ignored. Extend the runner if you need them.
-- Long-polling only — webhooks require a publicly reachable gateway. The
-  `TelegramIntegration` class supports both modes; see its `setupWebhook`
-  and `verifyWebhookSecret` methods.
+- The trigger source drops any pending updates on startup
+  (`dropPending: true`) so it won't reply to messages received while the
+  bot was offline. Disable that in `skelm.config.ts` if you want
+  catch-up behavior.
+- Only `text` messages are handled; non-text updates are skipped by the
+  source. Extend `telegramUpdateToInput` (or write a richer extractor) if
+  you need them.
+- This example uses long polling — no public webhook URL needed. The same
+  `TelegramIntegration` class also supports webhook delivery via
+  `setupWebhook` and `verifyWebhookSecret`; that path can plug into a
+  `webhook` trigger kind instead.
+- Sending the reply lives in the trigger source's `onResult` hook, not in
+  the pipeline. That keeps the pipeline pure and testable: you can run it
+  via `skelm run` against a fixture input without any network I/O.
