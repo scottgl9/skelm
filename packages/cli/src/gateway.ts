@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Gateway, createTriggerDispatcher, readDiscovery, readLockfile } from '@skelm/gateway'
 import { tsImport } from 'tsx/esm/api'
+import { buildBackendRegistry } from './backends.js'
 import { EXIT } from './exit-codes.js'
 import { loadSkelmConfig } from './load-config.js'
 import type { MainIO, MainResult } from './main.js'
@@ -71,23 +72,19 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     return { exitCode: EXIT.CLI_ERROR }
   }
 
-  // Build a backend registry from config.instances so triggered
-  // workflows can use agent() steps with pre-built backends.
-  const { BackendRegistry } = await import('@skelm/core')
-  const backendRegistry = new BackendRegistry()
-  for (const instance of config.instances ?? []) {
-    backendRegistry.register(instance)
-  }
+  // Build a backend registry covering BOTH `config.instances` (pre-built
+  // backends like vercel-ai / opencode SDK / pi-sdk) AND `config.backends.<id>`
+  // factory entries (Pi RPC, opencode subprocess, …). Without the latter,
+  // gateway-fired runs that reference a config-backed backend id (e.g.
+  // `agent({ backend: 'pi' })`) fail with `BackendNotFoundError`.
+  const backendRegistry = await buildBackendRegistry(config)
 
   // Replace the trigger coordinator's onFire with the real dispatcher.
   const dispatcher = createTriggerDispatcher({
     gateway,
     loadWorkflow: async (_id, absolutePath) =>
       tsImport(pathToFileURL(absolutePath).href, import.meta.url),
-    ...(config.instances !== undefined &&
-      config.instances.length > 0 && {
-        backends: backendRegistry,
-      }),
+    ...(backendRegistry !== undefined && { backends: backendRegistry }),
   })
   gateway.managers.triggers.setOnFire(dispatcher)
 

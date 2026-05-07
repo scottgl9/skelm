@@ -1,5 +1,28 @@
-import { type ResolvedPolicy, TrustEnforcer } from '@skelm/core'
+import { PermissionDeniedError, type ResolvedPolicy, TrustEnforcer } from '@skelm/core'
 import type { Tool, ToolSet } from 'ai'
+
+/**
+ * vercel-ai is an in-process backend: outbound HTTP from the AI SDK uses
+ * Node's global fetch which does not honor HTTP_PROXY env vars set by the
+ * gateway egress proxy. To honor the project tenet "a backend that cannot
+ * enforce a declared permission fails at step start instead of bypassing
+ * it", we refuse any policy that constrains networkEgress to anything
+ * other than `'allow'`.
+ *
+ * Operators who need real network egress enforcement for vercel-ai should
+ * either (a) use a subprocess backend (Pi RPC, opencode subprocess) which
+ * the proxy injects into, or (b) wire a custom `fetch` into the AI SDK
+ * provider that delegates to a proxy-aware undici dispatcher.
+ */
+export function assertEgressEnforceable(policy: ResolvedPolicy | undefined): void {
+  if (policy === undefined) return
+  const ne = policy.networkEgress
+  if (ne === 'allow') return
+  // 'deny' or { allowHosts: [...] } — vercel-ai cannot enforce these in-process.
+  throw new PermissionDeniedError(
+    'vercel-ai backend cannot enforce networkEgress in-process. Set networkEgress: "allow" for this step, or use a subprocess backend (pi, opencode) so the gateway egress proxy can intercept outbound traffic.',
+  )
+}
 
 /**
  * Filter and wrap a user-supplied ToolSet so:

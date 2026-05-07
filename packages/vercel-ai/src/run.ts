@@ -2,7 +2,7 @@ import type { AgentRequest, AgentResponse, BackendContext } from '@skelm/core'
 import { generateText, stepCountIs } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
 import { mapUsage } from './infer.js'
-import { applyPolicyToTools } from './permissions.js'
+import { applyPolicyToTools, assertEgressEnforceable } from './permissions.js'
 import { buildSystemContent, loadSkillBodies } from './skill-injection.js'
 import { parseStructured } from './structured.js'
 import type { VercelAiBackendOptions } from './types.js'
@@ -13,6 +13,10 @@ export async function vercelAiRun(
   context: BackendContext,
 ): Promise<AgentResponse> {
   const policy = context.permissions ?? request.permissions
+  // vercel-ai is in-process; the AI SDK's outbound HTTP does not honor
+  // HTTP_PROXY env vars from the gateway egress proxy. Fail-closed instead
+  // of pretending to enforce networkEgress.
+  assertEgressEnforceable(policy)
   const tools = applyPolicyToTools(options.tools, policy)
 
   const skillBodies = await loadSkillBodies(request, context)

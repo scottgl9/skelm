@@ -1,4 +1,4 @@
-import { pipeline, agent } from '@skelm/core'
+import { agent, pipeline } from '@skelm/core'
 
 /**
  * Simple test pipeline to verify pi backend is working.

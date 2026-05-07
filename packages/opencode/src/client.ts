@@ -258,7 +258,7 @@ export class OpencodeClientWrapper {
     if (token !== undefined) {
       process.env.SKELM_EGRESS_TOKEN = token
     } else {
-      delete process.env.SKELM_EGRESS_TOKEN
+      process.env.SKELM_EGRESS_TOKEN = undefined
     }
   }
 
@@ -270,8 +270,8 @@ export class OpencodeClientWrapper {
       process.env.HTTP_PROXY = url
       process.env.HTTPS_PROXY = url
     } else {
-      delete process.env.HTTP_PROXY
-      delete process.env.HTTPS_PROXY
+      process.env.HTTP_PROXY = undefined
+      process.env.HTTPS_PROXY = undefined
     }
   }
 }

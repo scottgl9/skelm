@@ -9,17 +9,17 @@
  * - Emits audit events for every allow/deny decision
  */
 
-import { createServer, type Server, type Socket, createConnection } from 'node:net'
+import { type Server, type Socket, createConnection, createServer } from 'node:net'
 import type { AuditWriter } from '@skelm/core'
 import type { NetworkPolicy } from '@skelm/core'
+import { type NetworkEgressEvent, emitEgressAudit } from './egress-audit.js'
 import {
   type PolicyCheckResult,
+  type TokenPolicyMap,
   checkHostPolicy,
   extractHostnameFromConnectTarget,
   extractHostnameFromHostHeader,
-  type TokenPolicyMap,
 } from './egress-policy.js'
-import { emitEgressAudit, type NetworkEgressEvent } from './egress-audit.js'
 
 /**
  * Proxy configuration.
@@ -207,7 +207,7 @@ export class EgressProxy {
       socket.end()
       return
     }
-    const destPort = parseInt(destPortStr || '443', 10) || 443
+    const destPort = Number.parseInt(destPortStr || '443', 10) || 443
 
     const destSocket = connectToHost(destHost, destPort, () => {
       // Start bidirectional forwarding
@@ -287,7 +287,7 @@ export class EgressProxy {
       socket.end()
       return
     }
-    const destPort = parseInt(destPortStr || '80', 10) || 80
+    const destPort = Number.parseInt(destPortStr || '80', 10) || 80
 
     // Reconstruct the request to send to the destination
     const lines = request.split('\r\n')
@@ -297,16 +297,18 @@ export class EgressProxy {
       socket.end()
       return
     }
-    const destRequest = lines.map((line, i) => {
-      if (i === 0) {
-        return firstLine
-      }
-      // Replace Host header with actual destination
-      if (line.toLowerCase().startsWith('host:')) {
-        return `Host: ${destHost}`
-      }
-      return line
-    }).join('\r\n')
+    const destRequest = lines
+      .map((line, i) => {
+        if (i === 0) {
+          return firstLine
+        }
+        // Replace Host header with actual destination
+        if (line.toLowerCase().startsWith('host:')) {
+          return `Host: ${destHost}`
+        }
+        return line
+      })
+      .join('\r\n')
 
     const destSocket = connectToHost(destHost, destPort, () => {
       destSocket.write(destRequest)
