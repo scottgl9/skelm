@@ -1172,13 +1172,13 @@ describe('Gateway runStore', () => {
 
 it('DELETE /schedules/:id unregisters a schedule; 404 for unknown', async () => {
   const port = await pickFreePort()
-    const proxyPort = await pickFreePort()
+  const proxyPort = await pickFreePort()
   const gw = new Gateway({
     stateDir,
     watchRegistries: false,
     enableHttp: true,
     httpPort: port,
-      httpProxyPort: proxyPort,
+    httpProxyPort: proxyPort,
     config: {},
   })
   await gw.start()

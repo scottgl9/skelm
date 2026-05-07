@@ -53,10 +53,7 @@ export class InMemoryTokenPolicyStore implements TokenPolicyMap {
  * @param hostname The destination hostname
  * @returns PolicyCheckResult indicating allow/deny
  */
-export function checkHostPolicy(
-  policy: NetworkPolicy,
-  hostname: string,
-): PolicyCheckResult {
+export function checkHostPolicy(policy: NetworkPolicy, hostname: string): PolicyCheckResult {
   if (policy === 'deny') {
     return { allowed: false, reason: 'egress-denied' }
   }

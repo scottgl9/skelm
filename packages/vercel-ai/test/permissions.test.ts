@@ -1,5 +1,5 @@
 import type { BackendContext, ResolvedPolicy } from '@skelm/core'
-import { TrustEnforcer } from '@skelm/core'
+import { PermissionDeniedError, TrustEnforcer } from '@skelm/core'
 import { tool } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, it, vi } from 'vitest'
@@ -19,7 +19,7 @@ function makePolicy(overrides: Partial<ResolvedPolicy> = {}): ResolvedPolicy {
     allowedMcpServers: new Set(),
     allowedSkills: new Set(),
     allowedSecrets: new Set(),
-    networkEgress: 'deny',
+    networkEgress: 'allow',
     fsRead: new Set(),
     fsWrite: new Set(),
     approval: null,
@@ -152,5 +152,76 @@ describe('createVercelAiBackend — end-to-end tool denial', () => {
     })
     await backend.run?.({ prompt: 'hi', permissions: policy }, makeCtx({ permissions: policy }))
     expect(capturedToolNames.sort()).toEqual(['foo'])
+  })
+})
+
+describe('vercel-ai networkEgress fail-closed', () => {
+  it("run() refuses when policy.networkEgress is 'deny'", async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: 'text', text: 'never' }],
+        finishReason: { unified: 'stop', raw: 'stop' },
+        usage: { inputTokens: { total: 0 }, outputTokens: { total: 0 }, totalTokens: 0 },
+        warnings: [],
+      }),
+    })
+    const backend = createVercelAiBackend({ model })
+    const policy = makePolicy({ networkEgress: 'deny' })
+    await expect(
+      backend.run?.({ prompt: 'go', permissions: policy }, makeCtx({ permissions: policy })),
+    ).rejects.toBeInstanceOf(PermissionDeniedError)
+  })
+
+  it('run() refuses when policy.networkEgress is allowHosts', async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: 'text', text: 'never' }],
+        finishReason: { unified: 'stop', raw: 'stop' },
+        usage: { inputTokens: { total: 0 }, outputTokens: { total: 0 }, totalTokens: 0 },
+        warnings: [],
+      }),
+    })
+    const backend = createVercelAiBackend({ model })
+    const policy = makePolicy({ networkEgress: { allowHosts: ['api.openai.com'] } })
+    await expect(
+      backend.run?.({ prompt: 'go', permissions: policy }, makeCtx({ permissions: policy })),
+    ).rejects.toBeInstanceOf(PermissionDeniedError)
+  })
+
+  it("infer() refuses when policy.networkEgress is 'deny'", async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: 'text', text: 'never' }],
+        finishReason: { unified: 'stop', raw: 'stop' },
+        usage: { inputTokens: { total: 0 }, outputTokens: { total: 0 }, totalTokens: 0 },
+        warnings: [],
+      }),
+    })
+    const backend = createVercelAiBackend({ model })
+    const policy = makePolicy({ networkEgress: 'deny' })
+    await expect(
+      backend.infer?.(
+        { messages: [{ role: 'user', content: 'hi' }] },
+        makeCtx({ permissions: policy }),
+      ),
+    ).rejects.toBeInstanceOf(PermissionDeniedError)
+  })
+
+  it("run() proceeds when policy.networkEgress is 'allow'", async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: 'text', text: 'ok' }],
+        finishReason: { unified: 'stop', raw: 'stop' },
+        usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 }, totalTokens: 2 },
+        warnings: [],
+      }),
+    })
+    const backend = createVercelAiBackend({ model })
+    const policy = makePolicy({ networkEgress: 'allow' })
+    const result = await backend.run?.(
+      { prompt: 'go', permissions: policy },
+      makeCtx({ permissions: policy }),
+    )
+    expect(result?.text).toBe('ok')
   })
 })

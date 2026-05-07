@@ -1,14 +1,18 @@
-import { describe, expect, test, beforeEach, afterEach } from 'vitest'
 import { createServer as createHttpServer } from 'node:http'
-import { createServer as createNetServer, createConnection, type Socket } from 'node:net'
-import { EgressProxy, InMemoryTokenPolicyStore } from '../../src/proxy/index.js'
+import { type Socket, createConnection, createServer as createNetServer } from 'node:net'
 import type { AuditWriter, NetworkPolicy } from '@skelm/core'
+import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { EgressProxy, InMemoryTokenPolicyStore } from '../../src/proxy/index.js'
 
 // Fake audit writer for testing
 class FakeAuditWriter implements AuditWriter {
   events: Array<{ actor: string; action: string; details?: Record<string, unknown> }> = []
 
-  async write(entry: { actor: string; action: string; details?: Record<string, unknown> }): Promise<void> {
+  async write(entry: {
+    actor: string
+    action: string
+    details?: Record<string, unknown>
+  }): Promise<void> {
     this.events.push({ actor: entry.actor, action: entry.action, details: entry.details })
   }
 }
@@ -164,7 +168,9 @@ describe('egress-proxy', () => {
         res.writeHead(200)
         res.end('OK')
       })
-      await new Promise<void>((resolve) => testHttpServer?.listen(testHttpPort, '127.0.0.1', resolve))
+      await new Promise<void>((resolve) =>
+        testHttpServer?.listen(testHttpPort, '127.0.0.1', resolve),
+      )
 
       const port = await startProxyWithPolicy('allow')
 
@@ -198,7 +204,7 @@ async function makeConnectRequest(
       if (lines.length >= 1) {
         const statusLine = lines[0]
         const statusCodeMatch = statusLine.match(/HTTP\/1\.1\s+(\d+)/)
-        const statusCode = statusCodeMatch ? parseInt(statusCodeMatch[1], 10) : 0
+        const statusCode = statusCodeMatch ? Number.parseInt(statusCodeMatch[1], 10) : 0
         socket.destroy()
         resolve({
           allowed: statusCode === 200,
@@ -234,8 +240,4 @@ async function pickFreePort(): Promise<number> {
       srv.close(() => resolve(port))
     })
   })
-}
-
-function createNetServer() {
-  return createNetServer()
 }

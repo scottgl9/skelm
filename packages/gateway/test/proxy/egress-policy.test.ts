@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'vitest'
 import {
+  InMemoryTokenPolicyStore,
+  type NetworkPolicy,
   checkHostPolicy,
   extractHostnameFromConnectTarget,
   extractHostnameFromHostHeader,
-  InMemoryTokenPolicyStore,
-  type NetworkPolicy,
 } from '../../src/proxy/index.js'
 
 describe('egress-policy', () => {
@@ -79,7 +79,7 @@ describe('egress-policy', () => {
     test('stores and retrieves policies', () => {
       const store = new InMemoryTokenPolicyStore()
       const policy: NetworkPolicy = { allowHosts: ['api.openai.com'] }
-      
+
       store.set('run1:step1', policy)
       expect(store.get('run1:step1')).toBe(policy)
     })
@@ -92,7 +92,7 @@ describe('egress-policy', () => {
     test('deletes policies', () => {
       const store = new InMemoryTokenPolicyStore()
       const policy: NetworkPolicy = { allowHosts: ['api.openai.com'] }
-      
+
       store.set('run1:step1', policy)
       store.delete('run1:step1')
       expect(store.get('run1:step1')).toBeUndefined()
