@@ -327,6 +327,86 @@ describe('Gateway HTTP /schedules', () => {
     }
   })
 
+  it('POST /schedules persists `input` and GET /schedules echoes it back', async () => {
+    const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      httpProxyPort: proxyPort,
+      config: {},
+    })
+    await gw.start()
+    const base = `http://127.0.0.1:${port}`
+    try {
+      const created = (await fetch(`${base}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-with-input',
+          workflowId: 'wf',
+          trigger: { kind: 'cron', expression: '*/5 * * * *' },
+          input: { user: 'alice', level: 3 },
+        }),
+      }).then((r) => r.json())) as { id: string; input?: unknown }
+      expect(created.id).toBe('s-with-input')
+      expect(created.input).toEqual({ user: 'alice', level: 3 })
+
+      const list = (await fetch(`${base}/schedules`).then((r) => r.json())) as Array<{
+        id: string
+        input?: unknown
+      }>
+      expect(list.find((s) => s.id === 's-with-input')?.input).toEqual({
+        user: 'alice',
+        level: 3,
+      })
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('schedule fire dispatches the persisted input as the pipeline payload', async () => {
+    const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
+    const seenPayloads: unknown[] = []
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      httpProxyPort: proxyPort,
+      config: {},
+    })
+    await gw.start()
+    // Inject a no-op onFire so we can observe FireContext.payload directly.
+    gw.managers.triggers.setOnFire(async (ctx) => {
+      seenPayloads.push(ctx.payload)
+    })
+    try {
+      const base = `http://127.0.0.1:${port}`
+      // Register with input.
+      await fetch(`${base}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-fire',
+          workflowId: 'wf',
+          trigger: { kind: 'manual' },
+          input: { foo: 'bar' },
+        }),
+      }).then((r) => r.json())
+      // Fire it through the manual fire endpoint.
+      const fired = await fetch(`${base}/triggers/s-fire/fire`, { method: 'POST' })
+      expect(fired.status).toBe(200)
+      // onFire receives the persisted input as the payload.
+      expect(seenPayloads).toEqual([{ foo: 'bar' }])
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('POST /schedules with kind=queue registers when the driver is known', async () => {
     const port = await pickFreePort()
     const proxyPort = await pickFreePort()

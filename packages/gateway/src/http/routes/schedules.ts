@@ -46,7 +46,14 @@ export function registerScheduleRoutes(router: Router, gateway: Gateway): void {
       if (spec === 'invalid') {
         throw createError({ statusCode: 400, message: 'invalid trigger configuration' })
       }
-      const reg = gateway.managers.triggers.register(spec, overlap)
+      // Persist the optional `input` JSON so cron / interval / manual / at /
+      // immediate fires can pass it as the pipeline input. Queue / webhook
+      // sources still supply per-fire payloads that take precedence.
+      const reg = gateway.managers.triggers.register(
+        spec,
+        overlap,
+        body.input !== undefined ? { input: body.input } : {},
+      )
       if (reg.lastError !== undefined) {
         throw createError({ statusCode: 400, message: `failed to register: ${reg.lastError}` })
       }
@@ -132,6 +139,7 @@ function registrationToSchedule(reg: TriggerRegistration): {
   enabled: boolean
   fired: number
   inflight: boolean
+  input?: unknown
   lastFiredAt?: string
   lastError?: string
 } {
@@ -176,6 +184,7 @@ function registrationToSchedule(reg: TriggerRegistration): {
     fired: reg.fired,
     inflight: reg.inflight,
   }
+  if (reg.input !== undefined) out.input = reg.input
   if (reg.lastFiredAt !== undefined) out.lastFiredAt = reg.lastFiredAt
   if (reg.lastError !== undefined) out.lastError = reg.lastError
   return out
