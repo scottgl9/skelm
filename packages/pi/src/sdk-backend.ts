@@ -17,7 +17,7 @@
  *   undefined policy                             → no override (pi defaults)
  */
 
-import { formatSkillBlock } from '@skelm/core'
+import { PermissionDeniedError, formatSkillBlock } from '@skelm/core'
 import type {
   AgentRequest,
   AgentResponse,
@@ -30,6 +30,31 @@ import type {
 } from '@skelm/core'
 import { PiSdkClient } from './sdk-client.js'
 import type { PiSdkBackendOptions } from './types.js'
+
+/**
+ * Pi SDK runs in-process: the underlying @mariozechner/pi-ai package calls
+ * globalThis.fetch directly with no custom-fetch / dispatcher hook, so it
+ * does not honor the HTTP_PROXY env vars set by the gateway egress proxy.
+ *
+ * Per the project tenet "a backend that cannot enforce a declared permission
+ * fails at step start instead of bypassing it", we refuse any policy that
+ * constrains networkEgress to anything other than 'allow'.
+ *
+ * Operators who need real network egress enforcement should:
+ *   (a) use a subprocess backend (Pi RPC, opencode subprocess) which the
+ *       gateway egress proxy injects HTTP_PROXY into, or
+ *   (b) wait for a future PR that monkey-patches globalThis.fetch under
+ *       AsyncLocalStorage so per-call policies can route via undici's
+ *       ProxyAgent without process-global state.
+ */
+function assertEgressEnforceable(policy: ResolvedPolicy | undefined): void {
+  if (policy === undefined) return
+  const ne = policy.networkEgress
+  if (ne === 'allow') return
+  throw new PermissionDeniedError(
+    'pi-sdk backend cannot enforce networkEgress in-process. Set networkEgress: "allow" for this step, or use a subprocess backend (pi RPC, opencode) so the gateway egress proxy can intercept outbound traffic.',
+  )
+}
 
 export class PiSdkBackendError extends Error {
   override readonly name = 'PiSdkBackendError'
@@ -86,6 +111,9 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
     capabilities,
 
     async infer(request: InferRequest, context: BackendContext): Promise<InferResponse> {
+      // Fail-closed before acquiring the concurrency slot — see comment on
+      // assertEgressEnforceable.
+      assertEgressEnforceable(context.permissions)
       await acquire()
       try {
         const cwd = options.cwd
@@ -139,10 +167,13 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
     },
 
     async run(request: AgentRequest, context: BackendContext): Promise<AgentResponse> {
+      const policy = context.permissions ?? request.permissions
+      // Fail-closed before acquiring the concurrency slot — see comment on
+      // assertEgressEnforceable.
+      assertEgressEnforceable(policy)
       await acquire()
 
       try {
-        const policy = context.permissions ?? request.permissions
         const toolAllowlist = derivePiToolAllowlist(policy)
 
         const skillBodies = await loadSkillBodies(request, context)
