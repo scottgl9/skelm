@@ -50,7 +50,7 @@ The gateway is required for:
 | POST | `/approvals/:id/deny` | Deny a gated action |
 | GET | `/audit` | Query audit log |
 
-Default port: `4000`, default host: `127.0.0.1`. Configure via `server.port` and `server.host` in `skelm.config.ts`.
+Default port: `14738`, default host: `127.0.0.1`. Configure via `server.port` and `server.host` in `skelm.config.ts`.
 
 ## Run events (SSE)
 

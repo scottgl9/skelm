@@ -56,7 +56,7 @@ export default defineConfig({
     workspaces?: { base?: string, ephemeralBase?: string },
   },
   server?: {
-    port?:              number,              // default: 4000
+    port?:              number,              // default: 14738
     host?:              string,              // default: 127.0.0.1
     auth?:              { mode: 'none' | 'bearer' },
     maxConcurrentRuns?: number,              // default: 10
@@ -189,7 +189,7 @@ export default defineConfig({
   },
 
   server: {
-    port: 4000,
+    port: 14738,
     host: '127.0.0.1',
     auth: { mode: 'none' },
   },

@@ -51,7 +51,7 @@ When started with signal handlers attached (the default for `skelm gateway start
 
 ## HTTP control surface
 
-When started with `skelm gateway start --foreground` the gateway also binds an HTTP server (`server.host` / `server.port` from `skelm.config.ts`, default `127.0.0.1:4000`). Auth defaults to loopback-only (`auth.mode: 'none'`); set `auth.mode: 'bearer'` and `SKELM_TOKEN` for remote use.
+When started with `skelm gateway start --foreground` the gateway also binds an HTTP server (`server.host` / `server.port` from `skelm.config.ts`, default `127.0.0.1:14738`). Auth defaults to loopback-only (`auth.mode: 'none'`); set `auth.mode: 'bearer'` and `SKELM_TOKEN` for remote use.
 
 Routes:
 

@@ -56,7 +56,7 @@ export default defineConfig({
     workspaces: { base: '~/.skelm/workspaces' },
   },
   secrets: { driver: 'env' },
-  server: { port: 4000, host: '127.0.0.1', auth: { mode: 'none' } },
+  server: { port: 14738, host: '127.0.0.1', auth: { mode: 'none' } },
 })
 ```
 
@@ -263,7 +263,7 @@ skelm schedule add workflows/coding.workflow.ts \
 skelm gateway start
 ```
 
-External chat-bridge service POSTs to `http://gateway-host:4000/webhooks/chat` with the inbound message body matching the `input` schema. Each POST fires one run.
+External chat-bridge service POSTs to `http://gateway-host:14738/webhooks/chat` with the inbound message body matching the `input` schema. Each POST fires one run.
 
 ## Why each piece is here
 
