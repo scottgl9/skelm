@@ -28,7 +28,7 @@ import type {
   ResolvedPolicy,
   SkelmBackend,
 } from '@skelm/core'
-import { PiSdkClient } from './sdk-client.js'
+import { PiSdkClient, PiSdkUpstreamError } from './sdk-client.js'
 import type { PiSdkBackendOptions } from './types.js'
 
 /**
@@ -149,18 +149,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
         }
         return response
       } catch (err) {
-        if (err instanceof Error) {
-          if (err.message.includes('ENOENT') || err.message.includes('not installed')) {
-            throw new PiSdkBackendAuthenticationError(
-              'pi SDK not available. Install it: npm install @mariozechner/pi-coding-agent',
-              err,
-            )
-          }
-          if (err.message.includes('timed out')) {
-            throw new PiSdkBackendTimeoutError(err.message, err)
-          }
-        }
-        throw new PiSdkBackendError(`pi SDK inference failed: ${(err as Error).message}`, err)
+        throw classifyPiSdkError(err, 'inference')
       } finally {
         release()
       }
@@ -211,23 +200,32 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
           }),
         }
       } catch (err) {
-        if (err instanceof Error) {
-          if (err.message.includes('ENOENT') || err.message.includes('not installed')) {
-            throw new PiSdkBackendAuthenticationError(
-              'pi SDK not available. Install it: npm install @mariozechner/pi-coding-agent',
-              err,
-            )
-          }
-          if (err.message.includes('timed out')) {
-            throw new PiSdkBackendTimeoutError(err.message, err)
-          }
-        }
-        throw new PiSdkBackendError(`pi SDK agent execution failed: ${(err as Error).message}`, err)
+        throw classifyPiSdkError(err, 'agent execution')
       } finally {
         release()
       }
     },
   }
+}
+
+function classifyPiSdkError(err: unknown, action: 'inference' | 'agent execution'): Error {
+  if (err instanceof PiSdkUpstreamError) {
+    // Already carries provider/model + upstream errorMessage; surface it as
+    // a backend-level error without obscuring the diagnostic.
+    return new PiSdkBackendError(`pi SDK ${action} failed: ${err.message}`, err)
+  }
+  if (err instanceof Error) {
+    if (err.message.includes('ENOENT') || err.message.includes('not installed')) {
+      return new PiSdkBackendAuthenticationError(
+        'pi SDK not available. Install it: npm install @mariozechner/pi-coding-agent',
+        err,
+      )
+    }
+    if (err.message.includes('timed out')) {
+      return new PiSdkBackendTimeoutError(err.message, err)
+    }
+  }
+  return new PiSdkBackendError(`pi SDK ${action} failed: ${(err as Error).message}`, err)
 }
 
 /**
