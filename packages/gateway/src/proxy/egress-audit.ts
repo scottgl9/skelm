@@ -13,7 +13,7 @@ export interface NetworkEgressEvent {
   stepId: string
   host: string
   decision: 'allow' | 'deny'
-  reason?: 'egress-denied' | 'not-in-allowlist' | 'unknown-token'
+  reason?: 'egress-denied' | 'not-in-allowlist' | 'unknown-token' | 'unknown'
   timestamp: string
 }
 
