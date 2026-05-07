@@ -361,7 +361,7 @@ export class Gateway {
       this.lockfile = await acquireLockfile(this.lockfilePath)
       this.discovery = {
         pid: process.pid,
-        url: this.options.url ?? 'http://127.0.0.1:14738',
+        url: this.options.url ?? defaultDiscoveryUrl(this.options, this.config),
         token: this.options.token,
         startedAt: this.lockfile.startedAt,
       }
@@ -683,4 +683,23 @@ export class Gateway {
 function expandHome(p: string): string {
   if (p.startsWith('~/')) return join(homedir(), p.slice(2))
   return p
+}
+
+/**
+ * Build the discovery URL from the gateway's option / config inputs.
+ *
+ * Priority:
+ *   1. `options.httpHost` / `options.httpPort` (CLI-supplied overrides)
+ *   2. `config.server.host` / `config.server.port` (project config)
+ *   3. The documented defaults (127.0.0.1:14738)
+ *
+ * `startHttp()` later rewrites the discovery URL with the same `host:port`
+ * after the listener binds, but writing the correct URL here keeps the
+ * discovery file useful for embedded gateways (constructed without
+ * `enableHttp: true`) and during the brief window before HTTP is up.
+ */
+function defaultDiscoveryUrl(options: GatewayOptions, config: SkelmConfig): string {
+  const host = options.httpHost ?? config.server?.host ?? '127.0.0.1'
+  const port = options.httpPort ?? config.server?.port ?? 14738
+  return `http://${host}:${port}`
 }
