@@ -55,11 +55,13 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
     skills: true,
     modelSelection: options.model !== undefined,
     // RPC mode runs pi in a subprocess; skelm cannot intercept tool_call events
-    // mid-run, so it cannot enforce allowedTools, fsRead/fsWrite, or any other
-    // dimension. However, networkEgress IS enforced at the proxy layer via
-    // HTTP_PROXY/HTTPS_PROXY injection and SKELM_EGRESS_TOKEN-based policy.
-    // We declare 'native' to indicate networkEgress is enforced natively.
-    toolPermissions: 'native',
+    // mid-run, so it cannot enforce allowedTools, allowedExecutables,
+    // fsRead/fsWrite, allowedMcpServers, or allowedSkills. The new gateway
+    // egress proxy DOES enforce networkEgress out-of-band (HTTP_PROXY +
+    // SKELM_EGRESS_TOKEN), but that is orthogonal to *tool* permissions. We
+    // therefore keep toolPermissions: 'unsupported' and refuse below when a
+    // caller hands us a non-network-only policy (defense-in-depth).
+    toolPermissions: 'unsupported',
   }
 
   // Concurrency semaphore — limits simultaneous pi processes
@@ -88,12 +90,14 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
 
     async run(request: AgentRequest, context: BackendContext): Promise<AgentResponse> {
       const policy = context.permissions ?? request.permissions
-      if (policy !== undefined) {
-        // networkEgress is enforced at the proxy layer via HTTP_PROXY/HTTPS_PROXY
-        // injection and SKELM_EGRESS_TOKEN-based policy. Other dimensions
-        // (allowedTools, fsRead/fsWrite, etc.) are NOT enforced - the proxy cannot
-        // intercept individual tool calls mid-run. We allow networkEgress through
-        // and ignore other permissions (they will be advisory-only).
+      if (policy !== undefined && hasNonNetworkConstraints(policy)) {
+        // The caller declared a permission policy that constrains a dimension
+        // Pi RPC cannot enforce in-subprocess. Fail-closed instead of letting
+        // the agent run unconstrained — networkEgress alone is fine because
+        // the gateway egress proxy enforces it outside the subprocess.
+        throw new PermissionDeniedError(
+          'pi RPC backend cannot enforce tool, executable, filesystem, MCP, or skill permissions in-subprocess. Use the pi-sdk backend for tool-level enforcement, or remove the policy if only networkEgress is required (the gateway egress proxy enforces that out-of-band).',
+        )
       }
       await acquire()
 
@@ -161,6 +165,35 @@ async function loadSkillBodies(req: AgentRequest, ctx: BackendContext): Promise<
     if (skill !== null) bodies.push(formatSkillBlock(skill))
   }
   return bodies
+}
+
+/**
+ * True if the policy constrains any dimension Pi RPC cannot enforce in-subprocess.
+ * networkEgress is enforceable via the gateway egress proxy (HTTP_PROXY env +
+ * SKELM_EGRESS_TOKEN) and is therefore allowed without triggering the
+ * defense-in-depth refusal.
+ */
+function hasNonNetworkConstraints(policy: {
+  allowedTools?: { exact: ReadonlySet<string>; prefixes: readonly string[]; star: boolean }
+  allowedExecutables?: ReadonlySet<string>
+  allowedMcpServers?: ReadonlySet<string>
+  allowedSkills?: ReadonlySet<string>
+  fsRead?: ReadonlySet<string>
+  fsWrite?: ReadonlySet<string>
+  approval?: unknown
+}): boolean {
+  const tools = policy.allowedTools
+  if (tools !== undefined && !tools.star) return true
+  if ((policy.allowedExecutables?.size ?? 0) === 0 && policy.allowedExecutables !== undefined) {
+    // empty set means deny-all → constrains
+    return true
+  }
+  if (policy.allowedMcpServers !== undefined && policy.allowedMcpServers.size === 0) return true
+  if (policy.allowedSkills !== undefined && policy.allowedSkills.size === 0) return true
+  if (policy.fsRead !== undefined && policy.fsRead.size === 0) return true
+  if (policy.fsWrite !== undefined && policy.fsWrite.size === 0) return true
+  if (policy.approval !== undefined && policy.approval !== null) return true
+  return false
 }
 
 function buildPrompt(req: AgentRequest, skillBodies: string[] = []): string {

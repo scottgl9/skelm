@@ -1,4 +1,4 @@
-import { pipeline, agent } from '@skelm/core'
+import { agent, pipeline } from '@skelm/core'
 
 /**
  * Test pipeline for network egress proxy enforcement.

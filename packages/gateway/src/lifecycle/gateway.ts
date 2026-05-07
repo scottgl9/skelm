@@ -6,13 +6,13 @@ import {
   DEFAULT_CONFIG,
   EnvSecretResolver,
   MemoryRunStore,
+  type NetworkPolicy,
   NoopAuditWriter,
   PermissionResolver,
   type RunStore,
   type SecretResolver,
   type SkelmConfig,
   SqliteRunStore,
-  type NetworkPolicy,
 } from '@skelm/core'
 import { SuspendApprovalGate } from '../approvals/suspend-gate.js'
 import { ChainAuditWriter } from '../audit/chain.js'
@@ -21,6 +21,7 @@ import { type SkelmServer, createServer } from '../http/index.js'
 import { AcpSessionManager, defaultAcpSessionStorePath } from '../managers/acp-session-manager.js'
 import { CodingAgentManager } from '../managers/coding-agent-manager.js'
 import { McpServerManager } from '../managers/mcp-server-manager.js'
+import { EgressProxy, InMemoryTokenPolicyStore, type TokenPolicyMap } from '../proxy/index.js'
 import {
   AgentRegistry,
   McpServerRegistry,
@@ -30,11 +31,6 @@ import {
 import { FileSecretResolver } from '../secrets/file-driver.js'
 import { TriggerCoordinator } from '../triggers/coordinator.js'
 import { createTriggerDispatcher } from '../triggers/dispatcher.js'
-import {
-  EgressProxy,
-  InMemoryTokenPolicyStore,
-  type TokenPolicyMap,
-} from '../proxy/index.js'
 import { type DiscoveryRecord, removeDiscovery, writeDiscovery } from './discovery.js'
 import { type LockfileContents, acquireLockfile, releaseLockfile } from './lockfile.js'
 
@@ -151,7 +147,25 @@ export class Gateway {
     this.projectRoot = resolve(options.projectRoot ?? process.cwd())
     this.lockfilePath = join(this.stateDir, 'gateway.lock')
     this.discoveryPath = join(this.stateDir, 'gateway.json')
-    this.config = options.config ?? DEFAULT_CONFIG
+    // When the caller does not supply a config (typical for embedded /
+    // test construction), bind both the HTTP server and the egress proxy
+    // to OS-assigned ports so concurrent gateway instances do not collide
+    // on the documented production defaults (14738 / 14739). The CLI
+    // (`skelm gateway start`) always supplies a config, so production
+    // behavior is unchanged.
+    if (options.config !== undefined) {
+      this.config = options.config
+    } else {
+      const defaultServer = DEFAULT_CONFIG.server ?? {}
+      this.config = {
+        ...DEFAULT_CONFIG,
+        server: {
+          ...defaultServer,
+          port: 0,
+          proxy: { ...(defaultServer.proxy ?? {}), port: 0 },
+        },
+      }
+    }
     this.breakpointsInternal = new BreakpointRegistry()
   }
 
@@ -489,8 +503,18 @@ export class Gateway {
     }
 
     this.tokenPolicyStore = new InMemoryTokenPolicyStore()
-    const serverPort = this.config.server?.port ?? 14738
-    const proxyPort = proxyConfig?.port ?? serverPort + 1
+    // If neither the proxy port nor the HTTP server port is explicitly set,
+    // bind to an OS-assigned port (0). Concurrent gateway instances (typically
+    // tests) need port isolation; production users always set server.port via
+    // defineConfig() so production behavior is unchanged.
+    const serverPort = this.config.server?.port
+    const explicitProxyPort = proxyConfig?.port
+    const proxyPort =
+      explicitProxyPort !== undefined
+        ? explicitProxyPort
+        : serverPort !== undefined
+          ? serverPort + 1
+          : 0
 
     this.egressProxy = new EgressProxy({
       port: proxyPort,

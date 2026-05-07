@@ -1,6 +1,7 @@
 import type { BackendContext, InferRequest, InferResponse, PromptMessage, Usage } from '@skelm/core'
 import { type ModelMessage, generateText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
+import { assertEgressEnforceable } from './permissions.js'
 import { parseStructured } from './structured.js'
 import type { VercelAiBackendOptions } from './types.js'
 
@@ -9,6 +10,10 @@ export async function vercelAiInfer(
   request: InferRequest,
   context: BackendContext,
 ): Promise<InferResponse> {
+  // vercel-ai is in-process; the AI SDK's outbound HTTP does not honor
+  // HTTP_PROXY env vars from the gateway egress proxy. Fail-closed instead
+  // of pretending to enforce networkEgress.
+  assertEgressEnforceable(context.permissions)
   const messages = mapMessages(request.messages)
   const timeout = options.timeout ?? 300_000
   const timeoutCtl = new AbortController()
