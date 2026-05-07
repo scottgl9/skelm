@@ -113,7 +113,15 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
           )
           continue
         }
-        const reg = gateway.managers.triggers.register(spec)
+        // Pipeline-declared triggers may include an `input` field that the
+        // gateway uses as the default pipeline input on cron/interval/manual
+        // fires. Pass it through to the coordinator so `triggers: [{ kind:
+        // 'cron', cron: '…', input: { foo: 'bar' } }]` works.
+        const reg = gateway.managers.triggers.register(
+          spec,
+          undefined,
+          t.input !== undefined ? { input: t.input } : {},
+        )
         if (reg.lastError !== undefined) {
           io.stderr.write(
             `gateway: failed to register trigger ${spec.id} for ${entry.id}: ${reg.lastError}\n`,

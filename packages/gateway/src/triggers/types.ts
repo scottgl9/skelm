@@ -35,6 +35,16 @@ export type OverlapPolicy = 'skip' | 'queue' | 'cancel'
 export interface TriggerRegistration {
   spec: TriggerSpec
   overlap: OverlapPolicy
+  /**
+   * Default pipeline input for fires that don't supply their own payload
+   * (cron, interval, manual, at, immediate, and `skelm schedule fire <id>`).
+   * Queue and webhook triggers receive a per-fire payload from the source;
+   * those still take precedence — `input` is the fallback, not an override.
+   *
+   * Stored opaquely as JSON; the runtime hands it to the pipeline as the
+   * step input where the pipeline's own input schema validates it.
+   */
+  input?: unknown
   /** Number of times the trigger has fired (excluding skipped overlaps). */
   fired: number
   /** Whether a run is currently in flight for this trigger. */
