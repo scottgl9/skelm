@@ -1,4 +1,5 @@
 import type { BackendContext, ResolvedPolicy, Skill } from '@skelm/core'
+import { PermissionDeniedError } from '@skelm/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock PiSdkClient so no real pi process is required
@@ -204,6 +205,47 @@ describe('createPiSdkBackend', () => {
   it('forwards noExtensions: false when explicitly opted in', async () => {
     await createPiSdkBackend({ noExtensions: false }).run?.({ prompt: 'go' }, makeCtx())
     expect(lastConstructorArgs()?.noExtensions).toBe(false)
+  })
+
+  // --- networkEgress fail-closed (pi-sdk is in-process; HTTP_PROXY is not honored) ---
+
+  it("run() refuses when policy.networkEgress is 'deny'", async () => {
+    const backend = createPiSdkBackend()
+    const policy = makePolicy({ networkEgress: 'deny' })
+    await expect(
+      backend.run?.({ prompt: 'go', permissions: policy }, makeCtx({ permissions: policy })),
+    ).rejects.toBeInstanceOf(PermissionDeniedError)
+  })
+
+  it('run() refuses when policy.networkEgress is allowHosts', async () => {
+    const backend = createPiSdkBackend()
+    const policy = makePolicy({
+      networkEgress: { allowHosts: ['api.openai.com'] },
+    })
+    await expect(
+      backend.run?.({ prompt: 'go', permissions: policy }, makeCtx({ permissions: policy })),
+    ).rejects.toBeInstanceOf(PermissionDeniedError)
+  })
+
+  it("infer() refuses when policy.networkEgress is 'deny'", async () => {
+    const backend = createPiSdkBackend()
+    const policy = makePolicy({ networkEgress: 'deny' })
+    await expect(
+      backend.infer?.(
+        { messages: [{ role: 'user', content: 'hi' }] },
+        makeCtx({ permissions: policy }),
+      ),
+    ).rejects.toBeInstanceOf(PermissionDeniedError)
+  })
+
+  it("run() proceeds when policy.networkEgress is 'allow'", async () => {
+    const backend = createPiSdkBackend()
+    const policy = makePolicy({ networkEgress: 'allow' })
+    const result = await backend.run?.(
+      { prompt: 'go', permissions: policy },
+      makeCtx({ permissions: policy }),
+    )
+    expect(result?.text).toBe('agent output')
   })
 })
 
