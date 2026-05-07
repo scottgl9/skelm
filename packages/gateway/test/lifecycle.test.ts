@@ -96,4 +96,48 @@ describe('Gateway lifecycle', () => {
     await gw.stop()
     await expect(gw.stop()).resolves.toBeUndefined()
   })
+
+  it('discovery URL reflects config.server.host/port even without enableHttp', async () => {
+    // Embedded use: no `enableHttp`, no explicit `options.url`, but
+    // `config.server.port` is non-default. The discovery file must point at
+    // the config-declared address — not the documented default.
+    const gw = new Gateway({
+      stateDir,
+      config: {
+        server: { port: 4099, host: '127.0.0.1', auth: { mode: 'none' } },
+      },
+    })
+    await gw.start()
+    const disc = await readDiscovery(gw.discoveryPath)
+    expect(disc?.url).toBe('http://127.0.0.1:4099')
+    await gw.stop()
+  })
+
+  it('options.httpPort wins over config.server.port for the discovery URL', async () => {
+    const gw = new Gateway({
+      stateDir,
+      httpPort: 4042,
+      config: {
+        server: { port: 4099, host: '127.0.0.1', auth: { mode: 'none' } },
+      },
+    })
+    await gw.start()
+    const disc = await readDiscovery(gw.discoveryPath)
+    expect(disc?.url).toBe('http://127.0.0.1:4042')
+    await gw.stop()
+  })
+
+  it('explicit options.url still wins over config.server.port', async () => {
+    const gw = new Gateway({
+      stateDir,
+      url: 'http://example.com:9999',
+      config: {
+        server: { port: 4099, host: '127.0.0.1', auth: { mode: 'none' } },
+      },
+    })
+    await gw.start()
+    const disc = await readDiscovery(gw.discoveryPath)
+    expect(disc?.url).toBe('http://example.com:9999')
+    await gw.stop()
+  })
 })
