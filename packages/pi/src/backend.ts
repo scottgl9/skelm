@@ -40,6 +40,9 @@ export class PiBackendTimeoutError extends PiBackendError {}
  * Each backend instance keeps one pi process alive and reuses it across
  * calls (a new session per call, same process). Use maxConcurrent to
  * limit simultaneous requests.
+ *
+ * @param options Backend configuration
+ * @param options.egressProxyUrl Optional egress proxy URL to inject into subprocess
  */
 export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
   const capabilities: BackendCapabilities = {
@@ -101,6 +104,8 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
         ...(options.provider !== undefined && { provider: options.provider }),
         ...(options.model !== undefined && { model: options.model }),
         ...((request.cwd ?? options.cwd) !== undefined && { cwd: request.cwd ?? options.cwd }),
+        ...(options.egressProxyUrl !== undefined && { egressProxyUrl: options.egressProxyUrl }),
+        ...(context.egressToken !== undefined && { egressToken: context.egressToken }),
         persistSession: false,
       })
 

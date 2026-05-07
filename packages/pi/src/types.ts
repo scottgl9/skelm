@@ -61,4 +61,10 @@ export interface PiBackendOptions {
    * Excess calls are queued until a slot opens.
    */
   maxConcurrent?: number
+  /**
+   * Optional egress proxy URL to inject into subprocess environment.
+   * When provided along with an egress token from the gateway, the pi process
+   * will route outbound connections through the proxy for network policy enforcement.
+   */
+  egressProxyUrl?: string
 }
