@@ -22,7 +22,7 @@ import {
 } from './errors.js'
 import { EventBus } from './events.js'
 import { createMcpHost } from './mcp/host.js'
-import type { AgentPermissions, PermissionDimension } from './permissions.js'
+import type { AgentPermissions, NetworkPolicy, PermissionDimension } from './permissions.js'
 import { TrustEnforcer, createPolicyFetch, resolvePermissions } from './permissions.js'
 import { MemoryRunStore, type RunStore, type StateStore } from './run-store.js'
 import { SchemaValidationError, validate } from './schema.js'
@@ -104,6 +104,18 @@ export interface RunOptions {
    * omitted, declared secrets cannot resolve and the step fails.
    */
   secretResolver?: SecretResolver
+  /**
+   * Optional callback to register an egress token for network policy enforcement.
+   * Called before each agent step with the runId, stepId, and resolved network policy.
+   * Returns a token string that will be injected into the BackendContext.
+   * When omitted, no egress token is provided to backends.
+   */
+  registerEgressToken?: (runId: string, stepId: string, policy: NetworkPolicy) => string
+  /**
+   * Optional callback to unregister an egress token when an agent step completes.
+   * Called after each agent step with the runId and stepId.
+   */
+  unregisterEgressToken?: (runId: string, stepId: string) => void
 }
 
 export class BackendChainExhaustedError extends Error {
@@ -159,6 +171,8 @@ interface ExecutionRuntime {
   readonly approvalGate?: ApprovalGate
   readonly skillSource?: (skillId: string) => Promise<import('./skills.js').Skill | null>
   readonly secretResolver?: SecretResolver
+  readonly registerEgressToken?: (runId: string, stepId: string, policy: NetworkPolicy) => string
+  readonly unregisterEgressToken?: (runId: string, stepId: string) => void
   readonly currentWorkspace: Context['workspace']
   setCurrentWorkspace(workspace: Context['workspace']): void
   deferRunWorkspaceFinalizer(finalizer: (status: RunStatus) => Promise<void>): void
@@ -927,6 +941,11 @@ async function runAgentStep(
             stepId: step.id,
           })
         : undefined
+    // Register egress token if the callback is provided and network policy is declared.
+    const egressToken =
+      policy?.networkEgress !== undefined && runtime?.registerEgressToken !== undefined
+        ? runtime.registerEgressToken(ctx.run.runId, step.id, policy.networkEgress)
+        : undefined
     try {
       // Policy-enforcing fetch wrapper: if the step declares a network
       // policy, wrap globalThis.fetch so outbound requests are checked
@@ -963,6 +982,7 @@ async function runAgentStep(
         ...(mcpHost !== undefined && { mcpHost }),
         ...(policyFetch !== undefined && { fetch: policyFetch }),
         ...(loadSkill !== undefined && { loadSkill }),
+        ...(egressToken !== undefined && { egressToken }),
       })
       const candidate =
         step.outputSchema !== undefined
@@ -992,6 +1012,10 @@ async function runAgentStep(
       return result
     } finally {
       await mcpHost?.dispose()
+      // Unregister egress token when the step completes.
+      if (egressToken !== undefined && runtime?.unregisterEgressToken !== undefined) {
+        runtime.unregisterEgressToken(ctx.run.runId, step.id)
+      }
     }
   } catch (error) {
     if (!finishedWorkspace) {

@@ -177,6 +177,14 @@ export interface BackendContext {
    * Undefined when no skill registry is available.
    */
   loadSkill?: (skillId: string) => Promise<import('./skills.js').Skill | null>
+  /**
+   * Egress token for network proxy authentication. When provided, the backend
+   * should use this token in Proxy-Authorization: Bearer <token> header for
+   * outbound HTTP requests through the egress proxy. The token maps to a
+   * network policy that the proxy enforces. Undefined when no network policy
+   * is declared or the gateway does not provide tokens.
+   */
+  egressToken?: string
 }
 
 /**

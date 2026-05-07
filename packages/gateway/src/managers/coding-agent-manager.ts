@@ -33,6 +33,10 @@ export interface CodingAgentManagerOptions {
   maxRestarts?: number
   /** Soft per-agent concurrency cap for ephemeral runs. Default: unlimited. */
   ephemeralConcurrency?: number
+  /** Optional callback to get proxy env vars to inject into subprocesses. */
+  getProxyEnv?: () => Record<string, string> | undefined
+  /** Optional callback to get egress token for a specific run/step. */
+  getEgressToken?: (runId: string, stepId: string) => string | undefined
 }
 
 const DEFAULT_BACKOFF = [200, 500, 1_000, 2_500, 5_000] as const
@@ -57,6 +61,20 @@ export class CodingAgentManager {
   private stopping = false
 
   constructor(private readonly opts: CodingAgentManagerOptions = {}) {}
+
+  /**
+   * Get proxy environment variables from the configured callback.
+   */
+  private getProxyEnvVars(): Record<string, string> | undefined {
+    return this.opts.getProxyEnv?.()
+  }
+
+  /**
+   * Get egress token for a specific run/step from the configured callback.
+   */
+  private getEgressToken(runId: string, stepId: string): string | undefined {
+    return this.opts.getEgressToken?.(runId, stepId)
+  }
 
   list(): ResidentHandle[] {
     return Array.from(this.resident.values())
@@ -106,7 +124,8 @@ export class CodingAgentManager {
     }
     const port = await pickFreePort()
     const args = withInjectedPort(entry.args ?? [], port)
-    const env = { ...process.env, ...(entry.env ?? {}), PORT: String(port) }
+    const proxyEnv = this.getProxyEnvVars() ?? {}
+    const env = { ...process.env, ...(entry.env ?? {}), PORT: String(port), ...proxyEnv }
     const child = spawn(entry.command, args, { env, stdio: ['pipe', 'pipe', 'pipe'] })
     const handle: ResidentHandle = {
       kind: 'resident',
@@ -175,7 +194,7 @@ export class CodingAgentManager {
    */
   async spawnEphemeral(
     entry: SkelmConfigAgentEntry,
-    input: { prompt?: string; stdin?: string },
+    input: { prompt?: string; stdin?: string; runId?: string; stepId?: string },
   ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
     if (entry.lifecycle !== 'ephemeral') {
       throw new Error(`agent ${entry.id} is not ephemeral`)
@@ -187,7 +206,15 @@ export class CodingAgentManager {
     if (cap !== undefined && (this.ephemerals.get(entry.id)?.length ?? 0) >= cap) {
       throw new Error(`agent ${entry.id} ephemeral concurrency cap (${cap}) reached`)
     }
-    const env = { ...process.env, ...(entry.env ?? {}) }
+    const proxyEnv = this.getProxyEnvVars() ?? {}
+    const env = { ...process.env, ...(entry.env ?? {}), ...proxyEnv }
+    // Inject egress token if provided.
+    if (input.runId !== undefined && input.stepId !== undefined) {
+      const token = this.getEgressToken(input.runId, input.stepId)
+      if (token !== undefined) {
+        env.SKELM_EGRESS_TOKEN = token
+      }
+    }
     const child = spawn(entry.command, [...(entry.args ?? [])], {
       env,
       stdio: ['pipe', 'pipe', 'pipe'],

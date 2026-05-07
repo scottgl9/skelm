@@ -52,6 +52,16 @@ export class OpencodeClientWrapper {
   private async _start(): Promise<void> {
     const command = this.options.command ?? 'opencode'
 
+    // Inject egress proxy environment variables if provided.
+    const proxyEnv: Record<string, string> = {}
+    if (this.options.egressProxyUrl !== undefined) {
+      proxyEnv.HTTP_PROXY = this.options.egressProxyUrl
+      proxyEnv.HTTPS_PROXY = this.options.egressProxyUrl
+    }
+    if (this.options.egressToken !== undefined) {
+      proxyEnv.SKELM_EGRESS_TOKEN = this.options.egressToken
+    }
+
     // (#2) Inject model and logLevel via OPENCODE_CONFIG_CONTENT so opencode
     // uses them as its defaults for every session, without needing per-session
     // body overrides.
@@ -67,7 +77,7 @@ export class OpencodeClientWrapper {
 
     return new Promise<void>((resolve, reject) => {
       const proc = spawn(command, ['serve', '--port', '0'], {
-        env: { ...process.env, OPENCODE_CONFIG_CONTENT: JSON.stringify(serverConfig) },
+        env: { ...process.env, ...proxyEnv, OPENCODE_CONFIG_CONTENT: JSON.stringify(serverConfig) },
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       this.proc = proc
@@ -238,6 +248,31 @@ export class OpencodeClientWrapper {
     this.proc = null
     this.client = null
     this.startPromise = null
+  }
+
+  /**
+   * Update egress token for the running opencode server.
+   * Called when a new step starts with a different token.
+   */
+  updateEgressToken(token: string | undefined): void {
+    if (token !== undefined) {
+      process.env.SKELM_EGRESS_TOKEN = token
+    } else {
+      delete process.env.SKELM_EGRESS_TOKEN
+    }
+  }
+
+  /**
+   * Update egress proxy URL for the running opencode server.
+   */
+  updateEgressProxyUrl(url: string | undefined): void {
+    if (url !== undefined) {
+      process.env.HTTP_PROXY = url
+      process.env.HTTPS_PROXY = url
+    } else {
+      delete process.env.HTTP_PROXY
+      delete process.env.HTTPS_PROXY
+    }
   }
 }
 

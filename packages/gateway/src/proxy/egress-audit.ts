@@ -1,28 +1,43 @@
 /**
- * Audit helpers for the egress proxy.
- *
- * Emits `network.egress` audit events so every outbound connection attempt
- * (allowed or denied) is visible in `skelm audit query`.
+ * Audit event emission for network egress decisions.
  */
 
 import type { AuditWriter } from '@skelm/core'
-import type { EgressDecision, EgressPolicy } from './egress-policy.js'
 
-export async function writeEgressAudit(
-  writer: AuditWriter,
-  host: string,
-  policy: EgressPolicy | undefined,
-  decision: EgressDecision,
+/**
+ * Network egress audit event.
+ */
+export interface NetworkEgressEvent {
+  event: 'network.egress'
+  runId: string
+  stepId: string
+  host: string
+  decision: 'allow' | 'deny'
+  reason?: 'egress-denied' | 'not-in-allowlist' | 'unknown-token'
+  timestamp: string
+}
+
+/**
+ * Emits a network egress audit event.
+ *
+ * @param auditWriter The audit writer to use
+ * @param event The network egress event
+ */
+export async function emitEgressAudit(
+  auditWriter: AuditWriter,
+  event: NetworkEgressEvent,
 ): Promise<void> {
-  await writer.write({
-    timestamp: new Date().toISOString(),
-    ...(policy?.runId !== undefined && { runId: policy.runId }),
-    actor: policy?.stepId ?? 'unknown-step',
-    action: 'network.egress',
+  await auditWriter.write({
+    timestamp: event.timestamp,
+    runId: event.runId,
+    actor: 'egress-proxy',
+    action: event.decision === 'allow' ? 'network.egress:allow' : 'network.egress:deny',
     details: {
-      host,
-      decision: decision.allow ? 'allow' : 'deny',
-      ...(!decision.allow && { reason: decision.reason }),
+      runId: event.runId,
+      stepId: event.stepId,
+      host: event.host,
+      decision: event.decision,
+      reason: event.reason,
     },
   })
 }

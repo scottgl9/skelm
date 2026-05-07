@@ -40,6 +40,10 @@ export interface OpencodeBackendOptions {
 
   /** Log level */
   logLevel?: 'debug' | 'info' | 'warn' | 'error' | 'off'
+  /** Egress proxy URL for outbound HTTP requests (e.g., 'http://127.0.0.1:14739'). */
+  egressProxyUrl?: string
+  /** Egress token for proxy authentication (injected into subprocesses). */
+  egressToken?: string
   /**
    * Server-level permission defaults injected via OPENCODE_CONFIG_CONTENT at
    * server startup. These apply to every session on this backend instance.

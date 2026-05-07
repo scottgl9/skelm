@@ -1,69 +1,100 @@
 /**
- * Egress policy evaluation for the embedded CONNECT proxy.
+ * Egress policy checking logic for the CONNECT proxy.
  *
- * Each agent step registers a token → policy entry before the subprocess
- * starts.  The proxy resolves the token from the Proxy-Authorization header
- * and calls `evaluate()` to decide whether to allow or deny a connection.
+ * Maps `networkEgress` permission values to allow/deny decisions:
+ * - `'deny'` → reject all
+ * - `'allow'` → forward all
+ * - `{ allowHosts: [...] }` → forward only listed hostnames
  */
 
-export type NetworkPolicy = 'allow' | 'deny' | { allowHosts: readonly string[] }
-
-export interface EgressPolicy {
-  networkEgress: NetworkPolicy
-  runId?: string
-  stepId?: string
-}
-
-export type EgressDecision =
-  | { allow: true }
-  | { allow: false; reason: 'egress-denied' | 'not-in-allowlist' | 'no-policy' }
+import type { NetworkPolicy } from '@skelm/core'
 
 /**
- * Evaluate whether `host` is allowed under `policy`.
+ * Result of a policy check.
  */
-export function evaluate(policy: EgressPolicy, host: string): EgressDecision {
-  const egress = policy.networkEgress
-
-  if (egress === 'deny') {
-    return { allow: false, reason: 'egress-denied' }
-  }
-
-  if (egress === 'allow') {
-    return { allow: true }
-  }
-
-  // { allowHosts: [...] }
-  const allowed = egress.allowHosts.some((h) => matchHost(h, host))
-  if (allowed) return { allow: true }
-  return { allow: false, reason: 'not-in-allowlist' }
+export interface PolicyCheckResult {
+  allowed: boolean
+  reason?: 'egress-denied' | 'not-in-allowlist' | 'unknown-token'
 }
 
 /**
- * Exact hostname match or leading-wildcard match (*.example.com).
+ * Token-to-policy mapping. Each agent step run gets a unique token
+ * that maps to its resolved networkEgress policy.
  */
-function matchHost(pattern: string, host: string): boolean {
-  if (pattern.startsWith('*.')) {
-    const suffix = pattern.slice(1) // '.example.com'
-    return host === pattern.slice(2) || host.endsWith(suffix)
-  }
-  return host === pattern
+export interface TokenPolicyMap {
+  get(token: string): NetworkPolicy | undefined
+  set(token: string, policy: NetworkPolicy): void
+  delete(token: string): void
 }
 
 /**
- * In-memory token registry.  Thread-safe for single-threaded Node.js.
+ * In-memory token-to-policy store.
  */
-export class EgressPolicyRegistry {
-  private readonly entries = new Map<string, EgressPolicy>()
+export class InMemoryTokenPolicyStore implements TokenPolicyMap {
+  private store = new Map<string, NetworkPolicy>()
 
-  register(token: string, policy: EgressPolicy): void {
-    this.entries.set(token, policy)
+  get(token: string): NetworkPolicy | undefined {
+    return this.store.get(token)
   }
 
-  revoke(token: string): void {
-    this.entries.delete(token)
+  set(token: string, policy: NetworkPolicy): void {
+    this.store.set(token, policy)
   }
 
-  resolve(token: string): EgressPolicy | undefined {
-    return this.entries.get(token)
+  delete(token: string): void {
+    this.store.delete(token)
   }
+}
+
+/**
+ * Check if a hostname is allowed by the given network policy.
+ *
+ * @param policy The network egress policy
+ * @param hostname The destination hostname
+ * @returns PolicyCheckResult indicating allow/deny
+ */
+export function checkHostPolicy(
+  policy: NetworkPolicy,
+  hostname: string,
+): PolicyCheckResult {
+  if (policy === 'deny') {
+    return { allowed: false, reason: 'egress-denied' }
+  }
+
+  if (policy === 'allow') {
+    return { allowed: true }
+  }
+
+  // policy is { allowHosts: readonly string[] }
+  if (policy.allowHosts.includes(hostname)) {
+    return { allowed: true }
+  }
+
+  return { allowed: false, reason: 'not-in-allowlist' }
+}
+
+/**
+ * Extract hostname from a CONNECT request target.
+ *
+ * CONNECT targets are in the form `hostname:port` (e.g., `api.openai.com:443`)
+ */
+export function extractHostnameFromConnectTarget(target: string): string {
+  const colonIndex = target.lastIndexOf(':')
+  if (colonIndex === -1) {
+    // No port specified, treat entire target as hostname
+    return target
+  }
+  return target.slice(0, colonIndex)
+}
+
+/**
+ * Extract hostname from an HTTP request Host header.
+ */
+export function extractHostnameFromHostHeader(hostHeader: string): string {
+  // Host header can be "hostname" or "hostname:port"
+  const colonIndex = hostHeader.lastIndexOf(':')
+  if (colonIndex === -1) {
+    return hostHeader
+  }
+  return hostHeader.slice(0, colonIndex)
 }

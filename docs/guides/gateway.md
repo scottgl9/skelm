@@ -13,6 +13,69 @@ skelm gateway status --json
 
 There is no separate `skelm-gateway` executable.
 
+## Network egress proxy
+
+The gateway hosts an embedded CONNECT proxy that enforces `networkEgress` permissions at the gateway level — not advisory, **actually enforced**. Every agent subprocess is spawned with proxy environment variables pointing to the local proxy, which checks each outbound connection against the step's resolved policy.
+
+### Configuration
+
+Enable and configure the proxy in `skelm.config.ts`:
+
+```ts
+export default defineConfig({
+  server: {
+    port: 14738,
+    proxy: {
+      enabled: true,        // default: true
+      port: 14739,          // default: server.port + 1
+    },
+  },
+})
+```
+
+### How it works
+
+1. **Proxy startup**: The gateway starts a CONNECT proxy listener on `server.port + 1` (default 14739)
+2. **Subprocess injection**: Every agent subprocess gets these environment variables:
+   ```bash
+   HTTP_PROXY=http://127.0.0.1:14739
+   HTTPS_PROXY=http://127.0.0.1:14739
+   SKELM_EGRESS_TOKEN=<runId>:<stepId>
+   ```
+3. **Token-based policy lookup**: The proxy reads `Proxy-Authorization: Bearer <token>` from CONNECT requests, looks up the token → policy mapping, and enforces the policy
+4. **Default deny**: Unknown/missing tokens → all connections denied (safe default)
+
+### Policy enforcement
+
+The proxy enforces `networkEgress` policies:
+
+- `networkEgress: 'deny'` → reject all connections
+- `networkEgress: 'allow'` → forward everything
+- `{ allowHosts: ['api.openai.com'] }` → forward only listed hostnames, reject all others
+
+### Audit
+
+Every decision emits an audit event:
+
+```json
+{
+  "event": "network.egress",
+  "runId": "<run-id>",
+  "stepId": "<step-id>",
+  "host": "api.openai.com",
+  "decision": "allow|deny",
+  "reason?": "not-in-allowlist"
+}
+```
+
+### Token lifecycle
+
+- **Registration**: Before each agent step, the gateway registers the token → policy mapping
+- **Injection**: The token is passed to the subprocess via `SKELM_EGRESS_TOKEN` env var
+- **Cleanup**: After the step completes, the token is unregistered (prevents stale lookups)
+
+This handles concurrent steps from different pipelines each getting their own policy enforced correctly.
+
 ## State files
 
 By default the gateway writes its lockfile and discovery file under `~/.skelm`:

@@ -1,83 +1,101 @@
-import { describe, it, expect } from 'vitest'
-import { evaluate, EgressPolicyRegistry, type EgressPolicy } from '../../src/proxy/egress-policy.js'
+import { describe, expect, test } from 'vitest'
+import {
+  checkHostPolicy,
+  extractHostnameFromConnectTarget,
+  extractHostnameFromHostHeader,
+  InMemoryTokenPolicyStore,
+  type NetworkPolicy,
+} from '../../src/proxy/index.js'
 
-describe('evaluate', () => {
-  it('denies when networkEgress is deny', () => {
-    const policy: EgressPolicy = { networkEgress: 'deny' }
-    expect(evaluate(policy, 'api.openai.com')).toEqual({
-      allow: false,
-      reason: 'egress-denied',
+describe('egress-policy', () => {
+  describe('checkHostPolicy', () => {
+    test('deny policy rejects all hosts', () => {
+      const result = checkHostPolicy('deny', 'api.openai.com')
+      expect(result.allowed).toBe(false)
+      expect(result.reason).toBe('egress-denied')
+    })
+
+    test('allow policy permits all hosts', () => {
+      const result = checkHostPolicy('allow', 'api.openai.com')
+      expect(result.allowed).toBe(true)
+      expect(result.reason).toBeUndefined()
+    })
+
+    test('allowHosts policy permits matching hosts', () => {
+      const policy: NetworkPolicy = { allowHosts: ['api.openai.com', 'api.anthropic.com'] }
+      const result = checkHostPolicy(policy, 'api.openai.com')
+      expect(result.allowed).toBe(true)
+      expect(result.reason).toBeUndefined()
+    })
+
+    test('allowHosts policy rejects non-matching hosts', () => {
+      const policy: NetworkPolicy = { allowHosts: ['api.openai.com'] }
+      const result = checkHostPolicy(policy, 'evil.com')
+      expect(result.allowed).toBe(false)
+      expect(result.reason).toBe('not-in-allowlist')
+    })
+
+    test('allowHosts policy is exact match', () => {
+      const policy: NetworkPolicy = { allowHosts: ['api.openai.com'] }
+      const result = checkHostPolicy(policy, 'api.openai.com.evil.com')
+      expect(result.allowed).toBe(false)
+      expect(result.reason).toBe('not-in-allowlist')
     })
   })
 
-  it('allows when networkEgress is allow', () => {
-    const policy: EgressPolicy = { networkEgress: 'allow' }
-    expect(evaluate(policy, 'anything.example.com')).toEqual({ allow: true })
-  })
+  describe('extractHostnameFromConnectTarget', () => {
+    test('extracts hostname from hostname:port', () => {
+      expect(extractHostnameFromConnectTarget('api.openai.com:443')).toBe('api.openai.com')
+    })
 
-  it('allows listed host', () => {
-    const policy: EgressPolicy = {
-      networkEgress: { allowHosts: ['api.openai.com'] },
-    }
-    expect(evaluate(policy, 'api.openai.com')).toEqual({ allow: true })
-  })
+    test('extracts hostname from hostname without port', () => {
+      expect(extractHostnameFromConnectTarget('api.openai.com')).toBe('api.openai.com')
+    })
 
-  it('denies unlisted host', () => {
-    const policy: EgressPolicy = {
-      networkEgress: { allowHosts: ['api.openai.com'] },
-    }
-    expect(evaluate(policy, 'evil.example.com')).toEqual({
-      allow: false,
-      reason: 'not-in-allowlist',
+    test('handles IPv4 addresses', () => {
+      expect(extractHostnameFromConnectTarget('192.168.1.1:8080')).toBe('192.168.1.1')
+    })
+
+    test('handles IPv6 addresses', () => {
+      expect(extractHostnameFromConnectTarget('[::1]:8080')).toBe('[::1]')
     })
   })
 
-  it('allows wildcard subdomain match', () => {
-    const policy: EgressPolicy = {
-      networkEgress: { allowHosts: ['*.openai.com'] },
-    }
-    expect(evaluate(policy, 'api.openai.com')).toEqual({ allow: true })
-    expect(evaluate(policy, 'files.openai.com')).toEqual({ allow: true })
-  })
-
-  it('allows exact match for wildcard base domain', () => {
-    const policy: EgressPolicy = {
-      networkEgress: { allowHosts: ['*.openai.com'] },
-    }
-    expect(evaluate(policy, 'openai.com')).toEqual({ allow: true })
-  })
-
-  it('denies non-matching host against wildcard', () => {
-    const policy: EgressPolicy = {
-      networkEgress: { allowHosts: ['*.openai.com'] },
-    }
-    expect(evaluate(policy, 'notopen.ai.com')).toEqual({
-      allow: false,
-      reason: 'not-in-allowlist',
+  describe('extractHostnameFromHostHeader', () => {
+    test('extracts hostname from hostname:port', () => {
+      expect(extractHostnameFromHostHeader('api.openai.com:443')).toBe('api.openai.com')
     })
-  })
-})
 
-describe('EgressPolicyRegistry', () => {
-  it('registers and resolves a token', () => {
-    const registry = new EgressPolicyRegistry()
-    registry.register('tok1', { networkEgress: 'allow', runId: 'r1', stepId: 's1' })
-    expect(registry.resolve('tok1')).toEqual({
-      networkEgress: 'allow',
-      runId: 'r1',
-      stepId: 's1',
+    test('extracts hostname from hostname without port', () => {
+      expect(extractHostnameFromHostHeader('api.openai.com')).toBe('api.openai.com')
+    })
+
+    test('handles IPv4 addresses', () => {
+      expect(extractHostnameFromHostHeader('192.168.1.1:8080')).toBe('192.168.1.1')
     })
   })
 
-  it('returns undefined for unknown token', () => {
-    const registry = new EgressPolicyRegistry()
-    expect(registry.resolve('unknown')).toBeUndefined()
-  })
+  describe('InMemoryTokenPolicyStore', () => {
+    test('stores and retrieves policies', () => {
+      const store = new InMemoryTokenPolicyStore()
+      const policy: NetworkPolicy = { allowHosts: ['api.openai.com'] }
+      
+      store.set('run1:step1', policy)
+      expect(store.get('run1:step1')).toBe(policy)
+    })
 
-  it('revokes a token', () => {
-    const registry = new EgressPolicyRegistry()
-    registry.register('tok2', { networkEgress: 'deny' })
-    registry.revoke('tok2')
-    expect(registry.resolve('tok2')).toBeUndefined()
+    test('returns undefined for unknown tokens', () => {
+      const store = new InMemoryTokenPolicyStore()
+      expect(store.get('unknown')).toBeUndefined()
+    })
+
+    test('deletes policies', () => {
+      const store = new InMemoryTokenPolicyStore()
+      const policy: NetworkPolicy = { allowHosts: ['api.openai.com'] }
+      
+      store.set('run1:step1', policy)
+      store.delete('run1:step1')
+      expect(store.get('run1:step1')).toBeUndefined()
+    })
   })
 })

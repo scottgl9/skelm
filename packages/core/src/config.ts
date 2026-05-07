@@ -54,14 +54,10 @@ export interface SkelmConfigServer {
   host?: string
   auth?: { mode: 'none' | 'bearer' }
   maxConcurrentRuns?: number
-  /**
-   * Embedded CONNECT proxy for real `networkEgress` enforcement.
-   * Defaults to enabled on port `server.port + 1` (14739 when port is 14738).
-   */
   proxy?: {
-    /** Proxy listen port. Defaults to server.port + 1. */
+    /** Egress proxy port. Default: server.port + 1. */
     port?: number
-    /** Set to false to disable the proxy entirely. Defaults to true. */
+    /** Enable the egress proxy. Default: true. */
     enabled?: boolean
   }
 }
@@ -197,5 +193,8 @@ export const DEFAULT_CONFIG: SkelmConfig = Object.freeze({
     host: '127.0.0.1',
     auth: { mode: 'none' as const },
     maxConcurrentRuns: 10,
+    proxy: {
+      enabled: true,
+    },
   },
 })
