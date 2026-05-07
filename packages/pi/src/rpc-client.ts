@@ -20,6 +20,10 @@ export interface PiRpcClientOptions {
   args?: readonly string[]
   /** Whether to persist the session (default: false — ephemeral) */
   persistSession?: boolean
+  /** Optional egress proxy URL to inject into subprocess environment */
+  egressProxyUrl?: string
+  /** Optional egress token to inject into subprocess environment */
+  egressToken?: string
 }
 
 export interface PiRpcResponse {
@@ -53,9 +57,21 @@ export class PiRpcClient {
     if (!this.options.persistSession) args.push('--no-session')
     if (this.options.args) args.push(...this.options.args)
 
+    // Build environment with optional egress proxy injection
+    const env: Record<string, string> = Object.fromEntries(
+      Object.entries(process.env).filter(([, v]) => v !== undefined),
+    )
+    if (this.options.egressProxyUrl !== undefined) {
+      env.HTTP_PROXY = this.options.egressProxyUrl
+      env.HTTPS_PROXY = this.options.egressProxyUrl
+    }
+    if (this.options.egressToken !== undefined) {
+      env.SKELM_EGRESS_TOKEN = this.options.egressToken
+    }
+
     const proc = spawn(command, args, {
       cwd: this.options.cwd ?? process.cwd(),
-      env: { ...process.env },
+      env,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     this.proc = proc
