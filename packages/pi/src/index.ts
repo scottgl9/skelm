@@ -23,7 +23,7 @@ export {
   PiSdkBackendAuthenticationError,
   PiSdkBackendTimeoutError,
 } from './sdk-backend.js'
-export { PiSdkClient } from './sdk-client.js'
+export { PiSdkClient, PiSdkUpstreamError } from './sdk-client.js'
 export type { PiBackendOptions, PiSdkBackendOptions } from './types.js'
 export type { PiBackendConfig } from './factory.js'
 export type { PiRpcClientOptions, PiRpcResponse } from './rpc-client.js'

@@ -2,8 +2,13 @@ import type { BackendContext, ResolvedPolicy, Skill } from '@skelm/core'
 import { PermissionDeniedError } from '@skelm/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock PiSdkClient so no real pi process is required
-vi.mock('../src/sdk-client.js', () => {
+// Mock PiSdkClient so no real pi process is required. Pass through the
+// PiSdkUpstreamError class (and other named exports) from the real module
+// so `instanceof PiSdkUpstreamError` checks in classifyPiSdkError see the
+// same constructor identity.
+vi.mock('../src/sdk-client.js', async () => {
+  const actual =
+    await vi.importActual<typeof import('../src/sdk-client.js')>('../src/sdk-client.js')
   const MockPiSdkClient = vi.fn().mockImplementation(() => ({
     prompt: vi.fn().mockResolvedValue({
       text: 'agent output',
@@ -11,11 +16,11 @@ vi.mock('../src/sdk-client.js', () => {
       usage: { inputTokens: 10, outputTokens: 5 },
     }),
   }))
-  return { PiSdkClient: MockPiSdkClient }
+  return { ...actual, PiSdkClient: MockPiSdkClient }
 })
 
-import { createPiSdkBackend, derivePiToolAllowlist } from '../src/sdk-backend.js'
-import { PiSdkClient } from '../src/sdk-client.js'
+import { PiSdkBackendError, createPiSdkBackend, derivePiToolAllowlist } from '../src/sdk-backend.js'
+import { PiSdkClient, PiSdkUpstreamError } from '../src/sdk-client.js'
 
 function makeCtx(overrides: Partial<BackendContext> = {}): BackendContext {
   return { signal: new AbortController().signal, ...overrides }
@@ -246,6 +251,55 @@ describe('createPiSdkBackend', () => {
       makeCtx({ permissions: policy }),
     )
     expect(result?.text).toBe('agent output')
+  })
+
+  // ---------------------------------------------------------------------
+  // F007: upstream errors must surface as thrown PiSdkBackendError, not as
+  // a "completed" step with empty text.
+  // ---------------------------------------------------------------------
+
+  it('run() promotes PiSdkUpstreamError to PiSdkBackendError so the runner fails the step', async () => {
+    const upstream = new PiSdkUpstreamError(
+      'pi inference failed (provider=openai, model=gpt-5.4): 401 Incorrect API key provided.',
+      'error',
+      '401 Incorrect API key provided.',
+    )
+    ;(PiSdkClient as ReturnType<typeof vi.fn>).mockImplementationOnce(() => ({
+      prompt: vi.fn().mockRejectedValue(upstream),
+    }))
+    const backend = createPiSdkBackend()
+    let caught: unknown
+    try {
+      await backend.run?.({ prompt: 'go' }, makeCtx())
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeInstanceOf(PiSdkBackendError)
+    expect((caught as Error).message).toContain('pi SDK agent execution failed')
+    expect((caught as Error).message).toContain('401 Incorrect API key provided')
+    // Original PiSdkUpstreamError preserved as the .cause for diagnostics.
+    expect((caught as PiSdkBackendError).cause).toBe(upstream)
+  })
+
+  it('infer() promotes PiSdkUpstreamError to PiSdkBackendError', async () => {
+    const upstream = new PiSdkUpstreamError(
+      'pi inference failed (provider=openai, model=gpt-5.4): rate-limited',
+      'error',
+      'rate-limited',
+    )
+    ;(PiSdkClient as ReturnType<typeof vi.fn>).mockImplementationOnce(() => ({
+      prompt: vi.fn().mockRejectedValue(upstream),
+    }))
+    const backend = createPiSdkBackend()
+    let caught: unknown
+    try {
+      await backend.infer?.({ messages: [{ role: 'user', content: 'hi' }] }, makeCtx())
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeInstanceOf(PiSdkBackendError)
+    expect((caught as Error).message).toContain('pi SDK inference failed')
+    expect((caught as Error).message).toContain('rate-limited')
   })
 })
 
