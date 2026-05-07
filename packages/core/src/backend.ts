@@ -158,6 +158,14 @@ export interface BackendContext {
   signal: AbortSignal
   /** Resolved permission policy for this run when the step declared one. */
   permissions?: ResolvedPolicy
+  /**
+   * Raw `AgentPermissions` object the workflow author wrote on the step,
+   * before defaults and profiles were merged in. Backends use this to tell
+   * which dimensions the user *explicitly* declared vs. which fell out of
+   * default-deny resolution. Undefined when the step had no `permissions`
+   * field at all.
+   */
+  declaredPermissions?: import('./permissions.js').AgentPermissions
   /** Optional MCP host available to wrapped-tool backends. */
   mcpHost?: McpHost
   /**
@@ -185,6 +193,16 @@ export interface BackendContext {
    * is declared or the gateway does not provide tokens.
    */
   egressToken?: string
+  /**
+   * Per-step environment variables to inject into agent subprocesses for
+   * outbound network proxying. Typically includes `HTTP_PROXY`, `HTTPS_PROXY`,
+   * and `SKELM_EGRESS_TOKEN` — with the egress token already encoded as the
+   * URL credential of `HTTP_PROXY` so standard HTTP clients send
+   * `Proxy-Authorization: Basic <…>` automatically. Subprocess backends
+   * should merge this into the spawned child's env. Undefined when the
+   * runtime has no egress proxy or no token was registered for this step.
+   */
+  proxyEnv?: Record<string, string>
 }
 
 /**

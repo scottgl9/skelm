@@ -45,6 +45,12 @@ export interface OpencodeBackendOptions {
   /** Egress token for proxy authentication (injected into subprocesses). */
   egressToken?: string
   /**
+   * Pre-encoded proxy env from the runtime (takes precedence over the legacy
+   * egressProxyUrl + egressToken fields). Set by the gateway per-step so
+   * HTTP_PROXY already contains the token as URL credentials.
+   */
+  proxyEnv?: Record<string, string>
+  /**
    * Server-level permission defaults injected via OPENCODE_CONFIG_CONTENT at
    * server startup. These apply to every session on this backend instance.
    * For per-request tool blocking, use the skelm permission layer instead.

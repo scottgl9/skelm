@@ -52,21 +52,24 @@ export class OpencodeClientWrapper {
   private async _start(): Promise<void> {
     const command = this.options.command ?? 'opencode'
 
-    // Inject egress proxy environment variables if provided. The egress
-    // token (when set) is encoded as the credential field of the proxy URL
-    // so any HTTP client (Node http/https, undici, fetch) automatically
-    // sends `Proxy-Authorization: Basic <base64(token:<token>)>`. We also
-    // emit SKELM_EGRESS_TOKEN as a backup for clients that read it directly.
+    // Inject egress proxy environment variables. Two sources, in priority:
+    //   1. options.proxyEnv — per-spawn env from the runtime, with the
+    //      egress token already encoded as the URL credential of HTTP_PROXY
+    //      (the canonical path used by the gateway).
+    //   2. options.egressProxyUrl + options.egressToken — legacy fields
+    //      retained for back-compat. The token is URL-encoded here.
     const proxyEnv: Record<string, string> = {}
-    if (this.options.egressProxyUrl !== undefined) {
+    if (this.options.proxyEnv !== undefined) {
+      Object.assign(proxyEnv, this.options.proxyEnv)
+    } else if (this.options.egressProxyUrl !== undefined) {
       proxyEnv.HTTP_PROXY = encodeProxyUrlWithToken(
         this.options.egressProxyUrl,
         this.options.egressToken,
       )
       proxyEnv.HTTPS_PROXY = proxyEnv.HTTP_PROXY
-    }
-    if (this.options.egressToken !== undefined) {
-      proxyEnv.SKELM_EGRESS_TOKEN = this.options.egressToken
+      if (this.options.egressToken !== undefined) {
+        proxyEnv.SKELM_EGRESS_TOKEN = this.options.egressToken
+      }
     }
 
     // (#2) Inject model and logLevel via OPENCODE_CONFIG_CONTENT so opencode

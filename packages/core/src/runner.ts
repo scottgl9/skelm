@@ -116,6 +116,14 @@ export interface RunOptions {
    * Called after each agent step with the runId and stepId.
    */
   unregisterEgressToken?: (runId: string, stepId: string) => void
+  /**
+   * Optional callback returning per-step environment variables (HTTP_PROXY,
+   * HTTPS_PROXY, SKELM_EGRESS_TOKEN) for the gateway egress proxy. The token
+   * (when provided) is encoded as the URL credential of HTTP_PROXY. The
+   * runner threads the result into BackendContext.proxyEnv so subprocess
+   * backends can inject it into the spawned agent's env.
+   */
+  getProxyEnv?: (egressToken?: string) => Record<string, string> | undefined
 }
 
 export class BackendChainExhaustedError extends Error {
@@ -173,6 +181,7 @@ interface ExecutionRuntime {
   readonly secretResolver?: SecretResolver
   readonly registerEgressToken?: (runId: string, stepId: string, policy: NetworkPolicy) => string
   readonly unregisterEgressToken?: (runId: string, stepId: string) => void
+  readonly getProxyEnv?: (egressToken?: string) => Record<string, string> | undefined
   readonly currentWorkspace: Context['workspace']
   setCurrentWorkspace(workspace: Context['workspace']): void
   deferRunWorkspaceFinalizer(finalizer: (status: RunStatus) => Promise<void>): void
@@ -485,6 +494,13 @@ export async function runPipeline<TInput, TOutput>(
           ...(options.approvalGate !== undefined && { approvalGate: options.approvalGate }),
           ...(options.skillSource !== undefined && { skillSource: options.skillSource }),
           ...(options.secretResolver !== undefined && { secretResolver: options.secretResolver }),
+          ...(options.registerEgressToken !== undefined && {
+            registerEgressToken: options.registerEgressToken,
+          }),
+          ...(options.unregisterEgressToken !== undefined && {
+            unregisterEgressToken: options.unregisterEgressToken,
+          }),
+          ...(options.getProxyEnv !== undefined && { getProxyEnv: options.getProxyEnv }),
           currentWorkspace,
           ...(store !== undefined && { store }),
           setCurrentWorkspace: (workspace) => {
@@ -687,10 +703,18 @@ function assertBackendSupportsPermissions(
   stepId: string,
   backend: SkelmBackend,
   declared: ReadonlySet<PermissionDimension>,
+  options: { hasEgressProxy?: boolean } = {},
 ): void {
   const unresolved = new Set(declared)
   if (backend.capabilities.mcp) {
     unresolved.delete('mcp')
+  }
+  // When the runtime supplies an egress proxy (gateway-driven runs), the
+  // network dimension is enforced out-of-band by the proxy regardless of
+  // the backend's own capability — so it does not need to be enforceable
+  // by the backend.
+  if (options.hasEgressProxy) {
+    unresolved.delete('network')
   }
   if (unresolved.size === 0) return
 
@@ -884,7 +908,9 @@ async function runAgentStep(
     }
     const declaredPermissionDimensions = collectResolvedPermissionDimensions(policy, mcpServers)
     try {
-      assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions)
+      assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions, {
+        hasEgressProxy: runtime?.registerEgressToken !== undefined,
+      })
     } catch (err) {
       if (err instanceof BackendCapabilityError) {
         events?.publish({
@@ -946,6 +972,9 @@ async function runAgentStep(
       policy?.networkEgress !== undefined && runtime?.registerEgressToken !== undefined
         ? runtime.registerEgressToken(ctx.run.runId, step.id, policy.networkEgress)
         : undefined
+    // Resolve per-step proxy env (HTTP_PROXY/HTTPS_PROXY with token credentials)
+    // so subprocess backends can inject it into the spawned agent.
+    const proxyEnv = runtime?.getProxyEnv?.(egressToken)
     try {
       // Policy-enforcing fetch wrapper: if the step declares a network
       // policy, wrap globalThis.fetch so outbound requests are checked
@@ -979,10 +1008,12 @@ async function runAgentStep(
       const response = await backend.run!(req, {
         signal: ctx.signal,
         ...(policy !== undefined && { permissions: policy }),
+        ...(step.permissions !== undefined && { declaredPermissions: step.permissions }),
         ...(mcpHost !== undefined && { mcpHost }),
         ...(policyFetch !== undefined && { fetch: policyFetch }),
         ...(loadSkill !== undefined && { loadSkill }),
         ...(egressToken !== undefined && { egressToken }),
+        ...(proxyEnv !== undefined && { proxyEnv }),
       })
       const candidate =
         step.outputSchema !== undefined
@@ -1336,6 +1367,13 @@ function createDetachedWorkspaceRuntime(
     }),
     ...(runtime.skillSource !== undefined && { skillSource: runtime.skillSource }),
     ...(runtime.secretResolver !== undefined && { secretResolver: runtime.secretResolver }),
+    ...(runtime.registerEgressToken !== undefined && {
+      registerEgressToken: runtime.registerEgressToken,
+    }),
+    ...(runtime.unregisterEgressToken !== undefined && {
+      unregisterEgressToken: runtime.unregisterEgressToken,
+    }),
+    ...(runtime.getProxyEnv !== undefined && { getProxyEnv: runtime.getProxyEnv }),
     currentWorkspace,
     setCurrentWorkspace: (workspace) => {
       currentWorkspace = workspace
