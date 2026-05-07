@@ -1,10 +1,9 @@
 import type { AgentRequest, AgentResponse, BackendContext } from '@skelm/core'
-import { generateText, stepCountIs } from 'ai'
+import { Output, generateText, stepCountIs } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
 import { mapUsage } from './infer.js'
 import { applyPolicyToTools, assertEgressEnforceable } from './permissions.js'
 import { buildSystemContent, loadSkillBodies } from './skill-injection.js'
-import { parseStructured } from './structured.js'
 import type { VercelAiBackendOptions } from './types.js'
 
 export async function vercelAiRun(
@@ -30,12 +29,26 @@ export async function vercelAiRun(
   const maxTurns = request.maxTurns ?? 8
 
   try {
+    // When the step declares an `output` schema, route through the AI SDK's
+    // `Output.object({ schema })` adapter so the underlying provider uses
+    // its native structured-output mode (function-calling /
+    // response_format / etc.) for the final answer. This keeps tool calls
+    // working during the loop AND eliminates the previous parseStructured
+    // fallback that rejected plain text from smaller open-weight models
+    // (qwen, llama, …) that didn't always wrap responses in JSON.
+    //
+    // SkelmSchema is StandardSchemaV1, which the SDK accepts directly via
+    // FlexibleSchema.
     const result = await generateText({
       model: options.model,
       ...(system !== undefined ? { system } : {}),
       prompt: request.prompt,
       ...(Object.keys(tools).length > 0 ? { tools } : {}),
       stopWhen: stepCountIs(maxTurns),
+      ...(request.outputSchema !== undefined && {
+        // biome-ignore lint/suspicious/noExplicitAny: SkelmSchema → FlexibleSchema; SDK generic plumbing is loose
+        output: Output.object({ schema: request.outputSchema as any }),
+      }),
       ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
       ...(options.maxOutputTokens !== undefined
         ? { maxOutputTokens: options.maxOutputTokens }
@@ -53,7 +66,9 @@ export async function vercelAiRun(
     if (usage !== undefined) response.usage = usage
 
     if (request.outputSchema !== undefined) {
-      response.structured = parseStructured(result.text)
+      // result.output is the typed object produced by the Output.object
+      // adapter; the SDK has already validated against the schema.
+      response.structured = (result as { output?: unknown }).output
     } else {
       response.text = result.text
     }
