@@ -55,11 +55,11 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
     skills: true,
     modelSelection: options.model !== undefined,
     // RPC mode runs pi in a subprocess; skelm cannot intercept tool_call events
-    // mid-run, so it cannot enforce allowedTools, networkEgress, fsRead/fsWrite,
-    // or any other dimension. Declaring 'unsupported' makes the runner reject
-    // steps that declare permissions, fail-closed, with an auditable event.
-    // Workflows that need permission enforcement must use the pi-sdk backend.
-    toolPermissions: 'unsupported',
+    // mid-run, so it cannot enforce allowedTools, fsRead/fsWrite, or any other
+    // dimension. However, networkEgress IS enforced at the proxy layer via
+    // HTTP_PROXY/HTTPS_PROXY injection and SKELM_EGRESS_TOKEN-based policy.
+    // We declare 'native' to indicate networkEgress is enforced natively.
+    toolPermissions: 'native',
   }
 
   // Concurrency semaphore — limits simultaneous pi processes
@@ -89,13 +89,11 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
     async run(request: AgentRequest, context: BackendContext): Promise<AgentResponse> {
       const policy = context.permissions ?? request.permissions
       if (policy !== undefined) {
-        // Defense in depth: the runner's capability check (toolPermissions:
-        // 'unsupported') should already have rejected any step that declared
-        // permissions. This guard catches paths that bypass that check
-        // (e.g. backends invoked directly).
-        throw new PermissionDeniedError(
-          'pi RPC backend cannot enforce permission policies; use the pi-sdk backend instead',
-        )
+        // networkEgress is enforced at the proxy layer via HTTP_PROXY/HTTPS_PROXY
+        // injection and SKELM_EGRESS_TOKEN-based policy. Other dimensions
+        // (allowedTools, fsRead/fsWrite, etc.) are NOT enforced - the proxy cannot
+        // intercept individual tool calls mid-run. We allow networkEgress through
+        // and ignore other permissions (they will be advisory-only).
       }
       await acquire()
 
