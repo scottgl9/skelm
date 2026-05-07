@@ -8,6 +8,7 @@ value:PiSdkBackendAuthenticationError
 value:PiSdkBackendError
 value:PiSdkBackendTimeoutError
 value:PiSdkClient
+value:PiSdkUpstreamError
 value:createPiBackend
 value:createPiBackendFromConfig
 value:createPiProvider

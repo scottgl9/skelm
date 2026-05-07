@@ -29,7 +29,7 @@ vi.mock('@mariozechner/pi-coding-agent', () => ({
   SessionManager: { inMemory: () => ({ kind: 'inMemory' }) },
 }))
 
-import { PiSdkClient } from '../src/sdk-client.js'
+import { PiSdkClient, PiSdkUpstreamError } from '../src/sdk-client.js'
 
 function emitAgentEnd(text: string, stopReason = 'stop' as const) {
   // Wire subscribe → fire agent_end on next tick after prompt() resolves
@@ -172,15 +172,18 @@ describe('PiSdkClient — assistant message extraction', () => {
     expect(result.text).toBe('part one. part two.')
   })
 
-  it('returns empty text when there is no assistant message', async () => {
+  it('rejects when there is no assistant message (was: silently returned empty text)', async () => {
+    // Pre-fix this resolved with `{ text: '', stopReason: 'stop' }`, which the
+    // runner recorded as a completed step. After F007 we promote this to a
+    // real error so callers can't mistake it for success.
     mockSession.subscribe.mockImplementation((listener: (e: unknown) => void) => {
       queueMicrotask(() => listener({ type: 'agent_end', messages: [] }))
       return () => {}
     })
 
-    const result = await new PiSdkClient().prompt('go')
-    expect(result.text).toBe('')
-    expect(result.stopReason).toBe('stop')
+    await expect(new PiSdkClient().prompt('go')).rejects.toThrow(
+      /pi agent terminated without producing an assistant message/,
+    )
   })
 
   it('finds the LAST assistant message when multiple exist', async () => {
@@ -234,5 +237,129 @@ describe('PiSdkClient — assistant message extraction', () => {
 
     await expect(new PiSdkClient().prompt('go')).rejects.toThrow('boom')
     expect(mockSession.dispose).toHaveBeenCalled()
+  })
+})
+
+describe('PiSdkClient — upstream error surface (F007)', () => {
+  it("rejects with PiSdkUpstreamError when assistantMsg.stopReason is 'error'", async () => {
+    mockSession.subscribe.mockImplementation((listener: (e: unknown) => void) => {
+      queueMicrotask(() =>
+        listener({
+          type: 'agent_end',
+          messages: [
+            {
+              role: 'assistant',
+              content: [],
+              api: 'openai-responses',
+              provider: 'openai',
+              model: 'gpt-5.4',
+              usage: { input: 0, output: 0 },
+              stopReason: 'error',
+              errorMessage: '401 Incorrect API key provided: unused.',
+            },
+          ],
+        }),
+      )
+      return () => {}
+    })
+
+    let caught: unknown
+    try {
+      await new PiSdkClient().prompt('go')
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeInstanceOf(PiSdkUpstreamError)
+    const err = caught as PiSdkUpstreamError
+    expect(err.stopReason).toBe('error')
+    expect(err.upstreamErrorMessage).toBe('401 Incorrect API key provided: unused.')
+    // Diagnostic should include provider/model + the upstream errorMessage.
+    expect(err.message).toContain('pi inference failed')
+    expect(err.message).toContain('provider=openai')
+    expect(err.message).toContain('model=gpt-5.4')
+    expect(err.message).toContain('401 Incorrect API key provided')
+  })
+
+  it("rejects with PiSdkUpstreamError when assistantMsg.stopReason is 'aborted'", async () => {
+    mockSession.subscribe.mockImplementation((listener: (e: unknown) => void) => {
+      queueMicrotask(() =>
+        listener({
+          type: 'agent_end',
+          messages: [
+            {
+              role: 'assistant',
+              content: [],
+              api: 'openai-responses',
+              provider: 'openai',
+              model: 'gpt-5.4',
+              usage: { input: 0, output: 0 },
+              stopReason: 'aborted',
+              errorMessage: 'upstream cancelled the stream',
+            },
+          ],
+        }),
+      )
+      return () => {}
+    })
+
+    await expect(new PiSdkClient().prompt('go')).rejects.toThrow(/pi inference aborted/)
+  })
+
+  it('rejects with a generic message when stopReason=error has no errorMessage', async () => {
+    mockSession.subscribe.mockImplementation((listener: (e: unknown) => void) => {
+      queueMicrotask(() =>
+        listener({
+          type: 'agent_end',
+          messages: [
+            {
+              role: 'assistant',
+              content: [],
+              api: 'openai-responses',
+              provider: 'openai',
+              model: 'gpt-5.4',
+              usage: { input: 0, output: 0 },
+              stopReason: 'error',
+              // no errorMessage
+            },
+          ],
+        }),
+      )
+      return () => {}
+    })
+
+    let caught: unknown
+    try {
+      await new PiSdkClient().prompt('go')
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeInstanceOf(PiSdkUpstreamError)
+    expect((caught as PiSdkUpstreamError).upstreamErrorMessage).toBeUndefined()
+    expect((caught as Error).message).toMatch(/pi inference failed/)
+  })
+
+  it("does NOT reject for stopReason: 'stop' (success path remains intact)", async () => {
+    mockSession.subscribe.mockImplementation((listener: (e: unknown) => void) => {
+      queueMicrotask(() =>
+        listener({
+          type: 'agent_end',
+          messages: [
+            {
+              role: 'assistant',
+              content: [{ type: 'text', text: 'hi' }],
+              api: 'x',
+              provider: 'y',
+              model: 'z',
+              usage: { input: 5, output: 3 },
+              stopReason: 'stop',
+            },
+          ],
+        }),
+      )
+      return () => {}
+    })
+    const result = await new PiSdkClient().prompt('go')
+    expect(result.text).toBe('hi')
+    expect(result.stopReason).toBe('stop')
   })
 })

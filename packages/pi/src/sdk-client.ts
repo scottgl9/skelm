@@ -53,6 +53,25 @@ export interface PiSdkResponse {
   usage?: { inputTokens: number; outputTokens: number }
 }
 
+/**
+ * Thrown by `PiSdkClient.prompt` when pi terminates with a non-success
+ * stopReason ('error' or 'aborted' from the provider side). Carries the
+ * upstream `errorMessage` from pi's final assistant message so callers can
+ * surface a useful diagnostic (rate limits, 401s, network failures, …).
+ */
+export class PiSdkUpstreamError extends Error {
+  override readonly name = 'PiSdkUpstreamError'
+  constructor(
+    message: string,
+    /** The stopReason pi reported on the final assistant message. */
+    readonly stopReason: 'error' | 'aborted',
+    /** The raw `errorMessage` field from pi's assistant message, if present. */
+    readonly upstreamErrorMessage?: string,
+  ) {
+    super(message)
+  }
+}
+
 export class PiSdkClient {
   constructor(private readonly opts: PiSdkClientOptions = {}) {}
 
@@ -144,7 +163,46 @@ export class PiSdkClient {
             const assistantMsg = [...event.messages].reverse().find((m) => m.role === 'assistant')
 
             if (!assistantMsg || assistantMsg.role !== 'assistant') {
-              resolve({ text: '', stopReason: 'stop' })
+              // pi terminated without producing an assistant message. This is
+              // not a successful "empty stop" — surface it as a real error so
+              // the runner can mark the step failed instead of silently
+              // recording a completed step with empty text.
+              reject(
+                new PiSdkUpstreamError(
+                  'pi agent terminated without producing an assistant message',
+                  'error',
+                ),
+              )
+              return
+            }
+
+            // pi-coding-agent embeds upstream provider errors (rate limits,
+            // 401s, network failures, model-side aborts, …) into the final
+            // assistant message with stopReason: 'error' or 'aborted' and an
+            // optional `errorMessage` field. Without this guard the SDK would
+            // resolve `{ text: '', stopReason: 'error' }` which the runner
+            // records as `status: completed` — masquerading as success.
+            // Promote those terminal stopReasons to a thrown error.
+            if (assistantMsg.stopReason === 'error' || assistantMsg.stopReason === 'aborted') {
+              const detail =
+                typeof (assistantMsg as { errorMessage?: unknown }).errorMessage === 'string'
+                  ? (assistantMsg as { errorMessage: string }).errorMessage
+                  : undefined
+              const apiTag =
+                'provider' in assistantMsg && 'model' in assistantMsg
+                  ? ` (provider=${(assistantMsg as { provider?: string }).provider ?? '?'}, model=${(assistantMsg as { model?: string }).model ?? '?'})`
+                  : ''
+              const headline =
+                assistantMsg.stopReason === 'aborted'
+                  ? `pi inference aborted${apiTag}`
+                  : `pi inference failed${apiTag}`
+              reject(
+                new PiSdkUpstreamError(
+                  detail !== undefined && detail.length > 0 ? `${headline}: ${detail}` : headline,
+                  assistantMsg.stopReason,
+                  detail,
+                ),
+              )
               return
             }
 
