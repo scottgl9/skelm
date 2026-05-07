@@ -1,8 +1,7 @@
 import type { BackendContext, InferRequest, InferResponse, PromptMessage, Usage } from '@skelm/core'
-import { type ModelMessage, generateText } from 'ai'
+import { type ModelMessage, generateObject, generateText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
 import { assertEgressEnforceable } from './permissions.js'
-import { parseStructured } from './structured.js'
 import type { VercelAiBackendOptions } from './types.js'
 
 export async function vercelAiInfer(
@@ -23,31 +22,45 @@ export async function vercelAiInfer(
   )
   const signal = combineSignals(context.signal, timeoutCtl.signal)
 
+  // Build the call settings shared by both generateText and generateObject.
+  const baseCall = {
+    model: options.model,
+    messages,
+    ...(request.system !== undefined ? { system: request.system } : {}),
+    ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+    ...(options.maxOutputTokens !== undefined ? { maxOutputTokens: options.maxOutputTokens } : {}),
+    ...(options.providerOptions !== undefined
+      ? // biome-ignore lint/suspicious/noExplicitAny: ProviderOptions is JSONObject; we accept a looser shape for ergonomics
+        { providerOptions: options.providerOptions as any }
+      : {}),
+    abortSignal: signal,
+  }
+
   try {
-    const result = await generateText({
-      model: options.model,
-      ...(request.system !== undefined ? { system: request.system } : {}),
-      messages,
-      ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
-      ...(options.maxOutputTokens !== undefined
-        ? { maxOutputTokens: options.maxOutputTokens }
-        : {}),
-      ...(options.providerOptions !== undefined
-        ? // biome-ignore lint/suspicious/noExplicitAny: ProviderOptions is JSONObject; we accept a looser shape for ergonomics
-          { providerOptions: options.providerOptions as any }
-        : {}),
-      abortSignal: signal,
-    })
-
-    const response: InferResponse = {}
-    const usage = mapUsage(result.usage)
-    if (usage !== undefined) response.usage = usage
-
     if (request.outputSchema !== undefined) {
-      response.structured = parseStructured(result.text)
-    } else {
-      response.text = result.text
+      // Schema path: route through generateObject so the AI SDK uses the
+      // provider's native structured-output mode (function-calling /
+      // response_format / etc.) rather than free-form text. This makes the
+      // call robust against smaller open-weight models (qwen, llama, …) that
+      // would otherwise emit terse plain text the previous parseStructured
+      // helper rejected. SkelmSchema is StandardSchemaV1, which the SDK
+      // accepts directly via FlexibleSchema.
+      const objectResult = await generateObject({
+        ...baseCall,
+        // biome-ignore lint/suspicious/noExplicitAny: see above
+        schema: request.outputSchema as any,
+      })
+      const response: InferResponse = { structured: objectResult.object }
+      const usage = mapUsage(objectResult.usage)
+      if (usage !== undefined) response.usage = usage
+      return response
     }
+
+    // No schema: free-form text.
+    const textResult = await generateText(baseCall)
+    const response: InferResponse = { text: textResult.text }
+    const usage = mapUsage(textResult.usage)
+    if (usage !== undefined) response.usage = usage
     return response
   } catch (err) {
     if (timeoutCtl.signal.aborted) {
