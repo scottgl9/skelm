@@ -216,6 +216,29 @@ describe('TriggerCoordinator', () => {
     await c.stop()
   })
 
+  it('register({ input }) is used as default payload on fires that supply none', async () => {
+    const seen: unknown[] = []
+    const c = new TriggerCoordinator({ onFire: async (ctx) => void seen.push(ctx.payload) })
+    c.register({ kind: 'manual', id: 'm', workflowId: 'wf' }, undefined, {
+      input: { hello: 'from-schedule' },
+    })
+    // fire() without an explicit payload → registration's input is used.
+    await c.fire('m')
+    // fire() with an explicit payload → that payload wins, registration input is ignored.
+    await c.fire('m', undefined, { hello: 'from-source' })
+    expect(seen).toEqual([{ hello: 'from-schedule' }, { hello: 'from-source' }])
+    await c.stop()
+  })
+
+  it('register without input keeps payload undefined when fire() supplies none', async () => {
+    const seen: unknown[] = []
+    const c = new TriggerCoordinator({ onFire: async (ctx) => void seen.push(ctx.payload) })
+    c.register({ kind: 'manual', id: 'm', workflowId: 'wf' })
+    await c.fire('m')
+    expect(seen).toEqual([undefined])
+    await c.stop()
+  })
+
   it("'queue' records lastError when the named driver is not registered", async () => {
     const c = new TriggerCoordinator({ onFire: async () => {} })
     const reg = c.register({ kind: 'queue', id: 't', workflowId: 'wf', driver: 'missing' })

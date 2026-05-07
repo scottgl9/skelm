@@ -116,10 +116,15 @@ export class TriggerCoordinator {
     return this.registrations.get(id)
   }
 
-  register(spec: TriggerSpec, overlap?: OverlapPolicy): TriggerRegistration {
+  register(
+    spec: TriggerSpec,
+    overlap?: OverlapPolicy,
+    options: { input?: unknown } = {},
+  ): TriggerRegistration {
     const reg: TriggerRegistration = {
       spec,
       overlap: overlap ?? this.opts.defaultOverlap ?? 'skip',
+      ...(options.input !== undefined && { input: options.input }),
       fired: 0,
       inflight: false,
     }
@@ -292,11 +297,16 @@ export class TriggerCoordinator {
     if (this.stopping) return
     const reg = this.registrations.get(id)
     if (reg === undefined) return
+    // Per-fire payload from the source (queue driver, webhook adapter) takes
+    // precedence; otherwise fall back to the registration's stored `input`
+    // so workflows scheduled with `skelm schedule add --input <json>` see
+    // that JSON as the pipeline input rather than the trigger metadata.
+    const effectivePayload = payload !== undefined ? payload : reg.input
     const ctx: FireContext = {
       triggerId: id,
       workflowId: reg.spec.workflowId,
       firedAt: (when ?? new Date()).toISOString(),
-      ...(payload !== undefined && { payload }),
+      ...(effectivePayload !== undefined && { payload: effectivePayload }),
     }
     if (reg.inflight) {
       switch (reg.overlap) {
