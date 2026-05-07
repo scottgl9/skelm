@@ -60,6 +60,10 @@ export default defineConfig({
     host?:              string,              // default: 127.0.0.1
     auth?:              { mode: 'none' | 'bearer' },
     maxConcurrentRuns?: number,              // default: 10
+    proxy?: {
+      port?:    number,  // default: server.port + 1 (14739)
+      enabled?: boolean, // default: true
+    },
   },
   plugins?: readonly string[],               // package names imported at gateway startup
 })
