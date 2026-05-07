@@ -202,7 +202,12 @@ export class EgressProxy {
       host: hostname,
       allowed: result.allowed,
       policyReason: result.reason,
-      isUnknownToken: policy === undefined && token === undefined,
+      // No matched policy ⇒ treat as unknown-token regardless of whether the
+      // request had an auth header. Covers (a) no header at all, (b) malformed
+      // header that didn't yield a token, and (c) a well-formed token that is
+      // not (any longer) in the store. All three are operationally
+      // "unidentified caller".
+      isUnknownToken: policy === undefined,
       socket,
     })
 
@@ -266,7 +271,9 @@ export class EgressProxy {
       host: hostname,
       allowed: result.allowed,
       policyReason: result.reason,
-      isUnknownToken: policy === undefined && token === undefined,
+      // See note in handleConnect: any unmatched policy ⇒ unknown-token,
+      // independent of header presence.
+      isUnknownToken: policy === undefined,
       socket,
     })
 
@@ -365,19 +372,17 @@ export class EgressProxy {
     if (!args.allowed) {
       // Priority for `reason`:
       //   1. If the proxy never matched a token (no auth header at all,
-      //      or unknown token) → `'unknown-token'`. This is the most
-      //      forensically useful reason — a known-token deny carries
-      //      different operational implications than an untokened probe.
+      //      malformed header, or a well-formed token that's not in the
+      //      store) → `'unknown-token'`. This is the most forensically
+      //      useful reason — a known-token deny carries different
+      //      operational implications (policy / allowlist mismatch) than
+      //      an unidentified caller. The cumulative counter tracks this
+      //      class so spikes in untokened/stale-token probes are visible
+      //      in a single grep.
       //   2. Else, the policy's own denial reason ('not-in-allowlist',
       //      'egress-denied').
       //   3. Fallback `'unknown'`.
-      // The cumulative counter tracks (1) so spikes in untokened probes
-      // are visible in a single grep.
-      if (
-        args.isUnknownToken ||
-        (args.tokenPresent && args.token === undefined) ||
-        args.token === undefined
-      ) {
+      if (args.isUnknownToken) {
         event.reason = 'unknown-token'
         this.unknownTokenDenials += 1
         event.unknownTokenDenials = this.unknownTokenDenials
