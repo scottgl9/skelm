@@ -61,7 +61,7 @@ export interface GatewayOptions {
    * sets this to true on `skelm gateway start --foreground`.
    */
   enableHttp?: boolean
-  /** Bound URL the HTTP server should advertise; defaults to http://127.0.0.1:4000. */
+  /** Bound URL the HTTP server should advertise; defaults to http://127.0.0.1:14738. */
   httpHost?: string
   httpPort?: number
   /**
@@ -281,7 +281,7 @@ export class Gateway {
       this.lockfile = await acquireLockfile(this.lockfilePath)
       this.discovery = {
         pid: process.pid,
-        url: this.options.url ?? 'http://127.0.0.1:4000',
+        url: this.options.url ?? 'http://127.0.0.1:14738',
         token: this.options.token,
         startedAt: this.lockfile.startedAt,
       }
@@ -401,7 +401,7 @@ export class Gateway {
 
   private async startHttp(): Promise<void> {
     if (this.runStoreInternal === null) throw new Error('runStore must be built before HTTP starts')
-    const port = this.options.httpPort ?? this.config.server?.port ?? 4000
+    const port = this.options.httpPort ?? this.config.server?.port ?? 14738
     const host = this.options.httpHost ?? this.config.server?.host ?? '127.0.0.1'
     const auth = this.config.server?.auth?.mode === 'bearer' ? 'bearer' : 'none'
     this.httpServer = createServer(

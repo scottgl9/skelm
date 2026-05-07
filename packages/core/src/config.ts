@@ -183,7 +183,7 @@ export const DEFAULT_CONFIG: SkelmConfig = Object.freeze({
     state: { driver: 'sqlite' as const },
   },
   server: {
-    port: 4000,
+    port: 14738,
     host: '127.0.0.1',
     auth: { mode: 'none' as const },
     maxConcurrentRuns: 10,

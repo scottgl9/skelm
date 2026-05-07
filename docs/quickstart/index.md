@@ -180,7 +180,7 @@ For long-running schedules (cron, webhook, poll, queue) to fire continuously, st
 skelm gateway start
 ```
 
-The gateway listens on `127.0.0.1:4000` by default and runs your schedules. Press Ctrl-C to stop with a graceful drain.
+The gateway listens on `127.0.0.1:14738` by default and runs your schedules. Press Ctrl-C to stop with a graceful drain.
 
 To install it as a systemd user service so it runs across reboots:
 
@@ -201,8 +201,8 @@ skelm history --run <runId> --events
 Or via HTTP against a running gateway:
 
 ```sh
-curl http://127.0.0.1:4000/runs?limit=10
-curl http://127.0.0.1:4000/runs/<runId>
+curl http://127.0.0.1:14738/runs?limit=10
+curl http://127.0.0.1:14738/runs/<runId>
 ```
 
 ## What's next
@@ -219,6 +219,6 @@ curl http://127.0.0.1:4000/runs/<runId>
 
 **"Backend X not registered"** — your `skelm.config.ts` has no entry for the backend name. Add it under `backends:` and set `backend:` on the workflow or step.
 
-**"Gateway not reachable"** — `skelm` CLI commands that need a running gateway look for one at `SKELM_GATEWAY_URL`, then `~/.skelm/gateway.json`, then `http://127.0.0.1:4000`. Start it with `skelm gateway start`, or run the workflow locally with no gateway running and skelm will spin up an in-process one for the duration.
+**"Gateway not reachable"** — `skelm` CLI commands that need a running gateway look for one at `SKELM_GATEWAY_URL`, then `~/.skelm/gateway.json`, then `http://127.0.0.1:14738`. Start it with `skelm gateway start`, or run the workflow locally with no gateway running and skelm will spin up an in-process one for the duration.
 
 **"Schema validation failed"** — input did not match the workflow's `input` schema. Check `skelm describe` on the workflow for the expected shape.

@@ -80,7 +80,7 @@ export default defineConfig({
   },
 
   server: {
-    port: 4000, // default gateway port
+    port: 14738, // default gateway port
     host: '127.0.0.1',
     auth: { mode: 'none' }, // set to 'bearer' with an env-resolved token for remote access
   },
