@@ -1,6 +1,7 @@
 import type { BackendContext } from '@skelm/core'
 import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
 import { createVercelAiBackend } from '../src/index.js'
 
 function makeCtx(overrides: Partial<BackendContext> = {}): BackendContext {
@@ -56,21 +57,35 @@ describe('createVercelAiBackend — infer()', () => {
     expect(result?.structured).toBeUndefined()
   })
 
-  it('parses fenced JSON when outputSchema is set', async () => {
-    const backend = createVercelAiBackend({
-      model: mockModel('Sure: ```json\n{"answer":42}\n```'),
+  it('routes through generateObject when outputSchema is set (F006: was parseStructured)', async () => {
+    // Capture the responseFormat the SDK requests so we can assert that we
+    // routed through generateObject's structured-output mode rather than
+    // the old parseStructured-on-text fallback.
+    let capturedResponseFormat: unknown
+    const model = new MockLanguageModelV3({
+      doGenerate: async (opts: { responseFormat?: unknown }) => {
+        capturedResponseFormat = opts.responseFormat
+        return {
+          // generateObject expects raw JSON in the text content (no fence).
+          content: [{ type: 'text', text: '{"answer":42}' }],
+          finishReason: { unified: 'stop', raw: 'stop' },
+          usage: { inputTokens: { total: 10 }, outputTokens: { total: 5 }, totalTokens: 15 },
+          warnings: [],
+        }
+      },
     })
+    const backend = createVercelAiBackend({ model })
     const result = await backend.infer?.(
       {
         messages: [{ role: 'user', content: 'q' }],
-        outputSchema: {
-          '~standard': { validate: (v: unknown) => ({ value: v }) },
-        } as never,
+        outputSchema: z.object({ answer: z.number() }),
       },
       makeCtx(),
     )
     expect(result?.structured).toEqual({ answer: 42 })
     expect(result?.text).toBeUndefined()
+    // SDK requested structured output, not free-form text.
+    expect((capturedResponseFormat as { type?: string })?.type).toBe('json')
   })
 
   it('reports usage from the model', async () => {
@@ -88,21 +103,53 @@ describe('createVercelAiBackend — run()', () => {
     expect(result?.stopReason).toBe('stop')
   })
 
-  it('returns structured value when outputSchema is set', async () => {
-    const backend = createVercelAiBackend({
-      model: mockModel('```json\n{"action":"go"}\n```'),
+  it('returns structured value via Output.object when outputSchema is set (F006)', async () => {
+    let capturedResponseFormat: unknown
+    const model = new MockLanguageModelV3({
+      doGenerate: async (opts: { responseFormat?: unknown }) => {
+        capturedResponseFormat = opts.responseFormat
+        return {
+          content: [{ type: 'text', text: '{"action":"go"}' }],
+          finishReason: { unified: 'stop', raw: 'stop' },
+          usage: { inputTokens: { total: 10 }, outputTokens: { total: 5 }, totalTokens: 15 },
+          warnings: [],
+        }
+      },
     })
+    const backend = createVercelAiBackend({ model })
     const result = await backend.run?.(
       {
         prompt: 'p',
-        outputSchema: {
-          '~standard': { validate: (v: unknown) => ({ value: v }) },
-        } as never,
+        outputSchema: z.object({ action: z.string() }),
       },
       makeCtx(),
     )
     expect(result?.structured).toEqual({ action: 'go' })
     expect(result?.text).toBeUndefined()
+    // Output.object adapter requested JSON-mode from the provider.
+    expect((capturedResponseFormat as { type?: string })?.type).toBe('json')
+  })
+
+  it('does NOT request structured output when outputSchema is absent', async () => {
+    let capturedResponseFormat: unknown
+    const model = new MockLanguageModelV3({
+      doGenerate: async (opts: { responseFormat?: unknown }) => {
+        capturedResponseFormat = opts.responseFormat
+        return {
+          content: [{ type: 'text', text: 'plain text reply' }],
+          finishReason: { unified: 'stop', raw: 'stop' },
+          usage: { inputTokens: { total: 10 }, outputTokens: { total: 5 }, totalTokens: 15 },
+          warnings: [],
+        }
+      },
+    })
+    const backend = createVercelAiBackend({ model })
+    const result = await backend.run?.({ prompt: 'p' }, makeCtx())
+    expect(result?.text).toBe('plain text reply')
+    expect(result?.structured).toBeUndefined()
+    // Either no responseFormat, or the SDK's default 'text' mode.
+    const fmt = (capturedResponseFormat as { type?: string })?.type
+    expect(fmt === undefined || fmt === 'text').toBe(true)
   })
 
   it('passes options.systemPrompt + req.system + agentDef.instructions in order', async () => {
