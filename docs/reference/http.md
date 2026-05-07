@@ -6,7 +6,7 @@ machine-readable source of truth.
 
 ## Auth
 
-By default the gateway listens on `127.0.0.1:4000` with `auth.mode: 'none'`.
+By default the gateway listens on `127.0.0.1:14738` with `auth.mode: 'none'`.
 Set `server.auth = { mode: 'bearer' }` in `skelm.config.ts` to require a
 bearer token; unauthenticated requests then get `401`. Tokens are read from
 the environment.

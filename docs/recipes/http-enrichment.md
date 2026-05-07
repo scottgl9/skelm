@@ -52,7 +52,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 4000,
+    port: 14738,
     host: '0.0.0.0',                // exposed; bearer auth required
     auth: { mode: 'bearer' },        // SKELM_TOKEN env
     maxConcurrentRuns: 50,
@@ -148,7 +148,7 @@ chmod 600 ~/.skelm/token
 
 ```sh
 TOKEN=$(cat ~/.skelm/token)
-curl -X POST http://gateway-host:4000/pipelines/enrich-and-post/run \
+curl -X POST http://gateway-host:14738/pipelines/enrich-and-post/run \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: gh-event-$(date +%s)-$$" \
@@ -180,17 +180,17 @@ Response:
 For long-running enrichments where you do not want to hold the HTTP connection:
 
 ```sh
-curl -X POST http://gateway-host:4000/pipelines/enrich-and-post/start \
+curl -X POST http://gateway-host:14738/pipelines/enrich-and-post/start \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{ "input": { ... } }'
 # → 202 { "runId": "abc", "status": "running" }
 
 # Poll for completion
-curl -H "Authorization: Bearer $TOKEN" http://gateway-host:4000/runs/abc
+curl -H "Authorization: Bearer $TOKEN" http://gateway-host:14738/runs/abc
 
 # Or fetch the persisted event log (use ?since=<index> to tail)
-curl -H "Authorization: Bearer $TOKEN" http://gateway-host:4000/runs/abc/events
+curl -H "Authorization: Bearer $TOKEN" http://gateway-host:14738/runs/abc/events
 ```
 
 ## Why each piece is here
@@ -210,7 +210,7 @@ curl -H "Authorization: Bearer $TOKEN" http://gateway-host:4000/runs/abc/events
 ## Observability
 
 ```sh
-curl -H "Authorization: Bearer $TOKEN" http://gateway-host:4000/runs?workflowId=enrich-and-post&limit=20
+curl -H "Authorization: Bearer $TOKEN" http://gateway-host:14738/runs?workflowId=enrich-and-post&limit=20
 ```
 
 For Prometheus:
