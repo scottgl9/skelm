@@ -32,8 +32,12 @@ export { GitHubIntegration } from './github.js'
 export { SlackIntegration } from './slack.js'
 export {
   TelegramIntegration,
-  type TelegramSendMessageOptions,
+  telegramUpdateToInput,
+  type CreateTelegramTriggerSourceOptions,
   type TelegramGetUpdatesOptions,
+  type TelegramMessageInput,
+  type TelegramSendMessageOptions,
+  type TelegramTriggerSource,
 } from './telegram.js'
 
 // Integration registry

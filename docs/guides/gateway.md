@@ -72,6 +72,10 @@ Routes:
 
 Plus the existing pre-gateway routes (`/pipelines`, `/runs`, `/runs/:id/stream`, etc).
 
+## Triggers
+
+The gateway hosts a `TriggerCoordinator` that fires workflows on schedules, webhooks, polled changes, and queue messages. Pipelines declare their triggers inline (`pipeline({ triggers: [...] })`); long-running event sources (Telegram, Slack, custom queues) register as `triggerSources` in `skelm.config.ts`. See the dedicated [triggers guide](./triggers.md) and the [`telegram-bot` example](../../examples/telegram-bot/README.md).
+
 ## Persistence
 
 | File | Owner | Notes |

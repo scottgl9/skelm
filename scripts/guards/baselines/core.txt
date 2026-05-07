@@ -184,6 +184,7 @@ type:PermissionResolverOptions
 type:Pipeline
 type:PipelineDescription
 type:PipelineStep
+type:PipelineTrigger
 type:PluginConfig
 type:PluginHealthStatus
 type:PluginLifecycle
@@ -230,8 +231,10 @@ type:SkelmConfigRegistries
 type:SkelmConfigSecrets
 type:SkelmConfigServer
 type:SkelmConfigStorage
+type:SkelmConfigTriggerSourceEntry
 type:SkelmPlugin
 type:SkelmSchema
+type:SkelmTriggerSource
 type:Skill
 type:SlackBlockAction
 type:SlackCommand

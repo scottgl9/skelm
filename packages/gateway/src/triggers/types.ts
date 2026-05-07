@@ -49,6 +49,12 @@ export interface FireContext {
   triggerId: string
   workflowId: string
   firedAt: string
+  /**
+   * Per-fire payload supplied by the source (queue driver, webhook adapter,
+   * etc). When set, the dispatcher passes this as the pipeline input instead
+   * of the default `{ triggerId, firedAt }` metadata.
+   */
+  payload?: unknown
 }
 
 export type RunCallback = (ctx: FireContext) => Promise<void>
