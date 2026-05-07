@@ -15,6 +15,9 @@
     "@skelm/integrations": "workspace:*",
     "@skelm/opencode": "workspace:*",
     "@skelm/pi": "workspace:*",
+    "@skelm/vercel-ai": "workspace:*",
+    "@ai-sdk/openai": "^3.0.0",
+    "ai": "^6.0.0",
     "zod": "^4.4.2"
   },
   "devDependencies": {

@@ -27,8 +27,9 @@ Capabilities (`prompt`, `streaming`, `mcp`, `skills`, `modelSelection`, `toolPer
 | Pi (RPC)                | `createPiBackendFromConfig`        | `@skelm/pi`      |   —     |    ✅     | advisory         |
 | Pi (SDK)                | `createPiSdkBackend`               | `@skelm/pi`      |   ✅    |    ✅     | native           |
 | Opencode                | `createOpencodeBackendFromConfig`  | `@skelm/opencode`|   —     |    ✅     | native           |
+| Vercel AI SDK           | `createVercelAiBackend`            | `@skelm/vercel-ai`|  ✅    |    ✅     | native           |
 
-The CLI (`packages/cli/src/backends.ts`) wires the OpenAI, Anthropic, generic ACP, Copilot ACP, opencode, and pi-RPC backends from `skelm.config.ts` automatically. To use the **pi SDK backend** or any other backend not listed above, register it via `instances:` (see "Registering a custom backend" below).
+The CLI (`packages/cli/src/backends.ts`) wires the OpenAI, Anthropic, generic ACP, Copilot ACP, opencode, and pi-RPC backends from `skelm.config.ts` automatically. To use the **pi SDK backend**, the **Vercel AI SDK backend**, or any other backend not listed above, register it via `instances:` (see "Registering a custom backend" below).
 
 ## Configuring built-in backends from `skelm.config.ts`
 
@@ -140,11 +141,13 @@ For `agent()` you want a coding-agent backend that can drive multi-turn tool use
 - **`@skelm/pi` SDK** (`createPiSdkBackend`) — native enforcement of the skelm permission policy; pi resolves the underlying model from its own settings (`~/.pi/auth.json`, `~/.pi/models.json`).
 - **`@skelm/opencode`** (`createOpencodeBackendFromConfig`) — native enforcement; reaches the opencode agent service.
 - **ACP backends** (`createAcpBackend`) — works with any agent that speaks the [Agent Communication Protocol](https://agentcommprotocol.dev) (Copilot, Claude Code, Gemini CLI). Tool enforcement is **advisory** — the subprocess can ignore the allowlist; skelm logs the violation but cannot prevent it.
+- **`@skelm/vercel-ai`** (`createVercelAiBackend`) — wrap any Vercel AI SDK model (`@ai-sdk/openai`, `@ai-sdk/anthropic`, etc.) and reuse Vercel `tool({…})` definitions under skelm's permission policy. Tools are filtered by `allowedTools` and each `execute` is re-checked at call time. Streaming and MCP not yet supported.
 
 Per-backend pages cover configuration in detail:
 - [pi](./pi.md)
 - [opencode](./opencode.md)
 - [ACP backends](./acp-backends.md)
+- [vercel-ai](./vercel-ai.md)
 
 ## Failure model
 
