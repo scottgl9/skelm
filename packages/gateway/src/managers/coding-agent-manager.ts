@@ -34,7 +34,7 @@ export interface CodingAgentManagerOptions {
   /** Soft per-agent concurrency cap for ephemeral runs. Default: unlimited. */
   ephemeralConcurrency?: number
   /** Optional callback to get proxy env vars to inject into subprocesses. */
-  getProxyEnv?: () => Record<string, string> | undefined
+  getProxyEnv?: (egressToken?: string) => Record<string, string> | undefined
   /** Optional callback to get egress token for a specific run/step. */
   getEgressToken?: (runId: string, stepId: string) => string | undefined
 }
@@ -63,10 +63,12 @@ export class CodingAgentManager {
   constructor(private readonly opts: CodingAgentManagerOptions = {}) {}
 
   /**
-   * Get proxy environment variables from the configured callback.
+   * Get proxy environment variables from the configured callback. When an
+   * egress token is supplied, it is encoded into the proxy URL credentials
+   * so standard HTTP clients send `Proxy-Authorization` automatically.
    */
-  private getProxyEnvVars(): Record<string, string> | undefined {
-    return this.opts.getProxyEnv?.()
+  private getProxyEnvVars(egressToken?: string): Record<string, string> | undefined {
+    return this.opts.getProxyEnv?.(egressToken)
   }
 
   /**
@@ -206,15 +208,15 @@ export class CodingAgentManager {
     if (cap !== undefined && (this.ephemerals.get(entry.id)?.length ?? 0) >= cap) {
       throw new Error(`agent ${entry.id} ephemeral concurrency cap (${cap}) reached`)
     }
-    const proxyEnv = this.getProxyEnvVars() ?? {}
+    // Resolve the per-step egress token first so it can be encoded into the
+    // proxy URL credentials. SKELM_EGRESS_TOKEN is also emitted by
+    // getProxyEnvVars() for callers that read it directly.
+    const egressToken =
+      input.runId !== undefined && input.stepId !== undefined
+        ? this.getEgressToken(input.runId, input.stepId)
+        : undefined
+    const proxyEnv = this.getProxyEnvVars(egressToken) ?? {}
     const env = { ...process.env, ...(entry.env ?? {}), ...proxyEnv }
-    // Inject egress token if provided.
-    if (input.runId !== undefined && input.stepId !== undefined) {
-      const token = this.getEgressToken(input.runId, input.stepId)
-      if (token !== undefined) {
-        env.SKELM_EGRESS_TOKEN = token
-      }
-    }
     const child = spawn(entry.command, [...(entry.args ?? [])], {
       env,
       stdio: ['pipe', 'pipe', 'pipe'],

@@ -52,11 +52,18 @@ export class OpencodeClientWrapper {
   private async _start(): Promise<void> {
     const command = this.options.command ?? 'opencode'
 
-    // Inject egress proxy environment variables if provided.
+    // Inject egress proxy environment variables if provided. The egress
+    // token (when set) is encoded as the credential field of the proxy URL
+    // so any HTTP client (Node http/https, undici, fetch) automatically
+    // sends `Proxy-Authorization: Basic <base64(token:<token>)>`. We also
+    // emit SKELM_EGRESS_TOKEN as a backup for clients that read it directly.
     const proxyEnv: Record<string, string> = {}
     if (this.options.egressProxyUrl !== undefined) {
-      proxyEnv.HTTP_PROXY = this.options.egressProxyUrl
-      proxyEnv.HTTPS_PROXY = this.options.egressProxyUrl
+      proxyEnv.HTTP_PROXY = encodeProxyUrlWithToken(
+        this.options.egressProxyUrl,
+        this.options.egressToken,
+      )
+      proxyEnv.HTTPS_PROXY = proxyEnv.HTTP_PROXY
     }
     if (this.options.egressToken !== undefined) {
       proxyEnv.SKELM_EGRESS_TOKEN = this.options.egressToken
@@ -249,30 +256,25 @@ export class OpencodeClientWrapper {
     this.client = null
     this.startPromise = null
   }
+}
 
-  /**
-   * Update egress token for the running opencode server.
-   * Called when a new step starts with a different token.
-   */
-  updateEgressToken(token: string | undefined): void {
-    if (token !== undefined) {
-      process.env.SKELM_EGRESS_TOKEN = token
-    } else {
-      process.env.SKELM_EGRESS_TOKEN = undefined
-    }
-  }
-
-  /**
-   * Update egress proxy URL for the running opencode server.
-   */
-  updateEgressProxyUrl(url: string | undefined): void {
-    if (url !== undefined) {
-      process.env.HTTP_PROXY = url
-      process.env.HTTPS_PROXY = url
-    } else {
-      process.env.HTTP_PROXY = undefined
-      process.env.HTTPS_PROXY = undefined
-    }
+/**
+ * Encode an egress token into the credential field of a proxy URL so that
+ * standard HTTP clients automatically send `Proxy-Authorization: Basic
+ * <base64(token:<egressToken>)>`. The token (and the literal "token"
+ * username) are URL-encoded for safety.
+ *
+ * Exported for testing.
+ */
+export function encodeProxyUrlWithToken(proxyUrl: string, token: string | undefined): string {
+  if (token === undefined || token === '') return proxyUrl
+  try {
+    const url = new URL(proxyUrl)
+    url.username = 'token'
+    url.password = token
+    return url.toString()
+  } catch {
+    return proxyUrl
   }
 }
 

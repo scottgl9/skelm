@@ -319,17 +319,37 @@ export class Gateway {
   /**
    * Get proxy environment variables to inject into agent subprocesses.
    * Returns undefined if the proxy is disabled or not running.
+   *
+   * When `egressToken` is provided, it is encoded as the credential field of
+   * the proxy URL (`http://token:<egressToken>@host:port`). Standard HTTP
+   * clients (Node `http`/`https`, undici, curl, requests, …) extract the
+   * credential from the proxy URL and send `Proxy-Authorization: Basic
+   * <base64(token:<egressToken>)>` automatically. Without that encoding the
+   * proxy never receives the token and falls back to its default-deny policy.
+   *
+   * `SKELM_EGRESS_TOKEN` is still emitted for callers that want to read the
+   * raw token (e.g. for explicit Bearer auth in custom clients), but it is
+   * advisory; the URL credential is what makes the standard clients work.
    */
-  getProxyEnvVars(): Record<string, string> | undefined {
+  getProxyEnvVars(egressToken?: string): Record<string, string> | undefined {
     if (this.egressProxy === null) return undefined
     const config = this.getConfig()
     const proxyConfig = config.server?.proxy
     if (proxyConfig?.enabled === false) return undefined
     const port = this.egressProxy.getPort()
-    return {
-      HTTP_PROXY: `http://127.0.0.1:${port}`,
-      HTTPS_PROXY: `http://127.0.0.1:${port}`,
+    const userInfo =
+      egressToken !== undefined && egressToken !== ''
+        ? `${encodeURIComponent('token')}:${encodeURIComponent(egressToken)}@`
+        : ''
+    const url = `http://${userInfo}127.0.0.1:${port}`
+    const env: Record<string, string> = {
+      HTTP_PROXY: url,
+      HTTPS_PROXY: url,
     }
+    if (egressToken !== undefined && egressToken !== '') {
+      env.SKELM_EGRESS_TOKEN = egressToken
+    }
+    return env
   }
 
   async start(): Promise<void> {
@@ -550,7 +570,7 @@ export class Gateway {
   private async buildManagers(): Promise<GatewayManagers> {
     const mcp = new McpServerManager()
     const codingAgents = new CodingAgentManager({
-      getProxyEnv: () => this.getProxyEnvVars(),
+      getProxyEnv: (egressToken) => this.getProxyEnvVars(egressToken),
     })
     const acpSessions = new AcpSessionManager({
       storePath: defaultAcpSessionStorePath(this.stateDir),

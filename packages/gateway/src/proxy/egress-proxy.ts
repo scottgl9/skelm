@@ -4,9 +4,20 @@
  * This proxy:
  * - Listens on a configurable port (default: server.port + 1)
  * - Handles CONNECT requests for HTTPS tunneling
- * - Handles HTTP requests (for non-TLS traffic)
+ * - Handles HTTP requests (any verb) for non-TLS traffic
  * - Enforces networkEgress policies per-agent-step via token-based auth
  * - Emits audit events for every allow/deny decision
+ *
+ * Authentication:
+ *   The egress token is encoded as the credential field of the proxy URL
+ *   (`http://token:<egressToken>@host:port`) so that any HTTP client (Node
+ *   `http`/`https`, undici, curl, requests, …) sends `Proxy-Authorization:
+ *   Basic <base64(token:<egressToken>)>` automatically when it sees
+ *   `HTTP_PROXY` / `HTTPS_PROXY`. The proxy decodes that header and looks
+ *   the token up in the per-step token store.
+ *
+ *   For backward compatibility we also accept `Proxy-Authorization: Bearer
+ *   <token>` and `Authorization: Bearer <token>`.
  */
 
 import { type Server, type Socket, createConnection, createServer } from 'node:net'
@@ -14,7 +25,6 @@ import type { AuditWriter } from '@skelm/core'
 import type { NetworkPolicy } from '@skelm/core'
 import { type NetworkEgressEvent, emitEgressAudit } from './egress-audit.js'
 import {
-  type PolicyCheckResult,
   type TokenPolicyMap,
   checkHostPolicy,
   extractHostnameFromConnectTarget,
@@ -36,6 +46,9 @@ export interface EgressProxyOptions {
   /** Default policy when token is unknown/missing. Default: 'deny'. */
   defaultPolicy?: NetworkPolicy
 }
+
+/** HTTP request methods we forward to handleHttp() (anything not CONNECT). */
+const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'TRACE'])
 
 /**
  * Embedded CONNECT proxy server.
@@ -80,7 +93,9 @@ export class EgressProxy {
   }
 
   /**
-   * Stop the proxy server.
+   * Stop the proxy server. Drains in-flight connections (TLS tunnels, HTTP
+   * forwarding sockets) before resolving so a Gateway shutdown does not
+   * block on long-lived sessions.
    */
   async stop(): Promise<void> {
     if (!this.server) {
@@ -88,6 +103,11 @@ export class EgressProxy {
     }
 
     return new Promise((resolve) => {
+      // closeAllConnections (Node 18.2+) destroys keep-alive / tunnel sockets
+      // so server.close() can finish promptly. Cast because the @types/node
+      // version may not yet expose the method on `net.Server`.
+      const srv = this.server as Server & { closeAllConnections?: () => void }
+      srv?.closeAllConnections?.()
       this.server?.close(() => {
         this.server = null
         resolve()
@@ -113,13 +133,12 @@ export class EgressProxy {
    * Handle incoming connection.
    */
   private handleConnection(socket: Socket): void {
-    // Read the first line to determine request type
     let buffer = ''
 
     const onData = (chunk: Buffer): void => {
       buffer += chunk.toString()
 
-      // Check if we have a complete request line
+      // Wait for at least one complete request line.
       const lines = buffer.split('\r\n')
       if (lines.length < 2) {
         return // Need more data
@@ -129,16 +148,16 @@ export class EgressProxy {
       if (!firstLine) {
         return // Need more data
       }
-      const parts = firstLine.split(' ')
+      const method = firstLine.split(' ')[0]
+      const target = firstLine.split(' ')[1]
 
-      if (parts[0] === 'CONNECT' && parts[1]) {
-        // CONNECT request for HTTPS tunneling
-        this.handleConnect(socket, buffer, parts[1])
-      } else if (parts[0] === 'GET' || parts[0] === 'POST') {
-        // HTTP request (non-TLS)
+      if (method === 'CONNECT' && target) {
+        this.handleConnect(socket, buffer, target)
+      } else if (method !== undefined && HTTP_METHODS.has(method)) {
+        // Any standard HTTP verb gets forwarded as a plain-HTTP request.
         this.handleHttp(socket, buffer)
       } else {
-        // Unknown request type
+        // Unknown / unsupported request type
         this.rejectConnection(socket, '501 Not Implemented', 'Unknown request type')
         socket.end()
       }
@@ -148,12 +167,10 @@ export class EgressProxy {
 
     socket.on('data', onData)
 
-    // Handle socket errors
-    socket.on('error', (err) => {
-      // Connection error, nothing we can do
-    })
+    // Handle socket errors silently — connection-level errors aren't
+    // actionable from the proxy's perspective.
+    socket.on('error', () => {})
 
-    // Handle socket close
     socket.on('close', () => {
       socket.removeListener('data', onData)
     })
@@ -164,30 +181,20 @@ export class EgressProxy {
    */
   private handleConnect(socket: Socket, request: string, target: string): void {
     const hostname = extractHostnameFromConnectTarget(target)
-    const authHeader = this.extractAuthHeader(request)
-    const token = this.extractTokenFromAuth(authHeader)
+    const token = this.extractToken(request)
 
-    // Get policy for this token
-    const policy = token ? this.tokenStore.get(token) : undefined
+    const policy = token !== undefined ? this.tokenStore.get(token) : undefined
     const effectivePolicy = policy ?? this.defaultPolicy
 
-    // Check policy
     const result = checkHostPolicy(effectivePolicy, hostname)
 
-    // Emit audit event
-    const event: NetworkEgressEvent = {
-      event: 'network.egress',
-      runId: this.extractRunIdFromToken(token),
-      stepId: this.extractStepIdFromToken(token),
-      host: hostname,
-      decision: result.allowed ? 'allow' : 'deny',
-      reason: result.reason ?? 'unknown-token',
-      timestamp: new Date().toISOString(),
-    }
-
-    void emitEgressAudit(this.auditWriter, event).catch(() => {
-      // Audit failure doesn't block the connection
-    })
+    this.emitDecision(
+      token,
+      hostname,
+      result.allowed,
+      result.reason,
+      policy === undefined && token === undefined,
+    )
 
     if (!result.allowed) {
       this.rejectConnection(socket, '403 Forbidden', `Egress denied: ${result.reason ?? 'unknown'}`)
@@ -195,11 +202,9 @@ export class EgressProxy {
       return
     }
 
-    // Allowed - establish tunnel
     socket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
 
-    // Now we need to forward data between the client and the destination
-    // We'll use net.connect to create the destination connection
+    // Forward bytes between the client and the destination.
     const parts = target.split(':')
     const destHost = parts[0]
     const destPortStr = parts[1]
@@ -210,29 +215,19 @@ export class EgressProxy {
     const destPort = Number.parseInt(destPortStr || '443', 10) || 443
 
     const destSocket = connectToHost(destHost, destPort, () => {
-      // Start bidirectional forwarding
       socket.pipe(destSocket)
       destSocket.pipe(socket)
     })
 
-    destSocket.on('error', () => {
-      socket.end()
-    })
-
-    socket.on('error', () => {
-      destSocket.end()
-    })
-
-    socket.on('close', () => {
-      destSocket.end()
-    })
+    destSocket.on('error', () => socket.end())
+    socket.on('error', () => destSocket.end())
+    socket.on('close', () => destSocket.end())
   }
 
   /**
    * Handle HTTP request (non-TLS).
    */
   private handleHttp(socket: Socket, request: string): void {
-    // Extract Host header
     const hostMatch = request.match(/Host:\s*([^\r\n]+)/i)
     if (!hostMatch) {
       this.rejectConnection(socket, '400 Bad Request', 'Missing Host header')
@@ -247,30 +242,20 @@ export class EgressProxy {
       return
     }
     const hostname = extractHostnameFromHostHeader(hostValue.trim())
-    const authHeader = this.extractAuthHeader(request)
-    const token = this.extractTokenFromAuth(authHeader)
+    const token = this.extractToken(request)
 
-    // Get policy for this token
-    const policy = token ? this.tokenStore.get(token) : undefined
+    const policy = token !== undefined ? this.tokenStore.get(token) : undefined
     const effectivePolicy = policy ?? this.defaultPolicy
 
-    // Check policy
     const result = checkHostPolicy(effectivePolicy, hostname)
 
-    // Emit audit event
-    const event: NetworkEgressEvent = {
-      event: 'network.egress',
-      runId: this.extractRunIdFromToken(token),
-      stepId: this.extractStepIdFromToken(token),
-      host: hostname,
-      decision: result.allowed ? 'allow' : 'deny',
-      reason: result.reason ?? 'unknown-token',
-      timestamp: new Date().toISOString(),
-    }
-
-    void emitEgressAudit(this.auditWriter, event).catch(() => {
-      // Audit failure doesn't block the connection
-    })
+    this.emitDecision(
+      token,
+      hostname,
+      result.allowed,
+      result.reason,
+      policy === undefined && token === undefined,
+    )
 
     if (!result.allowed) {
       this.rejectConnection(socket, '403 Forbidden', `Egress denied: ${result.reason ?? 'unknown'}`)
@@ -278,7 +263,6 @@ export class EgressProxy {
       return
     }
 
-    // For HTTP, we need to forward the request to the destination
     const hostParts = hostname.split(':')
     const destHost = hostParts[0]
     const destPortStr = hostParts[1]
@@ -289,7 +273,11 @@ export class EgressProxy {
     }
     const destPort = Number.parseInt(destPortStr || '80', 10) || 80
 
-    // Reconstruct the request to send to the destination
+    // Rewrite the request line: HTTP/1.1 servers expect origin-form
+    // (`GET /path HTTP/1.1`), but proxy clients send absolute-form
+    // (`GET http://example.com/path HTTP/1.1`). Strip the scheme+host.
+    // Also drop hop-by-hop Proxy-* headers that should not leak to the
+    // origin server.
     const lines = request.split('\r\n')
     const firstLine = lines[0]
     if (!firstLine) {
@@ -297,18 +285,21 @@ export class EgressProxy {
       socket.end()
       return
     }
-    const destRequest = lines
-      .map((line, i) => {
-        if (i === 0) {
-          return firstLine
-        }
-        // Replace Host header with actual destination
-        if (line.toLowerCase().startsWith('host:')) {
-          return `Host: ${destHost}`
-        }
-        return line
-      })
-      .join('\r\n')
+    const rewrittenFirstLine = rewriteRequestLineToOriginForm(firstLine)
+    const destLines: string[] = [rewrittenFirstLine]
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i] ?? ''
+      const lower = line.toLowerCase()
+      if (lower.startsWith('proxy-authorization:') || lower.startsWith('proxy-connection:')) {
+        continue
+      }
+      if (lower.startsWith('host:')) {
+        destLines.push(`Host: ${destHost}`)
+        continue
+      }
+      destLines.push(line)
+    }
+    const destRequest = destLines.join('\r\n')
 
     const destSocket = connectToHost(destHost, destPort, () => {
       destSocket.write(destRequest)
@@ -316,13 +307,8 @@ export class EgressProxy {
       destSocket.pipe(socket)
     })
 
-    destSocket.on('error', () => {
-      socket.end()
-    })
-
-    socket.on('error', () => {
-      destSocket.end()
-    })
+    destSocket.on('error', () => socket.end())
+    socket.on('error', () => destSocket.end())
   }
 
   /**
@@ -336,43 +322,118 @@ export class EgressProxy {
   }
 
   /**
-   * Extract Authorization or Proxy-Authorization header from request.
+   * Emit a network.egress audit decision. `reason` is omitted when the
+   * connection was allowed and no policy reason applies (the previous
+   * implementation defaulted to "unknown-token" for allows, which was
+   * misleading audit noise).
    */
-  private extractAuthHeader(request: string): string | undefined {
-    // Check Proxy-Authorization first (standard for CONNECT requests)
-    let match = request.match(/Proxy-Authorization:\s*([^\r\n]+)/i)
-    if (match?.[1]) return match[1].trim()
-    // Fall back to Authorization for compatibility
-    match = request.match(/Authorization:\s*([^\r\n]+)/i)
-    return match?.[1]?.trim()
+  private emitDecision(
+    token: string | undefined,
+    host: string,
+    allowed: boolean,
+    policyReason: string | undefined,
+    isUnknownToken: boolean,
+  ): void {
+    const event: NetworkEgressEvent = {
+      event: 'network.egress',
+      runId: extractRunIdFromToken(token),
+      stepId: extractStepIdFromToken(token),
+      host,
+      decision: allowed ? 'allow' : 'deny',
+      timestamp: new Date().toISOString(),
+    }
+    if (!allowed) {
+      event.reason = isPolicyReason(policyReason)
+        ? policyReason
+        : isUnknownToken
+          ? 'unknown-token'
+          : 'unknown'
+    }
+    void emitEgressAudit(this.auditWriter, event).catch(() => {
+      // Audit failure does not block the connection
+    })
   }
 
   /**
-   * Extract token from Bearer authorization.
+   * Resolve the per-step egress token from any of:
+   *   - `Proxy-Authorization: Basic <base64(user:pass)>` — primary path.
+   *     The token is the password field; the username is conventionally
+   *     `token` but is not enforced.
+   *   - `Proxy-Authorization: Bearer <token>` — backward compat.
+   *   - `Authorization: Bearer <token>` — backward compat.
    */
-  private extractTokenFromAuth(authHeader: string | undefined): string | undefined {
-    if (!authHeader) return undefined
-    const match = authHeader.match(/^Bearer\s+(.+)$/i)
-    return match?.[1]?.trim()
-  }
+  private extractToken(request: string): string | undefined {
+    const proxyAuth = request.match(/Proxy-Authorization:\s*([^\r\n]+)/i)?.[1]?.trim() ?? undefined
+    const auth = request.match(/Authorization:\s*([^\r\n]+)/i)?.[1]?.trim() ?? undefined
 
-  /**
-   * Extract runId from token (token format: runId:stepId).
-   */
-  private extractRunIdFromToken(token: string | undefined): string {
-    if (!token) return 'unknown'
-    const parts = token.split(':')
-    return parts[0] || 'unknown'
+    for (const header of [proxyAuth, auth]) {
+      if (!header) continue
+      const basic = header.match(/^Basic\s+([A-Za-z0-9+/=._-]+)$/i)
+      if (basic?.[1]) {
+        try {
+          const decoded = Buffer.from(basic[1], 'base64').toString('utf8')
+          const colonIdx = decoded.indexOf(':')
+          if (colonIdx >= 0) {
+            const password = decoded.slice(colonIdx + 1)
+            if (password.length > 0) return password
+          }
+        } catch {
+          // fall through to Bearer
+        }
+      }
+      const bearer = header.match(/^Bearer\s+(.+)$/i)
+      if (bearer?.[1]) return bearer[1].trim()
+    }
+    return undefined
   }
+}
 
-  /**
-   * Extract stepId from token (token format: runId:stepId).
-   */
-  private extractStepIdFromToken(token: string | undefined): string {
-    if (!token) return 'unknown'
-    const parts = token.split(':')
-    return parts[1] || 'unknown'
-  }
+const POLICY_REASONS = ['egress-denied', 'not-in-allowlist', 'unknown-token'] as const
+type PolicyReason = (typeof POLICY_REASONS)[number]
+function isPolicyReason(value: string | undefined): value is PolicyReason {
+  return value !== undefined && (POLICY_REASONS as readonly string[]).includes(value)
+}
+
+/**
+ * Rewrite an HTTP request line from absolute-form (`GET http://host/path
+ * HTTP/1.1`) to origin-form (`GET /path HTTP/1.1`). HTTP/1.1 origin servers
+ * require origin-form; only proxies receive absolute-form. Leave the line
+ * alone if the request-target is already in origin-form.
+ */
+export function rewriteRequestLineToOriginForm(firstLine: string): string {
+  const space1 = firstLine.indexOf(' ')
+  if (space1 < 0) return firstLine
+  const space2 = firstLine.indexOf(' ', space1 + 1)
+  if (space2 < 0) return firstLine
+  const method = firstLine.slice(0, space1)
+  const requestTarget = firstLine.slice(space1 + 1, space2)
+  const httpVersion = firstLine.slice(space2 + 1)
+
+  const schemeMatch = requestTarget.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//)
+  if (!schemeMatch) return firstLine
+
+  const afterScheme = requestTarget.slice(schemeMatch[0].length)
+  const slashIdx = afterScheme.indexOf('/')
+  const path = slashIdx >= 0 ? afterScheme.slice(slashIdx) : '/'
+  return `${method} ${path} ${httpVersion}`
+}
+
+/**
+ * Token format: `<runId>:<stepId>`. Use the FIRST `:` as the delimiter so
+ * stepIds that contain `:` (e.g. `cohort:a`) are not silently truncated.
+ */
+function extractRunIdFromToken(token: string | undefined): string {
+  if (!token) return 'unknown'
+  const idx = token.indexOf(':')
+  if (idx < 0) return token || 'unknown'
+  return token.slice(0, idx) || 'unknown'
+}
+
+function extractStepIdFromToken(token: string | undefined): string {
+  if (!token) return 'unknown'
+  const idx = token.indexOf(':')
+  if (idx < 0) return 'unknown'
+  return token.slice(idx + 1) || 'unknown'
 }
 
 /**

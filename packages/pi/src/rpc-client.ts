@@ -62,8 +62,17 @@ export class PiRpcClient {
       Object.entries(process.env).filter(([, v]) => v !== undefined),
     ) as Record<string, string>
     if (this.options.egressProxyUrl !== undefined) {
-      env.HTTP_PROXY = this.options.egressProxyUrl
-      env.HTTPS_PROXY = this.options.egressProxyUrl
+      // Encode the egress token (when set) as the credential field of the
+      // proxy URL so any HTTP client (Node http/https, undici, fetch, curl)
+      // automatically sends `Proxy-Authorization: Basic <base64(...)>`.
+      // Without this the proxy never receives the token and falls back to
+      // its default-deny policy. SKELM_EGRESS_TOKEN is also emitted as a
+      // backup for clients that read it directly.
+      env.HTTP_PROXY = encodeProxyUrlWithToken(
+        this.options.egressProxyUrl,
+        this.options.egressToken,
+      )
+      env.HTTPS_PROXY = env.HTTP_PROXY
     }
     if (this.options.egressToken !== undefined) {
       env.SKELM_EGRESS_TOKEN = this.options.egressToken
@@ -244,5 +253,24 @@ export class PiRpcClient {
       l({ type: 'agent_end', messages: [], error: err.message })
     }
     this.eventListeners = []
+  }
+}
+
+/**
+ * Encode an egress token into the credential field of a proxy URL so that
+ * standard HTTP clients automatically send `Proxy-Authorization: Basic
+ * <base64(token:<egressToken>)>`.
+ *
+ * Exported for testing.
+ */
+export function encodeProxyUrlWithToken(proxyUrl: string, token: string | undefined): string {
+  if (token === undefined || token === '') return proxyUrl
+  try {
+    const url = new URL(proxyUrl)
+    url.username = 'token'
+    url.password = token
+    return url.toString()
+  } catch {
+    return proxyUrl
   }
 }

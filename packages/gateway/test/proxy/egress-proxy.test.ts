@@ -179,6 +179,71 @@ describe('egress-proxy', () => {
       expect(result.allowed).toBe(true)
     })
   })
+
+  describe('Proxy-Authorization: Basic', () => {
+    test('accepts a Basic-encoded token (token:<egressToken>) and resolves the per-step policy', async () => {
+      const port = await startProxyWithPolicy('allow')
+      // Encode 'token:run1:step1' as Basic auth — this is what standard HTTP
+      // clients send when they see http://token:run1:step1@host:port.
+      const basic = Buffer.from('token:run1:step1', 'utf8').toString('base64')
+      const result = await makeConnectRequestRaw(port, 'example.com:443', [
+        `Proxy-Authorization: Basic ${basic}`,
+      ])
+      expect(result.allowed).toBe(true)
+      expect(result.statusCode).toBe(200)
+    })
+
+    test('Basic with wrong password (unknown token) falls back to default-deny', async () => {
+      const port = await startProxyWithPolicy('allow')
+      const basic = Buffer.from('token:does-not-exist', 'utf8').toString('base64')
+      const result = await makeConnectRequestRaw(port, 'example.com:443', [
+        `Proxy-Authorization: Basic ${basic}`,
+      ])
+      expect(result.allowed).toBe(false)
+      expect(result.statusCode).toBe(403)
+    })
+  })
+
+  describe('audit reason', () => {
+    test('omits reason on allowed decisions (no more spurious unknown-token noise)', async () => {
+      const port = await startProxyWithPolicy('allow')
+      await makeConnectRequest(port, 'example.com:443', 'run1:step1')
+      const allow = auditWriter.events.find((e) => e.action === 'network.egress:allow')
+      expect(allow).toBeDefined()
+      expect(allow?.details?.reason).toBeUndefined()
+    })
+
+    test('preserves the policy reason on denied decisions', async () => {
+      const port = await startProxyWithPolicy({ allowHosts: ['example.com'] })
+      await makeConnectRequest(port, 'api.github.com:443', 'run1:step1')
+      const deny = auditWriter.events.find((e) => e.action === 'network.egress:deny')
+      expect(deny).toBeDefined()
+      expect(deny?.details?.reason).toBe('not-in-allowlist')
+    })
+  })
+
+  describe('token format', () => {
+    test('preserves stepIds that contain colons', async () => {
+      // token = "run-uuid-123:cohort:a"  — split-on-first-colon should yield
+      // runId="run-uuid-123", stepId="cohort:a".
+      const policy: NetworkPolicy = 'allow'
+      tokenStore.set('run-uuid-123:cohort:a', policy)
+      proxy = new EgressProxy({
+        port: 0,
+        host: '127.0.0.1',
+        tokenStore,
+        auditWriter,
+        defaultPolicy: 'deny',
+      })
+      await proxy.start()
+      const port = proxy.getPort()
+      const result = await makeConnectRequest(port, 'example.com:443', 'run-uuid-123:cohort:a')
+      expect(result.allowed).toBe(true)
+      const allow = auditWriter.events.find((e) => e.action === 'network.egress:allow')
+      expect(allow?.details?.runId).toBe('run-uuid-123')
+      expect(allow?.details?.stepId).toBe('cohort:a')
+    })
+  })
 })
 
 // Helper to make a CONNECT request
@@ -217,6 +282,42 @@ async function makeConnectRequest(
       reject(err)
     })
 
+    setTimeout(() => {
+      socket.destroy()
+      reject(new Error('timeout'))
+    }, 5000)
+  })
+}
+
+// Like makeConnectRequest but lets the caller pass arbitrary header lines
+// (e.g. Proxy-Authorization: Basic <...>).
+async function makeConnectRequestRaw(
+  proxyPort: number,
+  target: string,
+  extraHeaders: string[],
+): Promise<{ allowed: boolean; statusCode: number }> {
+  return new Promise((resolve, reject) => {
+    const socket = createConnection(proxyPort, '127.0.0.1', () => {
+      let request = `CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n`
+      for (const h of extraHeaders) request += `${h}\r\n`
+      request += '\r\n'
+      socket.write(request)
+    })
+
+    let response = ''
+    socket.on('data', (data: Buffer) => {
+      response += data.toString()
+      const lines = response.split('\r\n')
+      if (lines.length >= 1) {
+        const statusLine = lines[0]
+        const statusCodeMatch = statusLine.match(/HTTP\/1\.1\s+(\d+)/)
+        const statusCode = statusCodeMatch ? Number.parseInt(statusCodeMatch[1], 10) : 0
+        socket.destroy()
+        resolve({ allowed: statusCode === 200, statusCode })
+      }
+    })
+
+    socket.on('error', (err) => reject(err))
     setTimeout(() => {
       socket.destroy()
       reject(new Error('timeout'))
