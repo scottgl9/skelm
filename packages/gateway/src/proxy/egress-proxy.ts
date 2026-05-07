@@ -60,6 +60,13 @@ export class EgressProxy {
   private readonly tokenStore: TokenPolicyMap
   private readonly auditWriter: AuditWriter
   private readonly defaultPolicy: NetworkPolicy
+  /**
+   * Cumulative count of unknown-token deny events since this proxy started.
+   * Surfaced on each `network.egress:deny` audit entry whose `reason` is
+   * `unknown-token`, so operators can spot spikes (port-scans, lateral
+   * movement) without having to grep counts across the audit log.
+   */
+  private unknownTokenDenials = 0
 
   constructor(private readonly options: EgressProxyOptions) {
     this.port = options.port ?? 14739
@@ -182,19 +189,22 @@ export class EgressProxy {
   private handleConnect(socket: Socket, request: string, target: string): void {
     const hostname = extractHostnameFromConnectTarget(target)
     const token = this.extractToken(request)
+    const tokenPresent = hasAuthHeader(request)
 
     const policy = token !== undefined ? this.tokenStore.get(token) : undefined
     const effectivePolicy = policy ?? this.defaultPolicy
 
     const result = checkHostPolicy(effectivePolicy, hostname)
 
-    this.emitDecision(
+    this.emitDecision({
       token,
-      hostname,
-      result.allowed,
-      result.reason,
-      policy === undefined && token === undefined,
-    )
+      tokenPresent,
+      host: hostname,
+      allowed: result.allowed,
+      policyReason: result.reason,
+      isUnknownToken: policy === undefined && token === undefined,
+      socket,
+    })
 
     if (!result.allowed) {
       this.rejectConnection(socket, '403 Forbidden', `Egress denied: ${result.reason ?? 'unknown'}`)
@@ -243,19 +253,22 @@ export class EgressProxy {
     }
     const hostname = extractHostnameFromHostHeader(hostValue.trim())
     const token = this.extractToken(request)
+    const tokenPresent = hasAuthHeader(request)
 
     const policy = token !== undefined ? this.tokenStore.get(token) : undefined
     const effectivePolicy = policy ?? this.defaultPolicy
 
     const result = checkHostPolicy(effectivePolicy, hostname)
 
-    this.emitDecision(
+    this.emitDecision({
       token,
-      hostname,
-      result.allowed,
-      result.reason,
-      policy === undefined && token === undefined,
-    )
+      tokenPresent,
+      host: hostname,
+      allowed: result.allowed,
+      policyReason: result.reason,
+      isUnknownToken: policy === undefined && token === undefined,
+      socket,
+    })
 
     if (!result.allowed) {
       this.rejectConnection(socket, '403 Forbidden', `Egress denied: ${result.reason ?? 'unknown'}`)
@@ -323,31 +336,56 @@ export class EgressProxy {
 
   /**
    * Emit a network.egress audit decision. `reason` is omitted when the
-   * connection was allowed and no policy reason applies (the previous
-   * implementation defaulted to "unknown-token" for allows, which was
-   * misleading audit noise).
+   * connection was allowed and no policy reason applies. For every entry,
+   * the remote peer is captured (from the socket) so an operator can
+   * correlate `runId: "unknown"` denies to a process. For unknown-token
+   * denies specifically, a cumulative counter is also emitted so spikes
+   * are visible in a single grep.
    */
-  private emitDecision(
-    token: string | undefined,
-    host: string,
-    allowed: boolean,
-    policyReason: string | undefined,
-    isUnknownToken: boolean,
-  ): void {
+  private emitDecision(args: {
+    token: string | undefined
+    tokenPresent: boolean
+    host: string
+    allowed: boolean
+    policyReason: string | undefined
+    isUnknownToken: boolean
+    socket: Socket
+  }): void {
     const event: NetworkEgressEvent = {
       event: 'network.egress',
-      runId: extractRunIdFromToken(token),
-      stepId: extractStepIdFromToken(token),
-      host,
-      decision: allowed ? 'allow' : 'deny',
+      runId: extractRunIdFromToken(args.token),
+      stepId: extractStepIdFromToken(args.token),
+      host: args.host,
+      decision: args.allowed ? 'allow' : 'deny',
       timestamp: new Date().toISOString(),
+      tokenPresent: args.tokenPresent,
     }
-    if (!allowed) {
-      event.reason = isPolicyReason(policyReason)
-        ? policyReason
-        : isUnknownToken
-          ? 'unknown-token'
-          : 'unknown'
+    const source = readSocketPeer(args.socket)
+    if (source !== undefined) event.source = source
+    if (!args.allowed) {
+      // Priority for `reason`:
+      //   1. If the proxy never matched a token (no auth header at all,
+      //      or unknown token) → `'unknown-token'`. This is the most
+      //      forensically useful reason — a known-token deny carries
+      //      different operational implications than an untokened probe.
+      //   2. Else, the policy's own denial reason ('not-in-allowlist',
+      //      'egress-denied').
+      //   3. Fallback `'unknown'`.
+      // The cumulative counter tracks (1) so spikes in untokened probes
+      // are visible in a single grep.
+      if (
+        args.isUnknownToken ||
+        (args.tokenPresent && args.token === undefined) ||
+        args.token === undefined
+      ) {
+        event.reason = 'unknown-token'
+        this.unknownTokenDenials += 1
+        event.unknownTokenDenials = this.unknownTokenDenials
+      } else if (isPolicyReason(args.policyReason)) {
+        event.reason = args.policyReason
+      } else {
+        event.reason = 'unknown'
+      }
     }
     void emitEgressAudit(this.auditWriter, event).catch(() => {
       // Audit failure does not block the connection
@@ -416,6 +454,28 @@ export function rewriteRequestLineToOriginForm(firstLine: string): string {
   const slashIdx = afterScheme.indexOf('/')
   const path = slashIdx >= 0 ? afterScheme.slice(slashIdx) : '/'
   return `${method} ${path} ${httpVersion}`
+}
+
+/**
+ * Read the remote peer (address + port) from a connection socket. Returns
+ * undefined for the rare case where the socket has already closed by the
+ * time the audit fires — never throws so audit emission can't be blocked.
+ */
+function readSocketPeer(socket: Socket): { address: string; port: number } | undefined {
+  const address = socket.remoteAddress
+  const port = socket.remotePort
+  if (typeof address !== 'string' || typeof port !== 'number') return undefined
+  return { address, port }
+}
+
+/**
+ * Cheap presence-only check for either Authorization header. We don't care
+ * about the contents here — that's `extractToken`'s job; we only want to
+ * tell "the client sent an auth header at all" (probably a misconfigured
+ * agent) from "no auth header" (often a port-scan).
+ */
+function hasAuthHeader(request: string): boolean {
+  return /(?:Proxy-)?Authorization:/i.test(request)
 }
 
 /**
