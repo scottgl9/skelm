@@ -51,6 +51,11 @@ export interface OpencodeBackendOptions {
    */
   proxyEnv?: Record<string, string>
   /**
+   * Optional partial output callback. Called with each text delta as the
+   * opencode server streams the response. Maps to BackendContext.onPartial.
+   */
+  onPartial?: (delta: string) => void
+  /**
    * Server-level permission defaults injected via OPENCODE_CONFIG_CONTENT at
    * server startup. These apply to every session on this backend instance.
    * For per-request tool blocking, use the skelm permission layer instead.
