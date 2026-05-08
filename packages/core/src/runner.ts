@@ -15,6 +15,7 @@ import {
   type SecretResolver,
 } from './enforcement/index.js'
 import {
+  InvokePipelineNotFoundError,
   PermissionDeniedError,
   RunCancelledError,
   WaitTimeoutError,
@@ -124,6 +125,11 @@ export interface RunOptions {
    * backends can inject it into the spawned agent's env.
    */
   getProxyEnv?: (egressToken?: string) => Record<string, string> | undefined
+  /**
+   * Optional registry for resolving pipelines by ID for `invoke()` steps.
+   * When omitted, invoke() steps throw InvokePipelineNotFoundError.
+   */
+  pipelineRegistry?: (pipelineId: string) => Pipeline | undefined | Promise<Pipeline | undefined>
 }
 
 export class BackendChainExhaustedError extends Error {
@@ -182,6 +188,9 @@ interface ExecutionRuntime {
   readonly registerEgressToken?: (runId: string, stepId: string, policy: NetworkPolicy) => string
   readonly unregisterEgressToken?: (runId: string, stepId: string) => void
   readonly getProxyEnv?: (egressToken?: string) => Record<string, string> | undefined
+  readonly pipelineRegistry?: (
+    pipelineId: string,
+  ) => Pipeline | undefined | Promise<Pipeline | undefined>
   readonly currentWorkspace: Context['workspace']
   setCurrentWorkspace(workspace: Context['workspace']): void
   deferRunWorkspaceFinalizer(finalizer: (status: RunStatus) => Promise<void>): void
@@ -501,6 +510,9 @@ export async function runPipeline<TInput, TOutput>(
             unregisterEgressToken: options.unregisterEgressToken,
           }),
           ...(options.getProxyEnv !== undefined && { getProxyEnv: options.getProxyEnv }),
+          ...(options.pipelineRegistry !== undefined && {
+            pipelineRegistry: options.pipelineRegistry,
+          }),
           currentWorkspace,
           ...(store !== undefined && { store }),
           setCurrentWorkspace: (workspace) => {
@@ -750,9 +762,9 @@ async function runStep(
 ): Promise<unknown> {
   switch (step.kind) {
     case 'code':
-      return await step.run(ctx)
+      return await runCodeStep(step, ctx, runtime)
     case 'llm':
-      return await runLlmStep(step, ctx, backends)
+      return await runLlmStep(step, ctx, backends, events, runtime)
     case 'agent':
       return await runAgentStep(step, ctx, backends, waitForInput, events, runtime)
     case 'idempotent':
@@ -769,6 +781,8 @@ async function runStep(
       return await runWait(step, ctx, waitForInput, events)
     case 'pipelineStep':
       return await runPipelineStep(step, ctx, backends, waitForInput, events, runtime)
+    case 'invoke':
+      return await runInvokeStep(step, ctx, backends, waitForInput, events, runtime)
     default: {
       const exhaustive: never = step
       throw new Error(`unknown step kind: ${(exhaustive as { kind: string }).kind}`)
@@ -776,10 +790,35 @@ async function runStep(
   }
 }
 
+async function runCodeStep(
+  step: Extract<Step, { kind: 'code' }>,
+  ctx: Context,
+  runtime?: ExecutionRuntime,
+): Promise<unknown> {
+  const resolvedSecrets = await resolveDeclaredSecrets(
+    step,
+    undefined,
+    runtime?.secretResolver,
+    undefined,
+    ctx.run.runId,
+  )
+  const secretsAccessor =
+    resolvedSecrets !== undefined
+      ? {
+          get: (name: string) => resolvedSecrets[name],
+        }
+      : undefined
+  const stepCtx =
+    secretsAccessor !== undefined ? freezeContext({ ...ctx, secrets: secretsAccessor }) : ctx
+  return await step.run(stepCtx)
+}
+
 async function runLlmStep(
   step: Extract<Step, { kind: 'llm' }>,
   ctx: Context,
   backends: BackendRegistry | undefined,
+  events: EventBus | undefined,
+  runtime?: ExecutionRuntime,
 ): Promise<unknown> {
   if (!backends) {
     throw new BackendNotFoundError(
@@ -787,12 +826,27 @@ async function runLlmStep(
     )
   }
   const backend = backends.resolveForLlm({ backendId: step.backend as string | undefined })
-  const promptText = typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt
+  const resolvedSecrets = await resolveDeclaredSecrets(
+    step,
+    undefined,
+    runtime?.secretResolver,
+    undefined,
+    ctx.run.runId,
+  )
+  const secretsAccessor =
+    resolvedSecrets !== undefined
+      ? {
+          get: (name: string) => resolvedSecrets[name],
+        }
+      : undefined
+  const stepCtx =
+    secretsAccessor !== undefined ? freezeContext({ ...ctx, secrets: secretsAccessor }) : ctx
+  const promptText = typeof step.prompt === 'function' ? step.prompt(stepCtx) : step.prompt
   const systemText =
     step.system === undefined
       ? undefined
       : typeof step.system === 'function'
-        ? step.system(ctx)
+        ? step.system(stepCtx)
         : step.system
   const req = {
     messages: [{ role: 'user' as const, content: promptText }],
@@ -802,8 +856,24 @@ async function runLlmStep(
     ...(step.maxTokens !== undefined && { maxTokens: step.maxTokens }),
     ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
   }
+  const onPartial =
+    events !== undefined
+      ? (delta: string) => {
+          events.publish({
+            type: 'step.partial',
+            runId: ctx.run.runId,
+            stepId: step.id,
+            kind: step.kind,
+            delta,
+            at: Date.now(),
+          })
+        }
+      : undefined
   // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForLlm
-  const response = await backend.infer!(req, { signal: ctx.signal })
+  const response = await backend.infer!(req, {
+    signal: stepCtx.signal,
+    ...(onPartial !== undefined && { onPartial }),
+  })
   if (step.outputSchema !== undefined) {
     const candidate = response.structured ?? response.text
     return await validate(step.outputSchema, candidate, 'output', {
@@ -1004,6 +1074,19 @@ async function runAgentStep(
               step.id,
             )
           : undefined
+      const onPartial =
+        events !== undefined
+          ? (delta: string) => {
+              events.publish({
+                type: 'step.partial',
+                runId: ctx.run.runId,
+                stepId: step.id,
+                kind: step.kind,
+                delta,
+                at: Date.now(),
+              })
+            }
+          : undefined
       // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
       const response = await backend.run!(req, {
         signal: ctx.signal,
@@ -1014,6 +1097,7 @@ async function runAgentStep(
         ...(loadSkill !== undefined && { loadSkill }),
         ...(egressToken !== undefined && { egressToken }),
         ...(proxyEnv !== undefined && { proxyEnv }),
+        ...(onPartial !== undefined && { onPartial }),
       })
       const candidate =
         step.outputSchema !== undefined
@@ -1276,6 +1360,56 @@ async function runWait(
   return resumed
 }
 
+async function runInvokeStep(
+  step: Extract<Step, { kind: 'invoke' }>,
+  ctx: Context,
+  backends: BackendRegistry | undefined,
+  waitForInput: RunOptions['waitForInput'],
+  events?: EventBus,
+  runtime?: ExecutionRuntime,
+): Promise<unknown> {
+  const pipeline = await runtime?.pipelineRegistry?.(step.pipelineId)
+  if (pipeline === undefined) {
+    throw new InvokePipelineNotFoundError(step.pipelineId, step.id)
+  }
+  const nestedInput =
+    step.input === undefined
+      ? ctx.input
+      : typeof step.input === 'function'
+        ? step.input(ctx)
+        : step.input
+  const nestedRun = await runPipeline(pipeline, nestedInput, {
+    signal: ctx.signal,
+    ...(events !== undefined && { events }),
+    ...(backends !== undefined && { backends }),
+    ...(runtime?.store !== undefined && { store: runtime.store }),
+    ...(runtime?.stateStore !== undefined && { stateStore: runtime.stateStore }),
+    ...(runtime?.defaultPermissions !== undefined && {
+      defaultPermissions: runtime.defaultPermissions,
+    }),
+    ...(runtime?.permissionProfiles !== undefined && {
+      permissionProfiles: runtime.permissionProfiles,
+    }),
+    ...(runtime?.workspaceManager !== undefined && { workspaceManager: runtime.workspaceManager }),
+    ...(runtime?.skillSource !== undefined && { skillSource: runtime.skillSource }),
+    ...(runtime?.secretResolver !== undefined && { secretResolver: runtime.secretResolver }),
+    ...(runtime?.pipelineRegistry !== undefined && { pipelineRegistry: runtime.pipelineRegistry }),
+    ...(waitForInput !== undefined && { waitForInput }),
+  })
+  if (nestedRun.status === 'completed') {
+    return nestedRun.output
+  }
+  if (nestedRun.status === 'cancelled') {
+    throw new RunCancelledError(
+      `invoke(${step.id}): nested pipeline "${pipeline.id}" was cancelled`,
+    )
+  }
+  throw restoreSerializedError(
+    nestedRun.error,
+    `invoke(${step.id}): nested pipeline "${pipeline.id}" did not complete`,
+  )
+}
+
 async function runPipelineStep(
   step: Extract<Step, { kind: 'pipelineStep' }>,
   ctx: Context,
@@ -1305,6 +1439,7 @@ async function runPipelineStep(
     ...(runtime?.workspaceManager !== undefined && { workspaceManager: runtime.workspaceManager }),
     ...(runtime?.skillSource !== undefined && { skillSource: runtime.skillSource }),
     ...(runtime?.secretResolver !== undefined && { secretResolver: runtime.secretResolver }),
+    ...(runtime?.pipelineRegistry !== undefined && { pipelineRegistry: runtime.pipelineRegistry }),
     ...(waitForInput !== undefined && { waitForInput }),
   })
   if (nestedRun.status === 'completed') {

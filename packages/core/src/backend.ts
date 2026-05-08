@@ -203,6 +203,13 @@ export interface BackendContext {
    * runtime has no egress proxy or no token was registered for this step.
    */
   proxyEnv?: Record<string, string>
+  /**
+   * Optional callback invoked by backends as partial output arrives.
+   * The `delta` is a text chunk (not cumulative). Backends that support
+   * streaming call this repeatedly during generation; backends that don't
+   * can ignore it.
+   */
+  onPartial?: (delta: string) => void
 }
 
 /**

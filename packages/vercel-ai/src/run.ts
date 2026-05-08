@@ -1,5 +1,5 @@
 import type { AgentRequest, AgentResponse, BackendContext } from '@skelm/core'
-import { Output, generateText, stepCountIs } from 'ai'
+import { Output, generateText, stepCountIs, streamText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
 import { mapUsage } from './infer.js'
 import { applyPolicyToTools, assertEgressEnforceable } from './permissions.js'
@@ -39,6 +39,52 @@ export async function vercelAiRun(
     //
     // SkelmSchema is StandardSchemaV1, which the SDK accepts directly via
     // FlexibleSchema.
+
+    if (context.onPartial !== undefined) {
+      // Streaming path: use streamText to emit partial chunks as they arrive.
+      const stream = streamText({
+        model: options.model,
+        ...(system !== undefined ? { system } : {}),
+        prompt: request.prompt,
+        ...(Object.keys(tools).length > 0 ? { tools } : {}),
+        stopWhen: stepCountIs(maxTurns),
+        ...(request.outputSchema !== undefined && {
+          // biome-ignore lint/suspicious/noExplicitAny: SkelmSchema → FlexibleSchema; SDK generic plumbing is loose
+          output: Output.object({ schema: request.outputSchema as any }),
+        }),
+        ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+        ...(options.maxOutputTokens !== undefined
+          ? { maxOutputTokens: options.maxOutputTokens }
+          : {}),
+        ...(options.providerOptions !== undefined
+          ? // biome-ignore lint/suspicious/noExplicitAny: ProviderOptions is JSONObject; we accept a looser shape for ergonomics
+            { providerOptions: options.providerOptions as any }
+          : {}),
+        abortSignal: signal,
+      })
+
+      let fullText = ''
+      for await (const chunk of stream.textStream) {
+        fullText += chunk
+        context.onPartial(chunk)
+      }
+      const finalResult = await stream
+
+      const response: AgentResponse = {}
+      if (typeof finalResult.finishReason === 'string')
+        response.stopReason = finalResult.finishReason
+      const usage = mapUsage(finalResult.usage)
+      if (usage !== undefined) response.usage = usage
+
+      if (request.outputSchema !== undefined) {
+        response.structured = (finalResult as { output?: unknown }).output
+      } else {
+        response.text = fullText
+      }
+      return response
+    }
+
+    // Non-streaming path: use generateText.
     const result = await generateText({
       model: options.model,
       ...(system !== undefined ? { system } : {}),

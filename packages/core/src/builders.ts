@@ -8,6 +8,7 @@ import type {
   Context,
   ForEachStep,
   IdempotentStep,
+  InvokeStep,
   LlmStep,
   LoopStep,
   ParallelOnError,
@@ -68,6 +69,7 @@ export function pipeline<TInput, TOutput>(def: {
 export function code<TOutput>(def: {
   id: StepId
   run: (ctx: Context) => TOutput | Promise<TOutput>
+  secrets?: readonly string[]
   state?: StateConfig
   retry?: RetryPolicy
 }): CodeStep<TOutput> {
@@ -82,6 +84,7 @@ export function code<TOutput>(def: {
     kind: 'code',
     id: def.id,
     run: def.run,
+    ...(def.secrets !== undefined && { secrets: def.secrets }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
   })
@@ -102,6 +105,7 @@ export function llm<TOutput>(def: {
   output?: SkelmSchema<TOutput>
   temperature?: number
   maxTokens?: number
+  secrets?: readonly string[]
   state?: StateConfig
   retry?: RetryPolicy
 }): LlmStep<TOutput> {
@@ -122,6 +126,7 @@ export function llm<TOutput>(def: {
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.temperature !== undefined && { temperature: def.temperature }),
     ...(def.maxTokens !== undefined && { maxTokens: def.maxTokens }),
+    ...(def.secrets !== undefined && { secrets: def.secrets }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
   })
@@ -344,6 +349,29 @@ export function pipelineStep<TInput, TOutput>(def: {
     kind: 'pipelineStep',
     id: def.id,
     pipeline: def.pipeline,
+    ...(def.input !== undefined && { input: def.input }),
+    ...(def.state !== undefined && { state: def.state }),
+    ...(def.retry !== undefined && { retry: def.retry }),
+  })
+}
+
+/** Invoke a pipeline looked up by ID from the workflow registry at runtime. */
+export function invoke<TOutput>(def: {
+  id: string
+  pipelineId: string
+  input?: unknown | ((ctx: Context) => unknown)
+  state?: StateConfig
+  retry?: RetryPolicy
+}): InvokeStep<unknown, TOutput> {
+  if (!def.id) throw new Error('invoke(): id is required')
+  if (!def.pipelineId) {
+    throw new Error(`invoke(${def.id}): pipelineId is required`)
+  }
+  assertValidRetryPolicy('invoke', def.id, def.retry)
+  return Object.freeze({
+    kind: 'invoke',
+    id: def.id,
+    pipelineId: def.pipelineId,
     ...(def.input !== undefined && { input: def.input }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
