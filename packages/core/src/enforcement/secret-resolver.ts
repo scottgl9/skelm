@@ -25,9 +25,24 @@ export class MissingSecretError extends Error {
 /**
  * Reads from process.env. Used as the in-process default for unit tests
  * and bare `runPipeline()` invocations.
+ *
+ * Optionally accepts a custom env map (useful in tests to avoid touching
+ * process.env directly).
  */
 export class EnvSecretResolver implements SecretResolver {
+  private readonly env: Record<string, string | undefined>
+  constructor(
+    envOrFactory?: Record<string, string | undefined> | (() => Record<string, string | undefined>),
+  ) {
+    if (typeof envOrFactory === 'function') {
+      this.env = envOrFactory()
+    } else if (envOrFactory !== undefined) {
+      this.env = envOrFactory
+    } else {
+      this.env = process.env as Record<string, string | undefined>
+    }
+  }
   async resolve(name: string): Promise<string | undefined> {
-    return process.env[name]
+    return this.env[name]
   }
 }

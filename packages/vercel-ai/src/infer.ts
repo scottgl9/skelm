@@ -1,5 +1,5 @@
 import type { BackendContext, InferRequest, InferResponse, PromptMessage, Usage } from '@skelm/core'
-import { type ModelMessage, generateObject, generateText } from 'ai'
+import { type ModelMessage, generateObject, generateText, streamText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
 import { assertEgressEnforceable } from './permissions.js'
 import type { VercelAiBackendOptions } from './types.js'
@@ -57,6 +57,21 @@ export async function vercelAiInfer(
     }
 
     // No schema: free-form text.
+    if (context.onPartial !== undefined) {
+      // Streaming path: use streamText to emit partial chunks as they arrive.
+      const stream = streamText({ ...baseCall })
+      let fullText = ''
+      for await (const chunk of stream.textStream) {
+        fullText += chunk
+        context.onPartial(chunk)
+      }
+      const finalResult = await stream
+      const response: InferResponse = { text: fullText }
+      const usage = mapUsage(finalResult.usage)
+      if (usage !== undefined) response.usage = usage
+      return response
+    }
+    // Non-streaming path: use generateText.
     const textResult = await generateText(baseCall)
     const response: InferResponse = { text: textResult.text }
     const usage = mapUsage(textResult.usage)

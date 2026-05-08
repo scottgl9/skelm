@@ -137,6 +137,14 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
             registry: gateway.registries.skills,
             workflowPath: entry.path,
           }),
+          pipelineRegistry: async (pipelineId) => {
+            const entry = gateway.registries.workflows.get(pipelineId)
+            if (!entry) return undefined
+            const loader = gateway.getWorkflowLoader()
+            if (!loader) return undefined
+            const mod = await loader(pipelineId, entry.path)
+            return extractPipeline(mod) as import('@skelm/core').Pipeline | undefined
+          },
         })
         const finalState = await handle.wait()
         if (idemKey !== null) idempotency.set(`${id}:${idemKey}`, finalState.runId)
@@ -210,6 +218,14 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
           registry: gateway.registries.skills,
           workflowPath: entry.path,
         }),
+        pipelineRegistry: async (pipelineId) => {
+          const entry = gateway.registries.workflows.get(pipelineId)
+          if (!entry) return undefined
+          const loader = gateway.getWorkflowLoader()
+          if (!loader) return undefined
+          const mod = await loader(pipelineId, entry.path)
+          return extractPipeline(mod) as import('@skelm/core').Pipeline | undefined
+        },
       })
       // Fire and forget; cleanup on settle.
       void handle

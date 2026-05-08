@@ -1,4 +1,5 @@
 import { type BackendRegistry, Runner } from '@skelm/core'
+import { extractPipeline } from '../http/routes/utils.js'
 import type { Gateway } from '../lifecycle/gateway.js'
 import type { FireContext, RunCallback } from './types.js'
 
@@ -82,6 +83,14 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
           if (breakpoints.has(info.stepId)) {
             await breakpoints.pause({ runId: info.runId, stepId: info.stepId, kind: info.kind })
           }
+        },
+        pipelineRegistry: async (pipelineId) => {
+          const entry = opts.gateway.registries.workflows.get(pipelineId)
+          if (!entry) return undefined
+          const loader = opts.gateway.getWorkflowLoader()
+          if (!loader) return undefined
+          const mod = await loader(pipelineId, entry.path)
+          return extractPipeline(mod) as import('@skelm/core').Pipeline | undefined
         },
       })
       const result = await handle.wait()

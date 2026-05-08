@@ -147,6 +147,7 @@ export {
   code,
   forEach,
   idempotent,
+  invoke,
   llm,
   loop,
   parallel,
@@ -155,6 +156,7 @@ export {
   wait,
 } from './builders.js'
 export {
+  InvokePipelineNotFoundError,
   PermissionDeniedError,
   RunCancelledError,
   StepError,
@@ -272,6 +274,7 @@ export type {
   CodeStep,
   Context,
   ForEachStep,
+  InvokeStep,
   LlmStep,
   LoopStep,
   ParallelOnError,
