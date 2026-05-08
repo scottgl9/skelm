@@ -28,6 +28,7 @@ export type StepKind =
   | 'loop'
   | 'wait'
   | 'pipelineStep'
+  | 'invoke'
 
 /** Metadata about the current run, available on `ctx.run`. */
 export interface RunMetadata {
@@ -119,6 +120,17 @@ export interface Context<TInput = unknown> {
    */
   readonly item?: unknown
   /**
+   * Resolved secrets for this step, keyed by name.
+   * Only populated when the step declares `secrets: [...]` and the runner
+   * has a SecretResolver configured. Absent keys resolve to undefined.
+   *
+   * Use in code() steps:
+   *   const token = ctx.secrets?.get('GITHUB_TOKEN')
+   */
+  readonly secrets?: {
+    get(name: string): string | undefined
+  }
+  /**
    * Typed accessor for prior step outputs. Equivalent to
    * `ctx.steps[stepId] as T | undefined`, but self-documents the assertion
    * at the call site:
@@ -163,6 +175,7 @@ export interface CodeStep<TOutput = unknown> {
   readonly kind: 'code'
   readonly id: StepId
   readonly run: (ctx: Context) => TOutput | Promise<TOutput>
+  readonly secrets?: readonly string[]
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
 }
@@ -178,6 +191,7 @@ export interface LlmStep<TOutput = unknown> {
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   readonly temperature?: number
   readonly maxTokens?: number
+  readonly secrets?: readonly string[]
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
 }
@@ -296,6 +310,18 @@ export interface PipelineStep<TInput = unknown, TOutput = unknown> {
   readonly retry?: RetryPolicy
 }
 
+/** An `invoke()` step: run a pipeline looked up by ID from the workflow registry at runtime. */
+export interface InvokeStep<TInput = unknown, TOutput = unknown> {
+  readonly kind: 'invoke'
+  readonly id: StepId
+  /** The ID of the pipeline to invoke (as registered in the gateway's workflow registry). */
+  readonly pipelineId: string
+  /** Input to pass to the invoked pipeline. Defaults to the current pipeline's input. */
+  readonly input?: TInput | ((ctx: Context) => TInput)
+  readonly state?: StateConfig
+  readonly retry?: RetryPolicy
+}
+
 /** Discriminated union of all step kinds. */
 export type Step =
   | CodeStep
@@ -308,6 +334,7 @@ export type Step =
   | LoopStep
   | WaitStep
   | PipelineStep
+  | InvokeStep
 
 /**
  * Trigger declared on a pipeline. The gateway reads these at startup and

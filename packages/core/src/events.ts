@@ -95,6 +95,15 @@ export type RunEvent =
   | { type: 'run.cancelled'; runId: RunId; at: number }
   | { type: 'secret.accessed'; runId: RunId; stepId: string; name: string; at: number }
   | { type: 'secret.not_found'; runId: RunId; stepId: string; name: string; at: number }
+  | {
+      type: 'step.partial'
+      runId: RunId
+      stepId: StepId
+      kind: StepKind
+      /** Partial text delta (not cumulative — each event is one new chunk). */
+      delta: string
+      at: number
+    }
 
 export type RunEventType = RunEvent['type']
 

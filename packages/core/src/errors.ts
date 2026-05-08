@@ -30,6 +30,18 @@ export class WaitTimeoutError extends Error {
   }
 }
 
+/** Thrown when invoke() cannot find a pipeline by its registered ID. */
+export class InvokePipelineNotFoundError extends Error {
+  override readonly name = 'InvokePipelineNotFoundError'
+  readonly pipelineId: string
+  readonly stepId: string
+  constructor(pipelineId: string, stepId: string) {
+    super(`invoke(${stepId}): pipeline "${pipelineId}" not found in registry`)
+    this.pipelineId = pipelineId
+    this.stepId = stepId
+  }
+}
+
 /** Thrown when a permission check blocks a privileged action. */
 export class PermissionDeniedError extends Error {
   override readonly name = 'PermissionDeniedError'
