@@ -27,7 +27,7 @@ import type { VercelAiBackendOptions } from './types.js'
 export function createVercelAiBackend(options: VercelAiBackendOptions): SkelmBackend {
   const capabilities: BackendCapabilities = {
     prompt: true,
-    streaming: false,
+    streaming: true, // supports onPartial via streamText
     sessionLifecycle: false,
     mcp: false,
     skills: true,
