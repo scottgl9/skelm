@@ -133,6 +133,7 @@ export class OpencodeClientWrapper {
     signal: AbortSignal,
     timeoutMs = 300_000,
     resolvedPolicy?: ResolvedPolicy,
+    onPartial?: (delta: string) => void,
   ): Promise<AgentResponse> {
     await this.ensureStarted()
     if (!this.client) throw new Error('opencode serve not ready')
@@ -174,7 +175,7 @@ export class OpencodeClientWrapper {
         throw new Error(`session.promptAsync failed: ${JSON.stringify(promptResult.error)}`)
       }
 
-      return await this._collectFromStream(stream, sessionId, signal)
+      return await this._collectFromStream(stream, sessionId, signal, onPartial)
     } finally {
       clearTimeout(timeoutId)
       signal.removeEventListener('abort', onSignalAbort)
@@ -191,6 +192,7 @@ export class OpencodeClientWrapper {
     stream: AsyncIterable<unknown>,
     sessionId: string,
     signal: AbortSignal,
+    onPartial?: (delta: string) => void,
   ): Promise<AgentResponse> {
     // Only collect text parts from assistant messages; track which message IDs are assistant.
     const assistantMessageIds = new Set<string>()
@@ -237,7 +239,13 @@ export class OpencodeClientWrapper {
           !part.synthetic &&
           part.text
         ) {
-          textParts.set(part.id, part.text)
+          const prev = textParts.get(part.id) ?? ''
+          const next = part.text as string
+          // Emit the delta (new characters since last update for this part)
+          if (onPartial !== undefined && next.length > prev.length) {
+            onPartial(next.slice(prev.length))
+          }
+          textParts.set(part.id, next)
         }
       }
 

@@ -35,8 +35,8 @@ describe('createVercelAiBackend — capabilities', () => {
       'native',
     )
   })
-  it('declares streaming:false (deferred)', () => {
-    expect(createVercelAiBackend({ model: mockModel('hi') }).capabilities.streaming).toBe(false)
+  it('declares streaming:true (via streamText / onPartial)', () => {
+    expect(createVercelAiBackend({ model: mockModel('hi') }).capabilities.streaming).toBe(true)
   })
   it('declares mcp:false (deferred)', () => {
     expect(createVercelAiBackend({ model: mockModel('hi') }).capabilities.mcp).toBe(false)

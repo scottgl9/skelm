@@ -132,7 +132,12 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
           }),
         })
 
-        const result = await client.prompt(promptText, context.signal, options.timeout ?? 300_000)
+        const result = await client.prompt(
+          promptText,
+          context.signal,
+          options.timeout ?? 300_000,
+          context.onPartial,
+        )
 
         const response: InferResponse = {
           ...(result.usage !== undefined && {
@@ -187,6 +192,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
           request.prompt,
           context.signal,
           options.timeout ?? 300_000,
+          context.onPartial,
         )
 
         return {

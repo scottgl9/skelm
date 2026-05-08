@@ -6,6 +6,12 @@
  * that createAgentSession does not expose directly.
  */
 
+export interface PiSdkPromptOptions {
+  signal?: AbortSignal
+  timeoutMs?: number
+  onPartial?: (delta: string) => void
+}
+
 export interface PiSdkClientOptions {
   /** Working directory for pi's project-local discovery. Default: process.cwd() */
   cwd?: string
@@ -75,7 +81,12 @@ export class PiSdkUpstreamError extends Error {
 export class PiSdkClient {
   constructor(private readonly opts: PiSdkClientOptions = {}) {}
 
-  async prompt(text: string, signal?: AbortSignal, timeoutMs = 300_000): Promise<PiSdkResponse> {
+  async prompt(
+    text: string,
+    signal?: AbortSignal,
+    timeoutMs?: number,
+    onPartial?: (delta: string) => void,
+  ): Promise<PiSdkResponse> {
     // Dynamic import keeps @mariozechner/pi-coding-agent optional at runtime
     const pi = await import('@mariozechner/pi-coding-agent').catch(() => {
       throw new Error(
@@ -113,7 +124,7 @@ export class PiSdkClient {
     })
 
     try {
-      return await this._run(session, text, signal, timeoutMs)
+      return await this._run(session, text, signal, timeoutMs ?? 300_000, onPartial)
     } finally {
       session.dispose()
     }
@@ -124,6 +135,7 @@ export class PiSdkClient {
     text: string,
     signal: AbortSignal | undefined,
     timeoutMs: number,
+    onPartial?: (delta: string) => void,
   ): Promise<PiSdkResponse> {
     return new Promise<PiSdkResponse>((resolve, reject) => {
       let settled = false
@@ -156,7 +168,30 @@ export class PiSdkClient {
       }
       signal?.addEventListener('abort', onAbort, { once: true })
 
+      // Track accumulated text per message for delta calculation
+      const partialTextByMsg = new Map<string, string>()
+
       const unsub = session.subscribe((event) => {
+        // Forward partial text deltas if onPartial is provided.
+        // pi emits 'message_update' events during streaming with updated content arrays.
+        if (onPartial !== undefined && event.type === 'message_update') {
+          const msg = event.message as {
+            role?: string
+            content?: Array<{ type: string; text: string }>
+          }
+          if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+            const fullText = msg.content
+              .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+              .map((c) => c.text)
+              .join('')
+            const msgId = (event as { messageId?: string }).messageId ?? 'default'
+            const prev = partialTextByMsg.get(msgId) ?? ''
+            if (fullText.length > prev.length) {
+              onPartial(fullText.slice(prev.length))
+              partialTextByMsg.set(msgId, fullText)
+            }
+          }
+        }
         if (event.type === 'agent_end') {
           unsub()
           settle(() => {
