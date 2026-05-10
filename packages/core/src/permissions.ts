@@ -203,9 +203,10 @@ export class TrustEnforcer {
 
   private canFsAccess(
     path: string,
-    roots: ReadonlySet<string>,
+    roots: ReadonlySet<string> | undefined,
     dimension: 'fs.read' | 'fs.write',
   ): EnforceDecision {
+    if (!roots || roots.size === 0) return { allow: false, reason: 'path-not-in-allowlist', dimension }
     for (const rawRoot of roots) {
       const root = rawRoot.endsWith('/') ? rawRoot.slice(0, -1) : rawRoot
       if (path === root || path.startsWith(`${root}/`)) {
