@@ -1,0 +1,26 @@
+/**
+ * Type alias for the backend returned by createSkelmAgentBackend.
+ *
+ * Implements:
+ * - `infer()` — single-shot LLM inference (llm steps)
+ * - `run()` — multi-turn agent loop with built-in tools (agent steps)
+ *
+ * Capabilities:
+ * - prompt: true
+ * - streaming: false
+ * - sessionLifecycle: false
+ * - mcp: true (delegates MCP tools to attached McpHost)
+ * - skills: true (wraps skillSource with canLoadSkill enforcement)
+ * - modelSelection: true
+ * - toolPermissions: 'native' (enforces all permissions in-process)
+ */
+
+export interface SkelmAgentBackendCapabilities {
+  prompt: true
+  streaming: false
+  sessionLifecycle: false
+  mcp: true
+  skills: true
+  modelSelection: true
+  toolPermissions: 'native'
+}

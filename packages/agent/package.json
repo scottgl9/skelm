@@ -1,0 +1,38 @@
+{
+  "name": "@skelm/agent",
+  "version": "0.0.1",
+  "description": "First-party skelm agent backend with native permission enforcement",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/scottgl9/skelm",
+    "directory": "packages/agent"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "vitest run",
+    "lint": "biome check src/"
+  },
+  "dependencies": {
+    "@skelm/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2",
+    "vitest": "^3.1.1",
+    "@biomejs/biome": "^2.0.0"
+  }
+}
