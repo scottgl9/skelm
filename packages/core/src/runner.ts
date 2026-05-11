@@ -922,28 +922,47 @@ async function runAgentStep(
             ...ctx,
             workspace: preparedWorkspace.handle,
           })
-    const resolvedPromptText =
-      typeof step.prompt === 'function' ? step.prompt(workspaceCtx) : step.prompt
-    const resolvedSystemText =
-      step.system === undefined
-        ? undefined
-        : typeof step.system === 'function'
-          ? step.system(workspaceCtx)
-          : step.system
-    const mcpServers =
-      step.mcp === undefined
-        ? undefined
-        : typeof step.mcp === 'function'
-          ? step.mcp(workspaceCtx)
-          : step.mcp
+    // Resolve permissions + secrets FIRST so step.prompt / step.system /
+    // step.mcp functions receive ctx.secrets, matching the contract that
+    // runCodeStep and runLlmStep already implement. Without this ordering
+    // agent steps see no secrets in their user-supplied callbacks.
     const policy =
-      step.permissions !== undefined || mcpServers !== undefined || preparedWorkspace !== undefined
+      step.permissions !== undefined || step.mcp !== undefined || preparedWorkspace !== undefined
         ? resolvePermissions(
             runtime?.defaultPermissions,
             applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
             runtime?.permissionProfiles,
           )
         : undefined
+    const resolvedSecrets = await resolveDeclaredSecrets(
+      step,
+      policy,
+      runtime?.secretResolver,
+      events,
+      ctx.run.runId,
+    )
+    const secretsAccessor =
+      resolvedSecrets !== undefined
+        ? { get: (name: string) => resolvedSecrets[name] }
+        : undefined
+    const stepCtx =
+      secretsAccessor !== undefined
+        ? freezeContext({ ...workspaceCtx, secrets: secretsAccessor })
+        : workspaceCtx
+    const resolvedPromptText =
+      typeof step.prompt === 'function' ? step.prompt(stepCtx) : step.prompt
+    const resolvedSystemText =
+      step.system === undefined
+        ? undefined
+        : typeof step.system === 'function'
+          ? step.system(stepCtx)
+          : step.system
+    const mcpServers =
+      step.mcp === undefined
+        ? undefined
+        : typeof step.mcp === 'function'
+          ? step.mcp(stepCtx)
+          : step.mcp
     if (policy !== undefined && mcpServers !== undefined) {
       const enforcer = new TrustEnforcer(policy)
       for (const server of mcpServers) {
@@ -1008,13 +1027,6 @@ async function runAgentStep(
         throw new ApprovalDeniedError(step.id, decision.approver, decision.reason)
       }
     }
-    const resolvedSecrets = await resolveDeclaredSecrets(
-      step,
-      policy,
-      runtime?.secretResolver,
-      events,
-      ctx.run.runId,
-    )
     const req: AgentRequest = {
       prompt: resolvedPromptText,
       ...(resolvedSystemText !== undefined && { system: resolvedSystemText }),

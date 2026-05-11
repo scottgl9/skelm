@@ -18,6 +18,7 @@ value:DiscordTrigger
 value:EnvSecretResolver
 value:EventBus
 value:GitHubTrigger
+value:InvokePipelineNotFoundError
 value:JsonRpcLineTransport
 value:JsonRpcStdioTransport
 value:MCP_PROTOCOL_VERSION
@@ -90,6 +91,7 @@ value:forEach
 value:formatSkillBlock
 value:globalCapabilityRegistry
 value:idempotent
+value:invoke
 value:llm
 value:loadAgentDefinition
 value:loop
@@ -155,6 +157,7 @@ type:InferRequest
 type:InferResponse
 type:InitializeRequest
 type:InitializeResponse
+type:InvokeStep
 type:JsonRpcNotification
 type:JsonRpcRequest
 type:JsonRpcResponse

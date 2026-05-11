@@ -2,7 +2,12 @@ import { Runner, describePipeline } from '@skelm/core'
 import { type Router, createError, eventHandler, readBody } from 'h3'
 import type { Gateway } from '../../lifecycle/gateway.js'
 import { createSkillSource } from '../../registries/skill-source.js'
-import { decodeMaybe, extractPipeline, tryToJsonSchema } from './utils.js'
+import {
+  decodeMaybe,
+  extractPipeline,
+  makeGatewayPipelineRegistry,
+  tryToJsonSchema,
+} from './utils.js'
 
 // Per-(pipeline, idempotency-key) → runId map shared by /run and /start.
 const idempotency = new Map<string, string>()
@@ -137,14 +142,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
             registry: gateway.registries.skills,
             workflowPath: entry.path,
           }),
-          pipelineRegistry: async (pipelineId) => {
-            const entry = gateway.registries.workflows.get(pipelineId)
-            if (!entry) return undefined
-            const loader = gateway.getWorkflowLoader()
-            if (!loader) return undefined
-            const mod = await loader(pipelineId, entry.path)
-            return extractPipeline(mod) as import('@skelm/core').Pipeline | undefined
-          },
+          pipelineRegistry: makeGatewayPipelineRegistry(gateway),
         })
         const finalState = await handle.wait()
         if (idemKey !== null) idempotency.set(`${id}:${idemKey}`, finalState.runId)
@@ -218,14 +216,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
           registry: gateway.registries.skills,
           workflowPath: entry.path,
         }),
-        pipelineRegistry: async (pipelineId) => {
-          const entry = gateway.registries.workflows.get(pipelineId)
-          if (!entry) return undefined
-          const loader = gateway.getWorkflowLoader()
-          if (!loader) return undefined
-          const mod = await loader(pipelineId, entry.path)
-          return extractPipeline(mod) as import('@skelm/core').Pipeline | undefined
-        },
+        pipelineRegistry: makeGatewayPipelineRegistry(gateway),
       })
       // Fire and forget; cleanup on settle.
       void handle

@@ -1,5 +1,5 @@
 import type { BackendContext } from '@skelm/core'
-import { MockLanguageModelV3 } from 'ai/test'
+import { MockLanguageModelV3, convertArrayToReadableStream } from 'ai/test'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createVercelAiBackend } from '../src/index.js'
@@ -150,6 +150,41 @@ describe('createVercelAiBackend — run()', () => {
     // Either no responseFormat, or the SDK's default 'text' mode.
     const fmt = (capturedResponseFormat as { type?: string })?.type
     expect(fmt === undefined || fmt === 'text').toBe(true)
+  })
+
+  it('streams text chunks through onPartial when context.onPartial is provided', async () => {
+    // Mock the V3 streaming protocol with three text-delta chunks.
+    const chunks = ['Hello, ', 'streaming ', 'world!']
+    const streamParts = [
+      { type: 'stream-start' as const, warnings: [] },
+      { type: 'text-start' as const, id: 't1' },
+      ...chunks.map((delta) => ({ type: 'text-delta' as const, id: 't1', delta })),
+      { type: 'text-end' as const, id: 't1' },
+      {
+        type: 'finish' as const,
+        usage: { inputTokens: 3, outputTokens: 6, totalTokens: 9 },
+        finishReason: 'stop' as const,
+      },
+    ]
+    const model = new MockLanguageModelV3({
+      doStream: async () => ({
+        stream: convertArrayToReadableStream(streamParts),
+      }),
+    })
+    const backend = createVercelAiBackend({ model })
+
+    const received: string[] = []
+    const result = await backend.run?.(
+      { prompt: 'stream me' },
+      { ...makeCtx(), onPartial: (c: string) => received.push(c) },
+    )
+
+    expect(received).toEqual(chunks)
+    expect(result?.text).toBe(chunks.join(''))
+    // finishReason / usage normalization through the streaming path are tested
+    // in the generateText tests above; here we just verify the streaming
+    // contract: every text-delta chunk reaches onPartial and the final text
+    // matches the concatenation.
   })
 
   it('passes options.systemPrompt + req.system + agentDef.instructions in order', async () => {

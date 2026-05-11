@@ -29,15 +29,22 @@ export class MissingSecretError extends Error {
  * Optionally accepts a custom env map (useful in tests to avoid touching
  * process.env directly).
  */
+/**
+ * Either a fixed env map or a thunk that produces one on construction.
+ * The thunk variant matters for tests that need to capture process.env
+ * at instantiation time rather than at constructor-define time.
+ */
+export type EnvSource =
+  | Record<string, string | undefined>
+  | (() => Record<string, string | undefined>)
+
 export class EnvSecretResolver implements SecretResolver {
   private readonly env: Record<string, string | undefined>
-  constructor(
-    envOrFactory?: Record<string, string | undefined> | (() => Record<string, string | undefined>),
-  ) {
-    if (typeof envOrFactory === 'function') {
-      this.env = envOrFactory()
-    } else if (envOrFactory !== undefined) {
-      this.env = envOrFactory
+  constructor(envSource?: EnvSource) {
+    if (typeof envSource === 'function') {
+      this.env = envSource()
+    } else if (envSource !== undefined) {
+      this.env = envSource
     } else {
       this.env = process.env as Record<string, string | undefined>
     }
