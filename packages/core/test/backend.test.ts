@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { BackendCapabilityError, BackendNotFoundError, BackendRegistry } from './backend.js'
-import { code, llm, pipeline } from './builders.js'
-import { runPipeline } from './runner.js'
-import { fixtureBackend } from './testing.js'
+import { BackendCapabilityError, BackendNotFoundError, BackendRegistry } from '../src/backend.js'
+import { code, llm, pipeline } from '../src/builders.js'
+import { runPipeline } from '../src/runner.js'
+import { fixtureBackend } from '../src/testing.js'
 
 describe('BackendRegistry', () => {
   it('rejects duplicate registration of the same id', () => {

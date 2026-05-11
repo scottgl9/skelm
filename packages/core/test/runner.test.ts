@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { BackendRegistry, type SkelmBackend } from './backend.js'
-import { agent, code, pipeline } from './builders.js'
-import { EventBus, type RunEvent } from './events.js'
-import { runPipeline } from './runner.js'
-import type { Skill } from './skills.js'
+import { BackendRegistry, type SkelmBackend } from '../src/backend.js'
+import { agent, code, pipeline } from '../src/builders.js'
+import { EventBus, type RunEvent } from '../src/events.js'
+import { runPipeline } from '../src/runner.js'
+import type { Skill } from '../src/skills.js'
 
 describe('runPipeline — sequential code steps', () => {
   it('runs a single code step and adopts its output as the run output', async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { BackendContext } from '../backend.js'
-import type { Skill } from '../skills.js'
-import { createAnthropicBackend } from './backend.js'
+import { createAnthropicBackend } from '../../src/anthropic/backend.js'
+import type { BackendContext } from '../../src/backend.js'
+import type { Skill } from '../../src/skills.js'
 
 function makeCtx(overrides: Partial<BackendContext> = {}): BackendContext {
   return {

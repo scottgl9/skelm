@@ -2,10 +2,10 @@ import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { BackendRegistry, type SkelmBackend } from './backend.js'
-import { agent, code, pipeline } from './builders.js'
-import { runPipeline } from './runner.js'
-import { WorkspaceManager } from './workspace.js'
+import { BackendRegistry, type SkelmBackend } from '../src/backend.js'
+import { agent, code, pipeline } from '../src/builders.js'
+import { runPipeline } from '../src/runner.js'
+import { WorkspaceManager } from '../src/workspace.js'
 
 describe('WorkspaceManager', () => {
   it('reuses persistent workspaces across runs and writes metadata', async () => {
