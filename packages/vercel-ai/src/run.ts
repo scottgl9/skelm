@@ -1,3 +1,4 @@
+import { combineSignals } from '@skelm/core'
 import type { AgentRequest, AgentResponse, BackendContext } from '@skelm/core'
 import { Output, generateText, stepCountIs, streamText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
@@ -128,15 +129,4 @@ export async function vercelAiRun(
   } finally {
     clearTimeout(timer)
   }
-}
-
-function combineSignals(a: AbortSignal | undefined, b: AbortSignal): AbortSignal {
-  if (a === undefined) return b
-  if (a.aborted) return a
-  const ctl = new AbortController()
-  const onA = () => ctl.abort(a.reason)
-  const onB = () => ctl.abort(b.reason)
-  a.addEventListener('abort', onA, { once: true })
-  b.addEventListener('abort', onB, { once: true })
-  return ctl.signal
 }

@@ -1,18 +1,6 @@
-import { type AgentRequest, type BackendContext, formatSkillBlock } from '@skelm/core'
+import type { AgentRequest } from '@skelm/core'
 
-/**
- * Load skill bodies via ctx.loadSkill (which itself enforces allowedSkills).
- * Skipped silently when a skill returns null — same convention as pi-sdk.
- */
-export async function loadSkillBodies(req: AgentRequest, ctx: BackendContext): Promise<string[]> {
-  if (!req.skills || req.skills.length === 0 || !ctx.loadSkill) return []
-  const bodies: string[] = []
-  for (const skillId of req.skills) {
-    const skill = await ctx.loadSkill(skillId)
-    if (skill !== null) bodies.push(formatSkillBlock(skill))
-  }
-  return bodies
-}
+export { loadSkillBodies } from '@skelm/core'
 
 /**
  * Assemble the system prompt for an agent run.

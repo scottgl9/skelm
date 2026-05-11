@@ -66,10 +66,13 @@ value:WaitTimeoutError
 value:WebhookTrigger
 value:WorkspaceManager
 value:agent
+value:assertEgressEnforceable
 value:branch
 value:code
+value:combineSignals
 value:createAcpBackend
 value:createAnthropicBackend
+value:createConcurrencySemaphore
 value:createCronTrigger
 value:createCustomTrigger
 value:createDiscordTrigger
@@ -94,6 +97,7 @@ value:idempotent
 value:invoke
 value:llm
 value:loadAgentDefinition
+value:loadSkillBodies
 value:loop
 value:parallel
 value:parseSkill
@@ -105,6 +109,7 @@ value:selectProvider
 value:selectProviderForTask
 value:serializeError
 value:terminalEventTypeFor
+value:timeoutSignal
 value:wait
 type:AcpBackendOptions
 type:AcpPromptResult
@@ -136,6 +141,7 @@ type:BranchStep
 type:ChatMessage
 type:ClientCapabilities
 type:CodeStep
+type:ConcurrencySemaphore
 type:ContentBlock
 type:Context
 type:CronTriggerConfig

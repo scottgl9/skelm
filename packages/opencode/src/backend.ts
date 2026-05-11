@@ -1,4 +1,4 @@
-import { formatSkillBlock } from '@skelm/core'
+import { loadSkillBodies } from '@skelm/core'
 import type {
   AgentRequest,
   AgentResponse,
@@ -118,13 +118,7 @@ async function injectSkills(req: AgentRequest, ctx: BackendContext): Promise<Age
   const prefixParts: string[] = []
   if (req.agentDef?.soul !== undefined) prefixParts.push(req.agentDef.soul)
   if (req.agentDef !== undefined) prefixParts.push(req.agentDef.instructions)
-  const skillParts: string[] = []
-  if (req.skills !== undefined && req.skills.length > 0 && ctx.loadSkill !== undefined) {
-    for (const skillId of req.skills) {
-      const skill = await ctx.loadSkill(skillId)
-      if (skill !== null) skillParts.push(formatSkillBlock(skill))
-    }
-  }
+  const skillParts = await loadSkillBodies(req, ctx)
   if (prefixParts.length === 0 && skillParts.length === 0) return req
   const systemParts: string[] = [...prefixParts]
   if (req.system !== undefined) systemParts.push(req.system)
