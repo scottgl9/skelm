@@ -1,0 +1,3 @@
+value:createSkelmAgentBackend
+type:SkelmAgentBackendCapabilities
+type:SkelmAgentOptions
