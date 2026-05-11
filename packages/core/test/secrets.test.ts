@@ -239,9 +239,11 @@ describe('secrets in llm() steps', () => {
 })
 
 describe('secrets in agent() steps', () => {
-  function mockAgentBackend(
-    captured: { prompt: string; system?: string; secrets?: Readonly<Record<string, string>> },
-  ): SkelmBackend {
+  function mockAgentBackend(captured: {
+    prompt: string
+    system?: string
+    secrets?: Readonly<Record<string, string>>
+  }): SkelmBackend {
     return {
       id: 'mock-agent',
       capabilities: {
@@ -263,8 +265,11 @@ describe('secrets in agent() steps', () => {
   }
 
   it('agent() step with secrets sees ctx.secrets in prompt + system + mcp callbacks', async () => {
-    const captured: { prompt: string; system?: string; secrets?: Readonly<Record<string, string>> } =
-      { prompt: '', system: undefined, secrets: undefined }
+    const captured: {
+      prompt: string
+      system?: string
+      secrets?: Readonly<Record<string, string>>
+    } = { prompt: '', system: undefined, secrets: undefined }
     const registry = new BackendRegistry()
     registry.register(mockAgentBackend(captured))
 

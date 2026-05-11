@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **`invoke()` step** — call any registered pipeline by id from inside another workflow. The runner resolves the target through a `pipelineRegistry` callback (in-process tests supply their own; the gateway wires one automatically from `Gateway.registries.workflows` with a fallback scan that matches by `pipeline.id` when the registry id lookup misses). Throws `InvokePipelineNotFoundError` when the id is unknown. Nested runs inherit the parent's store, permissions, secret resolver, audit writer, and egress-proxy wiring.
+- **`ctx.secrets` in `code()` / `llm()` / `agent()` callbacks** — steps that declare `secrets: [...]` now expose a `get(name)` accessor inside `run`, `prompt`, `system`, and `mcp` callbacks. Names are resolved through the `SecretResolver` and (when the step declares `permissions: { allowedSecrets }`) gated by `TrustEnforcer.canAccessSecret` before the callback runs. Missing names fail with `MissingSecretError`; denied names fail with `PermissionDeniedError`. For `agent()` steps the values are also forwarded to the backend as `AgentRequest.secrets` for tool/exec env-var injection.
+- **`step.partial` streaming events** — backends that opt into streaming (`vercel-ai`, `@skelm/pi` SDK, `@skelm/opencode`) emit incremental output through `onPartial(delta)`; the runner publishes each chunk as a `step.partial` event on the bus, observable via `skelm run … --events json`.
+- **CLI `SecretResolver` wiring** — `skelm run` now instantiates `FileSecretResolver` (driver `'file'`, honouring `SKELM_STATE_DIR` / `~/.skelm/secrets.json`) or `EnvSecretResolver` based on `skelm.config.ts` and passes it to `runPipeline()`. Previously the CLI path always failed agent/llm/code steps that declared `secrets: [...]` with "no SecretResolver is configured".
+- **CLI gateway `loadWorkflow`** — `skelm gateway start` now passes its tsImport-based workflow loader to the `Gateway` constructor as well as the trigger dispatcher. Without this, `POST /pipelines/:id/run` returned 501 and invoke() targets could not be resolved over HTTP.
+
 ## [0.3.7] - 2026-05-06
 
 ### Added

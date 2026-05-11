@@ -62,7 +62,9 @@ A workflow is a typed TypeScript module made of three step kinds (`code`, `llm`,
 
 - **TypeScript-native workflows.** Real `.ts` modules — refactor, test, type-check, and version like any other code. No DSL, no JSON config.
 - **Three step kinds, none wrapping another.** `code()` for deterministic logic, `llm()` for single inference calls, `agent()` for full multi-turn loops.
-- **Native control flow.** `parallel`, `forEach`, `branch`, `loop`, `wait`, and nested pipelines are core primitives, not add-ons.
+- **Native control flow.** `parallel`, `forEach`, `branch`, `loop`, `wait`, `invoke` (call another pipeline by id), and nested pipelines are core primitives, not add-ons.
+- **`ctx.secrets` in step callbacks.** `code()` / `llm()` / `agent()` steps declare `secrets: [...]` and read each value via `ctx.secrets.get(name)` inside their `run` / `prompt` / `system` / `mcp` callbacks. Resolution and `allowedSecrets` gating run before the callback fires.
+- **Streaming output.** Backends that opt in (`@skelm/vercel-ai`, `@skelm/pi` SDK, `@skelm/opencode`) emit `step.partial` events on the bus as the model streams; observable through `skelm run … --events json`.
 - **Markdown agent definitions.** `AGENTS.md` for role, `SOUL.md` for persona, `SKILL.md` for capabilities — reviewable in PRs.
 
 ### Security & isolation

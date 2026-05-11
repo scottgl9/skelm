@@ -3,10 +3,19 @@ import type { Gateway } from '../../lifecycle/gateway.js'
 
 /**
  * Build the `pipelineRegistry` callback that `invoke()` steps use to resolve
- * a target pipeline id at runtime. Walks the gateway's workflows registry,
- * loads the module via the configured workflow loader, and extracts the
- * default-exported pipeline. Returns `undefined` if no such workflow exists
- * or no loader is wired (the runner treats `undefined` as "not found").
+ * a target pipeline at runtime.
+ *
+ * Two lookup strategies, in order:
+ *   1. Direct: treat the id as a workflow-registry id (the file path
+ *      relative to the project root). Fast — single load.
+ *   2. Fallback: scan all registered workflows, load each via the workflow
+ *      loader, and return the first whose `pipeline.id` matches. This is
+ *      how `invoke({ pipelineId: 'foo' })` finds a workflow whose
+ *      `pipeline({ id: 'foo' })` lives in any file under the registry glob —
+ *      mirrors the in-process `pipelineRegistry` semantics that PR #84's
+ *      `invoke()` unit tests use.
+ *
+ * Returns `undefined` if no match was found or no loader is wired.
  *
  * Centralized here so the /pipelines/:id/run handler, the /pipelines/:id/start
  * handler, and the trigger dispatcher all share a single implementation.
@@ -15,12 +24,20 @@ export function makeGatewayPipelineRegistry(
   gateway: Gateway,
 ): (pipelineId: string) => Promise<Pipeline | undefined> {
   return async (pipelineId) => {
-    const entry = gateway.registries.workflows.get(pipelineId)
-    if (entry === undefined) return undefined
     const loader = gateway.getWorkflowLoader()
     if (loader === undefined) return undefined
-    const mod = await loader(pipelineId, entry.path)
-    return extractPipeline(mod) as Pipeline | undefined
+    const direct = gateway.registries.workflows.get(pipelineId)
+    if (direct !== undefined) {
+      const mod = await loader(pipelineId, direct.path)
+      const p = extractPipeline(mod)
+      if (p !== undefined) return p as Pipeline
+    }
+    for (const entry of gateway.registries.workflows.list()) {
+      const mod = await loader(entry.id, entry.path)
+      const p = extractPipeline(mod) as Pipeline | undefined
+      if (p?.id === pipelineId) return p
+    }
+    return undefined
   }
 }
 

@@ -942,9 +942,7 @@ async function runAgentStep(
       ctx.run.runId,
     )
     const secretsAccessor =
-      resolvedSecrets !== undefined
-        ? { get: (name: string) => resolvedSecrets[name] }
-        : undefined
+      resolvedSecrets !== undefined ? { get: (name: string) => resolvedSecrets[name] } : undefined
     const stepCtx =
       secretsAccessor !== undefined
         ? freezeContext({ ...workspaceCtx, secrets: secretsAccessor })
