@@ -8,7 +8,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*.ts"],
-  "references": [
-    { "path": "../core" }
-  ]
+  "references": [{ "path": "../core" }]
 }

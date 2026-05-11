@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { createSkelmAgentBackend } from '../src/index.js'
 import { BackendRegistry } from '@skelm/core/backend'
+import { resolvePermissions } from '@skelm/core/permissions'
+import { createSkelmAgentBackend } from '../src/index.js'
 
 function getDefaultBaseUrl(): string {
   return process.env.SKELM_AGENT_BASE_URL ?? 'http://localhost:8000'
@@ -39,7 +40,7 @@ describe('SkelmAgentBackend — inference', () => {
   })
 
   it('responds to a simple prompt (single-shot)', async () => {
-    const response = await backend.infer!(
+    const response = await backend.infer?.(
       {
         messages: [{ role: 'user', content: 'What is 2 + 2? Answer with just the number.' }],
       },
@@ -52,7 +53,7 @@ describe('SkelmAgentBackend — inference', () => {
   }, 65_000)
 
   it('supports structured output', async () => {
-    const response = await backend.infer!(
+    const response = await backend.infer?.(
       {
         messages: [{ role: 'user', content: 'Describe a cat in 3 adjectives.' }],
         outputSchema: {
@@ -81,7 +82,7 @@ describe('SkelmAgentBackend — agent loop', () => {
   })
 
   it('runs a simple agent step (single turn, no tools needed)', async () => {
-    const response = await backend.run!(
+    const response = await backend.run?.(
       {
         prompt: 'Count from 1 to 3.',
         maxTurns: 5,
@@ -98,7 +99,7 @@ describe('SkelmAgentBackend — agent loop', () => {
 
   it('uses fs_read tool to read a file', async () => {
     // Read the package.json itself
-    const response = await backend.run!(
+    const response = await backend.run?.(
       {
         prompt: `Use the fs_read tool to read the file at "${process.cwd()}/packages/agent/package.json" and tell me the package name.`,
         maxTurns: 10,
@@ -113,7 +114,7 @@ describe('SkelmAgentBackend — agent loop', () => {
 
   it('uses fs_write tool to write and verify', async () => {
     const testPath = `${process.cwd()}/packages/agent/test/_agent-test-output.txt`
-    const writeResponse = await backend.run!(
+    const writeResponse = await backend.run?.(
       {
         prompt: `Use the fs_write tool to write the text "Hello from skelm agent!" to the file at "${testPath}".`,
         maxTurns: 10,
@@ -124,7 +125,7 @@ describe('SkelmAgentBackend — agent loop', () => {
     expect(writeResponse.text).toBeDefined()
 
     // Verify the write worked by reading it back
-    const readResponse = await backend.run!(
+    const readResponse = await backend.run?.(
       {
         prompt: `Use the fs_read tool to read the file at "${testPath}" and tell me what it says.`,
         maxTurns: 10,
@@ -135,13 +136,11 @@ describe('SkelmAgentBackend — agent loop', () => {
     expect(readResponse.text).toContain('Hello from skelm agent')
 
     // Cleanup
-    await import('node:fs/promises').then((fs) =>
-      fs.rm(testPath).catch(() => {}),
-    )
+    await import('node:fs/promises').then((fs) => fs.rm(testPath).catch(() => {}))
   }, 120_000)
 
   it('uses ls tool to list workspace', async () => {
-    const response = await backend.run!(
+    const response = await backend.run?.(
       {
         prompt: `Use the ls tool to list the current directory and tell me if you see a "packages" folder.`,
         maxTurns: 5,
@@ -155,7 +154,7 @@ describe('SkelmAgentBackend — agent loop', () => {
   }, 95_000)
 
   it('rejects out-of-bounds path access', async () => {
-    const response = await backend.run!(
+    const response = await backend.run?.(
       {
         prompt: `Try to read the file at "/etc/passwd" using fs_read.`,
         maxTurns: 5,
@@ -167,21 +166,21 @@ describe('SkelmAgentBackend — agent loop', () => {
     // Should refuse the request (model may phrase the denial differently)
     expect(
       response.text.toLowerCase().includes('permission denied') ||
-      response.text.toLowerCase().includes('escape') ||
-      response.text.toLowerCase().includes('unable') ||
-      response.text.toLowerCase().includes('cannot') ||
-      response.text.toLowerCase().includes('denied') ||
-      response.text.toLowerCase().includes('cannot access') ||
-      response.text.toLowerCase().includes('outside') ||
-      response.text.toLowerCase().includes('not allowed') ||
-      response.text.toLowerCase().includes('unauthorized'),
+        response.text.toLowerCase().includes('escape') ||
+        response.text.toLowerCase().includes('unable') ||
+        response.text.toLowerCase().includes('cannot') ||
+        response.text.toLowerCase().includes('denied') ||
+        response.text.toLowerCase().includes('cannot access') ||
+        response.text.toLowerCase().includes('outside') ||
+        response.text.toLowerCase().includes('not allowed') ||
+        response.text.toLowerCase().includes('unauthorized'),
     ).toBe(true)
   }, 95_000)
 
   it('rejects out-of-bounds network access', async () => {
-    const response = await backend.run!(
+    const response = await backend.run?.(
       {
-        prompt: `Try to fetch http://169.254.169.254/latest/meta-data/ using http_fetch.`,
+        prompt: 'Try to fetch http://169.254.169.254/latest/meta-data/ using http_fetch.',
         maxTurns: 5,
       },
       { signal: AbortSignal.timeout(90_000) },
@@ -191,12 +190,12 @@ describe('SkelmAgentBackend — agent loop', () => {
     // Should mention permission denied (since no network policy allows it)
     expect(
       response.text.toLowerCase().includes('permission denied') ||
-      response.text.toLowerCase().includes('denied'),
+        response.text.toLowerCase().includes('denied'),
     ).toBe(true)
   }, 95_000)
 
   it('handles multi-turn conversation with context', async () => {
-    const response = await backend.run!(
+    const response = await backend.run?.(
       {
         prompt: `I'm thinking of a number between 1 and 100. Give me a hint about whether it's higher or lower than 50.`,
         maxTurns: 3,
@@ -207,6 +206,75 @@ describe('SkelmAgentBackend — agent loop', () => {
     expect(response.text).toBeDefined()
     expect(typeof response.text).toBe('string')
     expect(response.text.length).toBeGreaterThan(10)
+  }, 95_000)
+})
+
+describe('SkelmAgentBackend — exec tool', () => {
+  const backend = createSkelmAgentBackend({
+    baseUrl: getDefaultBaseUrl(),
+    model: 'qwen36',
+  })
+
+  it('refuses exec when allowedExecutables is empty (default-deny)', async () => {
+    // Resolve a policy with everything default-deny so canExec must deny.
+    const policy = resolvePermissions(
+      {
+        allowedTools: ['*'],
+        allowedExecutables: [],
+        fsRead: [process.cwd()],
+        fsWrite: [],
+        allowedSkills: [],
+        allowedMcpServers: [],
+        allowedSecrets: [],
+        networkEgress: 'deny',
+      },
+      undefined,
+    )
+    const response = await backend.run?.(
+      {
+        prompt:
+          'Call the exec tool with command="echo" args=["DENY_TEST"] and report ' +
+          'verbatim what the tool returns.',
+        maxTurns: 4,
+      },
+      { signal: AbortSignal.timeout(90_000), permissions: policy },
+    )
+
+    expect(response.text).toBeDefined()
+    expect(response.text.toLowerCase()).toMatch(
+      /permission denied|not-in-allowlist|cannot|unable|not allowed|denied/,
+    )
+    // Critical: the model must NOT have a successful echo result in its output.
+    expect(response.text).not.toMatch(/DENY_TEST\b/)
+  }, 95_000)
+
+  it('runs exec when binary is in allowedExecutables', async () => {
+    const policy = resolvePermissions(
+      {
+        allowedTools: ['*'],
+        allowedExecutables: ['echo'],
+        fsRead: [process.cwd()],
+        fsWrite: [],
+        allowedSkills: [],
+        allowedMcpServers: [],
+        allowedSecrets: [],
+        networkEgress: 'deny',
+      },
+      undefined,
+    )
+    const response = await backend.run?.(
+      {
+        prompt:
+          'Call the exec tool with command="echo" args=["AGENT_EXEC_OK"] and ' +
+          'report the stdout it returned verbatim.',
+        maxTurns: 5,
+      },
+      { signal: AbortSignal.timeout(90_000), permissions: policy },
+    )
+
+    expect(response.text).toBeDefined()
+    // echo prints AGENT_EXEC_OK — should reach the model and then the response.
+    expect(response.text).toMatch(/AGENT_EXEC_OK/)
   }, 95_000)
 })
 

@@ -14,8 +14,10 @@
  *   dispatching tool calls; no external sandbox required.
  */
 
-import { mkdir, readdir, readFile, writeFile, appendFile } from 'node:fs/promises'
-import { isAbsolute, resolve } from 'node:path'
+// @subprocess-ok: native exec tool gated by AgentPermissions.allowedExecutables
+import { spawn } from 'node:child_process'
+import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { basename, isAbsolute, resolve } from 'node:path'
 
 import type {
   AgentRequest,
@@ -28,11 +30,7 @@ import type {
   SkelmBackend,
   Usage,
 } from '@skelm/core/backend'
-import type {
-  EnforceDecision,
-  PermissionDimension,
-  ResolvedPolicy,
-} from '@skelm/core/permissions'
+import type { EnforceDecision, PermissionDimension, ResolvedPolicy } from '@skelm/core/permissions'
 import { TrustEnforcer } from '@skelm/core/permissions'
 import type { SkelmSchema } from '@skelm/core/schema'
 import type { Skill } from '@skelm/core/skills'
@@ -167,7 +165,7 @@ async function chatCompletion(
     'Content-Type': 'application/json',
   }
   if (opts.apiKey) {
-    headers['Authorization'] = `Bearer ${opts.apiKey}`
+    headers.Authorization = `Bearer ${opts.apiKey}`
   }
 
   const body: Record<string, unknown> = {
@@ -181,9 +179,7 @@ async function chatCompletion(
   }
 
   const timeoutSignal = AbortSignal.timeout(opts.timeoutMs)
-  const combinedSignal = opts.signal
-    ? AbortSignal.any([timeoutSignal, opts.signal])
-    : timeoutSignal
+  const combinedSignal = opts.signal ? AbortSignal.any([timeoutSignal, opts.signal]) : timeoutSignal
 
   const res = await fetch(url.toString(), {
     method: 'POST',
@@ -224,17 +220,17 @@ interface ToolExecutionContext {
   loadSkill?: ((skillId: string) => Promise<Skill | null>) | undefined
   fetch?: typeof globalThis.fetch | undefined
   secrets?: Readonly<Record<string, string>> | undefined
-  events?: {
-    publish: (ev: unknown) => void
-    runId?: string
-    stepId?: string
-  } | undefined
+  signal?: AbortSignal | undefined
+  events?:
+    | {
+        publish: (ev: unknown) => void
+        runId?: string
+        stepId?: string
+      }
+    | undefined
 }
 
-type ToolHandler = (
-  args: unknown,
-  ctx: ToolExecutionContext,
-) => Promise<ToolResult>
+type ToolHandler = (args: unknown, ctx: ToolExecutionContext) => Promise<ToolResult>
 
 interface BuiltInToolDef {
   name: string
@@ -243,14 +239,10 @@ interface BuiltInToolDef {
   handler: ToolHandler
 }
 
-function normalizePath(
-  input: string,
-  cwd: string,
-  agentDefRoot: string,
-): string {
+function normalizePath(input: string, cwd: string, agentDefRoot: string): string {
   const resolved = isAbsolute(input) ? resolve(input) : resolve(cwd, input)
-  if (!resolved.startsWith(cwd + '/') && resolved !== cwd) {
-    if (!resolved.startsWith(agentDefRoot + '/') && resolved !== agentDefRoot) {
+  if (!resolved.startsWith(`${cwd}/`) && resolved !== cwd) {
+    if (!resolved.startsWith(`${agentDefRoot}/`) && resolved !== agentDefRoot) {
       throw new Error(
         `Path escape: ${resolved} is outside workspace (${cwd}) and agentDefRoot (${agentDefRoot})`,
       )
@@ -340,14 +332,17 @@ const BUILTIN_TOOLS: BuiltInToolDef[] = [
         const resolved = normalizePath(p.path, ctx.cwd, ctx.agentDefRoot)
         const decision = ctx.enforcer.canRead(resolved)
         if (!decision.allow) {
-          publishDenied(ctx.events, 'fs.read', `fs_read_glob denied: ${resolved} — ${decision.reason}`)
+          publishDenied(
+            ctx.events,
+            'fs.read',
+            `fs_read_glob denied: ${resolved} — ${decision.reason}`,
+          )
           return { content: `Permission denied: ${decision.reason}`, isError: true }
         }
         const entries = await readdir(resolved, { withFileTypes: true })
-        let names = entries
-          .map((e) => `${e.isDirectory() ? '📁 ' : '📄 '}${e.name}`)
+        let names = entries.map((e) => `${e.isDirectory() ? '📁 ' : '📄 '}${e.name}`)
         if (p.pattern) {
-          const regex = new RegExp('^' + p.pattern.replace(/\*/g, '.*') + '$')
+          const regex = new RegExp(`^${p.pattern.replace(/\*/g, '.*')}$`)
           names = names.filter((n) => regex.test(n.split(' ')[1] ?? n))
         }
         return { content: names.join('\n') || '(empty)' }
@@ -360,8 +355,7 @@ const BUILTIN_TOOLS: BuiltInToolDef[] = [
   // ---- fs_write ----
   {
     name: 'fs_write',
-    description:
-      'Write or overwrite a file. Creates parent directories if they do not exist.',
+    description: 'Write or overwrite a file. Creates parent directories if they do not exist.',
     parameters: {
       type: 'object',
       properties: {
@@ -422,7 +416,11 @@ const BUILTIN_TOOLS: BuiltInToolDef[] = [
         const resolved = normalizePath(p.path, ctx.cwd, ctx.agentDefRoot)
         const decision = ctx.enforcer.canWrite(resolved)
         if (!decision.allow) {
-          publishDenied(ctx.events, 'fs.write', `fs_append denied: ${resolved} — ${decision.reason}`)
+          publishDenied(
+            ctx.events,
+            'fs.write',
+            `fs_append denied: ${resolved} — ${decision.reason}`,
+          )
           return { content: `Permission denied: ${decision.reason}`, isError: true }
         }
         const parent = requireParentDir(resolved)
@@ -438,8 +436,7 @@ const BUILTIN_TOOLS: BuiltInToolDef[] = [
   // ---- http_fetch ----
   {
     name: 'http_fetch',
-    description:
-      'Make an HTTP/HTTPS request. Supports GET, POST, PUT, DELETE, PATCH.',
+    description: 'Make an HTTP/HTTPS request. Supports GET, POST, PUT, DELETE, PATCH.',
     parameters: {
       type: 'object',
       properties: {
@@ -464,7 +461,12 @@ const BUILTIN_TOOLS: BuiltInToolDef[] = [
       required: ['url'],
     },
     handler: async (args, ctx): Promise<ToolResult> => {
-      const p = args as { url: string; method?: string; headers?: Record<string, string>; body?: string }
+      const p = args as {
+        url: string
+        method?: string
+        headers?: Record<string, string>
+        body?: string
+      }
       if (!p.url) return { content: 'Error: url is required', isError: true }
 
       let hostname: string
@@ -500,7 +502,7 @@ const BUILTIN_TOOLS: BuiltInToolDef[] = [
           status: res.status,
           statusText: res.statusText,
           headers: Object.fromEntries(res.headers.entries()),
-          body: text.length > 4096 ? text.slice(0, 4096) + '\n… (truncated)' : text,
+          body: text.length > 4096 ? `${text.slice(0, 4096)}\n… (truncated)` : text,
         }
         return { content: JSON.stringify(result, null, 2) }
       } catch (err) {
@@ -512,8 +514,7 @@ const BUILTIN_TOOLS: BuiltInToolDef[] = [
   // ---- ls ----
   {
     name: 'ls',
-    description:
-      'List files and directories. Supports recursive listing with --recursive flag.',
+    description: 'List files and directories. Supports recursive listing with --recursive flag.',
     parameters: {
       type: 'object',
       properties: {
@@ -531,17 +532,13 @@ const BUILTIN_TOOLS: BuiltInToolDef[] = [
     handler: async (args, ctx): Promise<ToolResult> => {
       const p = args as { path?: string; recursive?: boolean }
       try {
-        const target = p.path
-          ? normalizePath(p.path, ctx.cwd, ctx.agentDefRoot)
-          : ctx.cwd
+        const target = p.path ? normalizePath(p.path, ctx.cwd, ctx.agentDefRoot) : ctx.cwd
         const decision = ctx.enforcer.canRead(target)
         if (!decision.allow) {
           return { content: `Permission denied: ${decision.reason}`, isError: true }
         }
         const entries = await readdir(target, { withFileTypes: true })
-        const lines = entries
-          .map((e) => `${e.isDirectory() ? '📁 ' : '📄 '}${e.name}`)
-          .join('\n')
+        const lines = entries.map((e) => `${e.isDirectory() ? '📁 ' : '📄 '}${e.name}`).join('\n')
         return { content: lines || '(empty)' }
       } catch (err) {
         return { content: `Error listing: ${(err as Error).message}`, isError: true }
@@ -604,12 +601,190 @@ const BUILTIN_TOOLS: BuiltInToolDef[] = [
         description: skill.description,
       }
       if (skill.metadata['allowed-tools']) {
-        info['allowedTools'] = skill.metadata['allowed-tools']
+        info.allowedTools = skill.metadata['allowed-tools']
       }
       if (skill.metadata.compatibility) {
         info.compatibility = skill.metadata.compatibility
       }
       return { content: JSON.stringify(info, null, 2) }
+    },
+  },
+
+  // ---- exec ----
+  // Run an executable from AgentPermissions.allowedExecutables. No shell is
+  // invoked: argv is passed directly to spawn() with shell:false, so shell
+  // metacharacters in args are NOT expanded. To run a shell pipeline, the
+  // caller must put `bash` (or similar) in allowedExecutables AND pass
+  // `["-c", "<pipeline>"]` as args — granting that is a deliberate choice.
+  {
+    name: 'exec',
+    description:
+      'Execute an allowed binary (no shell). Returns exitCode + stdout + stderr. ' +
+      "The binary basename must be present in the step's allowedExecutables " +
+      'policy. Argv is passed directly; shell metacharacters are NOT expanded.',
+    parameters: {
+      type: 'object',
+      properties: {
+        command: {
+          type: 'string',
+          description:
+            'Binary to execute (basename, e.g. "curl", or absolute path). ' +
+            'basename(command) is checked against allowedExecutables.',
+        },
+        args: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Positional argv (no shell expansion).',
+        },
+        cwd: {
+          type: 'string',
+          description:
+            'Working directory for the process. Must be readable per fsRead policy. ' +
+            'Defaults to the agent step cwd.',
+        },
+        stdin: {
+          type: 'string',
+          description: 'Optional stdin payload.',
+        },
+        timeoutMs: {
+          type: 'number',
+          description: 'Hard timeout in milliseconds (default 30000, max 300000).',
+        },
+      },
+      required: ['command'],
+    },
+    handler: async (args, ctx): Promise<ToolResult> => {
+      const p = args as {
+        command: string
+        args?: readonly string[]
+        cwd?: string
+        stdin?: string
+        timeoutMs?: number
+      }
+      if (!p.command) {
+        return { content: 'Error: command is required', isError: true }
+      }
+      const binary = basename(p.command)
+      const decision = ctx.enforcer.canExec(binary)
+      if (!decision.allow) {
+        publishDenied(ctx.events, 'executable', `exec denied: ${binary} — ${decision.reason}`)
+        return { content: `Permission denied: ${decision.reason}`, isError: true }
+      }
+
+      let cwd: string = ctx.cwd
+      if (p.cwd !== undefined) {
+        try {
+          cwd = normalizePath(p.cwd, ctx.cwd, ctx.agentDefRoot)
+        } catch (err) {
+          return { content: `Error: ${(err as Error).message}`, isError: true }
+        }
+        const cwdDecision = ctx.enforcer.canRead(cwd)
+        if (!cwdDecision.allow) {
+          publishDenied(ctx.events, 'fs.read', `exec cwd denied: ${cwd} — ${cwdDecision.reason}`)
+          return { content: `Permission denied: ${cwdDecision.reason}`, isError: true }
+        }
+      }
+
+      const argv = (p.args ?? []).map((a) => String(a))
+      const timeoutMs = Math.min(Math.max(p.timeoutMs ?? 30_000, 1), 300_000)
+      const STDOUT_CAP = 64 * 1024
+      const STDERR_CAP = 64 * 1024
+
+      return await new Promise<ToolResult>((resolvePromise) => {
+        let stdout = ''
+        let stderr = ''
+        let stdoutTruncated = false
+        let stderrTruncated = false
+        let settled = false
+
+        const child = spawn(p.command, argv, {
+          cwd,
+          shell: false,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: process.env,
+        })
+
+        const timer = setTimeout(() => {
+          if (settled) return
+          try {
+            child.kill('SIGKILL')
+          } catch {
+            // ignore
+          }
+        }, timeoutMs)
+
+        const onAbort = (): void => {
+          try {
+            child.kill('SIGKILL')
+          } catch {
+            // ignore
+          }
+        }
+        ctx.signal?.addEventListener('abort', onAbort, { once: true })
+
+        child.stdout?.on('data', (chunk: Buffer) => {
+          if (stdout.length >= STDOUT_CAP) {
+            stdoutTruncated = true
+            return
+          }
+          const room = STDOUT_CAP - stdout.length
+          const piece = chunk.toString('utf-8')
+          if (piece.length <= room) {
+            stdout += piece
+          } else {
+            stdout += piece.slice(0, room)
+            stdoutTruncated = true
+          }
+        })
+
+        child.stderr?.on('data', (chunk: Buffer) => {
+          if (stderr.length >= STDERR_CAP) {
+            stderrTruncated = true
+            return
+          }
+          const room = STDERR_CAP - stderr.length
+          const piece = chunk.toString('utf-8')
+          if (piece.length <= room) {
+            stderr += piece
+          } else {
+            stderr += piece.slice(0, room)
+            stderrTruncated = true
+          }
+        })
+
+        child.on('error', (err) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          ctx.signal?.removeEventListener('abort', onAbort)
+          resolvePromise({
+            content: `Error executing ${binary}: ${err.message}`,
+            isError: true,
+          })
+        })
+
+        child.on('close', (code, signal) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          ctx.signal?.removeEventListener('abort', onAbort)
+          const result: Record<string, unknown> = {
+            exitCode: code,
+            ...(signal !== null && { signal }),
+            stdout,
+            stderr,
+            ...(stdoutTruncated && { stdoutTruncated: true }),
+            ...(stderrTruncated && { stderrTruncated: true }),
+          }
+          resolvePromise({ content: JSON.stringify(result, null, 2) })
+        })
+
+        if (p.stdin !== undefined && child.stdin !== null) {
+          child.stdin.end(p.stdin)
+        } else if (child.stdin !== null) {
+          child.stdin.end()
+        }
+      })
     },
   },
 ]
@@ -629,9 +804,7 @@ function toOpenAITool(tool: BuiltInToolDef): OpenAITool {
   }
 }
 
-function toUsage(
-  usage?: OpenAIChatResponse['usage'],
-): Usage | undefined {
+function toUsage(usage?: OpenAIChatResponse['usage']): Usage | undefined {
   if (!usage) return undefined
   return {
     ...(usage.prompt_tokens !== undefined && { inputTokens: usage.prompt_tokens }),
@@ -669,10 +842,7 @@ function buildSystemPrompt(
 
   // Tool-use instructions
   parts.push(
-    '\n# Tool Use\n\n' +
-    `You have access to ${toolCount} tool(s). Use them when appropriate.\n` +
-    `Your working directory is: ${cwd}\n` +
-    `When you need to use a tool, issue a tool call. When the task is complete, respond with your final answer.`,
+    `\n# Tool Use\n\nYou have access to ${toolCount} tool(s). Use them when appropriate.\nYour working directory is: ${cwd}\nWhen you need to use a tool, issue a tool call. When the task is complete, respond with your final answer.`,
   )
 
   if (hasMcpServers) {
@@ -718,17 +888,18 @@ async function runAgentLoop(
     loadSkill: ctx.loadSkill,
     fetch: ctx.fetch,
     secrets: req.secrets,
+    signal: ctx.signal,
     events: ctx.permissions
       ? {
-          publish: () => { /* audit handled by runner */ },
+          publish: () => {
+            /* audit handled by runner */
+          },
         }
       : undefined,
   }
 
   // Build initial messages
-  const messages: OpenAIMessage[] = [
-    { role: 'user', content: req.prompt },
-  ]
+  const messages: OpenAIMessage[] = [{ role: 'user', content: req.prompt }]
 
   const maxTurns = req.maxTurns ?? 30
   let turn = 0
@@ -759,7 +930,7 @@ async function runAgentLoop(
     if (!toolCalls || toolCalls.length === 0) {
       // Final answer
       const content = choice.message.content
-      const text = typeof content === 'string' ? content : (content !== null ? String(content) : '')
+      const text = typeof content === 'string' ? content : content !== null ? String(content) : ''
       return {
         text,
         stopReason: choice.finish_reason ?? 'stop',
@@ -853,9 +1024,7 @@ async function runAgentLoop(
  * }))
  * ```
  */
-export function createSkelmAgentBackend(
-  opts: SkelmAgentOptions,
-): SkelmBackend {
+export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
   const resolvedId = opts.id ?? 'agent'
 
   const backend: SkelmBackend = {
@@ -883,9 +1052,7 @@ export function createSkelmAgentBackend(
         messages,
         temperature: req.temperature as number | undefined,
         maxTokens: req.maxTokens as number | undefined,
-        responseFormat: req.outputSchema !== undefined
-          ? { type: 'json_object' }
-          : undefined,
+        responseFormat: req.outputSchema !== undefined ? { type: 'json_object' } : undefined,
         tools: undefined,
         signal: ctx.signal,
         timeoutMs: opts.timeoutMs ?? 300_000,
