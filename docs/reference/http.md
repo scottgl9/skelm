@@ -38,6 +38,8 @@ the environment.
 Both `/run` and `/start` accept an optional `Idempotency-Key` header; the same
 key for the same pipeline returns the cached run.
 
+The `:id` path segment is the workflow-registry id — by default this is the file path relative to the project root (e.g. `workflows%2Fhello.workflow.ts`, URL-encoded). Workflow files referenced from `invoke()` steps inside the pipeline are resolved separately by the gateway's `pipelineRegistry`, which matches first on registry id and falls back to scanning all registered workflows for one whose `pipeline.id` equals the requested value.
+
 ## Runs
 
 | Method | Path                          | Description                                      |

@@ -58,12 +58,20 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
   const { config } = await loadSkelmConfig({ fromDir: process.cwd() })
   const serverCfg = config.server ?? {}
 
+  // Loader used by both the trigger dispatcher AND the HTTP /pipelines/:id/run
+  // path (so invoke() steps and `POST /pipelines/<id>/run` can resolve
+  // workflow modules). Without this on the Gateway constructor, HTTP /run
+  // returns 501 and invoke() targets fail with "pipeline not found".
+  const loadWorkflow = async (_id: string, absolutePath: string): Promise<unknown> =>
+    tsImport(pathToFileURL(absolutePath).href, import.meta.url)
+
   const gateway = new Gateway({
     installSignalHandlers: true,
     enableHttp: true,
     ...(serverCfg.port !== undefined && { httpPort: serverCfg.port }),
     ...(serverCfg.host !== undefined && { httpHost: serverCfg.host }),
     config,
+    loadWorkflow,
   })
   try {
     await gateway.start()
@@ -82,8 +90,7 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
   // Replace the trigger coordinator's onFire with the real dispatcher.
   const dispatcher = createTriggerDispatcher({
     gateway,
-    loadWorkflow: async (_id, absolutePath) =>
-      tsImport(pathToFileURL(absolutePath).href, import.meta.url),
+    loadWorkflow,
     ...(backendRegistry !== undefined && { backends: backendRegistry }),
   })
   gateway.managers.triggers.setOnFire(dispatcher)

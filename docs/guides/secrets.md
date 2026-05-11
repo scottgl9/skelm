@@ -26,7 +26,7 @@ The CLI uses the file driver directly, bypassing the running gateway. That keeps
 
 ## Authoring guidance
 
-In a workflow:
+### Configuring a backend with a secret
 
 ```ts
 import { agent } from 'skelm'
@@ -39,3 +39,51 @@ export default agent({
 ```
 
 The runner asks the resolver for `OPENAI_KEY` at step start. If the resolver returns `undefined`, the step fails with `MissingSecretError` — the value is never logged.
+
+### Reading a secret inside a step (`ctx.secrets`)
+
+`code()`, `llm()`, and `agent()` steps can declare `secrets: [...]` and read each value via `ctx.secrets.get(name)` inside their user-supplied callbacks (`run`, `prompt`, `system`, `mcp`). The runner resolves every declared name through the `SecretResolver` **before** the callback runs and refuses to start the step if any name is missing.
+
+```ts
+import { code, llm, agent, pipeline } from 'skelm'
+
+export default pipeline({
+  id: 'summarize-ticket',
+  steps: [
+    code({
+      id: 'lookup',
+      secrets: ['JIRA_TOKEN'],
+      run: async (ctx) => {
+        const token = ctx.secrets!.get('JIRA_TOKEN')
+        // … use token to call Jira; never log it
+      },
+    }),
+    llm({
+      id: 'summarize',
+      backend: 'openai',
+      secrets: ['INTERNAL_DOC_KEY'],
+      prompt: (ctx) => `Codeword: ${ctx.secrets!.get('INTERNAL_DOC_KEY')}.\n\nSummarize the ticket below…`,
+    }),
+    agent({
+      id: 'reply',
+      backend: 'opencode',
+      secrets: ['INTERNAL_DOC_KEY'],
+      // Same `ctx.secrets.get()` access from prompt/system/mcp; the value is
+      // also forwarded to the backend as AgentRequest.secrets for tool/exec
+      // env-var injection.
+      prompt: (ctx) => `Reply using internal codeword ${ctx.secrets!.get('INTERNAL_DOC_KEY')}.`,
+      permissions: {
+        allowedSecrets: ['INTERNAL_DOC_KEY'],
+      },
+    }),
+  ],
+})
+```
+
+Authorisation: when a step has `permissions: { allowedSecrets: [...] }`, the runner gates each declared name through `TrustEnforcer.canAccessSecret` and emits `permission.denied` (dimension `'secret'`) on a violation. Steps without an explicit `permissions` field skip this gate — the secret reaches the callback unconditionally.
+
+Failure modes:
+
+- Missing name in the resolver → `MissingSecretError` (run fails before the callback fires).
+- No `SecretResolver` wired into `runPipeline()` → "step declares secret X but no SecretResolver is configured". The CLI wires `EnvSecretResolver` by default and `FileSecretResolver` when `secrets: { driver: 'file' }` is set in `skelm.config.ts`.
+- Denied by `allowedSecrets` → `PermissionDeniedError`; no value reaches the callback.

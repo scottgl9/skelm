@@ -96,6 +96,11 @@ expect(stepStarts.map((e) => e.stepId)).toEqual(['fetch', 'classify', 'route', '
 
 const denials = events.filter((e) => e.type === 'permission.denied')
 expect(denials).toHaveLength(0)
+
+// Streaming backends emit one event per delta — useful for asserting the
+// streaming path actually fires rather than coercing to a single round-trip.
+const partials = events.filter((e) => e.type === 'step.partial')
+expect(partials.length).toBeGreaterThan(0)
 ```
 
 This is how you assert ordering, parallelism, and that no permission denial slipped through unnoticed.
