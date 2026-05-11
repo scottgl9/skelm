@@ -8,7 +8,6 @@ This directory is the home for scripts that enforce skelm's architectural invari
 |---|---|---|
 | `gateway-only-enforcement.ts` | `node:child_process` use outside `packages/gateway/` must be either on the explicit allowlist or carry a `// @subprocess-ok: <reason>` annotation. | **Implemented.** Run via `pnpm guards`. Allowlisted paths: MCP stdio client, ACP stdio client/backend, script trigger, workspace manager, pi backend. New callers must annotate or extend the allowlist. |
 | `default-deny-permissions.ts` | Every field on `AgentPermissions` ships with adversarial fixture coverage under `packages/core/test/security/`. | **Implemented.** Reads the `AgentPermissions` interface, asserts each non-exempt field name appears somewhere in the security corpus. Run via `pnpm guards`. Mechanical check only — fixtures are still reviewed by humans. |
-| `changelog-present.ts` | Every PR that changes published-package source under `packages/<pkg>/src/` includes a changeset, or opts out via `[skip changeset]` in the PR body. | **Implemented.** Uses `@changesets/cli` (configured under `.changeset/`). Run via `pnpm guards:changeset --base origin/main`. |
 | `public-export-baseline.ts` | Public-API changes (`packages/*/src/index.ts` exports) update the baseline file in the same commit. | **Implemented.** Each package's exports captured in `scripts/guards/baselines/<pkg>.txt`. New or removed exports require running `pnpm exec tsx scripts/guards/public-export-baseline.ts --update` and committing the diff. |
 
 ## How to land a guard

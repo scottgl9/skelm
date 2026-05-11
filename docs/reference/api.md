@@ -28,8 +28,7 @@ keeps the API page honest.
 1. Add the export in `packages/<pkg>/src/index.ts`.
 2. Run `pnpm build && pnpm guards` — the guard will fail with the diff.
 3. Update the relevant baseline file with the new entries.
-4. Mention the addition in the package's changelog (see issue #35 for the
-   changesets workflow).
+4. Mention the addition in the package's `CHANGELOG.md`.
 
 ## Stability
 
