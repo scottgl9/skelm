@@ -47,6 +47,18 @@ export class PermissionDeniedError extends Error {
   override readonly name = 'PermissionDeniedError'
 }
 
+/** Thrown when an agent step's approval gate rejects the run. */
+export class ApprovalDeniedError extends Error {
+  constructor(
+    readonly stepId: string,
+    readonly approver?: string,
+    readonly reason?: string,
+  ) {
+    super(`approval denied for step "${stepId}"${reason ? `: ${reason}` : ''}`)
+    this.name = 'ApprovalDeniedError'
+  }
+}
+
 /** Thrown when an agent step exceeds its declared `timeoutMs` wall clock. */
 export class StepTimeoutError extends Error {
   override readonly name = 'StepTimeoutError'
