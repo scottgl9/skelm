@@ -1,8 +1,10 @@
 import { accessSync, createReadStream, createWriteStream, constants as fsConstants } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import {
+  EnvSecretResolver,
   EventBus,
   PermissionDeniedError,
   RunCancelledError,
@@ -12,8 +14,8 @@ import {
   WaitTimeoutError,
   runPipeline,
 } from '@skelm/core'
-import type { Run } from '@skelm/core'
-import { SkillRegistry, createSkillSource } from '@skelm/gateway'
+import type { Run, SecretResolver } from '@skelm/core'
+import { FileSecretResolver, SkillRegistry, createSkillSource } from '@skelm/gateway'
 import { applyAgentDefinitions } from './agent-defs.js'
 import { applyConfiguredBackends, buildBackendRegistry } from './backends.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
@@ -105,6 +107,13 @@ export async function runCommand(
 
   const workflowDir = dirname(resolve(process.cwd(), workflowPath))
   const { config, projectRoot } = await loadSkelmConfig({ fromDir: workflowDir })
+  const secretResolver: SecretResolver =
+    config.secrets?.driver === 'file'
+      ? new FileSecretResolver(
+          config.secrets.file ??
+            join(process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm'), 'secrets.json'),
+        )
+      : new EnvSecretResolver()
   const resolvedWorkflow = applyConfiguredBackends(
     applyAgentDefinitions(workflow, workflowDir),
     config,
@@ -141,6 +150,7 @@ export async function runCommand(
         }),
         workspaceManager,
         ...(backends !== undefined && { backends }),
+        secretResolver,
         skillSource,
         waitForInput: async (request) => await promptForWaitInput(request, io),
       })
