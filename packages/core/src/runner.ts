@@ -22,10 +22,23 @@ import {
   serializeError,
 } from './errors.js'
 import { EventBus } from './events.js'
+import { extractJsonFromText, tryParseJson } from './json-utils.js'
 import { createMcpHost } from './mcp/host.js'
 import type { AgentPermissions, NetworkPolicy, PermissionDimension } from './permissions.js'
 import { TrustEnforcer, createPolicyFetch, resolvePermissions } from './permissions.js'
 import { MemoryRunStore, type RunStore, type StateStore } from './run-store.js'
+import {
+  adoptLastStepOutput,
+  applyWorkspacePermissions,
+  freezeContext,
+  generateRunId,
+  idempotentStateKey,
+  isRetryableError,
+  resolveIdempotentKey,
+  restoreSerializedError,
+  sleep,
+  uniqueStrings,
+} from './runner-utils.js'
 import { SchemaValidationError, validate } from './schema.js'
 import { createStateHandle } from './state.js'
 import type {
@@ -1466,35 +1479,6 @@ async function runPipelineStep(
   )
 }
 
-function freezeContext<TInput>(ctx: Context<TInput>): Context<TInput> {
-  Object.freeze(ctx.steps)
-  return Object.freeze(ctx)
-}
-
-function adoptLastStepOutput<TOutput>(stepResults: readonly StepResult[]): TOutput | undefined {
-  if (stepResults.length === 0) {
-    return undefined
-  }
-  return stepResults[stepResults.length - 1]?.output as TOutput | undefined
-}
-
-function applyWorkspacePermissions(
-  permissions: AgentPermissions | undefined,
-  workspacePath: string | undefined,
-): AgentPermissions | undefined {
-  if (workspacePath === undefined) return permissions
-  const next: AgentPermissions = {
-    ...permissions,
-    fsRead: uniqueStrings([workspacePath, ...(permissions?.fsRead ?? [])]),
-    fsWrite: uniqueStrings([workspacePath, ...(permissions?.fsWrite ?? [])]),
-  }
-  return next
-}
-
-function uniqueStrings(values: readonly string[]): readonly string[] {
-  return [...new Set(values)]
-}
-
 function createDetachedWorkspaceRuntime(
   runtime: ExecutionRuntime | undefined,
 ): ExecutionRuntime | undefined {
@@ -1612,18 +1596,6 @@ async function resolveDeclaredSecrets(
   return Object.freeze(resolved)
 }
 
-function resolveIdempotentKey(key: string | ((ctx: Context) => string), ctx: Context): string {
-  const resolved = typeof key === 'function' ? key(ctx) : key
-  if (resolved.trim().length === 0) {
-    throw new Error('idempotent(): key must resolve to a non-empty string')
-  }
-  return resolved
-}
-
-function idempotentStateKey(key: string): string {
-  return `idempotent:${key}`
-}
-
 function collectResolvedPermissionDimensions(
   policy: ReturnType<typeof resolvePermissions> | undefined,
   mcpServers: readonly unknown[] | undefined,
@@ -1652,109 +1624,4 @@ function collectResolvedPermissionDimensions(
   if (policy.fsRead.size > 0) declared.add('fs.read')
   if (policy.fsWrite.size > 0) declared.add('fs.write')
   return declared
-}
-
-function generateRunId(): string {
-  // Node 19+ exposes globalThis.crypto.randomUUID().
-  return crypto.randomUUID()
-}
-
-function restoreSerializedError(error: Run['error'], fallbackMessage: string): Error {
-  const restored = new Error(error?.message ?? fallbackMessage)
-  restored.name = error?.name ?? 'Error'
-  if (error?.stack !== undefined) {
-    restored.stack = error.stack
-  }
-  return restored
-}
-
-function isRetryableError(err: unknown): boolean {
-  if (err instanceof RunCancelledError || err instanceof WaitTimeoutError) {
-    return false
-  }
-  if (err instanceof Error) {
-    return err.name !== RunCancelledError.name && err.name !== WaitTimeoutError.name
-  }
-  return true
-}
-
-async function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) {
-    throw new RunCancelledError()
-  }
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
-    const onAbort = () => {
-      clearTimeout(timer)
-      signal.removeEventListener('abort', onAbort)
-      reject(new RunCancelledError())
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-    timer.unref?.()
-  })
-}
-
-/**
- * Try to parse a string as JSON. Returns the parsed value on success, or the
- * original string when parsing fails. Used to extract structured output from
- * agent text responses when the backend doesn't natively support structured
- * output (i.e. `response.structured` is undefined).
- */
-function tryParseJson(text: string | undefined): unknown {
-  if (text === undefined) return undefined
-  const trimmed = text.trim()
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return text
-  try {
-    return JSON.parse(trimmed)
-  } catch {
-    return text
-  }
-}
-
-/**
- * Extract JSON from agent text that may contain markdown, explanations, or
- * other non-JSON content. Looks for the first `{...}` or `[...]` block and
- * attempts to parse it. Returns the parsed value or the original text if
- * extraction fails.
- */
-function extractJsonFromText(text: string | undefined): unknown {
-  if (text === undefined) return undefined
-  const trimmed = text.trim()
-
-  // If it's already pure JSON, return it
-  if (
-    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
-    (trimmed.startsWith('[') && trimmed.endsWith(']'))
-  ) {
-    try {
-      return JSON.parse(trimmed)
-    } catch {
-      return text
-    }
-  }
-
-  // Try to find JSON block within text
-  const objMatch = trimmed.match(/\{[\s\S]*\}/)
-  const arrMatch = trimmed.match(/\[[\s\S]*\]/)
-
-  if (objMatch) {
-    try {
-      return JSON.parse(objMatch[0])
-    } catch {
-      // Fall through to try array
-    }
-  }
-
-  if (arrMatch) {
-    try {
-      return JSON.parse(arrMatch[0])
-    } catch {
-      return text
-    }
-  }
-
-  return text
 }
