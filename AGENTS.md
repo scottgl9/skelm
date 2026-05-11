@@ -140,7 +140,6 @@ The review produces a structured result with sections for summary, changes, secu
 
 - Conventional-style commit messages (`feat:`, `fix:`, `refactor:`, `chore:`, `docs:`, `test:`).
 - One logical change per commit; one logical change per PR. Stack PRs if a feature naturally splits.
-- Every behavior-changing PR carries a changeset entry. A CI guard for this (`scripts/guards/changelog-present.ts`) is planned but not yet implemented — see `scripts/guards/README.md`.
 - PR descriptions include: what changed, why, how it was tested, and any security implications.
 - Do not reference internal note paths or internal rule identifiers in commit messages or PR descriptions; commits are read by anyone who later runs `git log`.
 
@@ -149,7 +148,7 @@ The review produces a structured result with sections for summary, changes, secu
 - **Never** write code that takes a privileged action (exec, network, fs-write, tool dispatch) outside the gateway's enforcement helper. Use the helper or annotate `@gateway-enforced` with a justification. CI guards this.
 - **Never** add a second audit-log writer. There is exactly one writer module; everything else logs through it.
 - **Never** mock the gateway in security-related tests. The gateway is the trust boundary; tests of permission enforcement run against the real gateway code path (in-process is fine, mocked is not).
-- **Never** widen permissions silently. A change that grows the default permission set is a security event and must be called out in the PR description and the changeset.
+- **Never** widen permissions silently. A change that grows the default permission set is a security event and must be called out in the PR description.
 - **Never** ship code that produces an unhandled rejection or an uncaught exception in the gateway's main loop. Crash-only design where it makes sense (within a run); never within the gateway lifecycle.
 
 ## Where to ask
