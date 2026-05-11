@@ -247,6 +247,11 @@ export {
 export type { SkelmSchema } from './schema.js'
 export { formatSkillBlock, parseSkill, SkillParseError } from './skills.js'
 export type { Skill } from './skills.js'
+export { createConcurrencySemaphore } from './concurrency.js'
+export type { ConcurrencySemaphore } from './concurrency.js'
+export { loadSkillBodies } from './skill-injection.js'
+export { assertEgressEnforceable } from './egress-enforcement.js'
+export { combineSignals, timeoutSignal } from './signals.js'
 export { AgentDefinitionError, loadAgentDefinition } from './agent-def.js'
 export type { AgentDefinition, LoadAgentDefinitionOptions } from './agent-def.js'
 

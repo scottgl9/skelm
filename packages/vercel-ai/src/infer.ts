@@ -1,3 +1,4 @@
+import { combineSignals } from '@skelm/core'
 import type { BackendContext, InferRequest, InferResponse, PromptMessage, Usage } from '@skelm/core'
 import { type ModelMessage, generateObject, generateText, streamText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
@@ -114,15 +115,4 @@ export function mapUsage(v: unknown): Usage | undefined {
   if (typeof o.cachedInputTokens === 'number') out.cachedInputTokens = o.cachedInputTokens
   if (typeof o.reasoningTokens === 'number') out.reasoningTokens = o.reasoningTokens
   return Object.keys(out).length > 0 ? out : undefined
-}
-
-function combineSignals(a: AbortSignal | undefined, b: AbortSignal): AbortSignal {
-  if (a === undefined) return b
-  if (a.aborted) return a
-  const ctl = new AbortController()
-  const onA = () => ctl.abort(a.reason)
-  const onB = () => ctl.abort(b.reason)
-  a.addEventListener('abort', onA, { once: true })
-  b.addEventListener('abort', onB, { once: true })
-  return ctl.signal
 }

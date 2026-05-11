@@ -17,7 +17,11 @@
  *   undefined policy                             → no override (pi defaults)
  */
 
-import { PermissionDeniedError, formatSkillBlock } from '@skelm/core'
+import {
+  assertEgressEnforceable as assertEgressEnforceableCore,
+  createConcurrencySemaphore,
+  loadSkillBodies,
+} from '@skelm/core'
 import type {
   AgentRequest,
   AgentResponse,
@@ -31,30 +35,8 @@ import type {
 import { PiSdkClient, PiSdkUpstreamError } from './sdk-client.js'
 import type { PiSdkBackendOptions } from './types.js'
 
-/**
- * Pi SDK runs in-process: the underlying @mariozechner/pi-ai package calls
- * globalThis.fetch directly with no custom-fetch / dispatcher hook, so it
- * does not honor the HTTP_PROXY env vars set by the gateway egress proxy.
- *
- * Per the project tenet "a backend that cannot enforce a declared permission
- * fails at step start instead of bypassing it", we refuse any policy that
- * constrains networkEgress to anything other than 'allow'.
- *
- * Operators who need real network egress enforcement should:
- *   (a) use a subprocess backend (Pi RPC, opencode subprocess) which the
- *       gateway egress proxy injects HTTP_PROXY into, or
- *   (b) wait for a future PR that monkey-patches globalThis.fetch under
- *       AsyncLocalStorage so per-call policies can route via undici's
- *       ProxyAgent without process-global state.
- */
-function assertEgressEnforceable(policy: ResolvedPolicy | undefined): void {
-  if (policy === undefined) return
-  const ne = policy.networkEgress
-  if (ne === 'allow') return
-  throw new PermissionDeniedError(
-    'pi-sdk backend cannot enforce networkEgress in-process. Set networkEgress: "allow" for this step, or use a subprocess backend (pi RPC, opencode) so the gateway egress proxy can intercept outbound traffic.',
-  )
-}
+const assertEgressEnforceable = (policy: ResolvedPolicy | undefined): void =>
+  assertEgressEnforceableCore(policy, 'pi-sdk')
 
 export class PiSdkBackendError extends Error {
   override readonly name = 'PiSdkBackendError'
@@ -87,23 +69,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
     toolPermissions: 'native',
   }
 
-  const maxConcurrent = options.maxConcurrent ?? 4
-  let active = 0
-  const queue: Array<() => void> = []
-
-  const acquire = (): Promise<void> => {
-    if (maxConcurrent === 0 || active < maxConcurrent) {
-      active++
-      return Promise.resolve()
-    }
-    return new Promise<void>((resolve) => queue.push(resolve))
-  }
-
-  const release = () => {
-    const next = queue.shift()
-    if (next) next()
-    else active--
-  }
+  const { acquire, release } = createConcurrencySemaphore(options.maxConcurrent ?? 4)
 
   return {
     id: options.id ?? 'pi-sdk',
@@ -341,14 +307,4 @@ function extractJson(text: string): string | null {
   const end = text.lastIndexOf(closer)
   if (end <= start) return null
   return text.slice(start, end + 1)
-}
-
-async function loadSkillBodies(req: AgentRequest, ctx: BackendContext): Promise<string[]> {
-  if (!req.skills || req.skills.length === 0 || !ctx.loadSkill) return []
-  const bodies: string[] = []
-  for (const skillId of req.skills) {
-    const skill = await ctx.loadSkill(skillId)
-    if (skill !== null) bodies.push(formatSkillBlock(skill))
-  }
-  return bodies
 }
