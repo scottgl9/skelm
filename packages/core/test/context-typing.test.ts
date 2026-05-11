@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { code, pipeline } from './builders.js'
-import { runPipeline } from './runner.js'
-import type { Context } from './types.js'
+import { code, pipeline } from '../src/builders.js'
+import { runPipeline } from '../src/runner.js'
+import type { Context } from '../src/types.js'
 
 describe('Context.get<T>', () => {
   it('reads prior step outputs with the asserted shape', async () => {

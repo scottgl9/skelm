@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { code, pipeline } from './builders.js'
-import { EventBus, type RunEvent } from './events.js'
-import { runPipeline } from './runner.js'
+import { code, pipeline } from '../src/builders.js'
+import { EventBus, type RunEvent } from '../src/events.js'
+import { runPipeline } from '../src/runner.js'
 
 describe('EventBus', () => {
   it('publishes events to all subscribers in registration order', () => {

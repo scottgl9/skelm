@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type Skill, SkillParseError, parseSkill } from './skills.js'
+import { type Skill, SkillParseError, parseSkill } from '../src/skills.js'
 
 describe('parseSkill', () => {
   it('parses minimal frontmatter + body', () => {

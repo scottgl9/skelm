@@ -8,12 +8,21 @@
 
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { branch, code, forEach, loop, parallel, pipeline, pipelineStep, wait } from './builders.js'
-import { EventBus } from './events.js'
-import type { RunEvent } from './events.js'
-import { MemoryRunStore } from './run-store.js'
-import { Runner, runPipeline } from './runner.js'
-import type { Step } from './types.js'
+import {
+  branch,
+  code,
+  forEach,
+  loop,
+  parallel,
+  pipeline,
+  pipelineStep,
+  wait,
+} from '../src/builders.js'
+import { EventBus } from '../src/events.js'
+import type { RunEvent } from '../src/events.js'
+import { MemoryRunStore } from '../src/run-store.js'
+import { Runner, runPipeline } from '../src/runner.js'
+import type { Step } from '../src/types.js'
 
 /**
  * Collect all events from an event bus for a specific run

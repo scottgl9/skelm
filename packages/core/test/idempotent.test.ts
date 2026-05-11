@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { code, idempotent, pipeline } from './builders.js'
-import { MemoryRunStore } from './run-store.js'
-import { runPipeline } from './runner.js'
+import { code, idempotent, pipeline } from '../src/builders.js'
+import { MemoryRunStore } from '../src/run-store.js'
+import { runPipeline } from '../src/runner.js'
 
 describe('idempotent()', () => {
   it('returns the cached output on repeated runs with the same key', async () => {

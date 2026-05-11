@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { branch, code, forEach, loop, parallel, pipeline, pipelineStep, wait } from './builders.js'
-import { RunCancelledError } from './errors.js'
-import { Runner, runPipeline } from './runner.js'
+import {
+  branch,
+  code,
+  forEach,
+  loop,
+  parallel,
+  pipeline,
+  pipelineStep,
+  wait,
+} from '../src/builders.js'
+import { RunCancelledError } from '../src/errors.js'
+import { Runner, runPipeline } from '../src/runner.js'
 
 describe('parallel()', () => {
   it('runs siblings concurrently and keys output by child id', async () => {

@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { BackendRegistry, type SkelmBackend } from './backend.js'
-import { agent, pipeline } from './builders.js'
+import { BackendRegistry, type SkelmBackend } from '../src/backend.js'
+import { agent, pipeline } from '../src/builders.js'
 import {
   type ApprovalDecision,
   type ApprovalGate,
   type ApprovalRequest,
   AutoApproveGate,
-} from './enforcement/index.js'
-import { TrustEnforcer, resolvePermissions } from './permissions.js'
-import { runPipeline } from './runner.js'
+} from '../src/enforcement/index.js'
+import { TrustEnforcer, resolvePermissions } from '../src/permissions.js'
+import { runPipeline } from '../src/runner.js'
 
 describe('resolvePermissions — default-deny', () => {
   it('returns empty allow-lists when nothing is declared', () => {

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { code, pipeline } from './builders.js'
-import { runPipeline } from './runner.js'
-import { SchemaValidationError, validate } from './schema.js'
+import { code, pipeline } from '../src/builders.js'
+import { runPipeline } from '../src/runner.js'
+import { SchemaValidationError, validate } from '../src/schema.js'
 
 describe('validate()', () => {
   const Person = z.object({ name: z.string(), age: z.number().int().nonnegative() })

@@ -2,11 +2,11 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { code, pipeline } from './builders.js'
-import { EventBus } from './events.js'
-import { MemoryRunStore, SqliteRunStore } from './run-store.js'
-import { runPipeline } from './runner.js'
-import type { Run } from './types.js'
+import { code, pipeline } from '../src/builders.js'
+import { EventBus } from '../src/events.js'
+import { MemoryRunStore, SqliteRunStore } from '../src/run-store.js'
+import { runPipeline } from '../src/runner.js'
+import type { Run } from '../src/types.js'
 
 describe('MemoryRunStore', () => {
   it('stores runs and events', async () => {
