@@ -32,84 +32,22 @@ import { FileSecretResolver } from '../secrets/file-driver.js'
 import { TriggerCoordinator } from '../triggers/coordinator.js'
 import { createTriggerDispatcher } from '../triggers/dispatcher.js'
 import { type DiscoveryRecord, removeDiscovery, writeDiscovery } from './discovery.js'
+import type {
+  GatewayEnforcement,
+  GatewayManagers,
+  GatewayOptions,
+  GatewayRegistries,
+  GatewayState,
+} from './gateway-types.js'
 import { type LockfileContents, acquireLockfile, releaseLockfile } from './lockfile.js'
 
-export type GatewayState = 'stopped' | 'starting' | 'running' | 'paused' | 'stopping'
-
-export interface GatewayOptions {
-  /** Directory holding `gateway.lock` and `gateway.json`. Defaults to `~/.skelm`. */
-  stateDir?: string
-  /** Project root used to resolve registry globs. Defaults to `process.cwd()`. */
-  projectRoot?: string
-  /** Loaded config (with defaults applied). Defaults to DEFAULT_CONFIG. */
-  config?: SkelmConfig
-  /** Bound URL advertised in the discovery file. Phase 2 placeholder until HTTP is wired in. */
-  url?: string
-  /** Optional bearer token written into the discovery file. */
-  token?: string
-  /** Install OS signal handlers (SIGTERM/SIGINT/SIGHUP). Disabled in tests by default. */
-  installSignalHandlers?: boolean
-  /** Enable FS watching on the workflow / skill registries. Defaults to true. */
-  watchRegistries?: boolean
-  /** Override the canonical audit writer; defaults to NoopAuditWriter (Phase 5 wires the chain). */
-  auditWriter?: AuditWriter
-  /** Override the canonical secret resolver; defaults to env-backed (Phase 5 wires the file driver). */
-  secretResolver?: SecretResolver
-  /** Override the canonical approval gate; defaults to auto-approve (Phase 6 wires the suspend gate). */
-  approvalGate?: ApprovalGate
-  /**
-   * When true, start the HTTP control surface alongside the rest of the
-   * lifecycle. Defaults to false so unit tests don't bind a port; the CLI
-   * sets this to true on `skelm gateway start --foreground`.
-   */
-  enableHttp?: boolean
-  /** Bound URL the HTTP server should advertise; defaults to http://127.0.0.1:14738. */
-  httpHost?: string
-  httpPort?: number
-  /**
-   * Optional loader the HTTP /pipelines/:id route uses to import a workflow
-   * module from its registered path so its graph can be serialized.
-   * Production wires this to tsImport(); tests can supply a fake.
-   */
-  loadWorkflow?: (registryId: string, absolutePath: string) => Promise<unknown>
-  /**
-   * Enable the Prometheus metrics collector and the GET /metrics endpoint.
-   * The collector subscribes to run-event buses passed via
-   * gateway.attachMetricsBus(); the route renders the current snapshot.
-   */
-  enableMetrics?: boolean
-  /**
-   * Custom RunStore. When provided, overrides the storage config and is
-   * used as-is — the gateway calls no constructor and applies no path
-   * resolution. This is the integration point for callers that want a
-   * Postgres-backed store, a Redis store, an in-memory store for tests,
-   * or any other implementation of RunStore. Without this option, the
-   * gateway constructs a SqliteRunStore at <stateDir>/runs.sqlite (or
-   * the path from config.storage.runs.path if set).
-   */
-  runStore?: RunStore
-}
-
-export interface GatewayEnforcement {
-  permissionResolver: PermissionResolver
-  auditWriter: AuditWriter
-  secretResolver: SecretResolver
-  approvalGate: ApprovalGate
-}
-
-export interface GatewayRegistries {
-  workflows: WorkflowRegistry
-  skills: SkillRegistry
-  agents: AgentRegistry
-  mcpServers: McpServerRegistry
-}
-
-export interface GatewayManagers {
-  mcp: McpServerManager
-  codingAgents: CodingAgentManager
-  acpSessions: AcpSessionManager
-  triggers: TriggerCoordinator
-}
+export type {
+  GatewayEnforcement,
+  GatewayManagers,
+  GatewayOptions,
+  GatewayRegistries,
+  GatewayState,
+} from './gateway-types.js'
 
 /**
  * Long-running gateway lifecycle. Phase 2 wired the lockfile, discovery
