@@ -1,3 +1,4 @@
+import { createConcurrencySemaphore } from '@skelm/core'
 import type {
   AgentRequest,
   AgentResponse,
@@ -35,23 +36,7 @@ export function createVercelAiBackend(options: VercelAiBackendOptions): SkelmBac
     toolPermissions: 'native',
   }
 
-  const maxConcurrent = options.maxConcurrent ?? 4
-  let active = 0
-  const queue: Array<() => void> = []
-
-  const acquire = (): Promise<void> => {
-    if (maxConcurrent === 0 || active < maxConcurrent) {
-      active++
-      return Promise.resolve()
-    }
-    return new Promise<void>((resolve) => queue.push(resolve))
-  }
-
-  const release = () => {
-    const next = queue.shift()
-    if (next) next()
-    else active--
-  }
+  const { acquire, release } = createConcurrencySemaphore(options.maxConcurrent ?? 4)
 
   return {
     id: options.id ?? 'vercel-ai',

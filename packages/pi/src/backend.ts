@@ -7,7 +7,7 @@
 // Pi does NOT speak ACP; this backend uses the native pi RPC protocol
 // documented in @mariozechner/pi-coding-agent/docs/rpc.md.
 
-import { PermissionDeniedError, formatSkillBlock } from '@skelm/core'
+import { PermissionDeniedError, createConcurrencySemaphore, loadSkillBodies } from '@skelm/core'
 import type {
   AgentPermissions,
   AgentRequest,
@@ -65,24 +65,7 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
     toolPermissions: 'unsupported',
   }
 
-  // Concurrency semaphore — limits simultaneous pi processes
-  const maxConcurrent = options.maxConcurrent ?? 4
-  let active = 0
-  const queue: Array<() => void> = []
-
-  const acquire = (): Promise<void> => {
-    if (maxConcurrent === 0 || active < maxConcurrent) {
-      active++
-      return Promise.resolve()
-    }
-    return new Promise<void>((resolve) => queue.push(resolve))
-  }
-
-  const release = () => {
-    const next = queue.shift()
-    if (next) next()
-    else active--
-  }
+  const { acquire, release } = createConcurrencySemaphore(options.maxConcurrent ?? 4)
 
   return {
     id: options.id ?? 'pi',
@@ -167,20 +150,6 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
       }
     },
   }
-}
-
-/**
- * Build the prompt string sent to pi, incorporating system prompt and
- * any multi-turn context from the request.
- */
-async function loadSkillBodies(req: AgentRequest, ctx: BackendContext): Promise<string[]> {
-  if (!req.skills || req.skills.length === 0 || !ctx.loadSkill) return []
-  const bodies: string[] = []
-  for (const skillId of req.skills) {
-    const skill = await ctx.loadSkill(skillId)
-    if (skill !== null) bodies.push(formatSkillBlock(skill))
-  }
-  return bodies
 }
 
 /**
