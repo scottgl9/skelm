@@ -51,6 +51,32 @@ diff. Cover both the happy path and the explicit error cases.
 
 Frontmatter is a small subset of YAML: `key: value` and `key: [a, b]`. Quoted strings are supported. Unknown keys flow through to `metadata` for forward-compatible additions.
 
+## Invoking another pipeline (`invoke()`)
+
+A workflow can call any registered pipeline by id from inside its own steps using `invoke()`:
+
+```ts
+import { invoke, pipeline } from 'skelm'
+
+export default pipeline({
+  id: 'parent',
+  steps: [
+    invoke<{ result: string }>({
+      id: 'delegate',
+      pipelineId: 'child-pipeline',          // matches pipeline({ id: 'child-pipeline' })
+      input: (ctx) => ({ from: ctx.run.runId }),
+    }),
+  ],
+})
+```
+
+The runner resolves `pipelineId` through a `pipelineRegistry` callback:
+
+- **In-process** (`runPipeline(..., { pipelineRegistry })`) — you supply the callback; the unit tests in `packages/core/test/invoke.test.ts` show the shape.
+- **Gateway-hosted** — the gateway wires `pipelineRegistry` automatically from its workflows registry. The lookup tries the registry id (the file path, e.g. `fixtures/child.workflow.ts`) first, then falls back to scanning all registered workflows and matching on `pipeline.id` so callers can pass either form. Missing pipelines raise `InvokePipelineNotFoundError`.
+
+The full parent runtime (store, stateStore, permissions, secret resolver, audit writer, egress proxy, `pipelineRegistry` itself) is forwarded to the child run so nested invocations behave identically to top-level ones.
+
 ## FS watching
 
 Workflow and skill registries use Node's built-in `fs.watch` with the `recursive` option (Linux 6.5+, macOS, Windows). Older Linux falls back to a single-level watch; the gateway still detects changes via `reload()` / `SIGHUP`. Change events are debounced (default 100 ms).
