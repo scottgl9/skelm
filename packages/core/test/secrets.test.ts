@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BackendRegistry, type SkelmBackend } from '../src/backend.js'
-import { code, llm, pipeline } from '../src/builders.js'
+import { agent, code, llm, pipeline } from '../src/builders.js'
 import { EnvSecretResolver, MissingSecretError } from '../src/enforcement/index.js'
 import { EventBus } from '../src/events.js'
 import { runPipeline } from '../src/runner.js'
@@ -235,5 +235,125 @@ describe('secrets in llm() steps', () => {
     expect(run.status).toBe('failed')
     expect(run.error?.name).toBe('MissingSecretError')
     expect(run.error?.message).toContain('MISSING_KEY')
+  })
+})
+
+describe('secrets in agent() steps', () => {
+  function mockAgentBackend(
+    captured: { prompt: string; system?: string; secrets?: Readonly<Record<string, string>> },
+  ): SkelmBackend {
+    return {
+      id: 'mock-agent',
+      capabilities: {
+        prompt: true,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'native',
+      },
+      async run(req) {
+        captured.prompt = req.prompt
+        captured.system = req.system
+        captured.secrets = req.secrets
+        return { text: 'mock-response' }
+      },
+    }
+  }
+
+  it('agent() step with secrets sees ctx.secrets in prompt + system + mcp callbacks', async () => {
+    const captured: { prompt: string; system?: string; secrets?: Readonly<Record<string, string>> } =
+      { prompt: '', system: undefined, secrets: undefined }
+    const registry = new BackendRegistry()
+    registry.register(mockAgentBackend(captured))
+
+    let mcpSawSecret: string | undefined
+    const wf = pipeline({
+      id: 'agent-secrets',
+      steps: [
+        agent({
+          id: 'agent-with-secrets',
+          backend: 'mock-agent',
+          secrets: ['API_KEY'],
+          // mcp triggers policy resolution; without allowedSecrets the
+          // enforcer's canAccessSecret would deny the resolution step.
+          permissions: { allowedSecrets: ['API_KEY'] },
+          prompt: (ctx) => `use ${ctx.secrets?.get('API_KEY')} please`,
+          system: (ctx) => `system uses ${ctx.secrets?.get('API_KEY')}`,
+          mcp: (ctx) => {
+            mcpSawSecret = ctx.secrets?.get('API_KEY')
+            return []
+          },
+        }),
+      ],
+    })
+
+    const resolver = new EnvSecretResolver(() => ({ API_KEY: 'secret-value' }))
+
+    const run = await runPipeline(wf, {}, { backends: registry, secretResolver: resolver })
+
+    if (run.status !== 'completed') {
+      // surface the underlying error so the assertion message is actionable
+      throw new Error(`run failed: ${run.error?.name}: ${run.error?.message}`)
+    }
+    expect(captured.prompt).toBe('use secret-value please')
+    expect(captured.system).toBe('system uses secret-value')
+    expect(mcpSawSecret).toBe('secret-value')
+    // Secrets must also be forwarded to the backend for tool env-var injection.
+    expect(captured.secrets).toEqual({ API_KEY: 'secret-value' })
+  })
+
+  it('agent() step without secrets has ctx.secrets === undefined in prompt', async () => {
+    const captured = { prompt: '', system: undefined, secrets: undefined }
+    const registry = new BackendRegistry()
+    registry.register(mockAgentBackend(captured))
+
+    const wf = pipeline({
+      id: 'agent-no-secrets',
+      steps: [
+        agent({
+          id: 'agent-no-secrets-step',
+          backend: 'mock-agent',
+          prompt: (ctx) => {
+            expect(ctx.secrets).toBeUndefined()
+            return 'no secrets here'
+          },
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, {}, { backends: registry })
+
+    expect(run.status).toBe('completed')
+    expect(captured.prompt).toBe('no secrets here')
+    expect(captured.secrets).toBeUndefined()
+  })
+
+  it('agent() step with missing secret throws MissingSecretError', async () => {
+    const registry = new BackendRegistry()
+    registry.register(mockAgentBackend({ prompt: '', system: undefined, secrets: undefined }))
+
+    const wf = pipeline({
+      id: 'agent-missing',
+      steps: [
+        agent({
+          id: 'agent-missing-secret',
+          backend: 'mock-agent',
+          secrets: ['MISSING'],
+          prompt: (ctx) => `${ctx.secrets?.get('MISSING')}`,
+        }),
+      ],
+    })
+
+    const resolver = new EnvSecretResolver(() => ({ OTHER: 'value' }))
+
+    const run = await runPipeline(wf, {}, { backends: registry, secretResolver: resolver })
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('MissingSecretError')
+    expect(run.error?.message).toContain('MISSING')
+    // Backend must not be invoked once secret resolution fails.
+    expect(MissingSecretError).toBeDefined()
   })
 })

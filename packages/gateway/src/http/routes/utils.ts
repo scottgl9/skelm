@@ -1,4 +1,28 @@
 import type { Pipeline } from '@skelm/core'
+import type { Gateway } from '../../lifecycle/gateway.js'
+
+/**
+ * Build the `pipelineRegistry` callback that `invoke()` steps use to resolve
+ * a target pipeline id at runtime. Walks the gateway's workflows registry,
+ * loads the module via the configured workflow loader, and extracts the
+ * default-exported pipeline. Returns `undefined` if no such workflow exists
+ * or no loader is wired (the runner treats `undefined` as "not found").
+ *
+ * Centralized here so the /pipelines/:id/run handler, the /pipelines/:id/start
+ * handler, and the trigger dispatcher all share a single implementation.
+ */
+export function makeGatewayPipelineRegistry(
+  gateway: Gateway,
+): (pipelineId: string) => Promise<Pipeline | undefined> {
+  return async (pipelineId) => {
+    const entry = gateway.registries.workflows.get(pipelineId)
+    if (entry === undefined) return undefined
+    const loader = gateway.getWorkflowLoader()
+    if (loader === undefined) return undefined
+    const mod = await loader(pipelineId, entry.path)
+    return extractPipeline(mod) as Pipeline | undefined
+  }
+}
 
 export function decodeMaybe(raw: string | undefined): string | undefined {
   if (raw === undefined) return undefined
