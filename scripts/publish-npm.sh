@@ -18,7 +18,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 VERSION="${1:-$(node -p "require('./packages/skelm/package.json').version")}"
-PUBLISH_ORDER=(core scheduler integrations metrics otel opencode pi gateway cli skelm)
+PUBLISH_ORDER=(core scheduler integrations metrics otel opencode pi vercel-ai agent gateway cli skelm)
 
 echo "==> skelm publish to npmjs.org"
 echo "    version: $VERSION"

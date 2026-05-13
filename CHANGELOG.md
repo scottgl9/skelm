@@ -6,12 +6,44 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-05-13
+
 ### Added
-- **`invoke()` step** — call any registered pipeline by id from inside another workflow. The runner resolves the target through a `pipelineRegistry` callback (in-process tests supply their own; the gateway wires one automatically from `Gateway.registries.workflows` with a fallback scan that matches by `pipeline.id` when the registry id lookup misses). Throws `InvokePipelineNotFoundError` when the id is unknown. Nested runs inherit the parent's store, permissions, secret resolver, audit writer, and egress-proxy wiring.
-- **`ctx.secrets` in `code()` / `llm()` / `agent()` callbacks** — steps that declare `secrets: [...]` now expose a `get(name)` accessor inside `run`, `prompt`, `system`, and `mcp` callbacks. Names are resolved through the `SecretResolver` and (when the step declares `permissions: { allowedSecrets }`) gated by `TrustEnforcer.canAccessSecret` before the callback runs. Missing names fail with `MissingSecretError`; denied names fail with `PermissionDeniedError`. For `agent()` steps the values are also forwarded to the backend as `AgentRequest.secrets` for tool/exec env-var injection.
-- **`step.partial` streaming events** — backends that opt into streaming (`vercel-ai`, `@skelm/pi` SDK, `@skelm/opencode`) emit incremental output through `onPartial(delta)`; the runner publishes each chunk as a `step.partial` event on the bus, observable via `skelm run … --events json`.
+- **`@skelm/agent` first-party agent backend** (#85) — native skelm agent backend with enforced permission policy. Includes an `exec` built-in tool gated by `allowedExecutables`, `fsRead`/`fsWrite` allowlist roots honoured in `normalizePath` (#89), and MCP tool advertisement + dispatch to the model (#90). Now published from this monorepo at version 0.3.8.
+- **`@skelm/vercel-ai` backend** (#74) — Vercel AI SDK backend with `onPartial` streaming and a `generateObject` / `Output.object` schema path (#81, F006).
+- **`invoke()` step** — call any registered pipeline by id from inside another workflow. The runner resolves the target through a `pipelineRegistry` callback (in-process tests supply their own; the gateway wires one automatically from `Gateway.registries.workflows` with a fallback scan that matches by `pipeline.id` when the registry id lookup misses). Throws `InvokePipelineNotFoundError` when the id is unknown. Nested runs inherit the parent's store, permissions, secret resolver, audit writer, and egress-proxy wiring. (#84)
+- **`ctx.secrets` in `code()` / `llm()` / `agent()` callbacks** (#84) — steps that declare `secrets: [...]` now expose a `get(name)` accessor inside `run`, `prompt`, `system`, and `mcp` callbacks. Names are resolved through the `SecretResolver` and (when the step declares `permissions: { allowedSecrets }`) gated by `TrustEnforcer.canAccessSecret` before the callback runs. Missing names fail with `MissingSecretError`; denied names fail with `PermissionDeniedError`. For `agent()` steps the values are also forwarded to the backend as `AgentRequest.secrets` for tool/exec env-var injection.
+- **`step.partial` streaming events** (#84) — backends that opt into streaming (`vercel-ai`, `@skelm/pi` SDK, `@skelm/opencode`) emit incremental output through `onPartial(delta)`; the runner publishes each chunk as a `step.partial` event on the bus, observable via `skelm run … --events json`.
 - **CLI `SecretResolver` wiring** — `skelm run` now instantiates `FileSecretResolver` (driver `'file'`, honouring `SKELM_STATE_DIR` / `~/.skelm/secrets.json`) or `EnvSecretResolver` based on `skelm.config.ts` and passes it to `runPipeline()`. Previously the CLI path always failed agent/llm/code steps that declared `secrets: [...]` with "no SecretResolver is configured".
 - **CLI gateway `loadWorkflow`** — `skelm gateway start` now passes its tsImport-based workflow loader to the `Gateway` constructor as well as the trigger dispatcher. Without this, `POST /pipelines/:id/run` returned 501 and invoke() targets could not be resolved over HTTP.
+- **`skelm approvals` CLI** (#55) — config command for managing approval policy and approver lists.
+- **Gateway embedded CONNECT proxy** (#76) — real `networkEgress` enforcement at the network layer; per-step proxy env plumbed through the runner; pi-sdk and pi-rpc backends use it for egress.
+- **Telegram integration + example** (#71, #72) — `TelegramIntegration` and a gateway-hosted Telegram bot example.
+
+### Changed
+- **Homepage URLs point to `https://skelm.dev/`** — all 12 published packages now point at the docs site (previously `scottgl9.github.io/skelm/`).
+- **Gateway default port standardized to `14738`** (#73).
+- **Internal refactors, no behaviour change** — runner step handlers + leaf helpers extracted from `runner.ts` (#86); gateway lifecycle interfaces moved to `gateway-types.ts`; `@skelm/agent` `backend.ts` split into `http-client` + `tools` + `prompt` modules; shared backend helpers extracted into `@skelm/core`.
+- **Co-located `core` tests moved under `test/`** (#87).
+- **Changesets workflow removed** — `.changeset/` workflow and `pnpm guards:changeset` retired; CHANGELOG.md is now the single source for release notes.
+- **Docs accuracy pass** (#68, #69, #70) — reference, guides, recipes, and example READMEs updated to match current APIs; VitePress build no longer breaks on bare angle-bracket tokens.
+
+### Fixed
+- **`step.timeoutMs` enforced on `agent()` steps** (#88) — the per-step deadline now actually fires and aborts the backend.
+- **`permission.denied` audit event for `BackendCapabilityError`** (#94) — capability-check denials are now auditable instead of silently failing.
+- **MCP permission denials + tool dispatch written to audit log** (#91) — closes a previous audit-blind spot for MCP tools.
+- **opencode**: forward MCP servers, answer permission asks, kill orphaned child processes on shutdown (#93).
+- **`pi-sdk` `stopReason: 'error' | 'aborted'`** promoted to a real failure (#79, F007) instead of being treated as success.
+- **`pi-sdk` fail-closed when `networkEgress !== 'allow'`** — drops `bash` (and other network-capable tools) from the allowlist; the only outbound path Pi has.
+- **`vercel-ai` schema path** (#81, F006) — uses `generateObject` / `Output.object` for `outputSchema`, not best-effort JSON parsing.
+- **Gateway discovery URL** written correctly on start (#78, F004).
+- **`schedule --input` persisted** and used as the default fire payload (#77, F008).
+- **Gateway egress audit hardening** (#82, F010) — records source, token presence, and a deny counter; well-formed-but-unknown tokens are treated as unknown rather than passed through.
+
+### Security
+- **Real `networkEgress` enforcement** via the gateway's embedded CONNECT proxy (#76) — `'deny'` and `'restricted'` are now enforced at the network layer, not just by tool allowlisting.
+- **Egress audit captures source + token presence + deny counter** (#82, F010) — closes a blind spot when well-formed but unknown tokens were silently accepted.
+- **MCP permission denials are now audited** (#91) — denying a tool call is observable in the audit log; previously only allowed dispatches were recorded.
 
 ## [0.3.7] - 2026-05-06
 

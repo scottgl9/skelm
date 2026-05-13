@@ -17,6 +17,7 @@ import type {
   McpServerConfig,
   SkelmBackend,
 } from '../backend.js'
+import type { ResolvedPolicy } from '../permissions.js'
 import { AcpClient } from './client.js'
 import type { McpServerSpec } from './protocol.js'
 
@@ -89,6 +90,11 @@ export function createAcpBackend(opts: AcpBackendOptions): SkelmBackend {
     id: opts.id ?? 'acp',
     capabilities,
     async run(req: AgentRequest, ctx: BackendContext): Promise<AgentResponse> {
+      if (ctx.permissions !== undefined && isNontrivialPolicy(ctx.permissions)) {
+        throw new Error(
+          'ACP backend cannot enforce permission policies; declare permissions on a backend with native or runtime enforcement instead',
+        )
+      }
       await acquire()
       const client = new AcpClient()
       const onAbort = () => client.cancel()
@@ -127,6 +133,21 @@ export function createAcpBackend(opts: AcpBackendOptions): SkelmBackend {
     Object.assign(backend, { label: opts.label })
   }
   return backend
+}
+
+function isNontrivialPolicy(p: ResolvedPolicy): boolean {
+  if (p.allowedTools.exact.size > 0 || p.allowedTools.prefixes.length > 0 || p.allowedTools.star) {
+    return true
+  }
+  if (p.allowedExecutables.size > 0) return true
+  // allowedMcpServers is forwarded to ACP via newSession; ACP enforces it natively.
+  if (p.allowedSkills.size > 0) return true
+  if (p.allowedSecrets.size > 0) return true
+  if (p.fsRead.size > 0) return true
+  if (p.fsWrite.size > 0) return true
+  if (p.networkEgress !== 'deny') return true
+  if (p.approval !== null) return true
+  return false
 }
 
 function buildPrompt(req: AgentRequest): string {

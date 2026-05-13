@@ -1,7 +1,8 @@
 {
   "name": "@skelm/agent",
-  "version": "0.0.1",
+  "version": "0.3.8",
   "description": "First-party skelm agent backend with native permission enforcement",
+  "homepage": "https://skelm.dev/",
   "license": "MIT",
   "repository": {
     "type": "git",
