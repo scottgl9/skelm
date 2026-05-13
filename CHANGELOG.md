@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **Gateway dashboard API** (`/v1/dashboard/*`) — read-only aggregations composed from the run store, registries, trigger coordinator, and approval gate. Endpoints: `overview`, `workflows`, `runs`, `analytics` (time-bucketed), `errors`, `schedules`, `approvals`. Five-second in-memory TTL on overview and analytics. Same bearer auth as the rest of the control surface. Reference dashboard demo under `examples/dashboard-demo/`.
+- **`RunFilter.startedAfter` / `RunFilter.startedBefore`** — date-range filtering on `listRuns()`, pushed into the SQL `WHERE` clause for the SQLite-backed store. Powers the analytics endpoint without scanning the full run table.
+
 ## [0.3.8] - 2026-05-13
 
 ### Added
