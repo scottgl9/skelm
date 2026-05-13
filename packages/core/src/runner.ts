@@ -123,6 +123,13 @@ export interface RunOptions {
    */
   secretResolver?: SecretResolver
   /**
+   * Optional audit writer for the durable permission/tool record. When
+   * omitted the runner subscribes a no-op writer, which is why bare
+   * runPipeline() invocations and the one-shot CLI (`skelm run`) produced
+   * empty audit logs prior to v0.3.8 — see F018.
+   */
+  auditWriter?: AuditWriter
+  /**
    * Optional callback to register an egress token for network policy enforcement.
    * Called before each agent step with the runId, stepId, and resolved network policy.
    * Returns a token string that will be injected into the BackendContext.
@@ -254,6 +261,35 @@ export class Runner {
             // audit writer failures must not poison the run.
           })
       }
+      // Bridge MCP tool dispatch events so the audit log records what tools
+      // were actually called. Without this, a successful MCP run leaves the
+      // jsonl empty (only denials made it through), which masks legitimate
+      // privileged operations from after-the-fact review.
+      if (event.type === 'tool.call') {
+        void this.enforcement.auditWriter
+          .write({
+            runId: event.runId,
+            actor: 'runtime',
+            action: 'mcp.tool.invoked',
+            details: { stepId: event.stepId, tool: event.tool, at: event.at },
+          })
+          .catch(() => {})
+      }
+      if (event.type === 'tool.result') {
+        void this.enforcement.auditWriter
+          .write({
+            runId: event.runId,
+            actor: 'runtime',
+            action: 'mcp.tool.completed',
+            details: {
+              stepId: event.stepId,
+              tool: event.tool,
+              durationMs: event.durationMs,
+              at: event.at,
+            },
+          })
+          .catch(() => {})
+      }
     })
   }
 
@@ -381,6 +417,61 @@ export async function runPipeline<TInput, TOutput>(
       : events.subscribe((event) => {
           storeWrites.push(store.appendEvent(event))
         })
+  // Bridge permission denials and MCP tool dispatch into the audit log.
+  // Mirrors the same subscriptions installed by the Runner constructor, so
+  // callers driving runPipeline directly (e.g. the one-shot `skelm run`
+  // CLI) get the same audit coverage as gateway-fired runs. Writes are
+  // tracked alongside storeWrites so the run waits for fsync before
+  // returning — otherwise a fast-failing CLI exit could drop the entry.
+  const auditWriter = options.auditWriter
+  const auditWrites: Promise<void>[] = []
+  if (auditWriter !== undefined) {
+    events.subscribe((event) => {
+      const queue = (entry: { action: string; details: Record<string, unknown> }) => {
+        auditWrites.push(
+          auditWriter
+            .write({
+              ...(event.runId !== undefined && { runId: event.runId }),
+              actor: 'runtime',
+              action: entry.action,
+              details: entry.details,
+            })
+            .catch(() => {}),
+        )
+      }
+      if (event.type === 'permission.denied') {
+        queue({
+          action: 'permission.denied',
+          details: {
+            stepId: event.stepId,
+            dimension: event.dimension,
+            detail: event.detail,
+            at: event.at,
+          },
+        })
+      } else if (event.type === 'secret.not_found') {
+        queue({
+          action: 'secret.not_found',
+          details: { stepId: event.stepId, name: event.name, at: event.at },
+        })
+      } else if (event.type === 'tool.call') {
+        queue({
+          action: 'mcp.tool.invoked',
+          details: { stepId: event.stepId, tool: event.tool, at: event.at },
+        })
+      } else if (event.type === 'tool.result') {
+        queue({
+          action: 'mcp.tool.completed',
+          details: {
+            stepId: event.stepId,
+            tool: event.tool,
+            durationMs: event.durationMs,
+            at: event.at,
+          },
+        })
+      }
+    })
+  }
   const controller = new AbortController()
   if (options.signal) {
     if (options.signal.aborted) {
@@ -439,6 +530,7 @@ export async function runPipeline<TInput, TOutput>(
         store,
         storeWrites,
         unsubscribeStore,
+        auditWrites,
       )
     }
   }
@@ -621,6 +713,7 @@ export async function runPipeline<TInput, TOutput>(
     store,
     storeWrites,
     unsubscribeStore,
+    auditWrites,
   )
 }
 
@@ -631,9 +724,11 @@ async function finalizeStoredRun<TRun extends Run>(
   store: RunStore | undefined,
   storeWrites: Promise<void>[],
   unsubscribeStore: (() => void) | undefined,
+  auditWrites: Promise<void>[] = [],
 ): Promise<TRun> {
   try {
     await Promise.all(storeWrites)
+    await Promise.all(auditWrites)
     await store?.putRun(run)
     return run
   } finally {
