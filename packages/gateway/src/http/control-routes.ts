@@ -1,6 +1,7 @@
 import { type App, type H3Event, createError, createRouter, eventHandler } from 'h3'
 import type { Gateway } from '../lifecycle/gateway.js'
 import { registerApprovalRoutes } from './routes/approvals.js'
+import { registerDashboardRoutes } from './routes/dashboard.js'
 import { registerDebugRoutes } from './routes/debug.js'
 import { registerGatewayLifecycleRoutes } from './routes/gateway-lifecycle.js'
 import { registerHealthRoutes } from './routes/health.js'
@@ -32,6 +33,7 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
   registerPipelineRoutes(router, gateway)
   registerScheduleRoutes(router, gateway)
   registerOpenAIRoutes(router, gateway)
+  registerDashboardRoutes(router, gateway)
 
   app.use(router)
 
