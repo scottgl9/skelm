@@ -47,16 +47,25 @@ export interface BuiltInToolDef {
   handler: ToolHandler
 }
 
-function normalizePath(input: string, cwd: string, agentDefRoot: string): string {
-  const resolved = isAbsolute(input) ? resolve(input) : resolve(cwd, input)
-  if (!resolved.startsWith(`${cwd}/`) && resolved !== cwd) {
-    if (!resolved.startsWith(`${agentDefRoot}/`) && resolved !== agentDefRoot) {
-      throw new Error(
-        `Path escape: ${resolved} is outside workspace (${cwd}) and agentDefRoot (${agentDefRoot})`,
-      )
-    }
+function normalizePath(input: string, ctx: ToolExecutionContext): string {
+  const resolved = isAbsolute(input) ? resolve(input) : resolve(ctx.cwd, input)
+  const acceptedRoots: string[] = [ctx.cwd, ctx.agentDefRoot]
+  // Also accept any root the caller explicitly granted via permissions.
+  // Without this, a user grant of `fsRead: ['/tmp/x']` is dead unless /tmp/x
+  // happens to live under cwd or agentDefRoot — the enforcer.canRead check
+  // below this layer never gets a chance to apply. The enforcer still gates
+  // every read/write at the tool handler, so adding allowlisted roots here
+  // does not widen access; it only stops the prefix guard from short-
+  // circuiting a path the operator already authorized.
+  for (const r of ctx.enforcer.policy.fsRead) acceptedRoots.push(r)
+  for (const r of ctx.enforcer.policy.fsWrite) acceptedRoots.push(r)
+  for (const raw of acceptedRoots) {
+    const root = raw.endsWith('/') ? raw.slice(0, -1) : raw
+    if (resolved === root || resolved.startsWith(`${root}/`)) return resolved
   }
-  return resolved
+  throw new Error(
+    `Path escape: ${resolved} is outside workspace (${ctx.cwd}), agentDefRoot (${ctx.agentDefRoot}), and any granted fsRead/fsWrite root`,
+  )
 }
 
 function requireParentDir(filepath: string): string {
@@ -96,7 +105,7 @@ export const BUILTIN_TOOLS: BuiltInToolDef[] = [
       const p = args as { path: string }
       if (!p.path) return { content: 'Error: path is required', isError: true }
       try {
-        const resolved = normalizePath(p.path, ctx.cwd, ctx.agentDefRoot)
+        const resolved = normalizePath(p.path, ctx)
         const decision = ctx.enforcer.canRead(resolved)
         if (!decision.allow) {
           publishDenied(ctx.events, 'fs.read', `fs_read denied: ${resolved} — ${decision.reason}`)
@@ -128,7 +137,7 @@ export const BUILTIN_TOOLS: BuiltInToolDef[] = [
     handler: async (args, ctx): Promise<ToolResult> => {
       const p = args as { path: string; pattern?: string }
       try {
-        const resolved = normalizePath(p.path, ctx.cwd, ctx.agentDefRoot)
+        const resolved = normalizePath(p.path, ctx)
         const decision = ctx.enforcer.canRead(resolved)
         if (!decision.allow) {
           publishDenied(
@@ -166,7 +175,7 @@ export const BUILTIN_TOOLS: BuiltInToolDef[] = [
       const p = args as { path: string; content: string }
       if (!p.path) return { content: 'Error: path is required', isError: true }
       try {
-        const resolved = normalizePath(p.path, ctx.cwd, ctx.agentDefRoot)
+        const resolved = normalizePath(p.path, ctx)
         const decision = ctx.enforcer.canWrite(resolved)
         if (!decision.allow) {
           publishDenied(ctx.events, 'fs.write', `fs_write denied: ${resolved} — ${decision.reason}`)
@@ -198,7 +207,7 @@ export const BUILTIN_TOOLS: BuiltInToolDef[] = [
       const p = args as { path: string; content: string }
       if (!p.path) return { content: 'Error: path is required', isError: true }
       try {
-        const resolved = normalizePath(p.path, ctx.cwd, ctx.agentDefRoot)
+        const resolved = normalizePath(p.path, ctx)
         const decision = ctx.enforcer.canWrite(resolved)
         if (!decision.allow) {
           publishDenied(
@@ -303,7 +312,7 @@ export const BUILTIN_TOOLS: BuiltInToolDef[] = [
     handler: async (args, ctx): Promise<ToolResult> => {
       const p = args as { path?: string; recursive?: boolean }
       try {
-        const target = p.path ? normalizePath(p.path, ctx.cwd, ctx.agentDefRoot) : ctx.cwd
+        const target = p.path ? normalizePath(p.path, ctx) : ctx.cwd
         const decision = ctx.enforcer.canRead(target)
         if (!decision.allow) {
           return { content: `Permission denied: ${decision.reason}`, isError: true }
@@ -433,7 +442,7 @@ export const BUILTIN_TOOLS: BuiltInToolDef[] = [
       let cwd: string = ctx.cwd
       if (p.cwd !== undefined) {
         try {
-          cwd = normalizePath(p.cwd, ctx.cwd, ctx.agentDefRoot)
+          cwd = normalizePath(p.cwd, ctx)
         } catch (err) {
           return { content: `Error: ${(err as Error).message}`, isError: true }
         }

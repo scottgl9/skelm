@@ -254,6 +254,32 @@ describe('SkelmAgentBackend — run / tool loop (mocked)', () => {
     expect(toolMsg?.content).toMatch(/Permission denied|Path escape/)
   })
 
+  it('honors fsRead allowlist for paths outside cwd (F017 regression)', async () => {
+    // Seed a real file under /tmp so the read succeeds when policy permits it.
+    const dir = await mkdtemp(join(tmpdir(), 'skelm-fsread-out-of-cwd-'))
+    const path = join(dir, 'note.txt')
+    const { writeFile: wf } = await import('node:fs/promises')
+    await wf(path, 'OUT_OF_CWD_OK', 'utf-8')
+    try {
+      stubFetch([
+        { toolCalls: [{ name: 'fs_read', arguments: { path } }] },
+        { content: 'AGENT_READ_OUT_OF_CWD' },
+      ])
+
+      const response = await backend.run?.(
+        { prompt: `Read ${path}.`, maxTurns: 3 },
+        {
+          signal: new AbortController().signal,
+          permissions: makePolicy({ fsRead: [dir], fsWrite: [] }),
+        },
+      )
+
+      expect(response?.text).toBe('AGENT_READ_OUT_OF_CWD')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   it('throws when maxTurns is exceeded', async () => {
     // Every turn keeps calling fs_read — the loop will hit maxTurns and bail.
     stubFetch([{ toolCalls: [{ name: 'fs_read', arguments: { path: '/nowhere' } }] }])
