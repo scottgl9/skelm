@@ -15,7 +15,12 @@ import {
   runPipeline,
 } from '@skelm/core'
 import type { Run, SecretResolver } from '@skelm/core'
-import { FileSecretResolver, SkillRegistry, createSkillSource } from '@skelm/gateway'
+import {
+  ChainAuditWriter,
+  FileSecretResolver,
+  SkillRegistry,
+  createSkillSource,
+} from '@skelm/gateway'
 import { applyAgentDefinitions } from './agent-defs.js'
 import { applyConfiguredBackends, buildBackendRegistry } from './backends.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
@@ -136,11 +141,23 @@ export async function runCommand(
 
   const run = await (async () => {
     try {
+      // Wire the chain audit writer so permission denials and tool dispatch
+      // events emitted during one-shot `skelm run` actually land in
+      // ~/.skelm/audit.jsonl (or $SKELM_STATE_DIR/audit.jsonl). Without this
+      // the runner falls back to NoopAuditWriter and the entire jsonl stays
+      // empty for CLI-driven runs, even when the runtime publishes the
+      // events on the bus.
+      const auditPath = join(
+        process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm'),
+        'audit.jsonl',
+      )
+      const auditWriter = new ChainAuditWriter(auditPath)
       return await runPipeline(resolvedWorkflow, input, {
         signal: controller.signal,
         events: bus,
         store,
         stateStore: store,
+        auditWriter,
         workflowPath: resolvedWorkflowPath,
         ...(config.defaults?.permissions !== undefined && {
           defaultPermissions: config.defaults.permissions,
