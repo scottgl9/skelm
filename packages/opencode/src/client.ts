@@ -9,10 +9,35 @@
 
 import { type ChildProcess, spawn } from 'node:child_process' // @subprocess-ok: spawns opencode serve for HTTP backend
 import { createOpencodeClient } from '@opencode-ai/sdk'
-import type { AgentRequest, AgentResponse, ResolvedPolicy } from '@skelm/core'
+import type { AgentRequest, AgentResponse, McpServerConfig, ResolvedPolicy } from '@skelm/core'
+import { TrustEnforcer } from '@skelm/core'
 import type { OpencodeBackendOptions } from './types.js'
 
 type SdkClient = ReturnType<typeof createOpencodeClient>
+
+// Module-singleton process-exit hook. Without this, every OpencodeClientWrapper
+// that called process.once('SIGTERM', …) would add a fresh listener, tripping
+// Node's MaxListeners=10 warning under any non-trivial backend churn. Wrappers
+// register their child process here on spawn and unregister in dispose; the
+// hook iterates the live set on signal and SIGTERMs each child.
+const liveChildren = new Set<ChildProcess>()
+let signalHookInstalled = false
+function ensureSignalHook(): void {
+  if (signalHookInstalled) return
+  signalHookInstalled = true
+  const cleanup = () => {
+    for (const proc of liveChildren) {
+      try {
+        proc.kill('SIGTERM')
+      } catch {
+        /* best-effort */
+      }
+    }
+  }
+  process.on('SIGTERM', cleanup)
+  process.on('SIGINT', cleanup)
+  process.on('exit', cleanup)
+}
 
 // Shape of OPENCODE_CONFIG_CONTENT — subset of opencode's Config type.
 interface OpencodeServerConfig {
@@ -31,6 +56,10 @@ export class OpencodeClientWrapper {
   private client: SdkClient | null = null
   private startPromise: Promise<void> | null = null
   private readonly options: OpencodeBackendOptions
+  // Track per-server-instance MCP attachments so we add() each one only once
+  // even when the same skelm process drives many sessions through the same
+  // opencode subprocess. Keyed by McpServerConfig.id.
+  private readonly attachedMcp = new Set<string>()
 
   constructor(options: OpencodeBackendOptions) {
     this.options = options
@@ -91,6 +120,12 @@ export class OpencodeClientWrapper {
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       this.proc = proc
+      // Register against the module-singleton SIGTERM/SIGINT/exit hook so the
+      // opencode child gets killed when the node parent is signalled (CLI
+      // timeout, Ctrl-C, gateway shutdown). Without this, the child is
+      // reparented to PID 1 and lingers as an orphan.
+      liveChildren.add(proc)
+      ensureSignalHook()
 
       let resolved = false
       let buf = ''
@@ -123,9 +158,11 @@ export class OpencodeClientWrapper {
   }
 
   private _handleExit(): void {
+    if (this.proc !== null) liveChildren.delete(this.proc)
     this.proc = null
     this.client = null
     this.startPromise = null
+    this.attachedMcp.clear()
   }
 
   async prompt(
@@ -139,6 +176,14 @@ export class OpencodeClientWrapper {
     if (!this.client) throw new Error('opencode serve not ready')
 
     const cwd = request.cwd ?? process.cwd()
+
+    // Forward each per-step McpServerConfig to opencode so its model sees the
+    // namespaced tools. The opencode subprocess persists across calls, so the
+    // mcp.add() endpoint is idempotent per (serverId, this wrapper) — we only
+    // call it once per ID per opencode subprocess.
+    if (request.mcpServers !== undefined && request.mcpServers.length > 0) {
+      await this._attachMcpServers(request.mcpServers)
+    }
 
     const sessResult = await this.client.session.create({ query: { directory: cwd } })
     if (!sessResult.data) {
@@ -175,7 +220,7 @@ export class OpencodeClientWrapper {
         throw new Error(`session.promptAsync failed: ${JSON.stringify(promptResult.error)}`)
       }
 
-      return await this._collectFromStream(stream, sessionId, signal, onPartial)
+      return await this._collectFromStream(stream, sessionId, signal, onPartial, resolvedPolicy)
     } finally {
       clearTimeout(timeoutId)
       signal.removeEventListener('abort', onSignalAbort)
@@ -193,6 +238,7 @@ export class OpencodeClientWrapper {
     sessionId: string,
     signal: AbortSignal,
     onPartial?: (delta: string) => void,
+    resolvedPolicy?: ResolvedPolicy,
   ): Promise<AgentResponse> {
     // Only collect text parts from assistant messages; track which message IDs are assistant.
     const assistantMessageIds = new Set<string>()
@@ -208,6 +254,36 @@ export class OpencodeClientWrapper {
         const props = event.properties as { sessionID?: string; error?: unknown }
         if (!props.sessionID || props.sessionID === sessionId) {
           throw new Error(`opencode session error: ${JSON.stringify(props.error)}`)
+        }
+      }
+
+      // Opencode pauses the session and emits permission.asked when a tool
+      // wants to escalate (external_directory read/write, bash, etc.). The
+      // session stays paused until we POST a response — without this handler
+      // _collectFromStream blocks forever waiting for session.idle.
+      if (event.type === 'permission.asked') {
+        const props = event.properties as {
+          sessionID?: string
+          id?: string
+          permission?: string
+          patterns?: string[]
+          metadata?: { filepath?: string }
+        }
+        if (props.sessionID === sessionId && typeof props.id === 'string') {
+          const response = this._decidePermission(
+            props.permission ?? '',
+            props.metadata?.filepath,
+            props.patterns,
+            resolvedPolicy,
+          )
+          await this.client
+            ?.postSessionIdPermissionsPermissionId({
+              path: { id: sessionId, permissionID: props.id },
+              body: { response },
+            })
+            .catch(() => {
+              /* opencode will give up on its own; we'll exit on session.idle/error */
+            })
         }
       }
 
@@ -261,11 +337,63 @@ export class OpencodeClientWrapper {
     return { text: text.trim(), stopReason: 'end_turn' }
   }
 
+  // Map a skelm McpServerConfig (stdio variant) to opencode's local MCP config
+  // and POST it to /mcp. Remote (http/sse) transports are not yet supported by
+  // this bridge — opencode's McpRemoteConfig has a different shape and isn't
+  // exercised by the §21 fixtures; we surface a clear error rather than a
+  // silent drop so a future fixture catches it.
+  private async _attachMcpServers(servers: readonly McpServerConfig[]): Promise<void> {
+    if (this.client === null) return
+    for (const server of servers) {
+      if (this.attachedMcp.has(server.id)) continue
+      if (server.transport !== 'stdio') {
+        throw new Error(
+          `opencode backend currently only forwards stdio MCP servers; "${server.id}" uses ${server.transport}`,
+        )
+      }
+      const command = [server.command, ...(server.args ?? [])]
+      const result = await this.client.mcp.add({
+        body: {
+          name: server.id,
+          config: {
+            type: 'local',
+            command,
+            enabled: true,
+            ...(server.env !== undefined && { environment: { ...server.env } }),
+          },
+        },
+      })
+      if (result.error !== undefined) {
+        throw new Error(`opencode mcp.add(${server.id}) failed: ${JSON.stringify(result.error)}`)
+      }
+      this.attachedMcp.add(server.id)
+    }
+  }
+
+  // Translate an opencode permission.asked into a once/reject decision using
+  // the step's ResolvedPolicy. "external_directory" is the common case (the
+  // model wants to read/write outside the session's directory); we accept if
+  // the path falls within fsRead or fsWrite. Everything else defaults to
+  // reject — opencode's prompt that asked will report the denial back to the
+  // model and the loop continues.
+  private _decidePermission(
+    permission: string,
+    filepath: string | undefined,
+    _patterns: string[] | undefined,
+    policy: ResolvedPolicy | undefined,
+  ): 'once' | 'reject' {
+    if (policy === undefined) return 'reject'
+    if (permission === 'external_directory' && filepath !== undefined) {
+      const enf = new TrustEnforcer(policy)
+      if (enf.canRead(filepath).allow) return 'once'
+      if (enf.canWrite(filepath).allow) return 'once'
+    }
+    return 'reject'
+  }
+
   async dispose(): Promise<void> {
     this.proc?.kill('SIGTERM')
-    this.proc = null
-    this.client = null
-    this.startPromise = null
+    this._handleExit()
   }
 }
 
