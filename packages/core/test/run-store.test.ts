@@ -269,6 +269,39 @@ describe('workflowPath persistence', () => {
     }
   })
 
+  it('MemoryRunStore: filters listRuns by startedAfter/startedBefore', async () => {
+    const store = new MemoryRunStore()
+    await store.putRun({ ...sampleRun('a'), startedAt: 100 })
+    await store.putRun({ ...sampleRun('b'), startedAt: 200 })
+    await store.putRun({ ...sampleRun('c'), startedAt: 300 })
+
+    const after = await collect(store.listRuns({ startedAfter: 200 }))
+    expect(after.map((r) => r.runId).sort()).toEqual(['b', 'c'])
+
+    const before = await collect(store.listRuns({ startedBefore: 200 }))
+    expect(before.map((r) => r.runId).sort()).toEqual(['a', 'b'])
+
+    const window = await collect(store.listRuns({ startedAfter: 150, startedBefore: 250 }))
+    expect(window.map((r) => r.runId)).toEqual(['b'])
+  })
+
+  it('SqliteRunStore: filters listRuns by startedAfter/startedBefore', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-filter-'))
+    const store = new SqliteRunStore({ path: join(dir, 'runs.db') })
+    try {
+      await store.putRun({ ...sampleRun('a'), startedAt: 100 })
+      await store.putRun({ ...sampleRun('b'), startedAt: 200 })
+      await store.putRun({ ...sampleRun('c'), startedAt: 300 })
+
+      const window = await collect(
+        store.listRuns({ startedAfter: 150, startedBefore: 250, pipelineId: 'p' }),
+      )
+      expect(window.map((r) => r.runId)).toEqual(['b'])
+    } finally {
+      store.close()
+    }
+  })
+
   it('SqliteRunStore: migrates existing DB without workflow_path column', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'skelm-migrate-'))
     // Create a DB without the workflow_path column (old schema)
