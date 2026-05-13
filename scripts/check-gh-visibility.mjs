@@ -29,6 +29,8 @@ const PACKAGES = [
   'opencode',
   'otel',
   'pi',
+  'vercel-ai',
+  'agent',
   'skelm',
 ]
 
