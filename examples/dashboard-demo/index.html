@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>skelm dashboard demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0f1115;
+        --fg: #e6e6e6;
+        --muted: #8a8f98;
+        --card: #1a1d24;
+        --accent: #4f9cff;
+        --ok: #5ecf86;
+        --warn: #f0c95e;
+        --err: #ef6f6f;
+      }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      header {
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid #222;
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 600;
+      }
+      header input {
+        flex: 1;
+        padding: 0.4rem 0.6rem;
+        background: var(--card);
+        color: var(--fg);
+        border: 1px solid #2a2d33;
+        border-radius: 6px;
+      }
+      header button {
+        padding: 0.4rem 0.9rem;
+        background: var(--accent);
+        color: white;
+        border: 0;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      main {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1rem;
+        padding: 1.5rem;
+      }
+      .card {
+        background: var(--card);
+        border-radius: 8px;
+        padding: 1rem 1.2rem;
+        border: 1px solid #232730;
+      }
+      .card h2 {
+        margin: 0 0 0.6rem;
+        font-size: 0.85rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .card .big {
+        font-size: 2rem;
+        font-weight: 600;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.2rem 0;
+        font-size: 0.9rem;
+      }
+      .row span:last-child {
+        color: var(--muted);
+      }
+      .status-ok { color: var(--ok); }
+      .status-failed { color: var(--err); }
+      .status-waiting { color: var(--warn); }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+      }
+      th, td {
+        text-align: left;
+        padding: 0.3rem 0.4rem;
+        border-bottom: 1px solid #232730;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .err {
+        color: var(--err);
+        font-family: ui-monospace, monospace;
+        font-size: 0.85rem;
+      }
+      footer {
+        padding: 1rem 1.5rem;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>skelm dashboard</h1>
+      <input id="base" placeholder="http://127.0.0.1:14738" />
+      <input id="token" placeholder="bearer token (optional)" type="password" />
+      <button id="refresh">Refresh</button>
+    </header>
+    <main id="main">
+      <div class="card"><h2>Loading…</h2></div>
+    </main>
+    <footer>
+      Polls <code>/v1/dashboard/*</code>. Server enforces auth; this page just
+      forwards the token you type. See
+      <a href="../../docs/reference/http.md" style="color: var(--accent)"
+        >docs/reference/http.md</a
+      >
+      for the API.
+    </footer>
+
+    <script>
+      const $ = (id) => document.getElementById(id)
+      const main = $('main')
+
+      function load(key, fallback) {
+        try {
+          return localStorage.getItem(key) ?? fallback
+        } catch {
+          return fallback
+        }
+      }
+      function save(key, val) {
+        try {
+          localStorage.setItem(key, val)
+        } catch {}
+      }
+
+      $('base').value = load('skelm-base', 'http://127.0.0.1:14738')
+      $('token').value = load('skelm-token', '')
+
+      async function getJson(path) {
+        const base = $('base').value.replace(/\/$/, '')
+        const token = $('token').value
+        const headers = {}
+        if (token) headers.authorization = `Bearer ${token}`
+        const res = await fetch(`${base}${path}`, { headers })
+        if (!res.ok) throw new Error(`${res.status} ${path}`)
+        return res.json()
+      }
+
+      function statusClass(s) {
+        if (s === 'completed') return 'status-ok'
+        if (s === 'failed' || s === 'cancelled') return 'status-failed'
+        if (s === 'waiting' || s === 'running') return 'status-waiting'
+        return ''
+      }
+
+      function fmtMs(ms) {
+        if (ms == null) return '—'
+        if (ms < 1000) return `${ms}ms`
+        if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+        return `${Math.round(ms / 1000 / 60)}m`
+      }
+
+      function fmtDate(epoch) {
+        if (!epoch) return '—'
+        return new Date(epoch).toLocaleString()
+      }
+
+      function card(title, body) {
+        const el = document.createElement('div')
+        el.className = 'card'
+        el.innerHTML = `<h2>${title}</h2>${body}`
+        return el
+      }
+
+      async function render() {
+        save('skelm-base', $('base').value)
+        save('skelm-token', $('token').value)
+        main.innerHTML = '<div class="card"><h2>Loading…</h2></div>'
+        try {
+          const [overview, workflows, errors, schedules] = await Promise.all([
+            getJson('/v1/dashboard/overview'),
+            getJson('/v1/dashboard/workflows'),
+            getJson('/v1/dashboard/errors'),
+            getJson('/v1/dashboard/schedules'),
+          ])
+          main.innerHTML = ''
+
+          main.appendChild(
+            card(
+              'Gateway',
+              `<div class="big status-ok">${overview.gateway.status}</div>
+               <div class="row"><span>version</span><span>${overview.gateway.version}</span></div>
+               <div class="row"><span>uptime</span><span>${fmtMs(overview.gateway.uptimeMs)}</span></div>`,
+            ),
+          )
+
+          const byStatus = overview.runs.byStatus ?? {}
+          main.appendChild(
+            card(
+              'Runs',
+              `<div class="big">${overview.runs.total}</div>
+               <div class="row"><span>last 24h</span><span>${overview.runs.last24h}</span></div>
+               <div class="row"><span>avg duration</span><span>${fmtMs(overview.runs.avgDurationMs)}</span></div>
+               <div class="row"><span>completed</span><span class="status-ok">${byStatus.completed ?? 0}</span></div>
+               <div class="row"><span>failed</span><span class="status-failed">${byStatus.failed ?? 0}</span></div>
+               <div class="row"><span>running</span><span class="status-waiting">${byStatus.running ?? 0}</span></div>`,
+            ),
+          )
+
+          main.appendChild(
+            card(
+              'Approvals',
+              `<div class="big ${overview.approvals.pending ? 'status-waiting' : 'status-ok'}">${overview.approvals.pending}</div>
+               <div class="row"><span>oldest age</span><span>${fmtMs(overview.approvals.oldestPendingAgeMs)}</span></div>`,
+            ),
+          )
+
+          main.appendChild(
+            card(
+              'Schedules',
+              `<div class="big">${overview.schedules.total}</div>
+               <div class="row"><span>in flight</span><span>${overview.schedules.inflight}</span></div>
+               <div class="row"><span>with errors</span><span class="status-failed">${overview.schedules.withErrors}</span></div>`,
+            ),
+          )
+
+          // Workflows table
+          const wfRows = (workflows.workflows ?? [])
+            .map(
+              (w) =>
+                `<tr><td>${w.id}</td><td>${w.totalRuns}</td>
+                 <td class="${statusClass(w.lastStatus)}">${w.lastStatus ?? '—'}</td>
+                 <td>${w.successRate == null ? '—' : `${(w.successRate * 100).toFixed(0)}%`}</td>
+                 <td>${fmtDate(w.lastRunAt)}</td></tr>`,
+            )
+            .join('')
+          main.appendChild(
+            card(
+              'Workflows',
+              `<table><thead><tr><th>id</th><th>runs</th><th>last status</th><th>success</th><th>last run</th></tr></thead><tbody>${wfRows || '<tr><td colspan="5">No workflows</td></tr>'}</tbody></table>`,
+            ),
+          )
+
+          // Errors table
+          const errRows = (errors.recent ?? [])
+            .map(
+              (e) =>
+                `<tr><td>${e.pipelineId}</td><td class="err">${escapeHtml(e.message)}</td><td>${fmtDate(e.at)}</td></tr>`,
+            )
+            .join('')
+          main.appendChild(
+            card(
+              `Recent errors (${errors.last24h} in 24h)`,
+              `<table><thead><tr><th>pipeline</th><th>message</th><th>at</th></tr></thead><tbody>${errRows || '<tr><td colspan="3">No errors</td></tr>'}</tbody></table>`,
+            ),
+          )
+
+          // Schedules table
+          const sRows = (schedules.schedules ?? [])
+            .map(
+              (s) =>
+                `<tr><td>${s.id}</td><td>${s.kind}</td><td>${s.fired}</td>
+                 <td>${fmtDate(s.lastFiredAt ? Date.parse(s.lastFiredAt) : null)}</td>
+                 <td class="${s.lastError ? 'status-failed' : ''}">${s.lastError ?? '—'}</td></tr>`,
+            )
+            .join('')
+          main.appendChild(
+            card(
+              'Triggers',
+              `<table><thead><tr><th>id</th><th>kind</th><th>fired</th><th>last fired</th><th>last error</th></tr></thead><tbody>${sRows || '<tr><td colspan="5">None registered</td></tr>'}</tbody></table>`,
+            ),
+          )
+        } catch (err) {
+          main.innerHTML = `<div class="card"><h2 class="status-failed">Error</h2><p>${escapeHtml(err.message)}</p></div>`
+        }
+      }
+
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, (c) =>
+          ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+        )
+      }
+
+      $('refresh').addEventListener('click', render)
+      $('base').addEventListener('change', render)
+      $('token').addEventListener('change', render)
+      render()
+      // Poll every 5s — matches the server-side cache TTL.
+      setInterval(render, 5000)
+    </script>
+  </body>
+</html>
