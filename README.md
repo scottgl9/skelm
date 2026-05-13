@@ -5,7 +5,7 @@
 <h1 align="center">skelm</h1>
 
 <p align="center">
-  <strong>Build secure, agentic, long-running workflows in TypeScript. Run them anywhere Node runs.</strong>
+  <strong>Build secure, agentic workflows in TypeScript. Run them anywhere Node runs.</strong>
 </p>
 
 <p align="center">
@@ -15,269 +15,148 @@
   <a href="https://github.com/scottgl9/skelm/stargazers"><img src="https://img.shields.io/github/stars/scottgl9/skelm" alt="GitHub stars" /></a>
 </p>
 
-skelm is a TypeScript framework for authoring, running, and operating **workflows** — typed orchestrations that mix deterministic code, LLM inference, and full agent loops behind a single, secure, default-deny execution model. Every workflow is schedulable: fire one once, schedule it on cron, register a webhook, or let it run continuously inside a long-lived gateway service.
+---
 
-> **Status:** early development. APIs are unstable until v1. Star the repo, open issues, contribute fixes — feedback now is the most valuable feedback.
+## What is skelm?
+
+skelm is a TypeScript framework for authoring and running **workflows** — typed orchestrations that mix deterministic code, LLM inference, and full agent loops behind a secure, default-deny execution model.
+
+**Key capabilities:**
+
+- **TypeScript-native** — Real `.ts` modules, no DSL or JSON config
+- **Default-deny security** — Every permission must be explicitly declared
+- **Multi-backend agents** — Pi, Opencode, Vercel AI, ACP (Copilot, Claude Code, Gemini), OpenAI, Anthropic
+- **MCP-native** — Model Context Protocol servers lifecycle-managed by the gateway
+- **Scheduler-built-in** — Cron, webhooks, intervals, queues, or long-running gateway service
+
+> **Status:** Early development. APIs are unstable until v1. Feedback and contributions welcome.
 
 ---
 
-## Get started in 60 seconds
-
-**1. Install the CLI.**
+## Quick start
 
 ```bash
+# Install the CLI
 npm install -g skelm
-```
 
-**2. Scaffold a project.**
-
-```bash
+# Scaffold a project
 skelm init my-bot && cd my-bot && npm install
-```
 
-You get a working project: an example `hello` workflow under `workflows/`, a `skelm.config.ts` with default-deny permissions, a `package.json`, a `tsconfig.json`, and a `.gitignore`.
-
-**3. Run your first workflow.**
-
-```bash
+# Run your first workflow
 skelm run workflows/hello.workflow.ts --input '{"name":"world"}'
 ```
 
-That's it. From here you can edit the workflow, add steps, schedule it, or stand up the gateway:
+That's it. From here you can edit workflows, add agent steps, schedule them, or stand up the gateway:
 
 ```bash
-skelm schedule add workflows/hello.workflow.ts --cron '0 * * * *'  # cron
+skelm schedule add workflows/hello.workflow.ts --cron '0 * * * *'  # cron job
 skelm gateway start                                                # long-running service
 ```
 
-📖 **Next:** the [quickstart](./docs/quickstart/index.md) walks through writing your second workflow with an LLM call.
+📖 **Next:** [Quickstart guide](./docs/quickstart/index.md)
 
 ---
 
-## Main features
+## Backend support
 
-A workflow is a typed TypeScript module made of three step kinds (`code`, `llm`, `agent`). The gateway hosts workflows, drives the scheduler, enforces default-deny permissions, and brokers everything privileged — backends, MCP servers, integrations.
+skelm supports multiple AI backends through pluggable adapters. Choose the one that fits your use case:
 
-### Authoring
+| Backend | Package | Best for |
+|---------|---------|----------|
+| **Pi** | `@skelm/pi` | Pi coding agent with full permission enforcement |
+| **Opencode** | `@skelm/opencode` | Open-source coding agent backend |
+| **Vercel AI** | `@skelm/vercel-ai` | Vercel AI SDK with streaming support |
+| **ACP** | Built-in | GitHub Copilot, Claude Code, Gemini via ACP |
+| **First-party agent** | `@skelm/agent` | Native agent loop with built-in tools and MCP |
 
-- **TypeScript-native workflows.** Real `.ts` modules — refactor, test, type-check, and version like any other code. No DSL, no JSON config.
-- **Three step kinds, none wrapping another.** `code()` for deterministic logic, `llm()` for single inference calls, `agent()` for full multi-turn loops.
-- **Native control flow.** `parallel`, `forEach`, `branch`, `loop`, `wait`, `invoke` (call another pipeline by id), and nested pipelines are core primitives, not add-ons.
-- **`ctx.secrets` in step callbacks.** `code()` / `llm()` / `agent()` steps declare `secrets: [...]` and read each value via `ctx.secrets.get(name)` inside their `run` / `prompt` / `system` / `mcp` callbacks. Resolution and `allowedSecrets` gating run before the callback fires.
-- **Streaming output.** Backends that opt in (`@skelm/vercel-ai`, `@skelm/pi` SDK, `@skelm/opencode`) emit `step.partial` events on the bus as the model streams; observable through `skelm run … --events json`.
-- **Markdown agent definitions.** `AGENTS.md` for role, `SOUL.md` for persona, `SKILL.md` for capabilities — reviewable in PRs.
+See [Backend documentation](./docs/backends/README.md) for setup guides and comparison.
 
-### Security & isolation
+---
 
-- **Default-deny everywhere.** Every agent step declares the tools, MCP servers, network hosts, and filesystem roots it may use. Anything undeclared is denied at step start.
-- **Real network egress enforcement.** The gateway runs an embedded CONNECT proxy (default port 14739). Agent subprocesses receive `HTTP_PROXY`/`HTTPS_PROXY` automatically — outbound connections to undeclared hosts are blocked at the proxy before they leave the machine. Wildcard patterns, per-step token scoping, and a full audit trail included.
-- **Per-agent workspaces.** Each agent step gets its own filesystem root — persistent or ephemeral — locked against cross-step corruption.
-- **Persistent state and tamper-evident audit.** Typed KV store, append-only decision journals, idempotency primitives, and a hash-chained audit log.
+## Core concepts
 
-### Integrations
+### Workflow step kinds
 
-- **Multi-backend agents.** Opencode, ACP (Copilot, Claude Code, Gemini), OpenAI, Anthropic, Pi — plus a provider SPI for custom backends.
-- **MCP-native.** Model Context Protocol servers are first-class registry citizens, lifecycle-managed by the gateway.
-- **CLI tools as first-class tools.** Agents can shell out to any CLI binary (`gh`, `kubectl`, `psql`, `ffmpeg`, your own scripts) — declared in `allowedTools`, scoped to the agent's workspace, and gated by the same default-deny permissions as everything else.
+- **`code()`** — Deterministic logic, API calls, data transformation
+- **`llm()`** — Single LLM inference call
+- **`agent()`** — Multi-turn agent loops with tools, MCP, and skills
 
-### Operations
+### Control flow primitives
 
-- **Scheduler-native.** Every run is a schedule — immediate, cron, interval, webhook, poll, or queue.
-- **Long-running gateway.** Hosts workflows over HTTP + SSE, drives the scheduler, owns the trust boundary.
-- **Local-first.** SQLite by default; Postgres + vault drivers for production. No managed cloud, no telemetry.
+- **`parallel`** — Run steps concurrently
+- **`forEach`** — Iterate over collections
+- **`branch`** — Conditional execution
+- **`loop`** — Repeat with exit conditions
+- **`wait`** — Pause and resume later
+- **`invoke`** — Call another pipeline by ID
+
+### Security model
+
+- **Default-deny permissions** — Tools, MCP servers, network hosts, filesystem roots must be declared
+- **Network egress enforcement** — Embedded CONNECT proxy blocks undeclared outbound connections
+- **Per-agent workspaces** — Isolated filesystem roots prevent cross-step corruption
+- **Tamper-evident audit** — Hash-chained decision journals for compliance
+
+---
 
 ## What you can build
 
-Build **agents**, along with deterministic steps and one-shot LLM calls, into robust workflows on any trigger or schedule. Here are a few examples:
+- **Coding assistants** — Reachable on chat, open PRs in persistent workspaces
+- **Queue workers** — Watch Jira, GitHub, or email and act on tickets
+- **Email triage** — Classify, summarize, and journal decisions for audit
+- **Digest automation** — Fan out, enrich with LLM, post to Slack
+- **HTTP webhooks** — Typed workflows triggered by external events
+- **Research agents** — Poll sources, store findings, resume after restart
+- **Compliance bots** — Watch S3 buckets, run checks, escalate to agents
 
-- A coding assistant reachable on chat that opens PRs in a persistent repo workspace.
-- A queue worker that watches Jira and tries to ship the ticket.
-- An email-triage agent that classifies, summarizes, and journals decisions you can audit.
-- A nightly digest that fans out, enriches with an LLM, and posts to Slack.
-- An HTTP endpoint that runs a typed workflow with three deterministic steps and one LLM call.
-- A long-lived research agent that polls sources, stores findings in typed KV, and resumes after restart.
-- A compliance bot that watches an S3 bucket via webhook and runs deterministic checks before escalating to an agent.
-- An on-call responder that fans out to multiple LLM backends in parallel and reconciles their answers.
+📁 See [`examples/`](./examples/) for runnable starting points.
 
-If your workflow has any combination of triggers, branching, retries, agents, tools, audit, or scheduling — skelm is the substrate.
+---
 
-Runnable starting points live under [`examples/`](./examples/) — including [`examples/telegram-bot/`](./examples/telegram-bot/README.md), a Telegram chat bot whose pipeline declares a queue trigger; the gateway drives the long-poll loop and dispatches each message into a run.
+## Package architecture
 
-## Three tenets, in this order
+| Package | Purpose |
+|---------|---------|
+| `skelm` | Meta-package — install this, re-exports `@skelm/core` + CLI |
+| `@skelm/core` | Runtime, types, builders, permission model, event bus |
+| `@skelm/cli` | CLI commands — `run`, `schedule`, `gateway`, `audit` |
+| `@skelm/gateway` | Long-running orchestrator: HTTP, scheduler, agent lifecycle |
+| `@skelm/scheduler` | Cron, interval, webhook, poll, queue triggers |
+| `@skelm/integrations` | Typed connectors for GitHub, Slack, Telegram |
+| `@skelm/pi` | Pi coding-agent backend |
+| `@skelm/opencode` | Opencode coding-agent backend |
+| `@skelm/vercel-ai` | Vercel AI SDK backend with streaming |
+| `@skelm/agent` | First-party native agent backend with built-in tools |
+| `@skelm/metrics` | Prometheus-format metrics |
+| `@skelm/otel` | OpenTelemetry tracing |
 
-1. **Security.** Default-deny everywhere. A backend that cannot enforce a declared permission fails at step start instead of bypassing it. The gateway is the single trust boundary; nothing privileged happens outside it.
-2. **Maintenance.** A small core, a narrow public surface, no DSL. Workflows are TypeScript modules.
-3. **Robustness.** Typed context end-to-end. Explicit error semantics. Deterministic event log. Durable wait/resume. Persistent state and per-agent workspaces that survive restarts.
-
-These outrank everything else. We will ship a smaller framework that is secure, maintainable, and robust before we ship a larger one that is not.
-
-## How it compares
-
-|                          | skelm                                            | LangChain        | CrewAI         | n8n               |
-| ------------------------ | :----------------------------------------------: | :--------------: | :------------: | :---------------: |
-| Workflow format          | TypeScript modules                               | Python code      | Python code    | JSON              |
-| Default-deny permissions | ✅ Structural — part of the API                  | ❌                | ❌              | Plugin            |
-| Per-agent workspaces     | ✅ Locked, persistent or ephemeral               | ❌                | ❌              | ❌                 |
-| Tamper-evident audit log | ✅ Hash-chained                                  | ❌                | ❌              | ❌                 |
-| Long-running gateway     | ✅ HTTP + SSE + scheduler                        | Self-build       | Self-build     | ✅                 |
-| Multi-backend agents     | ✅ ACP + SDK + provider SPI                      | ✅                | ✅              | Plugin            |
-| MCP-native               | ✅ Lifecycle-managed                             | Adapter          | Adapter        | ❌                 |
-| Self-hosted              | ✅                                               | ✅                | ✅              | ✅                 |
-| Telemetry                | None                                             | Opt-out          | Opt-out        | Varies            |
-| License                  | MIT                                              | MIT              | MIT            | Sustainable Use   |
-
-## Packages
-
-| Package                                             | Description                                                            |
-| --------------------------------------------------- | ---------------------------------------------------------------------- |
-| [`skelm`](packages/skelm)                           | Meta-package — install this. Re-exports `@skelm/core` + ships the bin  |
-| [`@skelm/core`](packages/core)                      | Runtime, types, builders, permission model, event bus                  |
-| [`@skelm/cli`](packages/cli)                        | CLI primitives — parser, commands, programmatic entry point            |
-| [`@skelm/gateway`](packages/gateway)                | Long-running orchestrator: HTTP, registries, audit, agent lifecycle    |
-| [`@skelm/scheduler`](packages/scheduler)            | Cron / interval / webhook / poll / queue triggers                      |
-| [`@skelm/integrations`](packages/integrations)      | Typed connectors for GitHub, Slack, and friends                        |
-| [`@skelm/opencode`](packages/opencode)              | Opencode coding-agent backend with full permission enforcement         |
-| [`@skelm/pi`](packages/pi)                          | Pi coding-agent backend with full permission enforcement               |
-| [`@skelm/metrics`](packages/metrics)                | Prometheus-format metrics for skelm event streams                      |
-| [`@skelm/otel`](packages/otel)                      | OpenTelemetry tracing for skelm event streams                          |
+---
 
 ## Documentation
 
-Customer-facing docs live under [`docs/`](./docs/) — quickstart, full CLI/API/HTTP reference, deployment guides, recipes for common workflow shapes.
+- **[Quickstart](./docs/quickstart/index.md)** — Get started in 60 seconds
+- **[Backends](./docs/backends/README.md)** — Provider architecture and setup
+- **[Guides](./docs/guides/)** — Testing, plugins, authoring patterns
+- **[Recipes](./docs/recipes/)** — Complete workflow examples
+- **[Reference](./docs/reference/)** — CLI, HTTP API, OpenAPI spec
+- **[Contributing](./CONTRIBUTING.md)** — How to contribute
 
-- **Quickstart:** [`docs/quickstart/index.md`](./docs/quickstart/index.md)
-- **Provider architecture:** [`docs/backends/README.md`](./docs/backends/README.md)
-- **Guides:** [`docs/guides/`](./docs/guides/) — testing, plugins, authoring tips
-- **Recipes:** [`docs/recipes/`](./docs/recipes/) — complete workflow examples
-- **Reference:** [`docs/reference/`](./docs/reference/) — [CLI](./docs/reference/cli.md), [HTTP](./docs/reference/http.md), [OpenAPI](./docs/reference/openapi.yaml), [API](./docs/reference/api.md)
-- **Production hardening:** [`docs/guides/production-hardening.md`](./docs/guides/production-hardening.md) — checklist before exposing the gateway
-- **Contributors:** [`AGENTS.md`](./AGENTS.md) — workflow, code style, testing expectations
-- **Changelog:** [`CHANGELOG.md`](./CHANGELOG.md) — version history
-- **Security policy:** [`SECURITY.md`](./SECURITY.md) — reporting vulnerabilities
+---
 
 ## Community
 
-- [GitHub Discussions](https://github.com/scottgl9/skelm/discussions) — questions, ideas, show & tell
-- [Issues](https://github.com/scottgl9/skelm/issues) — bug reports and feature requests
-- [Contributing](CONTRIBUTING.md) — PRs welcome
+- [GitHub Discussions](https://github.com/scottgl9/skelm/discussions) — Questions and show & tell
+- [Issues](https://github.com/scottgl9/skelm/issues) — Bug reports and feature requests
+- [Contributing](./CONTRIBUTING.md) — PRs welcome
 
 ---
-
-## A real workflow, end to end
-
-A workflow that triages a GitHub issue: a deterministic `code()` step fetches it, then an `agent()` step classifies it — guided by a **skill** that encodes your team's labeling criteria. Skills are reviewable Markdown files that skelm injects into the agent's context at runtime.
-
-```
-issue-triage/
-├── skills/
-│   └── triage-guide/
-│       └── SKILL.md                   ← label criteria the agent follows
-├── workflows/
-│   └── triage-issue.workflow.ts
-├── skelm.config.ts
-└── package.json
-```
-
-**`skills/triage-guide/SKILL.md`**
-
-```markdown
----
-id: triage-guide
-description: Label definitions and triage criteria for issue classification
----
-
-# Issue triage guide
-
-Apply exactly one label per issue:
-
-- **bug** — reproducible defect; something worked before and now does not.
-- **feature** — new capability request; nothing is broken.
-- **duplicate** — same problem already tracked elsewhere; include the existing issue number.
-- **security** — potential vulnerability; flag priority high regardless of other factors.
-- **docs** — documentation error or omission only; no code change needed.
-
-When the issue is ambiguous, prefer **bug** over **feature** and include your uncertainty in `reasoning`.
-```
-
-**`workflows/triage-issue.workflow.ts`**
-
-```ts
-import { pipeline, code, agent } from 'skelm'
-import { z } from 'zod'
-
-export default pipeline({
-  id: 'triage-issue',
-  input:  z.object({ repo: z.string(), issueNumber: z.number() }),
-  output: z.object({ label: z.string(), reasoning: z.string() }),
-  steps: [
-    code({
-      id: 'fetch',
-      run: async (ctx) => {
-        const res = await fetch(
-          `https://api.github.com/repos/${ctx.input.repo}/issues/${ctx.input.issueNumber}`,
-        )
-        return await res.json()
-      },
-    }),
-    agent({
-      id: 'classify',
-      backend: 'pi',
-      skills: ['triage-guide'],          // inject the skill into the agent's context
-      prompt: (ctx) =>
-        `Triage this issue and return JSON with {label, reasoning}:\n${JSON.stringify(ctx.steps.fetch)}`,
-      permissions: {
-        allowedTools:       [],
-        allowedExecutables: [],
-        allowedMcpServers:  [],
-        allowedSkills:      ['triage-guide'],
-        networkEgress:      'deny',
-        fsRead:             [],
-        fsWrite:            [],
-      },
-      output: z.object({
-        label:     z.enum(['bug', 'feature', 'duplicate', 'security', 'docs']),
-        reasoning: z.string(),
-      }),
-      maxTurns: 3,
-    }),
-  ],
-})
-```
-
-**`skelm.config.ts`**
-
-```ts
-import { defineConfig } from 'skelm'
-import { createPiSdkBackend } from '@skelm/pi'
-
-export default defineConfig({
-  backends: { agent: 'pi' },
-  instances: [createPiSdkBackend({ id: 'pi' })],
-  registries: {
-    skills: { glob: 'skills/**/SKILL.md' },  // where skelm discovers SKILL.md files
-  },
-})
-```
-
-Run it, schedule it, or expose it through the gateway:
-
-```bash
-# Run once
-skelm run workflows/triage-issue.workflow.ts --input '{"repo":"acme/x","issueNumber":42}'
-
-# Trigger from a webhook
-skelm schedule add workflows/triage-issue.workflow.ts --webhook /webhooks/issue-events
-
-# Or host it in the long-running gateway
-skelm gateway start
-```
-
-## Author
-
-Scott Glover — `scottgl@gmail.com`
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE)
 
-If you build something interesting on skelm, we want to hear about it — open an issue with the `showcase` label.
+---
+
+**Author:** Scott Glover — `scottgl@gmail.com`
+
+If you build something interesting on skelm, open an issue with the `showcase` label — we want to hear about it.
