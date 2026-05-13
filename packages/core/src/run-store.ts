@@ -25,6 +25,10 @@ export interface RunFilter {
   readonly pipelineId?: string
   readonly status?: RunStatus
   readonly limit?: number
+  /** Inclusive lower bound on `startedAt` (epoch ms). */
+  readonly startedAfter?: number
+  /** Inclusive upper bound on `startedAt` (epoch ms). */
+  readonly startedBefore?: number
 }
 
 export interface AuditEntry {
@@ -88,6 +92,8 @@ export class MemoryRunStore implements RunStore {
     const runs = [...this.runs.values()]
       .filter((run) => filter.pipelineId === undefined || run.pipelineId === filter.pipelineId)
       .filter((run) => filter.status === undefined || run.status === filter.status)
+      .filter((run) => filter.startedAfter === undefined || run.startedAt >= filter.startedAfter)
+      .filter((run) => filter.startedBefore === undefined || run.startedAt <= filter.startedBefore)
       .sort((a, b) => b.startedAt - a.startedAt)
 
     const limited = filter.limit === undefined ? runs : runs.slice(0, filter.limit)
@@ -310,6 +316,14 @@ export class SqliteRunStore implements RunStore {
     if (filter.status !== undefined) {
       clauses.push('status = ?')
       params.push(filter.status)
+    }
+    if (filter.startedAfter !== undefined) {
+      clauses.push('started_at >= ?')
+      params.push(filter.startedAfter)
+    }
+    if (filter.startedBefore !== undefined) {
+      clauses.push('started_at <= ?')
+      params.push(filter.startedBefore)
     }
     const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''
     const limit = filter.limit !== undefined ? `LIMIT ${filter.limit}` : ''
