@@ -14,6 +14,7 @@
  *   dispatching tool calls; no external sandbox required.
  */
 
+import { type McpHost, createMcpHost } from '@skelm/core'
 import type {
   AgentRequest,
   AgentResponse,
@@ -60,6 +61,10 @@ function createDefaultPolicy(cwd: string, agentDefRoot: string): ResolvedPolicy 
     fsWrite: roots,
     approval: null,
   })
+}
+
+function isObjectSchema(s: unknown): s is Record<string, unknown> {
+  return typeof s === 'object' && s !== null && !Array.isArray(s)
 }
 
 const capabilities: BackendCapabilities = {
@@ -117,91 +122,123 @@ async function runAgentLoop(
 
   const messages: OpenAIMessage[] = [{ role: 'user', content: req.prompt }]
 
-  const maxTurns = req.maxTurns ?? 30
-  let turn = 0
-
-  while (turn < maxTurns) {
-    turn++
-
-    const response = await chatCompletion(opts.baseUrl, {
-      apiKey: opts.apiKey,
-      model,
-      messages,
-      temperature: undefined,
-      maxTokens: undefined,
-      tools: BUILTIN_TOOLS.map(toOpenAITool),
-      responseFormat: undefined,
-      signal: ctx.signal,
-      timeoutMs: opts.timeoutMs,
+  // The runtime only builds an mcpHost for backends with toolPermissions:
+  // 'wrapped'. We're 'native', so for step.mcp to actually do anything the
+  // backend has to bring up the host itself and tear it down on exit.
+  let ownMcpHost: McpHost | undefined
+  if (ctx.mcpHost === undefined && req.mcpServers !== undefined && req.mcpServers.length > 0) {
+    ownMcpHost = await createMcpHost(req.mcpServers, {
+      ...(ctx.permissions !== undefined && { enforcer }),
     })
-
-    const choice = response.choices?.[0]
-    if (!choice?.message) {
-      throw new Error('LLM returned empty response')
-    }
-
-    const toolCalls = choice.message.tool_calls
-    if (!toolCalls || toolCalls.length === 0) {
-      const content = choice.message.content
-      const text = typeof content === 'string' ? content : content !== null ? String(content) : ''
-      return {
-        text,
-        stopReason: choice.finish_reason ?? 'stop',
-        usage: toUsage(response.usage),
-      }
-    }
-
-    const assistantMsg: OpenAIMessage = {
-      role: 'assistant',
-      tool_calls: toolCalls.map((tc) => ({
-        id: tc.id,
-        type: tc.type,
-        function: { name: tc.function.name, arguments: tc.function.arguments },
-      })),
-    }
-    messages.push(assistantMsg)
-
-    for (const tc of toolCalls) {
-      let parsedArgs: unknown = {}
-      try {
-        parsedArgs = JSON.parse(tc.function.arguments)
-      } catch {
-        // pass
-      }
-
-      const builtinTool = BUILTIN_TOOLS.find((t) => t.name === tc.function.name)
-
-      let result: ToolResult
-      if (builtinTool) {
-        result = await builtinTool.handler(parsedArgs, toolCtx)
-      } else if (ctx.mcpHost) {
-        try {
-          const toolDecision = enforcer.canCallTool(tc.function.name)
-          if (!toolDecision.allow) {
-            result = { content: `Permission denied: ${toolDecision.reason}`, isError: true }
-          } else {
-            const mcpResult = await ctx.mcpHost.invokeTool(tc.function.name, parsedArgs, ctx.signal)
-            const textParts = mcpResult.content
-              .filter((c) => c.type === 'text')
-              .map((c) => (c as { type: 'text'; text: string }).text)
-            result = { content: textParts.join('') }
-          }
-        } catch (err) {
-          result = { content: `MCP error: ${(err as Error).message}`, isError: true }
-        }
-      } else {
-        result = { content: `Unknown tool: ${tc.function.name}`, isError: true }
-      }
-
-      messages.push({
-        role: 'tool',
-        content: result.content,
-        tool_call_id: tc.id,
-      })
-    }
   }
+  const mcpHost = ctx.mcpHost ?? ownMcpHost
 
-  throw new Error(`Agent exceeded max turns (${maxTurns})`)
+  try {
+    // Surface every MCP tool the host has bridged in alongside the built-ins,
+    // so the model actually knows it can call them. Without this the agent
+    // loop's else-if (mcpHost) branch below is dead: the model never sees
+    // the namespaced "<serverId>.<toolName>" names and only falls back to the
+    // built-in tools (F016).
+    const mcpTools = mcpHost
+      ? (await mcpHost.listTools()).map((t) => ({
+          type: 'function' as const,
+          function: {
+            name: t.id,
+            ...(t.description !== undefined && { description: t.description }),
+            ...(isObjectSchema(t.inputSchema) && { parameters: t.inputSchema }),
+          },
+        }))
+      : []
+    const tools = [...BUILTIN_TOOLS.map(toOpenAITool), ...mcpTools]
+
+    const maxTurns = req.maxTurns ?? 30
+    let turn = 0
+
+    while (turn < maxTurns) {
+      turn++
+
+      const response = await chatCompletion(opts.baseUrl, {
+        apiKey: opts.apiKey,
+        model,
+        messages,
+        temperature: undefined,
+        maxTokens: undefined,
+        tools,
+        responseFormat: undefined,
+        signal: ctx.signal,
+        timeoutMs: opts.timeoutMs,
+      })
+
+      const choice = response.choices?.[0]
+      if (!choice?.message) {
+        throw new Error('LLM returned empty response')
+      }
+
+      const toolCalls = choice.message.tool_calls
+      if (!toolCalls || toolCalls.length === 0) {
+        const content = choice.message.content
+        const text = typeof content === 'string' ? content : content !== null ? String(content) : ''
+        return {
+          text,
+          stopReason: choice.finish_reason ?? 'stop',
+          usage: toUsage(response.usage),
+        }
+      }
+
+      const assistantMsg: OpenAIMessage = {
+        role: 'assistant',
+        tool_calls: toolCalls.map((tc) => ({
+          id: tc.id,
+          type: tc.type,
+          function: { name: tc.function.name, arguments: tc.function.arguments },
+        })),
+      }
+      messages.push(assistantMsg)
+
+      for (const tc of toolCalls) {
+        let parsedArgs: unknown = {}
+        try {
+          parsedArgs = JSON.parse(tc.function.arguments)
+        } catch {
+          // pass
+        }
+
+        const builtinTool = BUILTIN_TOOLS.find((t) => t.name === tc.function.name)
+
+        let result: ToolResult
+        if (builtinTool) {
+          result = await builtinTool.handler(parsedArgs, toolCtx)
+        } else if (mcpHost) {
+          try {
+            const toolDecision = enforcer.canCallTool(tc.function.name)
+            if (!toolDecision.allow) {
+              result = { content: `Permission denied: ${toolDecision.reason}`, isError: true }
+            } else {
+              const mcpResult = await mcpHost.invokeTool(tc.function.name, parsedArgs, ctx.signal)
+              const textParts = mcpResult.content
+                .filter((c) => c.type === 'text')
+                .map((c) => (c as { type: 'text'; text: string }).text)
+              result = { content: textParts.join('') }
+            }
+          } catch (err) {
+            result = { content: `MCP error: ${(err as Error).message}`, isError: true }
+          }
+        } else {
+          result = { content: `Unknown tool: ${tc.function.name}`, isError: true }
+        }
+
+        messages.push({
+          role: 'tool',
+          content: result.content,
+          tool_call_id: tc.id,
+        })
+      }
+    }
+
+    throw new Error(`Agent exceeded max turns (${maxTurns})`)
+  } finally {
+    if (ownMcpHost !== undefined) await ownMcpHost.dispose()
+  }
 }
 
 /**
