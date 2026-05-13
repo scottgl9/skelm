@@ -323,19 +323,34 @@ async function runAgentStep(
         }
       }
     }
+    // Backend-capability fail-fast: publish permission.denied BEFORE the throw
+    // so the runner's audit subscription (runner.ts:442-450) records it. Without
+    // this the run still fails closed at the CLI/gateway boundary, but the
+    // audit log stays silent — a deny event vanishes into the void, which is
+    // what we explicitly avoid for any other dimension.
     if (mcpServers !== undefined && mcpServers.length > 0 && !backend.capabilities.mcp) {
-      throw new BackendCapabilityError(
-        `backend ${backend.id} does not support per-step MCP attachments`,
-        backend.id,
-        'mcp',
-      )
+      const detail = `backend ${backend.id} does not support per-step MCP attachments`
+      events?.publish({
+        type: 'permission.denied',
+        runId: ctx.run.runId,
+        stepId: step.id,
+        dimension: 'mcp',
+        detail,
+        at: Date.now(),
+      })
+      throw new BackendCapabilityError(detail, backend.id, 'mcp')
     }
     if (step.skills !== undefined && step.skills.length > 0 && !backend.capabilities.skills) {
-      throw new BackendCapabilityError(
-        `backend ${backend.id} does not support skill loading`,
-        backend.id,
-        'skills',
-      )
+      const detail = `backend ${backend.id} does not support skill loading`
+      events?.publish({
+        type: 'permission.denied',
+        runId: ctx.run.runId,
+        stepId: step.id,
+        dimension: 'skill',
+        detail,
+        at: Date.now(),
+      })
+      throw new BackendCapabilityError(detail, backend.id, 'skills')
     }
     const declaredPermissionDimensions = collectResolvedPermissionDimensions(policy, mcpServers)
     try {
