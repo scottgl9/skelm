@@ -37,6 +37,8 @@ const RENAME = {
   '@skelm/opencode': '@scottgl9/opencode',
   '@skelm/otel': '@scottgl9/otel',
   '@skelm/pi': '@scottgl9/pi',
+  '@skelm/vercel-ai': '@scottgl9/vercel-ai',
+  '@skelm/agent': '@scottgl9/agent',
   skelm: '@scottgl9/skelm',
 }
 
