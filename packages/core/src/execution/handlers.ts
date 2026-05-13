@@ -11,6 +11,7 @@ import {
   InvokePipelineNotFoundError,
   PermissionDeniedError,
   RunCancelledError,
+  StepTimeoutError,
   serializeError,
 } from '../errors.js'
 import { EventBus } from '../events.js'
@@ -440,18 +441,48 @@ async function runAgentStep(
               })
             }
           : undefined
-      // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
-      const response = await backend.run!(req, {
-        signal: ctx.signal,
-        ...(policy !== undefined && { permissions: policy }),
-        ...(step.permissions !== undefined && { declaredPermissions: step.permissions }),
-        ...(mcpHost !== undefined && { mcpHost }),
-        ...(policyFetch !== undefined && { fetch: policyFetch }),
-        ...(loadSkill !== undefined && { loadSkill }),
-        ...(egressToken !== undefined && { egressToken }),
-        ...(proxyEnv !== undefined && { proxyEnv }),
-        ...(onPartial !== undefined && { onPartial }),
-      })
+      // Per-step timeout: install an AbortController chained to ctx.signal so
+      // a step.timeoutMs budget aborts the backend mid-run and surfaces as a
+      // StepTimeoutError. Without this, backends that ignore the budget (e.g.
+      // the native @skelm/agent loop) would run to completion regardless.
+      const stepController = step.timeoutMs !== undefined ? new AbortController() : undefined
+      const stepSignal = stepController?.signal ?? ctx.signal
+      const onParentAbort =
+        stepController !== undefined ? () => stepController.abort(ctx.signal.reason) : undefined
+      if (stepController !== undefined && onParentAbort !== undefined) {
+        if (ctx.signal.aborted) stepController.abort(ctx.signal.reason)
+        else ctx.signal.addEventListener('abort', onParentAbort, { once: true })
+      }
+      const timeoutHandle =
+        step.timeoutMs !== undefined && stepController !== undefined
+          ? setTimeout(
+              () => stepController.abort(new StepTimeoutError(step.id, step.timeoutMs!)),
+              step.timeoutMs,
+            )
+          : undefined
+      let response: import('../backend.js').AgentResponse
+      try {
+        // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
+        response = await backend.run!(req, {
+          signal: stepSignal,
+          ...(policy !== undefined && { permissions: policy }),
+          ...(step.permissions !== undefined && { declaredPermissions: step.permissions }),
+          ...(mcpHost !== undefined && { mcpHost }),
+          ...(policyFetch !== undefined && { fetch: policyFetch }),
+          ...(loadSkill !== undefined && { loadSkill }),
+          ...(egressToken !== undefined && { egressToken }),
+          ...(proxyEnv !== undefined && { proxyEnv }),
+          ...(onPartial !== undefined && { onPartial }),
+        })
+      } catch (err) {
+        if (stepSignal.aborted && stepSignal.reason instanceof StepTimeoutError) {
+          throw stepSignal.reason
+        }
+        throw err
+      } finally {
+        if (timeoutHandle !== undefined) clearTimeout(timeoutHandle)
+        if (onParentAbort !== undefined) ctx.signal.removeEventListener('abort', onParentAbort)
+      }
       const candidate =
         step.outputSchema !== undefined
           ? (response.structured ?? extractJsonFromText(response.text))
