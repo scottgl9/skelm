@@ -280,6 +280,54 @@ describe('SkelmAgentBackend — run / tool loop (mocked)', () => {
     }
   })
 
+  it('lists MCP tools alongside built-ins and dispatches MCP calls (F016 regression)', async () => {
+    const mcpHost = {
+      listTools: async () => [
+        {
+          id: 'echo.greet',
+          serverId: 'echo',
+          name: 'greet',
+          description: 'Echo greeting',
+          inputSchema: { type: 'object', properties: { who: { type: 'string' } } },
+        },
+      ],
+      invokeTool: async (id: string, args: unknown) => ({
+        content: [{ type: 'text' as const, text: `MCP_OK:${id}:${(args as { who: string }).who}` }],
+      }),
+      dispose: async () => {},
+    }
+    const fetchSpy = stubFetch([
+      { toolCalls: [{ name: 'echo.greet', arguments: { who: 'world' } }] },
+      { content: 'AGENT_SAW_MCP' },
+    ])
+
+    const response = await backend.run?.(
+      { prompt: 'Use echo.greet to greet world.', maxTurns: 3 },
+      {
+        signal: new AbortController().signal,
+        permissions: makePolicy({ allowedMcpServers: ['echo'] }),
+        mcpHost,
+      },
+    )
+
+    expect(response?.text).toBe('AGENT_SAW_MCP')
+
+    // First chat-completion request must advertise echo.greet alongside built-ins.
+    const body1 = JSON.parse((fetchSpy.mock.calls[0]?.[1] as { body: string }).body) as {
+      tools: Array<{ function: { name: string } }>
+    }
+    const advertised = body1.tools.map((t) => t.function.name)
+    expect(advertised).toContain('echo.greet')
+    expect(advertised).toContain('fs_read')
+
+    // Second turn must reflect the MCP tool result.
+    const body2 = JSON.parse((fetchSpy.mock.calls[1]?.[1] as { body: string }).body) as {
+      messages: Array<{ role: string; content: string }>
+    }
+    const toolMsg = body2.messages.find((m) => m.role === 'tool')
+    expect(toolMsg?.content).toBe('MCP_OK:echo.greet:world')
+  })
+
   it('throws when maxTurns is exceeded', async () => {
     // Every turn keeps calling fs_read — the loop will hit maxTurns and bail.
     stubFetch([{ toolCalls: [{ name: 'fs_read', arguments: { path: '/nowhere' } }] }])
