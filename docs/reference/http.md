@@ -91,6 +91,33 @@ The `:id` path segment is the workflow-registry id — by default this is the fi
 | GET    | `/debug/runs`                       | List runs paused at breakpoints   |
 | POST   | `/debug/runs/:runId/release`        | Release a paused run              |
 
+## Dashboard (`/v1/dashboard/*`)
+
+Read-only aggregations composed from the run store, registries, trigger
+coordinator, and approval gate. Same bearer auth as the rest of the control
+surface. Responses for `/overview` and `/analytics` are cached in-memory with
+a five-second TTL.
+
+| Method | Path                          | Description                                                                                |
+| ------ | ----------------------------- | ------------------------------------------------------------------------------------------ |
+| GET    | `/v1/dashboard/overview`      | Snapshot: gateway, workflows, runs (status counts, last-24h, avg duration), schedules, approvals, errors |
+| GET    | `/v1/dashboard/workflows`     | Per-workflow stats: totalRuns, lastRunAt, lastStatus, successRate                          |
+| GET    | `/v1/dashboard/runs`          | Filtered run list. Query: `workflowId`, `status`, `dateFrom`, `dateTo` (epoch ms), `limit` |
+| GET    | `/v1/dashboard/analytics`     | Time-bucketed series. Query: `metric=runs-per-hour\|success-rate\|avg-duration`, `resolution=hour\|day\|week`, `dateFrom`, `dateTo`, `workflowId?` |
+| GET    | `/v1/dashboard/errors`        | Recent failed runs + groupings by pipeline + message. Query: `limit`                       |
+| GET    | `/v1/dashboard/schedules`     | Trigger status: kind, workflowId, fired count, inflight, lastFiredAt, lastError            |
+| GET    | `/v1/dashboard/approvals`     | Pending approvals with `ageMs`; reports `pendingCount` and `oldestPendingAgeMs`            |
+
+Example:
+
+```
+curl -H "Authorization: Bearer $SKELM_TOKEN" \
+  "http://127.0.0.1:14738/v1/dashboard/analytics?metric=runs-per-hour&resolution=hour&dateFrom=1715600000000&dateTo=1715686400000"
+```
+
+A minimal reference dashboard that consumes these endpoints lives in
+[`examples/dashboard-demo`](../../examples/dashboard-demo/README.md).
+
 ## OpenAI compatibility (optional surface)
 
 | Method | Path                       | Description                          |

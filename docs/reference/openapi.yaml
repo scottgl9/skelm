@@ -4,7 +4,7 @@ info:
   description: |
     Control plane and runs surface for the skelm gateway. The gateway is the
     trust boundary — every privileged action is enforced and audited here.
-  version: 0.3.7
+  version: 0.3.8
   license:
     name: MIT
 servers:
@@ -308,6 +308,143 @@ paths:
       responses:
         '200': { description: Released }
 
+  /v1/dashboard/overview:
+    get:
+      summary: Dashboard overview snapshot
+      responses:
+        '200':
+          description: Overview
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardOverview' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/dashboard/workflows:
+    get:
+      summary: Per-workflow run statistics
+      responses:
+        '200':
+          description: Workflow stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflows:
+                    type: array
+                    items: { $ref: '#/components/schemas/DashboardWorkflowStats' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/dashboard/runs:
+    get:
+      summary: Filtered run list
+      parameters:
+        - in: query
+          name: workflowId
+          schema: { type: string }
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, running, waiting, completed, failed, cancelled]
+        - in: query
+          name: dateFrom
+          schema: { type: integer, format: int64, description: 'Inclusive lower bound on startedAt (epoch ms)' }
+        - in: query
+          name: dateTo
+          schema: { type: integer, format: int64 }
+        - in: query
+          name: limit
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Runs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runs:
+                    type: array
+                    items: { $ref: '#/components/schemas/DashboardRunListItem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/dashboard/analytics:
+    get:
+      summary: Time-bucketed analytics
+      parameters:
+        - in: query
+          name: metric
+          required: true
+          schema:
+            type: string
+            enum: [runs-per-hour, success-rate, avg-duration]
+        - in: query
+          name: resolution
+          schema:
+            type: string
+            enum: [hour, day, week]
+            default: hour
+        - in: query
+          name: dateFrom
+          schema: { type: integer, format: int64 }
+        - in: query
+          name: dateTo
+          schema: { type: integer, format: int64 }
+        - in: query
+          name: workflowId
+          schema: { type: string }
+      responses:
+        '200':
+          description: Analytics
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardAnalytics' }
+        '400': { description: Invalid metric, resolution, or date range }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/dashboard/errors:
+    get:
+      summary: Recent failures and groupings
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 25 }
+      responses:
+        '200':
+          description: Errors
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardErrors' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/dashboard/schedules:
+    get:
+      summary: Schedule/trigger status
+      responses:
+        '200':
+          description: Schedules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedules:
+                    type: array
+                    items: { $ref: '#/components/schemas/DashboardScheduleStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/dashboard/approvals:
+    get:
+      summary: Pending approvals with ages
+      responses:
+        '200':
+          description: Approvals
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardApprovals' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -367,3 +504,142 @@ components:
         stepId: { type: string }
         message: { type: string }
         createdAt: { type: string, format: date-time }
+
+    DashboardOverview:
+      type: object
+      properties:
+        gateway:
+          type: object
+          properties:
+            status: { type: string, enum: [running] }
+            uptimeMs: { type: integer }
+            version: { type: string }
+            startedAt: { type: integer, format: int64 }
+        workflows:
+          type: object
+          properties:
+            total: { type: integer }
+            withRecentFailures: { type: integer }
+        runs:
+          type: object
+          properties:
+            total: { type: integer }
+            byStatus:
+              type: object
+              additionalProperties: { type: integer }
+            avgDurationMs: { type: integer, nullable: true }
+            last24h: { type: integer }
+        schedules:
+          type: object
+          properties:
+            total: { type: integer }
+            inflight: { type: integer }
+            withErrors: { type: integer }
+        approvals:
+          type: object
+          properties:
+            pending: { type: integer }
+            oldestPendingAgeMs: { type: integer, nullable: true }
+        errors:
+          type: object
+          properties:
+            last24h: { type: integer }
+            recent:
+              type: array
+              items:
+                type: object
+                properties:
+                  runId: { type: string }
+                  pipelineId: { type: string }
+                  message: { type: string }
+                  at: { type: integer, format: int64 }
+
+    DashboardWorkflowStats:
+      type: object
+      properties:
+        id: { type: string }
+        file: { type: string }
+        totalRuns: { type: integer }
+        lastRunAt: { type: integer, format: int64, nullable: true }
+        lastStatus:
+          type: string
+          enum: [pending, running, waiting, completed, failed, cancelled]
+          nullable: true
+        successRate: { type: number, nullable: true }
+
+    DashboardRunListItem:
+      type: object
+      properties:
+        runId: { type: string }
+        pipelineId: { type: string }
+        status:
+          type: string
+          enum: [pending, running, waiting, completed, failed, cancelled]
+        startedAt: { type: integer, format: int64 }
+        completedAt: { type: integer, format: int64 }
+        durationMs: { type: integer }
+
+    DashboardAnalytics:
+      type: object
+      properties:
+        metric: { type: string, enum: [runs-per-hour, success-rate, avg-duration] }
+        resolution: { type: string, enum: [hour, day, week] }
+        dateFrom: { type: integer, format: int64 }
+        dateTo: { type: integer, format: int64 }
+        workflowId: { type: string }
+        points:
+          type: array
+          items:
+            type: object
+            properties:
+              bucketStart: { type: integer, format: int64 }
+              value: { type: number }
+
+    DashboardErrors:
+      type: object
+      properties:
+        last24h: { type: integer }
+        recent:
+          type: array
+          items:
+            type: object
+            properties:
+              runId: { type: string }
+              pipelineId: { type: string }
+              message: { type: string }
+              at: { type: integer, format: int64 }
+        topGroups:
+          type: array
+          items:
+            type: object
+            properties:
+              pipelineId: { type: string }
+              message: { type: string }
+              count: { type: integer }
+              lastAt: { type: integer, format: int64 }
+
+    DashboardScheduleStatus:
+      type: object
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        workflowId: { type: string }
+        fired: { type: integer }
+        inflight: { type: boolean }
+        lastFiredAt: { type: string, format: date-time, nullable: true }
+        lastError: { type: string, nullable: true }
+
+    DashboardApprovals:
+      type: object
+      properties:
+        pendingCount: { type: integer }
+        oldestPendingAgeMs: { type: integer, nullable: true }
+        pending:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              createdAt: { type: string, format: date-time }
+              ageMs: { type: integer }
+              request: {}

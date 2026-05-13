@@ -61,6 +61,7 @@ The HTTP API speaks JSON over `h3`, with SSE for run event streams.
 | `POST` | `/runs/:id/cancel`                  | Cancel an in-flight run              |
 | `POST` | `/approvals/:id/{approve,deny}`     | Resolve a pending approval           |
 | `GET`  | `/audit`                            | Tamper-evident, hash-chained audit   |
+| `GET`  | `/v1/dashboard/*`                   | Read-only aggregations for dashboards ([demo](https://github.com/scottgl9/skelm/blob/main/examples/dashboard-demo/README.md)) |
 
 See [`docs/reference/`](https://github.com/scottgl9/skelm/blob/main/docs/reference/) for the full schema, and [`docs/guides/production-hardening.md`](https://github.com/scottgl9/skelm/blob/main/docs/guides/production-hardening.md) for the production deployment checklist (reverse proxy, Postgres, secrets).
 
