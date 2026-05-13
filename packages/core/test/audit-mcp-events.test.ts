@@ -68,4 +68,73 @@ describe('runPipeline auditWriter — MCP events', () => {
     )
     expect(mcpDenials.length).toBeGreaterThan(0)
   })
+
+  it('records permission.denied when backend lacks MCP capability', async () => {
+    const reg = new BackendRegistry()
+    // Same shape as echoBackend but flips capabilities.mcp to false — should
+    // fail-fast at handlers.ts before any backend dispatch.
+    reg.register({
+      id: 'no-mcp-backend',
+      capabilities: { ...echoCapabilities, mcp: false },
+      async run(): Promise<AgentResponse> {
+        throw new Error('should never be dispatched')
+      },
+    })
+    const audit = new RecordingAuditWriter()
+    const wf = pipeline({
+      id: 'mcp-capability-denied',
+      steps: [
+        agent({
+          id: 'work',
+          backend: 'no-mcp-backend',
+          mcp: [{ id: 'echo', transport: 'stdio', command: 'node', args: ['-e', '1'] }],
+          permissions: { allowedMcpServers: ['echo'] },
+          prompt: 'hi',
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined, { backends: reg, auditWriter: audit })
+    expect(run.status).toBe('failed')
+    const capabilityDenials = audit.entries.filter(
+      (e) =>
+        e.action === 'permission.denied' &&
+        (e.details as { dimension?: string; detail?: string }).dimension === 'mcp' &&
+        (e.details as { detail?: string }).detail?.includes('does not support per-step MCP'),
+    )
+    expect(capabilityDenials.length).toBeGreaterThan(0)
+  })
+
+  it('records permission.denied when backend lacks skill capability', async () => {
+    const reg = new BackendRegistry()
+    reg.register({
+      id: 'no-skills-backend',
+      capabilities: { ...echoCapabilities, skills: false },
+      async run(): Promise<AgentResponse> {
+        throw new Error('should never be dispatched')
+      },
+    })
+    const audit = new RecordingAuditWriter()
+    const wf = pipeline({
+      id: 'skill-capability-denied',
+      steps: [
+        agent({
+          id: 'work',
+          backend: 'no-skills-backend',
+          skills: ['some-skill'],
+          permissions: { allowedSkills: ['some-skill'] },
+          prompt: 'hi',
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined, { backends: reg, auditWriter: audit })
+    expect(run.status).toBe('failed')
+    const skillDenials = audit.entries.filter(
+      (e) =>
+        e.action === 'permission.denied' &&
+        (e.details as { dimension?: string }).dimension === 'skill',
+    )
+    expect(skillDenials.length).toBeGreaterThan(0)
+  })
 })
