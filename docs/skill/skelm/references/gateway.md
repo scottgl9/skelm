@@ -54,7 +54,7 @@ Default port: `14738`, default host: `127.0.0.1`. Configure via `server.port` an
 
 ## Network egress proxy
 
-The gateway hosts an embedded CONNECT proxy (default port `server.port + 1` = 14739) that enforces `networkEgress` permissions. See the [Gateway guide](../../guides/gateway.md#network-egress-proxy) for details.
+The gateway hosts an embedded CONNECT proxy (default port `server.port + 1` = 14739) that enforces `networkEgress` permissions. See the [Gateway guide](../../../guides/gateway.md#network-egress-proxy) for details.
 
 Configure in `skelm.config.ts`:
 

@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/skelm"><img src="https://img.shields.io/npm/v/skelm" alt="npm version" /></a>
   <a href="https://scottgl9.github.io/skelm/"><img src="https://img.shields.io/badge/docs-online-blue" alt="Docs" /></a>
-  <a href="https://github.com/scottgl9/skelm/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
   <a href="https://github.com/scottgl9/skelm/stargazers"><img src="https://img.shields.io/github/stars/scottgl9/skelm" alt="GitHub stars" /></a>
 </p>
 
@@ -139,7 +139,7 @@ See [Backend documentation](./docs/backends/README.md) for setup guides and comp
 - **[Guides](./docs/guides/)** — Testing, plugins, authoring patterns
 - **[Recipes](./docs/recipes/)** — Complete workflow examples
 - **[Reference](./docs/reference/)** — CLI, HTTP API, OpenAPI spec
-- **[Contributing](./docs/contributing/CONTRIBUTING.md)** — How to contribute
+- **[Contributing](./.github/CONTRIBUTING.md)** — How to contribute
 
 ---
 
@@ -147,7 +147,7 @@ See [Backend documentation](./docs/backends/README.md) for setup guides and comp
 
 - [GitHub Discussions](https://github.com/scottgl9/skelm/discussions) — Questions and show & tell
 - [Issues](https://github.com/scottgl9/skelm/issues) — Bug reports and feature requests
-- [Contributing](./docs/contributing/CONTRIBUTING.md) — PRs welcome
+- [Contributing](./.github/CONTRIBUTING.md) — PRs welcome
 
 ---
 
