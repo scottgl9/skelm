@@ -210,7 +210,7 @@ curl http://127.0.0.1:14738/runs/<runId>
 - [Concepts → Permissions](../concepts/permissions.md) — the default-deny model, how to widen safely with profiles.
 - [Concepts → Coding agents](../concepts/coding-agents.md) — how skelm's agent runtime composes with backends.
 - [Concepts → Registries](../concepts/registries.md) — workflow, skill, agent, and MCP-server registries.
-- [Recipes](../recipes/index.md) — complete examples of long-running and HTTP-triggered patterns.
+- [Recipes](../recipes/README.md) — complete examples of long-running and HTTP-triggered patterns.
 - [CLI reference](../reference/cli.md) and [HTTP reference](../reference/http.md).
 
 ## Common gotchas

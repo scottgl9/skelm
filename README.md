@@ -53,7 +53,7 @@ skelm schedule add workflows/hello.workflow.ts --cron '0 * * * *'  # cron job
 skelm gateway start                                                # long-running service
 ```
 
-📖 **Next:** [Quickstart guide](./docs/quickstart/index.md)
+📖 **Next:** [Quickstart guide](./docs/quickstart/README.md)
 
 ---
 
@@ -134,7 +134,7 @@ See [Backend documentation](./docs/backends/README.md) for setup guides and comp
 
 ## Documentation
 
-- **[Quickstart](./docs/quickstart/index.md)** — Get started in 60 seconds
+- **[Quickstart](./docs/quickstart/README.md)** — Get started in 60 seconds
 - **[Backends](./docs/backends/README.md)** — Provider architecture and setup
 - **[Guides](./docs/guides/)** — Testing, plugins, authoring patterns
 - **[Recipes](./docs/recipes/)** — Complete workflow examples
