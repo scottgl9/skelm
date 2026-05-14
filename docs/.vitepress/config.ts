@@ -1,4 +1,13 @@
 import { defineConfig } from 'vitepress'
+import { readFileSync, existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
+const typedocSidebarPath = fileURLToPath(
+  new URL('../reference/api/typedoc-sidebar.json', import.meta.url),
+)
+const typedocSidebar = existsSync(typedocSidebarPath)
+  ? (JSON.parse(readFileSync(typedocSidebarPath, 'utf8')) as unknown[])
+  : []
 
 export default defineConfig({
   title: 'skelm',
@@ -15,8 +24,11 @@ export default defineConfig({
 
     nav: [
       { text: 'Guide', link: '/quickstart/' },
+      { text: 'Concepts', link: '/concepts/' },
       { text: 'Recipes', link: '/recipes/' },
-      { text: 'Reference', link: '/reference/api' },
+      { text: 'Reference', link: '/reference/' },
+      { text: 'Contributing', link: '/contributing/CONTRIBUTING' },
+      { text: 'Changelog', link: '/CHANGELOG' },
       { text: 'GitHub', link: 'https://github.com/scottgl9/skelm' },
     ],
 
@@ -31,6 +43,7 @@ export default defineConfig({
         {
           text: 'Concepts',
           items: [
+            { text: 'Overview', link: '/concepts/' },
             { text: 'Permissions', link: '/concepts/permissions' },
             { text: 'Coding Agents', link: '/concepts/coding-agents' },
             { text: 'Registries', link: '/concepts/registries' },
@@ -53,17 +66,32 @@ export default defineConfig({
       '/guides/': [
         {
           text: 'Guides',
+          items: [{ text: 'Overview', link: '/guides/' }],
+        },
+        {
+          text: 'Authoring',
           items: [
-            { text: 'Testing Workflows', link: '/guides/testing-workflows' },
             { text: 'Writing a Backend', link: '/guides/writing-a-backend' },
             { text: 'Writing a Plugin', link: '/guides/writing-a-plugin' },
-            { text: 'ACP Sessions', link: '/guides/acp-sessions' },
-            { text: 'Approvals', link: '/guides/approvals' },
-            { text: 'Audit', link: '/guides/audit' },
+            { text: 'Testing Workflows', link: '/guides/testing-workflows' },
+          ],
+        },
+        {
+          text: 'Operating the gateway',
+          items: [
             { text: 'Gateway', link: '/guides/gateway' },
-            { text: 'MCP Servers', link: '/guides/mcp-servers' },
-            { text: 'Secrets', link: '/guides/secrets' },
             { text: 'Triggers', link: '/guides/triggers' },
+            { text: 'ACP Sessions', link: '/guides/acp-sessions' },
+            { text: 'MCP Servers', link: '/guides/mcp-servers' },
+          ],
+        },
+        {
+          text: 'Security & compliance',
+          items: [
+            { text: 'Approvals', link: '/guides/approvals' },
+            { text: 'Secrets', link: '/guides/secrets' },
+            { text: 'Audit', link: '/guides/audit' },
+            { text: 'Production Hardening', link: '/guides/production-hardening' },
           ],
         },
       ],
@@ -71,10 +99,21 @@ export default defineConfig({
         {
           text: 'Reference',
           items: [
-            { text: 'API (Core)', link: '/reference/api' },
+            { text: 'Overview', link: '/reference/' },
+            { text: 'API (generated)', link: '/reference/api' },
             { text: 'CLI', link: '/reference/cli' },
             { text: 'HTTP', link: '/reference/http' },
+            { text: 'Config', link: '/reference/config' },
+            { text: 'Permissions', link: '/reference/permissions' },
+            { text: 'Pipeline Authoring', link: '/reference/pipeline-authoring' },
+            { text: 'Agent Step', link: '/reference/agent-step' },
+            { text: 'Gateway', link: '/reference/gateway' },
           ],
+        },
+        {
+          text: 'Generated API',
+          collapsed: true,
+          items: typedocSidebar as { text: string; link: string }[],
         },
       ],
       '/backends/': [
@@ -85,6 +124,17 @@ export default defineConfig({
             { text: 'Pi', link: '/backends/pi' },
             { text: 'Opencode', link: '/backends/opencode' },
             { text: 'ACP Backends', link: '/backends/acp-backends' },
+            { text: 'Vercel AI', link: '/backends/vercel-ai' },
+          ],
+        },
+      ],
+      '/contributing/': [
+        {
+          text: 'Contributing',
+          items: [
+            { text: 'Contributing guide', link: '/contributing/CONTRIBUTING' },
+            { text: 'Security policy', link: '/contributing/SECURITY' },
+            { text: 'Publishing', link: '/contributing/PUBLISHING' },
           ],
         },
       ],
@@ -93,9 +143,13 @@ export default defineConfig({
           text: 'Documentation',
           items: [
             { text: 'Quickstart', link: '/quickstart/' },
+            { text: 'Concepts', link: '/concepts/' },
             { text: 'Recipes', link: '/recipes/' },
-            { text: 'Guides', link: '/guides/testing-workflows' },
-            { text: 'Reference', link: '/reference/api' },
+            { text: 'Guides', link: '/guides/' },
+            { text: 'Reference', link: '/reference/' },
+            { text: 'Backends', link: '/backends/' },
+            { text: 'Contributing', link: '/contributing/CONTRIBUTING' },
+            { text: 'Changelog', link: '/CHANGELOG' },
           ],
         },
       ],

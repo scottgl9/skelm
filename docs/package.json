@@ -5,11 +5,15 @@
   "description": "skelm documentation website",
   "type": "module",
   "scripts": {
-    "docs:dev": "vitepress dev",
-    "docs:build": "vitepress build",
+    "docs:api": "typedoc && node scripts/escape-typedoc-html.mjs",
+    "docs:dev": "pnpm docs:api && vitepress dev",
+    "docs:build": "pnpm docs:api && vitepress build",
     "docs:preview": "vitepress preview"
   },
   "devDependencies": {
+    "typedoc": "^0.28.19",
+    "typedoc-plugin-markdown": "^4.11.0",
+    "typedoc-vitepress-theme": "^1.1.2",
     "vitepress": "^1.6.3",
     "vue": "^3.5.13"
   }

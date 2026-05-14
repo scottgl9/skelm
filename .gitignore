@@ -145,6 +145,9 @@ vite.config.ts.timestamp-*
 # Local-only planning notes (not committed)
 planning/
 
+# Generated TypeDoc API reference (built by `pnpm --filter @skelm/docs docs:api`)
+docs/reference/api/
+
 # TypeScript build artifacts that escape into src/ (compiled output belongs in dist/)
 packages/*/src/**/*.js
 packages/*/src/**/*.js.map
