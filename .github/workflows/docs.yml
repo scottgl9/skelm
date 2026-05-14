@@ -39,6 +39,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build packages
+        # TypeDoc resolves cross-package types from each package's dist/, so
+        # @skelm/* must be built before `pnpm docs:build` runs typedoc.
+        run: pnpm build
+
       - name: Build docs
         run: |
           cd docs
