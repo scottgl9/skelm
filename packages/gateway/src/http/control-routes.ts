@@ -11,6 +11,7 @@ import { registerPipelineRoutes } from './routes/pipelines.js'
 import { registerRunRoutes } from './routes/runs.js'
 import { registerScheduleRoutes } from './routes/schedules.js'
 import { registerSessionRoutes } from './routes/sessions.js'
+import { registerWorkflowRoutes } from './routes/workflows.js'
 
 /**
  * Mount the gateway control surface on an h3 app via a method-aware router.
@@ -34,6 +35,7 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
   registerScheduleRoutes(router, gateway)
   registerOpenAIRoutes(router, gateway)
   registerDashboardRoutes(router, gateway)
+  registerWorkflowRoutes(router, gateway)
 
   app.use(router)
 
