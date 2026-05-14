@@ -32,7 +32,7 @@ skelm is pre-1.0. Until v1:
 - **minor** (`0.3.x → 0.4.0`) — feature additions; **may** contain breaking API changes.
 - **major** — reserved for v1.
 
-Every user-visible change goes in [`CHANGELOG.md`](./CHANGELOG.md) under a clear "Breaking" / "Fixed" / "Added" / "Changed" / "Security" heading.
+Every user-visible change goes in [`CHANGELOG.md`](../CHANGELOG.md) under a clear "Breaking" / "Fixed" / "Added" / "Changed" / "Security" heading.
 
 ## Prerequisites
 

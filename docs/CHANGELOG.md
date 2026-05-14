@@ -7,6 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Added
+- **`skelm approvals config` CLI** — manage the approval policy file:
+  - `skelm approvals config show [--json]` — print the effective policy.
+  - `skelm approvals config validate [--json]` — static-check the policy (parse error, bad timeout, unknown step kind, duplicate approver id, missing approver id).
+  - `skelm approvals config set <key> <value>` — set `defaultTimeoutMs` or `stepKindsRequiringApproval` (comma-separated list); writes are atomic via tmp+rename.
+  - `skelm approvals config approvers add|remove <id>` — manage the approver registry.
+
+  Reads/writes `$SKELM_APPROVALS_CONFIG` (default `~/.skelm/approvals.config.json`), with file mode `0600`. The gateway re-reads the policy on `skelm gateway reload`. Routing the writes through the gateway HTTP surface (so policy changes land in the audit chain) remains a follow-up.
 - **Gateway dashboard API** (`/v1/dashboard/*`) — read-only aggregations composed from the run store, registries, trigger coordinator, and approval gate. Endpoints: `overview`, `workflows`, `runs`, `analytics` (time-bucketed), `errors`, `schedules`, `approvals`. Five-second in-memory TTL on overview and analytics. Same bearer auth as the rest of the control surface. Reference dashboard demo under `examples/dashboard-demo/`.
 - **`RunFilter.startedAfter` / `RunFilter.startedBefore`** — date-range filtering on `listRuns()`, pushed into the SQL `WHERE` clause for the SQLite-backed store. Powers the analytics endpoint without scanning the full run table.
 

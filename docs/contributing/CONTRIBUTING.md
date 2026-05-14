@@ -2,7 +2,13 @@
 
 Thanks for your interest. skelm is built in the open and contributions — bug reports, design feedback, documentation fixes, and code — are welcome.
 
-This document is the short version. The deep contributor guide is [`AGENTS.md`](./AGENTS.md); the Claude-specific operating notes are [`CLAUDE.md`](./CLAUDE.md). Read those before sending non-trivial changes.
+Related:
+
+- [Security policy](./SECURITY.md) — supported versions, threat model, vulnerability reporting.
+- [Publishing](./PUBLISHING.md) — how releases are cut and pushed to npmjs.org / GitHub Packages.
+
+
+This document is the short version. The deep contributor guide is [`AGENTS.md`](../../AGENTS.md); the Claude-specific operating notes are [`CLAUDE.md`](../../CLAUDE.md). Read those before sending non-trivial changes.
 
 ## Prerequisites
 
@@ -125,4 +131,4 @@ It produces a structured review (security, design, robustness, maintenance, foll
 
 ## License
 
-By contributing, you agree your contributions are licensed under the [MIT License](./LICENSE).
+By contributing, you agree your contributions are licensed under the [MIT License](../../LICENSE).
