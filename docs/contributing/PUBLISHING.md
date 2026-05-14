@@ -5,7 +5,7 @@ skelm is published to two npm registries:
 - **npmjs.org** — the canonical home, scope `@skelm`, package name `skelm`. This is the registry `npm install skelm` uses by default. Public.
 - **GitHub Packages** — a mirror under `@scottgl9` on `https://npm.pkg.github.com`. Discoverable from the GitHub UI and useful for teams that want a single GitHub-auth code/package surface.
 
-Both registries publish the same compiled tarball. Versions move in lockstep — every release publishes all ten packages at the same version on both registries.
+Both registries publish the same compiled tarball. Versions move in lockstep — every release publishes all twelve packages at the same version on both registries.
 
 ## Packages
 
@@ -18,8 +18,10 @@ Both registries publish the same compiled tarball. Versions move in lockstep —
 | `@skelm/integrations`  | `@scottgl9/integrations`  | Typed connectors (GitHub, Slack, …)                |
 | `@skelm/metrics`       | `@scottgl9/metrics`       | Prometheus metrics                                 |
 | `@skelm/otel`          | `@scottgl9/otel`          | OpenTelemetry tracing                              |
+| `@skelm/agent`         | `@scottgl9/agent`         | First-party skelm agent backend                    |
 | `@skelm/opencode`      | `@scottgl9/opencode`      | Opencode coding-agent backend                      |
 | `@skelm/pi`            | `@scottgl9/pi`            | Pi coding-agent backend                            |
+| `@skelm/vercel-ai`     | `@scottgl9/vercel-ai`     | Vercel AI SDK backend                              |
 | `skelm`                | `@scottgl9/skelm`         | Meta-package — bin + re-exports                    |
 
 The `@scottgl9/*` mirror keeps `@skelm/*` as its `dependencies` targets — transitive deps install anonymously from npmjs.org, so consumers only need GitHub auth for the `@scottgl9` scope, not for the whole tree.
@@ -48,7 +50,7 @@ Run from `main`. Replace `0.X.Y` with the new version.
 
 ```bash
 # every package, including the workspace root, moves in lockstep
-for pkg in core cli gateway scheduler integrations metrics opencode otel pi skelm; do
+for pkg in core cli gateway scheduler integrations metrics otel agent opencode pi vercel-ai skelm; do
   (cd packages/$pkg && npm version 0.X.Y --no-git-tag-version --allow-same-version)
 done
 node -e "const fs=require('fs'); const p=require('./package.json'); p.version='0.X.Y'; fs.writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n');"
@@ -86,7 +88,7 @@ The script:
 1. Syncs every package version with `npm version --allow-same-version`.
 2. `pnpm install --frozen-lockfile && pnpm build && pnpm typecheck && pnpm test`.
 3. Runs `scripts/rewrite-workspace-deps.mjs rewrite` — replaces every `workspace:*` with `^0.X.Y` on disk. A trapped `restore` reverts even if publish fails.
-4. Publishes each package in dependency order: `core → scheduler → integrations → metrics → otel → opencode → pi → gateway → cli → skelm`.
+4. Publishes each package in dependency order: `core → scheduler → integrations → metrics → otel → opencode → pi → vercel-ai → agent → gateway → cli → skelm`.
 
 > Why on-disk rewrite? `pnpm publish` rewrites `workspace:*` inside the tarball; `npm publish` does **not**. We rewrite explicitly so every publish path produces an identical tarball, and so a botched run leaves audit-friendly evidence on disk.
 
