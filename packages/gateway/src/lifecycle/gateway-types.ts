@@ -72,6 +72,13 @@ export interface GatewayOptions {
    * the path from config.storage.runs.path if set).
    */
   runStore?: RunStore
+  /**
+   * Additional directories outside the project root that are permitted as
+   * `source.path` targets for POST /v1/workflows/register. Defaults to `[]`,
+   * which means registration is limited to paths inside `projectRoot`.
+   * Each entry is resolved to an absolute realpath before comparison.
+   */
+  allowedRegistrationDirs?: string[]
 }
 
 export interface GatewayEnforcement {
