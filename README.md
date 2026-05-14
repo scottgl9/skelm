@@ -139,7 +139,7 @@ See [Backend documentation](./docs/backends/README.md) for setup guides and comp
 - **[Guides](./docs/guides/)** — Testing, plugins, authoring patterns
 - **[Recipes](./docs/recipes/)** — Complete workflow examples
 - **[Reference](./docs/reference/)** — CLI, HTTP API, OpenAPI spec
-- **[Contributing](./CONTRIBUTING.md)** — How to contribute
+- **[Contributing](./docs/contributing/CONTRIBUTING.md)** — How to contribute
 
 ---
 
@@ -147,7 +147,7 @@ See [Backend documentation](./docs/backends/README.md) for setup guides and comp
 
 - [GitHub Discussions](https://github.com/scottgl9/skelm/discussions) — Questions and show & tell
 - [Issues](https://github.com/scottgl9/skelm/issues) — Bug reports and feature requests
-- [Contributing](./CONTRIBUTING.md) — PRs welcome
+- [Contributing](./docs/contributing/CONTRIBUTING.md) — PRs welcome
 
 ---
 

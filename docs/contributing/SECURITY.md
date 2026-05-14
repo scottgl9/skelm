@@ -11,7 +11,7 @@ skelm is pre-1.0 and ships from `main`. Only the latest minor release on npmjs r
 | 0.3.x   | :white_check_mark: |
 | < 0.3   | :x:                |
 
-When a vulnerability is fixed, the fix lands in the next patch release on npmjs and is called out in [CHANGELOG.md](./CHANGELOG.md) under a `Security` heading.
+When a vulnerability is fixed, the fix lands in the next patch release on npmjs and is called out in the [CHANGELOG](../CHANGELOG.md) under a `Security` heading.
 
 ## Reporting a vulnerability
 

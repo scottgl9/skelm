@@ -75,7 +75,7 @@ The runtime + builders (`@skelm/core`) are small and dependency-light by design.
 
 ## Contributing
 
-See the [contributing guide](https://github.com/scottgl9/skelm/blob/main/CONTRIBUTING.md).
+See the [contributing guide](https://github.com/scottgl9/skelm/blob/main/docs/contributing/CONTRIBUTING.md).
 
 ## License
 
