@@ -18,6 +18,16 @@ export default defineConfig({
   cleanUrls: true,
   ignoreDeadLinks: true,
 
+  rewrites: {
+    'concepts/README.md': 'concepts/index.md',
+    'guides/README.md': 'guides/index.md',
+    'quickstart/README.md': 'quickstart/index.md',
+    'recipes/README.md': 'recipes/index.md',
+    'reference/README.md': 'reference/index.md',
+    'backends/README.md': 'backends/index.md',
+    'contributing/README.md': 'contributing/index.md',
+  },
+
   themeConfig: {
     logo: '/logo.svg',
     siteTitle: 'skelm',
