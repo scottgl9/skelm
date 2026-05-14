@@ -1,37 +1,51 @@
-# Public API reference
+# API reference
 
-The public surface of each skelm package is locked by baselines in
-[`scripts/guards/baselines/`](../../scripts/guards/baselines). Those files are
-the source of truth — this page indexes them.
+Per-package, generated reference for every public export.
 
-A `pnpm guards` run regenerates each baseline and fails CI if a public export
-is added or removed without an explicit baseline update. That gate is what
-keeps the API page honest.
+The pages under [`./api/`](./api/) are produced by [TypeDoc](https://typedoc.org/)
+from the TSDoc comments in each package's source tree. They are regenerated as
+part of `pnpm docs:build` and stay in lockstep with the code they describe.
 
 ## Packages
 
-| Package              | Baseline                                                 | Description                                          |
-| -------------------- | -------------------------------------------------------- | ---------------------------------------------------- |
-| `@skelm/core`        | [`core.txt`](../../scripts/guards/baselines/core.txt)         | Pipelines, builders, runner, types, contexts        |
-| `@skelm/cli`         | [`cli.txt`](../../scripts/guards/baselines/cli.txt)           | CLI entry points and argv plumbing                  |
-| `@skelm/gateway`     | [`gateway.txt`](../../scripts/guards/baselines/gateway.txt)   | Gateway runtime, audit/secrets/approvals enforcement|
-| `@skelm/integrations`| [`integrations.txt`](../../scripts/guards/baselines/integrations.txt) | First-party connectors                       |
-| `@skelm/metrics`     | [`metrics.txt`](../../scripts/guards/baselines/metrics.txt)   | Metrics adapters                                    |
-| `@skelm/opencode`    | [`opencode.txt`](../../scripts/guards/baselines/opencode.txt) | OpenCode adapter                                   |
-| `@skelm/otel`        | [`otel.txt`](../../scripts/guards/baselines/otel.txt)         | OpenTelemetry adapter                              |
-| `@skelm/pi`          | [`pi.txt`](../../scripts/guards/baselines/pi.txt)             | Pi backend                                         |
-| `@skelm/scheduler`   | [`scheduler.txt`](../../scripts/guards/baselines/scheduler.txt) | Scheduler primitives                              |
-| `skelm`              | [`skelm.txt`](../../scripts/guards/baselines/skelm.txt)       | Meta-package re-exports                             |
+| Package | Source | Reference |
+| ------- | ------ | --------- |
+| `@skelm/agent` | [`packages/agent`](../../packages/agent) | [API](./api/@skelm/agent/) |
+| `@skelm/cli` | [`packages/cli`](../../packages/cli) | [API](./api/@skelm/cli/) |
+| `@skelm/core` | [`packages/core`](../../packages/core) | [API](./api/@skelm/core/) |
+| `@skelm/gateway` | [`packages/gateway`](../../packages/gateway) | [API](./api/@skelm/gateway/) |
+| `@skelm/integrations` | [`packages/integrations`](../../packages/integrations) | [API](./api/@skelm/integrations/) |
+| `@skelm/metrics` | [`packages/metrics`](../../packages/metrics) | [API](./api/@skelm/metrics/) |
+| `@skelm/opencode` | [`packages/opencode`](../../packages/opencode) | [API](./api/@skelm/opencode/) |
+| `@skelm/otel` | [`packages/otel`](../../packages/otel) | [API](./api/@skelm/otel/) |
+| `@skelm/pi` | [`packages/pi`](../../packages/pi) | [API](./api/@skelm/pi/) |
+| `@skelm/scheduler` | [`packages/scheduler`](../../packages/scheduler) | [API](./api/@skelm/scheduler/) |
+| `@skelm/vercel-ai` | [`packages/vercel-ai`](../../packages/vercel-ai) | [API](./api/@skelm/vercel-ai/) |
+| `skelm` | [`packages/skelm`](../../packages/skelm) | [API](./api/skelm/) |
 
-## Adding a new export
+## Public-surface contract
 
-1. Add the export in `packages/<pkg>/src/index.ts`.
+What is documented under [`./api/`](./api/) is the public API. The same
+surface is locked by machine-checked baselines under
+[`scripts/guards/baselines/`](../../scripts/guards/baselines) — those files
+list the exact set of symbols each package exports.
+
+`pnpm guards` regenerates every baseline and fails CI if a public export is
+added or removed without an explicit baseline update. That gate, together
+with this reference, is what keeps the API contract honest.
+
+### Adding a new export
+
+1. Add the export from `packages/<pkg>/src/index.ts` with a TSDoc comment.
 2. Run `pnpm build && pnpm guards` — the guard will fail with the diff.
-3. Update the relevant baseline file with the new entries.
-4. Mention the addition in the package's `CHANGELOG.md`.
+3. Update the matching `scripts/guards/baselines/<pkg>.txt` entry.
+4. Note the addition in [`docs/CHANGELOG.md`](../CHANGELOG.md).
+5. Rebuild docs: `pnpm --filter @skelm/docs docs:build` (TypeDoc picks up
+   the new symbol automatically).
 
-## Stability
+### Stability
 
-- Anything in a baseline is part of the public API. Removing or renaming
-  requires a major version bump and an entry in the changelog.
+- Anything in a baseline (and therefore on a TypeDoc page) is part of the
+  public API. Removing or renaming requires a major version bump and an
+  entry in the changelog.
 - Anything not in a baseline is internal and may move at any time.
