@@ -79,6 +79,8 @@ export class Gateway {
   private metricsInternal: import('@skelm/metrics').MetricsCollector | null = null
   private metricsBus: import('@skelm/core').EventBus | null = null
   private readonly breakpointsInternal: import('../debug/breakpoint-registry.js').BreakpointRegistry
+  private workflowRegistrationInternal: import('../workflows/workflow-registration-service.js').WorkflowRegistrationService | null =
+    null
 
   constructor(private readonly options: GatewayOptions = {}) {
     this.stateDir = options.stateDir ?? join(homedir(), '.skelm')
@@ -185,6 +187,25 @@ export class Gateway {
     | ((registryId: string, absolutePath: string) => Promise<unknown>)
     | undefined {
     return this.options.loadWorkflow
+  }
+
+  /** Extra directories that POST /v1/workflows/register accepts. Empty by default. */
+  getAllowedRegistrationDirs(): string[] {
+    return this.options.allowedRegistrationDirs ?? []
+  }
+
+  /**
+   * The workflow-registration service backs /v1/workflows/* routes. Lazily
+   * constructed once registries are available and replayed from disk during
+   * start(); throws if accessed before start() completes.
+   */
+  getWorkflowRegistrationService(): import('../workflows/workflow-registration-service.js').WorkflowRegistrationService {
+    if (this.workflowRegistrationInternal === null) {
+      throw new Error(
+        'workflow registration service is not available — start() the gateway first',
+      )
+    }
+    return this.workflowRegistrationInternal
   }
 
   /**
@@ -308,6 +329,7 @@ export class Gateway {
       this.enforcementInternal = this.buildEnforcement()
       this.registriesInternal = await this.buildRegistries()
       this.managersInternal = await this.buildManagers()
+      this.workflowRegistrationInternal = await this.buildWorkflowRegistrationService()
       // Wire the trigger dispatcher now that managers + registries exist.
       // Without a loadWorkflow option the coordinator keeps its no-op
       // onFire — fired triggers still record their accounting but do not
@@ -339,6 +361,7 @@ export class Gateway {
       this.runStoreInternal = null
       this.egressProxy = null
       this.tokenPolicyStore = null
+      this.workflowRegistrationInternal = null
       throw err
     }
   }
@@ -422,6 +445,7 @@ export class Gateway {
       this.runStoreInternal = null
       this.egressProxy = null
       this.tokenPolicyStore = null
+      this.workflowRegistrationInternal = null
     }
   }
 
@@ -589,6 +613,25 @@ export class Gateway {
     await agents.refresh()
     await mcpServers.refresh()
     return { workflows, skills, agents, mcpServers }
+  }
+
+  private async buildWorkflowRegistrationService(): Promise<
+    import('../workflows/workflow-registration-service.js').WorkflowRegistrationService
+  > {
+    if (this.registriesInternal === null) {
+      throw new Error('registries must be built before workflow registration service')
+    }
+    const { WorkflowRegistrationService } = await import(
+      '../workflows/workflow-registration-service.js'
+    )
+    const service = new WorkflowRegistrationService({
+      stateDir: this.stateDir,
+      registry: this.registriesInternal.workflows,
+      projectRoot: this.projectRoot,
+      allowedDirs: this.options.allowedRegistrationDirs ?? [],
+    })
+    await service.loadFromDisk()
+    return service
   }
 
   private attachSignals(): void {
