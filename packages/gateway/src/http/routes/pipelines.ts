@@ -4,7 +4,7 @@ import type { Gateway } from '../../lifecycle/gateway.js'
 import { createSkillSource } from '../../registries/skill-source.js'
 import {
   decodeMaybe,
-  extractPipeline,
+  loadPipelineFromPath,
   makeGatewayPipelineRegistry,
   tryToJsonSchema,
 } from './utils.js'
@@ -39,22 +39,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
       if (loader === undefined) {
         return { id: entry.id, file: entry.path, graph: null, input: null, output: null }
       }
-      let mod: unknown
-      try {
-        mod = await loader(id, entry.path)
-      } catch (err) {
-        throw createError({
-          statusCode: 500,
-          message: `failed to load workflow: ${(err as Error).message}`,
-        })
-      }
-      const pipeline = extractPipeline(mod)
-      if (pipeline === undefined) {
-        throw createError({
-          statusCode: 422,
-          message: 'workflow module did not export a default pipeline',
-        })
-      }
+      const pipeline = await loadPipelineFromPath(loader, id, entry.path)
       const desc = describePipeline(pipeline)
       const [inputSchema, outputSchema] = await Promise.all([
         tryToJsonSchema((pipeline as { inputSchema?: unknown }).inputSchema),
@@ -107,22 +92,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
       const body =
         rawBody !== null && typeof rawBody === 'object' ? (rawBody as { input?: unknown }) : {}
       const input = body.input ?? {}
-      let mod: unknown
-      try {
-        mod = await loader(id, entry.path)
-      } catch (err) {
-        throw createError({
-          statusCode: 500,
-          message: `failed to load workflow: ${(err as Error).message}`,
-        })
-      }
-      const pipeline = extractPipeline(mod)
-      if (pipeline === undefined) {
-        throw createError({
-          statusCode: 422,
-          message: 'workflow module did not export a default pipeline',
-        })
-      }
+      const pipeline = await loadPipelineFromPath(loader, id, entry.path)
       const enforcement = gateway.enforcement
       const runner = new Runner({
         approvalGate: enforcement.approvalGate,
@@ -182,22 +152,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
       const body =
         rawBody !== null && typeof rawBody === 'object' ? (rawBody as { input?: unknown }) : {}
       const input = body.input ?? {}
-      let mod: unknown
-      try {
-        mod = await loader(id, entry.path)
-      } catch (err) {
-        throw createError({
-          statusCode: 500,
-          message: `failed to load workflow: ${(err as Error).message}`,
-        })
-      }
-      const pipeline = extractPipeline(mod)
-      if (pipeline === undefined) {
-        throw createError({
-          statusCode: 422,
-          message: 'workflow module did not export a default pipeline',
-        })
-      }
+      const pipeline = await loadPipelineFromPath(loader, id, entry.path)
       const enforcement = gateway.enforcement
       const runner = new Runner({
         approvalGate: enforcement.approvalGate,
