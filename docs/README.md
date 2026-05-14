@@ -39,7 +39,7 @@ docs/
 ├── scripts/             # build helpers (escape-typedoc-html.mjs)
 ├── typedoc.json         # TypeDoc configuration
 ├── CHANGELOG.md         # release history
-└── index.md             # home page
+└── index.md             # home page (VitePress root)
 ```
 
 ## Adding Content
