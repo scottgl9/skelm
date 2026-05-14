@@ -31,6 +31,7 @@ import {
 import { FileSecretResolver } from '../secrets/file-driver.js'
 import { TriggerCoordinator } from '../triggers/coordinator.js'
 import { createTriggerDispatcher } from '../triggers/dispatcher.js'
+import type { WorkflowRegistrationService } from '../workflows/workflow-registration-service.js'
 import { type DiscoveryRecord, removeDiscovery, writeDiscovery } from './discovery.js'
 import type {
   GatewayEnforcement,
@@ -79,8 +80,7 @@ export class Gateway {
   private metricsInternal: import('@skelm/metrics').MetricsCollector | null = null
   private metricsBus: import('@skelm/core').EventBus | null = null
   private readonly breakpointsInternal: import('../debug/breakpoint-registry.js').BreakpointRegistry
-  private workflowRegistrationInternal: import('../workflows/workflow-registration-service.js').WorkflowRegistrationService | null =
-    null
+  private workflowRegistrationInternal: WorkflowRegistrationService | null = null
 
   constructor(private readonly options: GatewayOptions = {}) {
     this.stateDir = options.stateDir ?? join(homedir(), '.skelm')
@@ -199,11 +199,9 @@ export class Gateway {
    * constructed once registries are available and replayed from disk during
    * start(); throws if accessed before start() completes.
    */
-  getWorkflowRegistrationService(): import('../workflows/workflow-registration-service.js').WorkflowRegistrationService {
+  getWorkflowRegistrationService(): WorkflowRegistrationService {
     if (this.workflowRegistrationInternal === null) {
-      throw new Error(
-        'workflow registration service is not available — start() the gateway first',
-      )
+      throw new Error('workflow registration service is not available — start() the gateway first')
     }
     return this.workflowRegistrationInternal
   }
@@ -615,16 +613,14 @@ export class Gateway {
     return { workflows, skills, agents, mcpServers }
   }
 
-  private async buildWorkflowRegistrationService(): Promise<
-    import('../workflows/workflow-registration-service.js').WorkflowRegistrationService
-  > {
+  private async buildWorkflowRegistrationService(): Promise<WorkflowRegistrationService> {
     if (this.registriesInternal === null) {
       throw new Error('registries must be built before workflow registration service')
     }
-    const { WorkflowRegistrationService } = await import(
+    const { WorkflowRegistrationService: Ctor } = await import(
       '../workflows/workflow-registration-service.js'
     )
-    const service = new WorkflowRegistrationService({
+    const service = new Ctor({
       stateDir: this.stateDir,
       registry: this.registriesInternal.workflows,
       projectRoot: this.projectRoot,
