@@ -86,14 +86,26 @@ every privileged action is enforced and audited there.
 `pause` and `resume` are exposed via the HTTP control surface
 (`POST /gateway/pause|resume`); see the [HTTP reference](./http.md).
 
-### `skelm approvals <list|approve|deny>`
+### `skelm approvals <list|approve|deny|config>`
 
-Inspect and resolve pending approval gates.
+Inspect and resolve pending approval gates, and manage the approval policy.
 
 ```
 skelm approvals list [--json]
 skelm approvals approve <id> [--reason <text>] [--approver <name>] [--json]
 skelm approvals deny    <id> [--reason <text>] [--approver <name>] [--json]
+```
+
+Policy management writes the file at `$SKELM_APPROVALS_CONFIG`
+(default `~/.skelm/approvals.config.json`, mode `0600`). The gateway re-reads
+the file on `skelm gateway reload`.
+
+```
+skelm approvals config show     [--json]
+skelm approvals config validate [--json]
+skelm approvals config set <defaultTimeoutMs|stepKindsRequiringApproval> <value>
+skelm approvals config approvers add    <id>
+skelm approvals config approvers remove <id>
 ```
 
 ### `skelm audit query`

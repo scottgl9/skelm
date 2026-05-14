@@ -28,8 +28,9 @@ Capabilities (`prompt`, `streaming`, `mcp`, `skills`, `modelSelection`, `toolPer
 | Pi (SDK)                | `createPiSdkBackend`               | `@skelm/pi`      |   ✅    |    ✅     | native           |
 | Opencode                | `createOpencodeBackendFromConfig`  | `@skelm/opencode`|   —     |    ✅     | native           |
 | Vercel AI SDK           | `createVercelAiBackend`            | `@skelm/vercel-ai`|  ✅    |    ✅     | native           |
+| skelm agent (in-process)| `createSkelmAgentBackend`          | `@skelm/agent`    |  ✅    |    ✅     | native           |
 
-The CLI (`packages/cli/src/backends.ts`) wires the OpenAI, Anthropic, generic ACP, Copilot ACP, opencode, and pi-RPC backends from `skelm.config.ts` automatically. To use the **pi SDK backend**, the **Vercel AI SDK backend**, or any other backend not listed above, register it via `instances:` (see "Registering a custom backend" below).
+The CLI (`packages/cli/src/backends.ts`) wires the OpenAI, Anthropic, generic ACP, Copilot ACP, opencode, and pi-RPC backends from `skelm.config.ts` automatically. To use the **pi SDK backend**, the **Vercel AI SDK backend**, the **skelm agent backend**, or any other backend not listed above, register it via `instances:` (see "Registering a custom backend" below).
 
 ## Configuring built-in backends from `skelm.config.ts`
 
