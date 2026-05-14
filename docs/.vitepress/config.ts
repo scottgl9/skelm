@@ -27,7 +27,7 @@ export default defineConfig({
       { text: 'Concepts', link: '/concepts/' },
       { text: 'Recipes', link: '/recipes/' },
       { text: 'Reference', link: '/reference/' },
-      { text: 'Contributing', link: '/contributing/CONTRIBUTING' },
+      { text: 'Contributing', link: '/contributing/' },
       { text: 'Changelog', link: '/CHANGELOG' },
       { text: 'GitHub', link: 'https://github.com/scottgl9/skelm' },
     ],
@@ -133,9 +133,16 @@ export default defineConfig({
         {
           text: 'Contributing',
           items: [
-            { text: 'Contributing guide', link: '/contributing/CONTRIBUTING' },
-            { text: 'Security policy', link: '/contributing/SECURITY' },
+            { text: 'Overview', link: '/contributing/' },
             { text: 'Publishing', link: '/contributing/PUBLISHING' },
+            {
+              text: 'Contributing guide ↗',
+              link: 'https://github.com/scottgl9/skelm/blob/main/.github/CONTRIBUTING.md',
+            },
+            {
+              text: 'Security policy ↗',
+              link: 'https://github.com/scottgl9/skelm/blob/main/.github/SECURITY.md',
+            },
           ],
         },
       ],
@@ -149,7 +156,7 @@ export default defineConfig({
             { text: 'Guides', link: '/guides/' },
             { text: 'Reference', link: '/reference/' },
             { text: 'Backends', link: '/backends/' },
-            { text: 'Contributing', link: '/contributing/CONTRIBUTING' },
+            { text: 'Contributing', link: '/contributing/' },
             { text: 'Changelog', link: '/CHANGELOG' },
           ],
         },

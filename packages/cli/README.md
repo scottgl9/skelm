@@ -92,7 +92,7 @@ process.exit(result.exitCode)
 
 ## Contributing
 
-See the [contributing guide](https://github.com/scottgl9/skelm/blob/main/docs/contributing/CONTRIBUTING.md).
+See the [contributing guide](https://github.com/scottgl9/skelm/blob/main/.github/CONTRIBUTING.md).
 
 ## License
 

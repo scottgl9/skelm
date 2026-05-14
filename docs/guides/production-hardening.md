@@ -86,7 +86,7 @@ do not fully control.
 
 ## Related
 
-- [`docs/contributing/SECURITY.md`](../contributing/SECURITY.md) — vulnerability reporting
+- [`.github/SECURITY.md`](../../.github/SECURITY.md) — vulnerability reporting
 - [`docs/reference/cli.md`](../reference/cli.md)
 - [`docs/reference/http.md`](../reference/http.md)
 - [`docs/reference/openapi.yaml`](../reference/openapi.yaml)

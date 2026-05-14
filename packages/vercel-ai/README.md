@@ -63,7 +63,7 @@ export default pipeline({
 - **MCP servers** — deferred.
 - **`networkEgress`** — does not gate the LLM's own HTTP connection (same convention as the built-in OpenAI/Anthropic backends).
 
-See the [docs page](../../docs/backends/vercel-ai.md) for details, the full options table, and roadmap.
+See the [docs page](https://github.com/scottgl9/skelm/blob/main/docs/backends/vercel-ai.md) for details, the full options table, and roadmap.
 
 ## License
 

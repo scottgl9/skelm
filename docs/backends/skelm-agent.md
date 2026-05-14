@@ -56,5 +56,5 @@ export default defineConfig({
 ## See also
 
 - [Backends overview](./README.md)
-- [`@skelm/agent` README](https://github.com/scottgl9/skelm/blob/main/packages/agent/README.md)
+- [`@skelm/agent` README](../../packages/agent/README.md)
 - [Permissions reference](../reference/permissions.md)
