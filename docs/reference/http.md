@@ -116,7 +116,7 @@ curl -H "Authorization: Bearer $SKELM_TOKEN" \
 ```
 
 A minimal reference dashboard that consumes these endpoints lives in
-[`examples/dashboard-demo`](../../examples/dashboard-demo/README.md).
+[`examples/dashboard-demo`](https://github.com/scottgl9/skelm/tree/main/examples/dashboard-demo).
 
 ## OpenAI compatibility (optional surface)
 

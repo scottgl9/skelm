@@ -125,6 +125,6 @@ The SDK backend supports skills via `formatSkillBlock` (skill metadata + body in
 
 ## See also
 
-- [`packages/pi/README.md`](../../packages/pi/README.md) — full export list and advanced options
+- [`packages/pi/README.md`](https://github.com/scottgl9/skelm/blob/main/packages/pi/README.md) — full export list and advanced options
 - [Backends overview](./README.md)
 - [Permissions](../concepts/permissions.md)

@@ -160,4 +160,4 @@ Per-backend pages cover configuration in detail:
 
 - [Writing a backend](../guides/writing-a-backend.md) — how to implement `SkelmBackend` end-to-end
 - [Permissions](../concepts/permissions.md) — how permission policy interacts with backend capabilities
-- [`packages/core/src/backend.ts`](../../packages/core/src/backend.ts) — the canonical `SkelmBackend` interface
+- [`packages/core/src/backend.ts`](https://github.com/scottgl9/skelm/blob/main/packages/core/src/backend.ts) — the canonical `SkelmBackend` interface

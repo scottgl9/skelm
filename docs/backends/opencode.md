@@ -36,7 +36,7 @@ export default defineConfig({
 })
 ```
 
-The full type is `OpencodeBackendOptions` — see [`packages/opencode/src/types.ts`](../../packages/opencode/src/types.ts) for every accepted field, including `model`, `temperature`, `maxSteps`, and `serverPermissions` (which injects opencode-level allow/ask/deny defaults via `OPENCODE_CONFIG_CONTENT` at server start).
+The full type is `OpencodeBackendOptions` — see [`packages/opencode/src/types.ts`](https://github.com/scottgl9/skelm/blob/main/packages/opencode/src/types.ts) for every accepted field, including `model`, `temperature`, `maxSteps`, and `serverPermissions` (which injects opencode-level allow/ask/deny defaults via `OPENCODE_CONFIG_CONTENT` at server start).
 
 ### Per-step permissions
 

@@ -117,4 +117,4 @@ This is most visible on `agent()` runs (where the call uses tool-loop framing); 
 
 - [Backends overview](./README.md)
 - [Permissions](../concepts/permissions.md)
-- Source: [`packages/vercel-ai`](../../packages/vercel-ai)
+- Source: [`packages/vercel-ai`](https://github.com/scottgl9/skelm/tree/main/packages/vercel-ai)
