@@ -24,24 +24,33 @@ pnpm docs:preview
 ```
 docs/
 ├── .vitepress/          # VitePress config and theme
-│   ├── config.ts
+│   ├── config.ts        # site config + sidebar (loads typedoc-sidebar.json)
 │   ├── theme/
-│   └── public/          # Static assets (logo, images)
-├── quickstart/          # Getting started guide
-├── concepts/            # Core concepts
-├── guides/              # How-to guides
-├── recipes/             # Complete examples
-├── reference/           # API and CLI reference
-├── backends/            # Backend provider docs
-└── index.md             # Home page
+│   └── public/          # static assets (logo, images)
+├── quickstart/          # getting started guide
+├── concepts/            # core concepts (permissions, agents, registries)
+├── guides/              # how-to guides, grouped by purpose
+├── recipes/             # complete worked examples
+├── reference/           # CLI, HTTP, config, permissions, etc.
+│   └── api/             # generated TypeDoc per-package reference (gitignored)
+├── backends/            # backend-specific docs (pi, opencode, vercel-ai, …)
+├── contributing/        # CONTRIBUTING.md, SECURITY.md, PUBLISHING.md
+├── skill/               # Claude Code skill pack ('skelm' skill)
+├── scripts/             # build helpers (escape-typedoc-html.mjs)
+├── typedoc.json         # TypeDoc configuration
+├── CHANGELOG.md         # release history
+└── index.md             # home page
 ```
 
 ## Adding Content
 
-- **New concept page**: Add `.md` file to `concepts/` and update `config.ts` sidebar
-- **New recipe**: Add `.md` file to `recipes/` and update `config.ts` sidebar
-- **New guide**: Add `.md` file to `guides/` and update `config.ts` sidebar
-- **New reference**: Add `.md` file to `reference/` and update `config.ts` sidebar
+- **New concept page**: add `.md` to `concepts/` and update `config.ts` sidebar
+- **New recipe**: add `.md` to `recipes/` and update `config.ts` sidebar
+- **New guide**: add `.md` to `guides/` and update `config.ts` sidebar
+- **New reference page**: add `.md` to `reference/` and update `config.ts` sidebar
+- **New public export**: add a TSDoc comment in `packages/<pkg>/src/index.ts` —
+  TypeDoc picks it up automatically next `docs:build`
+- **New backend**: add `.md` to `backends/`, list it in `backends/README.md` and `config.ts`
 
 ## Deployment
 

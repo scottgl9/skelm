@@ -1,6 +1,6 @@
-import { defineConfig } from 'vitepress'
-import { readFileSync, existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { defineConfig } from 'vitepress'
 
 const typedocSidebarPath = fileURLToPath(
   new URL('../reference/api/typedoc-sidebar.json', import.meta.url),
@@ -121,6 +121,7 @@ export default defineConfig({
           text: 'Backends',
           items: [
             { text: 'Overview', link: '/backends/' },
+            { text: 'skelm agent', link: '/backends/skelm-agent' },
             { text: 'Pi', link: '/backends/pi' },
             { text: 'Opencode', link: '/backends/opencode' },
             { text: 'ACP Backends', link: '/backends/acp-backends' },
