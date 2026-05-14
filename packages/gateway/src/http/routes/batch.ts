@@ -45,9 +45,7 @@ export function registerBatchRoutes(router: Router, gateway: Gateway): void {
       if (loader === undefined) {
         throw createError({ statusCode: 501, message: 'gateway has no workflow loader' })
       }
-      const results = await Promise.all(
-        items.map(async (item) => startOne(gateway, loader, item)),
-      )
+      const results = await Promise.all(items.map(async (item) => startOne(gateway, loader, item)))
       return { items: results }
     }),
   )

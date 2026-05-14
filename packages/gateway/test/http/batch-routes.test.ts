@@ -51,10 +51,7 @@ describe('/v1/batch/*', () => {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          items: [
-            { id: 'workflows/a.workflow.ts' },
-            { id: 'workflows/b.workflow.ts' },
-          ],
+          items: [{ id: 'workflows/a.workflow.ts' }, { id: 'workflows/b.workflow.ts' }],
         }),
       })
       expect(res.status).toBe(200)

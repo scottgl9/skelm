@@ -3,7 +3,7 @@ import { type Router, createError, eventHandler, readBody } from 'h3'
 import type { Gateway } from '../../lifecycle/gateway.js'
 import {
   WorkflowRegistrationError,
-  WorkflowRegistrationService,
+  type WorkflowRegistrationService,
 } from '../../workflows/workflow-registration-service.js'
 import { decodeMaybe, loadPipelineFromPath, tryToJsonSchema } from './utils.js'
 
@@ -33,9 +33,7 @@ export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
 
   router.get(
     '/v1/workflows',
-    eventHandler(async () =>
-      service.list().map((entry) => ({ id: entry.id, file: entry.path })),
-    ),
+    eventHandler(async () => service.list().map((entry) => ({ id: entry.id, file: entry.path }))),
   )
 
   router.post(
