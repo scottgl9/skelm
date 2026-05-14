@@ -124,7 +124,7 @@ trigger.error  { triggerId, message }
 
 ## End-to-end: Telegram bot
 
-[`examples/telegram-bot/`](../../examples/telegram-bot/README.md) is the canonical worked example: pipeline declares the trigger, config registers the source, `skelm gateway start` runs the loop and dispatches each inbound message into a workflow run with the message as input. The agent's reply is posted back via the source's `onResult`.
+[`examples/telegram-bot/`](https://github.com/scottgl9/skelm/tree/main/examples/telegram-bot) is the canonical worked example: pipeline declares the trigger, config registers the source, `skelm gateway start` runs the loop and dispatches each inbound message into a workflow run with the message as input. The agent's reply is posted back via the source's `onResult`.
 
 ## Wiring directly (without pipeline declarations)
 

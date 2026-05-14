@@ -193,4 +193,4 @@ default-deny config, lift the relevant dimension in `defaults.permissions`
 - [Backends overview](./README.md)
 - [Permissions reference](../reference/permissions.md)
 - [`@skelm/agent` README](https://github.com/scottgl9/skelm/blob/main/packages/agent/README.md)
-- Source: [`packages/agent`](../../packages/agent)
+- Source: [`packages/agent`](https://github.com/scottgl9/skelm/tree/main/packages/agent)

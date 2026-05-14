@@ -223,7 +223,7 @@ export default defineConfig({
 })
 ```
 
-If you need lifecycle hooks (init / start / stop / health), implement the `SkelmPlugin` interface from `@skelm/core` and ship the package name in the consumer's `plugins:` config — see [`packages/core/src/plugins.ts`](../../packages/core/src/plugins.ts) for the canonical interface.
+If you need lifecycle hooks (init / start / stop / health), implement the `SkelmPlugin` interface from `@skelm/core` and ship the package name in the consumer's `plugins:` config — see [`packages/core/src/plugins.ts`](https://github.com/scottgl9/skelm/blob/main/packages/core/src/plugins.ts) for the canonical interface.
 
 ```json
 // my-backend/package.json
