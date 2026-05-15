@@ -66,6 +66,15 @@ Default port: `14738`, default host: `127.0.0.1`. Configure via `server.port` an
 
 `POST /v1/workflows/register` accepts an explicit `id`, a `source` of the form `{ "type": "path", "path": "..." }`, and optional `description` / `version`. Paths are resolved via `realpath` and must sit inside the gateway's `projectRoot` or one of the directories listed in `GatewayOptions.allowedRegistrationDirs`; everything else is rejected with `400`. Registered workflows are written one-JSON-per-id under `${stateDir}/registered-workflows/` and replayed at boot, so they survive restarts. Raw TypeScript source (`source.type === "code"`) is **not** accepted — a future revision will define a sandbox before adding it.
 
+`POST /v1/workflows/register` and `PUT /v1/workflows/:id` also accept a `multipart/form-data` request containing a `.zip` archive of the workflow source. Fields:
+
+- `archive` — the `.zip` file (required)
+- `id` — workflow id (required on POST when no path param; PUT takes it from the URL)
+- `entry` — relative path inside the archive that points at the pipeline file (optional; the gateway auto-detects a single root-level `*.workflow.ts` or `*.pipeline.ts` when omitted)
+- `description`, `version` — optional metadata
+
+The archive is validated by magic bytes, capped at `GatewayOptions.workflows.maxArchiveBytes` (default 5 MiB, applied to both the compressed and total uncompressed sizes), and extracted into `${stateDir}/uploaded-workflows/${encodeURIComponent(id)}/`. Archive entries with `..`, absolute paths, or non-allowlisted extensions (anything outside `.ts`, `.js`, `.mjs`, `.cjs`, `.json`, `.md`, `.txt`, `.yaml`, `.yml`) are rejected. `POST` refuses to register if the extraction dir already has contents — use `PUT` to replace. `DELETE /v1/workflows/:id` also wipes the extraction dir for archive-sourced workflows.
+
 ### Batch operations
 
 `POST /v1/batch/runs` takes `{ items: [{ id, input? }, ...] }` and fans out to the same async-start path that `POST /pipelines/:id/start` uses. A per-item error never fails the whole batch — each item reports `{ id, accepted, runId?, error?, description? }` independently. `description` is a stable short category for debugging (`started`, `workflow-not-found`, `invalid-input`, `start-failed`); `error` carries the raw message. The maximum batch size defaults to 50 items and is configurable via `GatewayOptions.batch.maxItemsPerRequest`. `POST /v1/batch/cancel` takes `{ runIds: [...] }` and reports per-id `cancelled: true|false`.

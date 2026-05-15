@@ -141,6 +141,9 @@ importers:
       '@skelm/metrics':
         specifier: workspace:*
         version: link:../metrics
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.2
       h3:
         specifier: ^1.15.0
         version: 1.15.11
@@ -3781,6 +3784,10 @@ packages:
       node-domexception: 1.0.0
       web-streams-polyfill: 3.3.3
     dev: true
+
+  /fflate@0.8.2:
+    resolution: {integrity: sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A==}
+    dev: false
 
   /file-type@21.3.4:
     resolution: {integrity: sha512-Ievi/yy8DS3ygGvT47PjSfdFoX+2isQueoYP1cntFW1JLYAuS4GD7NUPGg4zv2iZfV52uDyk5w5Z0TdpRS6Q1g==}
