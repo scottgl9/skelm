@@ -92,7 +92,10 @@ export default pipeline({
           sprintName: string
         }
         const { targetPoints } = ctx.input as SprintInput
-        const target = targetPoints ?? capacityPoints
+        // Clamp the target to capacity: callers can request a *lower* load than
+        // capacity for de-risked sprints, but the prompt should never tell the
+        // LLM to plan beyond what the team can deliver.
+        const target = Math.min(targetPoints ?? capacityPoints, capacityPoints)
 
         const backlogText = backlog
           .map((s) => `  ${s.id} [${s.priority}] ${s.title} — ${s.points}pts`)
@@ -143,7 +146,9 @@ Reply ONLY with JSON matching this schema exactly:
           | undefined
         const ids = selection?.selectedIds ?? []
         // Production: replace with Jira SDK sprint creation.
-        console.error(`[create-sprint] Would create sprint "${sprintName}" with stories: ${ids.join(', ')}`)
+        console.log(
+          `[create-sprint] Would create sprint "${sprintName}" with stories: ${ids.join(', ')}`,
+        )
         return { sprintId: `SPRINT-${Date.now()}`, sprintName, created: true }
       },
     }),
@@ -157,7 +162,7 @@ Reply ONLY with JSON matching this schema exactly:
           | { selectedIds: string[]; totalPoints: number }
           | undefined
         // Production: replace with Slack SDK message.
-        console.error(
+        console.log(
           `[notify-team] Sprint "${sprint.sprintName}" planned: ` +
             `${selection?.selectedIds.length ?? 0} stories, ${selection?.totalPoints ?? 0}pts`,
         )
@@ -167,7 +172,10 @@ Reply ONLY with JSON matching this schema exactly:
   ],
 
   finalize: (ctx) => {
-    const capacity = ctx.steps['calculate-capacity'] as { capacityPoints: number; sprintName: string }
+    const capacity = ctx.steps['calculate-capacity'] as {
+      capacityPoints: number
+      sprintName: string
+    }
     const selection = ctx.steps['select-stories'] as
       | { selectedIds: string[]; totalPoints: number; rationale: string }
       | undefined

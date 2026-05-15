@@ -18,7 +18,5 @@ export default defineConfig({
     // permissions still narrow the rest of the surface (tools, fs, exec).
     permissions: { networkEgress: 'allow' },
   },
-  instances: [
-    createVercelAiBackend({ id: 'vercel-ai', model: openai(modelId) }),
-  ],
+  instances: [createVercelAiBackend({ id: 'vercel-ai', model: openai(modelId) })],
 })

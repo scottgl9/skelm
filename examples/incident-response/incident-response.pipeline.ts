@@ -69,8 +69,14 @@ export default pipeline({
             // Production: replace with real GitHub API call.
             return {
               issues: [
-                { title: `[${service}] High latency observed`, url: 'https://github.com/example/repo/issues/42' },
-                { title: `[${service}] Connection pool exhaustion`, url: 'https://github.com/example/repo/issues/38' },
+                {
+                  title: `[${service}] High latency observed`,
+                  url: 'https://github.com/example/repo/issues/42',
+                },
+                {
+                  title: `[${service}] Connection pool exhaustion`,
+                  url: 'https://github.com/example/repo/issues/38',
+                },
               ],
             }
           },
@@ -155,7 +161,7 @@ Reply ONLY with JSON matching this schema exactly:
         const triage = ctx.steps.triage as { 'create-channel': { channelName: string } }
         const ticket = ctx.steps['create-ticket'] as { ticketId: string }
         // Production: replace with Slack SDK call.
-        console.error(
+        console.log(
           `[notify] Posted summary to #${triage['create-channel'].channelName}: ticket=${ticket.ticketId}`,
         )
         return { posted: true }
@@ -164,6 +170,22 @@ Reply ONLY with JSON matching this schema exactly:
   ],
 
   finalize: (ctx) => {
+    const gate = ctx.steps['severity-gate'] as { escalated: boolean }
+
+    // Low/medium severity short-circuits the escalation work — triage, the
+    // root-cause agent, and the Jira ticket creation may never have run, so
+    // their step outputs can be undefined. Return the acknowledgement shape
+    // directly instead of attempting to dereference them.
+    if (!gate.escalated) {
+      return {
+        channel: '',
+        ticketId: '',
+        rootCause: 'Acknowledged only — low/medium severity did not escalate',
+        immediateActions: [],
+        acknowledged: true,
+      }
+    }
+
     const triage = ctx.steps.triage as {
       'create-channel': { channelId: string; channelName: string }
     }
@@ -173,14 +195,13 @@ Reply ONLY with JSON matching this schema exactly:
     const rca = ctx.steps['root-cause'] as
       | { rootCause: string; immediateActions: string[] }
       | undefined
-    const gate = ctx.steps['severity-gate'] as { escalated: boolean }
 
     return {
       channel: triage['create-channel'].channelName,
       ticketId: ticket.ticketId,
-      rootCause: rca?.rootCause ?? 'Analysis unavailable (low-severity path)',
+      rootCause: rca?.rootCause ?? 'Analysis unavailable',
       immediateActions: rca?.immediateActions ?? [],
-      acknowledged: !gate.escalated,
+      acknowledged: false,
     }
   },
 })
