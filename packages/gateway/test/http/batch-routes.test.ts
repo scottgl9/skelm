@@ -24,7 +24,9 @@ const wf = pipeline({
   steps: [code({ id: 'one', run: () => ({ ok: true }) })],
 })
 
-async function bootGateway(): Promise<{ gw: Gateway; base: string }> {
+async function bootGateway(
+  overrides: { batch?: { maxItemsPerRequest?: number } } = {},
+): Promise<{ gw: Gateway; base: string }> {
   await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
   await fs.writeFile(join(projectRoot, 'workflows/a.workflow.ts'), 'export default {}')
   await fs.writeFile(join(projectRoot, 'workflows/b.workflow.ts'), 'export default {}')
@@ -38,6 +40,7 @@ async function bootGateway(): Promise<{ gw: Gateway; base: string }> {
     runStore: new MemoryRunStore(),
     loadWorkflow: async () => wf,
     config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+    ...(overrides.batch !== undefined && { batch: overrides.batch }),
   })
   await gw.start()
   return { gw, base: `http://127.0.0.1:${port}` }
@@ -59,7 +62,9 @@ describe('/v1/batch/*', () => {
       expect(body.items).toHaveLength(2)
       expect(body.items[0].accepted).toBe(true)
       expect(body.items[0].runId).toMatch(/[a-f0-9-]{36}/)
+      expect(body.items[0].description).toBe('started')
       expect(body.items[1].accepted).toBe(true)
+      expect(body.items[1].description).toBe('started')
     } finally {
       await gw.stop()
     }
@@ -80,6 +85,7 @@ describe('/v1/batch/*', () => {
       expect(body.items[0].accepted).toBe(true)
       expect(body.items[1].accepted).toBe(false)
       expect(body.items[1].error).toBeTruthy()
+      expect(body.items[1].description).toBe('workflow-not-found')
     } finally {
       await gw.stop()
     }
@@ -89,6 +95,21 @@ describe('/v1/batch/*', () => {
     const { gw, base } = await bootGateway()
     try {
       const items = Array.from({ length: 51 }, () => ({ id: 'workflows/a.workflow.ts' }))
+      const res = await fetch(`${base}/v1/batch/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ items }),
+      })
+      expect(res.status).toBe(400)
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('honours a configured smaller batch cap', async () => {
+    const { gw, base } = await bootGateway({ batch: { maxItemsPerRequest: 2 } })
+    try {
+      const items = Array.from({ length: 3 }, () => ({ id: 'workflows/a.workflow.ts' }))
       const res = await fetch(`${base}/v1/batch/runs`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

@@ -79,6 +79,16 @@ export interface GatewayOptions {
    * Each entry is resolved to an absolute realpath before comparison.
    */
   allowedRegistrationDirs?: string[]
+  /** Batch endpoint tunables. */
+  batch?: {
+    /** Maximum items per /v1/batch/runs request. Defaults to 50. */
+    maxItemsPerRequest?: number
+  }
+  /** Workflow registration tunables. */
+  workflows?: {
+    /** Maximum uploaded .zip size in bytes. Defaults to 5 MiB. */
+    maxArchiveBytes?: number
+  }
 }
 
 export interface GatewayEnforcement {
