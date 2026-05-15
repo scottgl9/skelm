@@ -201,6 +201,53 @@ describe('/v1/workflows/*', () => {
     }
   })
 
+  it('GET /v1/workflows surfaces glob-discovered workflows and tags by source', async () => {
+    // Regression for F023: GET /v1/workflows used to return only the
+    // explicitly-registered set (empty by default), while /pipelines
+    // returned the full glob discovery. Both should now agree on the
+    // union, with a `source` discriminator per entry.
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    const globPath = join(projectRoot, 'workflows/by-glob.workflow.ts')
+    await fs.writeFile(globPath, 'export default {}')
+
+    const explicitPath = join(projectRoot, 'workflows/by-register.workflow.ts')
+    await fs.writeFile(explicitPath, 'export default {}')
+
+    const { gw, base } = await bootGateway()
+    try {
+      // Register one of the two explicitly; the other is glob-only.
+      const reg = await fetch(`${base}/v1/workflows/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 'registered-flow',
+          source: { type: 'path', path: explicitPath },
+        }),
+      })
+      expect(reg.status).toBe(200)
+
+      const list = (await fetch(`${base}/v1/workflows`).then((r) => r.json())) as Array<{
+        id: string
+        source: 'glob' | 'registered'
+      }>
+
+      const byId = new Map(list.map((e) => [e.id, e]))
+      const globEntry = byId.get('workflows/by-glob.workflow.ts')
+      const registered = byId.get('registered-flow')
+
+      expect(globEntry).toBeDefined()
+      expect(globEntry?.source).toBe('glob')
+      expect(registered).toBeDefined()
+      expect(registered?.source).toBe('registered')
+
+      // Sanity-check: /pipelines and /v1/workflows now agree on size.
+      const pipelines = (await fetch(`${base}/pipelines`).then((r) => r.json())) as unknown[]
+      expect(list.length).toBe(pipelines.length)
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('replays persisted registrations after gateway restart', async () => {
     await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
     const wfPath = join(projectRoot, 'workflows/a.workflow.ts')

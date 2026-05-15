@@ -43,7 +43,19 @@ export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
 
   router.get(
     '/v1/workflows',
-    eventHandler(async () => service.list().map((entry) => ({ id: entry.id, file: entry.path }))),
+    eventHandler(async () => {
+      // Merge glob-discovered workflows with explicitly-registered ones so
+      // the listing endpoint surfaces the same set the runner can actually
+      // dispatch. `WorkflowRegistry.list()` already produces the union
+      // (registered entries shadow glob hits with the same id). Tag each
+      // entry by source so dashboards can differentiate.
+      const registered = new Set(service.list().map((e) => e.id))
+      return gateway.registries.workflows.list().map((entry) => ({
+        id: entry.id,
+        file: entry.path,
+        source: registered.has(entry.id) ? ('registered' as const) : ('glob' as const),
+      }))
+    }),
   )
 
   router.post(
