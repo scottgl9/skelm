@@ -29,7 +29,7 @@ import type { ResolvedPolicy } from '@skelm/core/permissions'
 import { TrustEnforcer } from '@skelm/core/permissions'
 
 import { type OpenAIMessage, chatCompletion } from './http-client.js'
-import { buildSystemPrompt, toUsage } from './prompt.js'
+import { buildSystemPromptFromRequest, toUsage } from './prompt.js'
 import { BUILTIN_TOOLS, type ToolExecutionContext, type ToolResult, toOpenAITool } from './tools.js'
 
 export interface SkelmAgentOptions {
@@ -94,10 +94,6 @@ async function runAgentLoop(
   usage?: Usage | undefined
 }> {
   const model = opts.defaultModel
-  // systemPrompt is computed for parity with prior behavior. The original
-  // implementation built it but never pushed it onto `messages`; preserving
-  // that here to avoid silent behavior change during the file split.
-  void buildSystemPrompt(req, opts.cwd, false, BUILTIN_TOOLS.length)
 
   const enforcer = ctx.permissions
     ? new TrustEnforcer(ctx.permissions)
@@ -120,8 +116,6 @@ async function runAgentLoop(
       : undefined,
   }
 
-  const messages: OpenAIMessage[] = [{ role: 'user', content: req.prompt }]
-
   // The runtime only builds an mcpHost for backends with toolPermissions:
   // 'wrapped'. We're 'native', so for step.mcp to actually do anything the
   // backend has to bring up the host itself and tear it down on exit.
@@ -139,17 +133,65 @@ async function runAgentLoop(
     // loop's else-if (mcpHost) branch below is dead: the model never sees
     // the namespaced "<serverId>.<toolName>" names and only falls back to the
     // built-in tools (F016).
-    const mcpTools = mcpHost
-      ? (await mcpHost.listTools()).map((t) => ({
-          type: 'function' as const,
-          function: {
-            name: t.id,
-            ...(t.description !== undefined && { description: t.description }),
-            ...(isObjectSchema(t.inputSchema) && { parameters: t.inputSchema }),
-          },
-        }))
-      : []
+    const mcpRawTools = mcpHost ? await mcpHost.listTools() : []
+    const mcpTools = mcpRawTools.map((t) => ({
+      type: 'function' as const,
+      function: {
+        name: t.id,
+        ...(t.description !== undefined && { description: t.description }),
+        ...(isObjectSchema(t.inputSchema) && { parameters: t.inputSchema }),
+      },
+    }))
     const tools = [...BUILTIN_TOOLS.map(toOpenAITool), ...mcpTools]
+
+    // Build a real system prompt and prepend it. Aggregate built-in + MCP tools,
+    // resolve skill summaries (body fetched on demand via fs_read), and tag the
+    // MCP servers so the model knows the namespacing convention.
+    const promptTools: Array<{ name: string; description?: string }> = [
+      ...BUILTIN_TOOLS.map((t) => ({
+        name: t.name,
+        ...(t.description !== undefined && { description: t.description }),
+      })),
+      ...mcpRawTools.map((t) => ({
+        name: t.id,
+        ...(t.description !== undefined && { description: t.description }),
+      })),
+    ]
+    const skillSummaries: Array<{ name: string; description: string; location?: string }> = []
+    if (req.skills && req.skills.length > 0 && ctx.loadSkill !== undefined) {
+      for (const skillId of req.skills) {
+        const skill = await ctx.loadSkill(skillId)
+        if (skill !== null) {
+          skillSummaries.push({
+            name: skill.id,
+            description: skill.description ?? '',
+            location: skill.source,
+          })
+        }
+      }
+    }
+    const mcpServerSummaries =
+      req.mcpServers && req.mcpServers.length > 0
+        ? req.mcpServers.map((s) => ({
+            id: s.id,
+            toolCount: mcpRawTools.filter((t) => t.id.startsWith(`${s.id}.`)).length,
+          }))
+        : undefined
+
+    const systemContent = buildSystemPromptFromRequest(req, {
+      cwd: opts.cwd,
+      platform: process.platform,
+      date: new Date().toISOString().slice(0, 10),
+      model,
+      tools: promptTools,
+      ...(skillSummaries.length > 0 && { skills: skillSummaries }),
+      ...(mcpServerSummaries && { mcpServers: mcpServerSummaries }),
+    })
+
+    const messages: OpenAIMessage[] = [
+      { role: 'system', content: systemContent },
+      { role: 'user', content: req.prompt },
+    ]
 
     const maxTurns = req.maxTurns ?? 30
     let turn = 0
