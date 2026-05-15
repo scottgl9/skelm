@@ -92,4 +92,59 @@ describe('/v1/config', () => {
       await gw.stop()
     }
   })
+
+  it('redacts sensitive env vars on agents, mcpServers, and backends', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      runStore: new MemoryRunStore(),
+      config: {
+        registries: {
+          agents: [
+            {
+              id: 'demo-agent',
+              runtime: 'opencode',
+              lifecycle: 'ephemeral',
+              command: 'opencode',
+              env: { OPENAI_API_KEY: 'sk-secret', LOG_LEVEL: 'info' },
+            },
+          ],
+          mcpServers: [
+            {
+              id: 'demo-mcp',
+              transport: 'stdio',
+              command: 'mcp-server',
+              env: { GH_TOKEN: 'ghp-secret', PORT: '7000' },
+            },
+          ],
+        },
+        backends: {
+          default: 'demo',
+          demo: {
+            apiKey: 'inline-key',
+            model: 'gpt-4',
+            env: { ANOTHER_TOKEN: 't' },
+          },
+        },
+      },
+    })
+    await gw.start()
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/v1/config`)
+      const body = await res.json()
+      expect(body.registries.agents[0].env.OPENAI_API_KEY).toBe('[redacted]')
+      expect(body.registries.agents[0].env.LOG_LEVEL).toBe('info')
+      expect(body.registries.mcpServers[0].env.GH_TOKEN).toBe('[redacted]')
+      expect(body.registries.mcpServers[0].env.PORT).toBe('7000')
+      expect(body.backends.demo.apiKey).toBe('[redacted]')
+      expect(body.backends.demo.model).toBe('gpt-4')
+      expect(body.backends.demo.env.ANOTHER_TOKEN).toBe('[redacted]')
+      expect(body.backends.default).toBe('demo')
+    } finally {
+      await gw.stop()
+    }
+  })
 })

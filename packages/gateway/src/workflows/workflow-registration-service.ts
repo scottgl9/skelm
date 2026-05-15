@@ -66,21 +66,34 @@ export class WorkflowRegistrationService {
     for (const name of names) {
       if (!name.endsWith('.json')) continue
       const path = join(this.dir, name)
+      let rec: RegisteredWorkflowRecord
       try {
         const text = await readFile(path, 'utf8')
-        const rec = JSON.parse(text) as RegisteredWorkflowRecord
-        if (typeof rec.id === 'string' && typeof rec.sourcePath === 'string') {
-          records.push(rec)
-        } else {
-          // Visible to operators so a corrupted record doesn't make a workflow
-          // silently vanish across a restart.
-          console.warn(`[skelm] workflow registration record missing required fields: ${path}`)
-        }
+        rec = JSON.parse(text) as RegisteredWorkflowRecord
       } catch (err) {
         console.warn(
           `[skelm] failed to read workflow registration record ${path}: ${(err as Error).message}`,
         )
+        continue
       }
+      if (typeof rec.id !== 'string' || typeof rec.sourcePath !== 'string') {
+        // Visible to operators so a corrupted record doesn't make a workflow
+        // silently vanish across a restart.
+        console.warn(`[skelm] workflow registration record missing required fields: ${path}`)
+        continue
+      }
+      // Re-run the allowed-roots check on every replay so tampering with the
+      // on-disk record can't smuggle an out-of-roots source path past boot.
+      try {
+        await this.resolveSourcePath(rec.sourcePath)
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err)
+        console.warn(
+          `[skelm] dropping workflow registration "${rec.id}" — source path failed safety check: ${reason}`,
+        )
+        continue
+      }
+      records.push(rec)
     }
     await this.options.registry.setRegistered(
       records.map((r) => ({ id: r.id, path: r.sourcePath })),
