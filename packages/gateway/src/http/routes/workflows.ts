@@ -1,6 +1,16 @@
 import { describePipeline } from '@skelm/core'
-import { type Router, createError, eventHandler, readBody } from 'h3'
+import {
+  type H3Event,
+  type MultiPartData,
+  type Router,
+  createError,
+  eventHandler,
+  getHeader,
+  readBody,
+  readMultipartFormData,
+} from 'h3'
 import type { Gateway } from '../../lifecycle/gateway.js'
+import type { WorkflowArchiveService } from '../../workflows/workflow-archive-service.js'
 import {
   WorkflowRegistrationError,
   type WorkflowRegistrationService,
@@ -68,6 +78,10 @@ export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
   router.post(
     '/v1/workflows/register',
     eventHandler(async (event) => {
+      if (isMultipart(event)) {
+        const archive = gateway.getWorkflowArchiveService()
+        return await registerFromArchive(event, gateway, service, archive, 'register')
+      }
       const body = (await readBody(event).catch(() => ({}))) as RegisterBody
       const id = takeId(service, body.id)
       const path = extractSourcePath(body.source)
@@ -79,6 +93,7 @@ export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
       const record = await service.upsert({
         id,
         sourcePath: real,
+        sourceKind: 'path',
         ...(description !== undefined && { description }),
         ...(version !== undefined && { version }),
       })
@@ -90,6 +105,10 @@ export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
     '/v1/workflows/:id',
     eventHandler(async (event) => {
       const id = takeId(service, decodeMaybe(event.context.params?.id))
+      if (isMultipart(event)) {
+        const archive = gateway.getWorkflowArchiveService()
+        return await registerFromArchive(event, gateway, service, archive, 'replace', id)
+      }
       const body = (await readBody(event).catch(() => ({}))) as RegisterBody
       const path = extractSourcePath(body.source)
       const description = takeOptionalString(body.description, 'description')
@@ -100,6 +119,7 @@ export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
       const record = await service.upsert({
         id,
         sourcePath: real,
+        sourceKind: 'path',
         ...(description !== undefined && { description }),
         ...(version !== undefined && { version }),
       })
@@ -114,13 +134,96 @@ export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
       if (id === undefined || id.length === 0) {
         throw createError({ statusCode: 400, message: 'id is required' })
       }
+      const existing = await service.getRecord(id)
       const removed = await service.remove(id)
       if (!removed) {
         throw createError({ statusCode: 404, message: 'workflow not registered' })
       }
+      if (existing?.sourceKind === 'archive') {
+        await gateway.getWorkflowArchiveService().remove(id)
+      }
       return { unregistered: true, id }
     }),
   )
+}
+
+function isMultipart(event: H3Event): boolean {
+  const ctype = getHeader(event, 'content-type') ?? ''
+  return ctype.toLowerCase().startsWith('multipart/form-data')
+}
+
+async function registerFromArchive(
+  event: H3Event,
+  gateway: Gateway,
+  service: WorkflowRegistrationService,
+  archive: WorkflowArchiveService,
+  mode: 'register' | 'replace',
+  fixedId?: string,
+): Promise<{ registered?: true; updated?: true; workflow: unknown }> {
+  const parts = (await readMultipartFormData(event)) ?? []
+  const fields = collectMultipartFields(parts)
+  const id = takeId(service, fixedId ?? fields.string('id'))
+  const archiveBytes = fields.file('archive')
+  if (archiveBytes === undefined) {
+    throw createError({ statusCode: 400, message: 'archive field with .zip file is required' })
+  }
+  const entry = fields.string('entry')
+  const description = fields.string('description')
+  const version = fields.string('version')
+  const loader = requireLoader(gateway)
+  let extracted: Awaited<ReturnType<WorkflowArchiveService['extract']>>
+  try {
+    extracted = await archive.extract({
+      id,
+      archive: archiveBytes,
+      mode,
+      ...(entry !== undefined && { entry }),
+    })
+  } catch (err) {
+    if (err instanceof WorkflowRegistrationError) {
+      throw createError({ statusCode: err.statusCode, message: err.message })
+    }
+    throw err
+  }
+  const real = await resolveOrThrow(service, extracted.entryPath)
+  try {
+    await loadPipelineFromPath(loader, id, real)
+  } catch (err) {
+    await archive.remove(id).catch(() => {})
+    throw err
+  }
+  const record = await service.upsert({
+    id,
+    sourcePath: real,
+    sourceKind: 'archive',
+    ...(description !== undefined && { description }),
+    ...(version !== undefined && { version }),
+  })
+  return mode === 'register'
+    ? { registered: true, workflow: record }
+    : { updated: true, workflow: record }
+}
+
+interface MultipartFields {
+  string(name: string): string | undefined
+  file(name: string): Uint8Array | undefined
+}
+
+function collectMultipartFields(parts: MultiPartData[]): MultipartFields {
+  const text = new Map<string, string>()
+  const files = new Map<string, Uint8Array>()
+  for (const part of parts) {
+    if (part.name === undefined) continue
+    if (part.filename !== undefined) {
+      files.set(part.name, new Uint8Array(part.data))
+    } else {
+      text.set(part.name, part.data.toString('utf8'))
+    }
+  }
+  return {
+    string: (name) => text.get(name),
+    file: (name) => files.get(name),
+  }
 }
 
 function extractSourcePath(source: unknown): string {
