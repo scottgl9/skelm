@@ -104,7 +104,14 @@ export default pipeline({
           ? 'needs-review'
           : 'auto',
       cases: {
-        auto: code({ id: 'auto-approved', run: () => ({ decision: 'approve', comments: 'Auto-approved (below threshold)', wasAuto: true }) }),
+        auto: code({
+          id: 'auto-approved',
+          run: () => ({
+            decision: 'approve',
+            comments: 'Auto-approved (below threshold)',
+            wasAuto: true,
+          }),
+        }),
         'needs-review': wait({
           id: 'human-review',
           message: 'Review this expense request and approve or reject it.',
@@ -158,9 +165,12 @@ export default pipeline({
       | undefined
 
     const wasAuto = (autoApproveGate as { wasAuto?: boolean } | undefined)?.wasAuto ?? false
+    // `comments` is optional on the wait() output schema, so a human reviewer
+    // may legitimately submit none. Distinguish the three sources explicitly
+    // rather than emitting an empty string that looks like a vetted answer.
     const comments =
       (autoApproveGate as { comments?: string } | undefined)?.comments ??
-      (wasAuto ? 'Auto-approved (below threshold)' : '')
+      (wasAuto ? 'Auto-approved (below threshold)' : 'No reviewer comments provided')
 
     return {
       status: decisionGate.outcome === 'approved' ? ('approved' as const) : ('rejected' as const),

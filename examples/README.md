@@ -9,6 +9,9 @@ Runnable workflow examples. Each subdirectory is a self-contained workflow you c
 | `permissions-demo/`      | `TrustEnforcer` usage in a `code()` step against a deny-all policy.        |
 | `multi-step-pipeline/`   | Sequential composition with branching/control flow.                        |
 | `telegram-bot/`          | Long-poll Telegram bot driving an `agent()` step on the pi backend.        |
+| `incident-response/`     | Webhook-triggered triage: `parallel()` + `branch()` + `agent()` root-cause.|
+| `approval-workflow/`     | Human-in-the-loop expense approval via `wait()`; auto-approves under $100. |
+| `sprint-planning/`       | Cron-triggered LLM story selection feeding from `code()` capacity calc.    |
 
 ## Run
 
