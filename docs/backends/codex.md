@@ -63,9 +63,13 @@ The mapper in `packages/codex/src/permission-mapper.ts` translates a resolved `A
 | `fsWrite: ['*']` AND no approval policy     | `sandboxMode: 'danger-full-access'`                          |
 | `fsWrite: ['*']` AND approval policy set    | **refused** — never silently escalate                        |
 | `networkEgress: 'deny'`                     | `networkAccessEnabled: false`                                |
-| `networkEgress: 'allow'` or `{ allowHosts }` | `networkAccessEnabled: true` (the gateway egress proxy enforces hostnames out-of-band; Codex just lifts its own network block) |
+| `networkEgress: 'allow'` (blanket allow)    | `networkAccessEnabled: true`, `webSearchMode: 'live'`, `webSearchEnabled: true` |
+| `networkEgress: { allowHosts: [...] }`       | `networkAccessEnabled: true` (the gateway egress proxy enforces hostnames out-of-band for shell egress), but `webSearchMode: 'disabled'` — Codex's built-in `web_search` runs in-process and cannot be host-gated by the proxy. To use web search, declare `networkEgress: 'allow'`. |
+| no `approval` policy (`approval === null`)  | `approvalPolicy: 'never'` — see note below                    |
 | `approval.on` covers `tool` or `executable` | `approvalPolicy: 'untrusted'`                                |
 | any other approval policy                   | `approvalPolicy: 'on-request'`                               |
+
+> **Default approval is `'never'`.** When a step declares no `approval` policy, the backend asks Codex *not* to prompt for every shell command. In automated pipelines there's no operator available to answer prompts; `sandboxMode` + `workingDirectory` + `networkAccessEnabled` are the primary enforcement boundary. Set `permissions.approval: { on: ['executable'] }` (or `['tool']`) on a step to switch into `'untrusted'` mode where Codex escalates every shell command for human approval.
 
 ## MCP servers
 
