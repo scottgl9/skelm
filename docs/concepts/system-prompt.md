@@ -87,6 +87,12 @@ With `systemPromptMode: 'replace'` and `systemPromptIncludeAgentDef: true` (defa
 | `@skelm/core` openai | `infer()` only — passes `req.system` through unchanged. No agent loop, so no built-in default. |
 | `@skelm/core` acp | Forwards prompts to a Claude-Code-compatible subprocess, which has its own system prompt. `req.system` is concatenated with the user prompt as-is. |
 
+### `agent()` steps vs. `llm()` steps
+
+The builder runs on the **agent loop path only** — i.e. `agent()` steps, which route to a backend's `run()`. Single-shot `llm()` steps route to `infer()`, which passes `req.system` through unchanged and does **not** inject the default sections. `systemPromptMode` and `systemPromptIncludeAgentDef` are therefore no-ops on `llm()` steps: the only system content on those calls is whatever the caller supplies.
+
+If you need the default tool-use / safety / coding guidance on a single-shot call, write it into `system` yourself, or convert the step to an `agent()` with `maxTurns: 1`.
+
 ## Length budget
 
 The built-in default sections (Identity through Coding work) are budget-capped at 5000 characters. A unit test (`packages/agent/test/prompt.test.ts`) regresses on this so future edits don't bloat the prompt. AGENTS.md / SOUL.md / `system` are user content and have no cap.
