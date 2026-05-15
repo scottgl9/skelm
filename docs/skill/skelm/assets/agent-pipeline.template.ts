@@ -26,7 +26,10 @@ export default pipeline({
     }),
     agent({
       id: 'execute',
-      backend: 'native-agent', // first-party @skelm/agent backend; swap for 'pi' / 'opencode' / 'copilot-acp' / etc. if you wire those into skelm.config.ts. See docs/backends/skelm-agent.md.
+      // First-party @skelm/agent backend. Swap for 'pi' / 'opencode' /
+      // 'copilot-acp' / etc. once wired into skelm.config.ts.
+      // See docs/backends/skelm-agent.md for the full reference.
+      backend: 'native-agent',
       prompt: (ctx) => (ctx.steps.prepare as { prompt: string }).prompt,
       permissions: {
         // profile: 'my-profile',   // optional: named profile from skelm.config.ts
