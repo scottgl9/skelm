@@ -561,6 +561,7 @@ async function runParallel(
   runtime?: ExecutionRuntime,
 ): Promise<Record<string, unknown>> {
   const onError = step.onError ?? 'fail'
+  warnOnSharedWorkspaces(step, ctx, events)
   const settled = await Promise.allSettled(
     step.steps.map((child) =>
       runStep(child, ctx, backends, waitForInput, events, createDetachedWorkspaceRuntime(runtime)),
@@ -582,6 +583,59 @@ async function runParallel(
     }
   }
   return out
+}
+
+function warnOnSharedWorkspaces(
+  step: Extract<Step, { kind: 'parallel' }>,
+  ctx: Context,
+  events?: EventBus,
+): void {
+  if (events === undefined) return
+  // Map workspace-key -> the child step ids that resolve to it. A "key" is
+  // a string fingerprint of mode+identity that's robust enough to catch the
+  // common shared-workspace mistake (mode: 'persistent', name: 'shared') and
+  // mode: 'mounted' aliases. Step-resolved paths are not consulted here —
+  // we just compare the declared identity.
+  const keyToChildren = new Map<string, string[]>()
+  for (const child of step.steps) {
+    if (child.kind !== 'agent' || child.workspace === undefined) continue
+    let cfg: ReturnType<typeof resolveWorkspaceConfig>
+    try {
+      cfg = resolveWorkspaceConfig(child.workspace, ctx)
+    } catch {
+      continue
+    }
+    if (cfg === undefined) continue
+    const key =
+      cfg.mode === 'persistent'
+        ? `persistent:${cfg.base ?? ''}:${cfg.name}`
+        : cfg.mode === 'mounted'
+          ? `mounted:${cfg.path}`
+          : null
+    if (key === null) continue
+    const ids = keyToChildren.get(key)
+    if (ids === undefined) keyToChildren.set(key, [child.id])
+    else ids.push(child.id)
+  }
+  for (const [, ids] of keyToChildren) {
+    if (ids.length < 2) continue
+    events.publish({
+      type: 'run.warning',
+      runId: ctx.run.runId,
+      stepId: step.id,
+      code: 'parallel.shared-workspace',
+      message: `parallel(${step.id}): children [${ids.join(', ')}] resolve to the same workspace; concurrent writes may race silently. Use workspace mode: 'ephemeral' per child to isolate.`,
+      at: Date.now(),
+    })
+  }
+}
+
+function resolveWorkspaceConfig(
+  workspace: NonNullable<Extract<Step, { kind: 'agent' }>['workspace']>,
+  ctx: Context,
+): import('../types.js').WorkspaceConfig | undefined {
+  if (typeof workspace === 'function') return workspace(ctx)
+  return workspace
 }
 
 async function runIdempotent(
@@ -637,6 +691,30 @@ async function runForEach(
 ): Promise<unknown[]> {
   const items = step.items(ctx)
   const concurrency = step.concurrency ?? 1
+  // Eagerly materialize per-iteration child steps so we can detect duplicate
+  // ids (the natural factory pattern) before launching concurrent workers.
+  // Duplicate ids would make the egress token key (runId:stepId) collide
+  // across iterations: the first iteration to unregister deletes the token
+  // out from under siblings still in flight, silently disabling network
+  // policy enforcement. Suffixing the id with the iteration index keeps the
+  // token key unique per iteration.
+  const children = new Array<Step>(items.length)
+  const seenIds = new Set<string>()
+  let needsSuffix = false
+  for (let i = 0; i < items.length; i++) {
+    const child = step.step(items[i], i)
+    if (seenIds.has(child.id)) {
+      needsSuffix = true
+    }
+    seenIds.add(child.id)
+    children[i] = child
+  }
+  if (needsSuffix && concurrency > 1) {
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i] as Step
+      children[i] = { ...child, id: `${child.id}#${i}` } as Step
+    }
+  }
   const results = new Array<unknown>(items.length)
   let cursor = 0
   const workers: Promise<void>[] = []
@@ -644,7 +722,7 @@ async function runForEach(
     while (cursor < items.length) {
       const i = cursor++
       const item = items[i]
-      const child = step.step(item, i)
+      const child = children[i] as Step
       const itemCtx = freezeContext({ ...ctx, item })
       results[i] = await runStep(
         child,
