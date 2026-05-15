@@ -1,6 +1,6 @@
 import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, normalize, posix, resolve, sep } from 'node:path'
-import { unzipSync } from 'fflate'
+import { type UnzipFileInfo, unzip } from 'fflate'
 import { WorkflowRegistrationError } from './workflow-registration-service.js'
 
 /**
@@ -80,10 +80,43 @@ export class WorkflowArchiveService {
       throw new WorkflowRegistrationError(400, 'uploaded file is not a .zip archive')
     }
 
+    // Stop zip bombs before decompression: fflate's filter hook fires with each
+    // entry's central-directory `originalSize`, so we can reject any entry whose
+    // uncompressed size exceeds the cap before allocating its decoded bytes.
+    // Run async so a CPU-bound decompress doesn't stall the gateway event loop.
+    const maxBytes = this.options.maxBytes
     let entries: Record<string, Uint8Array>
     try {
-      entries = unzipSync(input.archive)
+      entries = await new Promise<Record<string, Uint8Array>>((resolveUnzip, rejectUnzip) => {
+        unzip(
+          input.archive,
+          {
+            filter(file: UnzipFileInfo) {
+              if (file.originalSize > maxBytes) {
+                rejectUnzip(
+                  new WorkflowRegistrationError(
+                    413,
+                    `archive entry "${file.name}" uncompressed size ${file.originalSize} exceeds ${maxBytes} bytes`,
+                  ),
+                )
+                return false
+              }
+              return true
+            },
+          },
+          (err, decoded) => {
+            if (err !== null && err !== undefined) {
+              rejectUnzip(
+                new WorkflowRegistrationError(400, `failed to decode .zip archive: ${err.message}`),
+              )
+              return
+            }
+            resolveUnzip(decoded ?? {})
+          },
+        )
+      })
     } catch (err) {
+      if (err instanceof WorkflowRegistrationError) throw err
       throw new WorkflowRegistrationError(
         400,
         `failed to decode .zip archive: ${(err as Error).message}`,

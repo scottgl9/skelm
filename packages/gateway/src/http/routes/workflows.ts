@@ -142,7 +142,18 @@ export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
       if (existing?.sourceKind === 'archive') {
         await gateway.getWorkflowArchiveService().remove(id)
       }
-      return { unregistered: true, id }
+      // A workflow can be both explicitly registered AND surfaced by the FS
+      // glob; unregistering only drops the explicit entry, so the glob copy
+      // can survive. Surface that so callers don't assume the id is gone.
+      const survivor = gateway.registries.workflows.get(id)
+      return {
+        unregistered: true,
+        id,
+        ...(survivor !== undefined && {
+          stillDiscoveredByGlob: true,
+          file: survivor.path,
+        }),
+      }
     }),
   )
 }

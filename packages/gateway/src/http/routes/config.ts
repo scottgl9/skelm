@@ -1,13 +1,13 @@
 import { type Router, createError, eventHandler, readBody } from 'h3'
 import type { Gateway } from '../../lifecycle/gateway.js'
 
-/** Server-config keys that PATCH /v1/config is permitted to update. */
-const SERVER_PATCH_KEYS = new Set<string>(['maxConcurrentRuns'])
-
 // Intentionally narrow: only hot-reloadable, side-effect-bounded, non-security-relevant
 // fields belong here. Auth, trust roots, secret-driver paths, and storage settings require
 // a gateway restart so changes survive a reconcile and audit.
 const ALLOWED_PATCH_PATHS = new Set<string>(['server.maxConcurrentRuns'])
+
+/** Substrings (case-insensitive) that mark a field's value as sensitive in `server.auth`. */
+const SENSITIVE_KEYWORDS = ['token', 'secret', 'password', 'credential', 'key']
 
 /**
  * Mount GET/PATCH /v1/config.
@@ -73,10 +73,10 @@ function sanitize(config: import('@skelm/core').SkelmConfig): Record<string, unk
     const auth = server.auth as Record<string, unknown>
     // Future-proof: never echo a token even if a config ever stores one inline.
     for (const k of Object.keys(auth)) {
-      if (k !== 'mode' && SERVER_PATCH_KEYS.has(k) === false) {
-        if (k.toLowerCase().includes('token') || k.toLowerCase().includes('secret')) {
-          auth[k] = '[redacted]'
-        }
+      if (k === 'mode') continue
+      const lower = k.toLowerCase()
+      if (SENSITIVE_KEYWORDS.some((kw) => lower.includes(kw))) {
+        auth[k] = '[redacted]'
       }
     }
   }
