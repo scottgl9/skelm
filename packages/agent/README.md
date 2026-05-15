@@ -109,7 +109,7 @@ Override surface on each `agent()` step:
 - `systemPromptMode: 'extend' | 'replace'` — `'replace'` drops the built-in default; default is `'extend'`.
 - `systemPromptIncludeAgentDef: boolean` — when replacing, keep AGENTS.md/SOUL.md anyway (default `true`).
 
-See [`docs/concepts/system-prompt.md`](../../docs/concepts/system-prompt.md) for the full section list and per-backend behavior.
+See [`docs/concepts/system-prompt.md`](https://github.com/scottgl9/skelm/blob/main/docs/concepts/system-prompt.md) for the full section list and per-backend behavior.
 
 ## Built-in tools
 

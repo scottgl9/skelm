@@ -25,9 +25,9 @@ skelm is a TypeScript framework for authoring and running **workflows** — type
 
 - **TypeScript-native** — Real `.ts` modules, no DSL or JSON config
 - **Default-deny security** — Every permission must be explicitly declared
-- **Multi-backend agents** — Pi, Opencode, Vercel AI, ACP (Copilot, Claude Code, Gemini), OpenAI, Anthropic
+- **Multi-backend agents** — First-party agent, Pi, Opencode (native or ACP), Vercel AI, ACP (Copilot, Claude Code, Gemini), Anthropic, OpenAI
 - **MCP-native** — Model Context Protocol servers lifecycle-managed by the gateway
-- **Scheduler-built-in** — Cron, webhooks, intervals, queues, or long-running gateway service
+- **Scheduler-built-in** — Cron, intervals, webhooks, polling, queues, or long-running gateway service
 
 > **Status:** Early development. APIs are unstable until v1. Feedback and contributions welcome.
 
@@ -63,11 +63,11 @@ skelm supports multiple AI backends through pluggable adapters. Choose the one t
 
 | Backend | Package | Best for |
 |---------|---------|----------|
+| **First-party** | `@skelm/agent` | OpenAI-compatible LLM, in-process permission enforcement, built-in tool surface, no external runtime dependency |
 | **Pi** | `@skelm/pi` | Pi coding agent with full permission enforcement |
-| **Opencode** | `@skelm/opencode` | Open-source coding agent backend |
+| **Opencode** | `@skelm/opencode` | Open-source coding agent backend (native; ACP transport also supported) |
 | **Vercel AI** | `@skelm/vercel-ai` | Vercel AI SDK with streaming support |
-| **ACP** | Built-in | GitHub Copilot, Claude Code, Gemini via ACP |
-| **First-party agent** | `@skelm/agent` | Native agent loop with built-in tools and MCP |
+| **ACP** | Built-in | GitHub Copilot, Claude Code, Gemini via ACP (Opencode also available as native — see above) |
 
 See [Backend documentation](./docs/backends/README.md) for setup guides and comparison.
 
