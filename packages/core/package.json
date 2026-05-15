@@ -50,6 +50,10 @@
       "types": "./dist/skills.d.ts",
       "import": "./dist/skills.js"
     },
+    "./system-prompt": {
+      "types": "./dist/system-prompt.d.ts",
+      "import": "./dist/system-prompt.js"
+    },
     "./types": {
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js"
