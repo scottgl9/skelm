@@ -21,6 +21,8 @@ cache TTL on `/overview`.
 
 ## What it shows
 
+Read-only summary cards from `/v1/dashboard/*`:
+
 - **Gateway** — status, version, uptime
 - **Runs** — totals, last-24h, average duration, status breakdown
 - **Approvals** — pending count and oldest age
@@ -29,9 +31,22 @@ cache TTL on `/overview`.
 - **Recent errors** — last failures with messages
 - **Triggers** — registered triggers with fire counts
 
+Control panels backed by the REST surface:
+
+- **Workflows** — `GET /v1/workflows` for the list; register from a host
+  path (`POST /v1/workflows/register`) or upload a `.zip` archive
+  (multipart `POST` or `PUT /v1/workflows/:id` to replace). Delete buttons
+  call `DELETE /v1/workflows/:id`.
+- **Batch run** — POST a JSON `items` array to `/v1/batch/runs` and render
+  each per-item outcome, including the new stable `description` category.
+  The configured cap is fetched from `/v1/config` and displayed above the
+  form.
+- **Gateway config** — pretty-prints the sanitized `/v1/config` projection
+  and offers a one-field form to PATCH `server.maxConcurrentRuns`.
+
 ## Customizing
 
-The page is intentionally one self-contained HTML file (~250 lines, no
-framework). Fork it as a starting point for your own dashboard. The API
-reference is at [`docs/reference/http.md`](../../docs/reference/http.md) and
-[`docs/reference/openapi.yaml`](../../docs/reference/openapi.yaml).
+The page is intentionally one self-contained HTML file, no build step and
+no dependencies. Fork it as a starting point for your own dashboard. The
+API reference is at [`docs/reference/http.md`](../../docs/reference/http.md)
+and [`docs/reference/openapi.yaml`](../../docs/reference/openapi.yaml).
