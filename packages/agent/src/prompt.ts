@@ -263,10 +263,6 @@ export function buildSystemPromptFromRequest(
     mcpServers?: ReadonlyArray<{ id: string; toolCount: number }>
   },
 ): string {
-  const reqWithMode = req as AgentRequest & {
-    systemPromptMode?: 'extend' | 'replace'
-    systemPromptIncludeAgentDef?: boolean
-  }
   return buildSystemPrompt({
     ...(req.agentDef && { agentDef: req.agentDef }),
     ...(req.system !== undefined && { userSystem: req.system }),
@@ -277,9 +273,9 @@ export function buildSystemPromptFromRequest(
     tools: ctx.tools,
     ...(ctx.skills && { skills: ctx.skills }),
     ...(ctx.mcpServers && { mcpServers: ctx.mcpServers }),
-    ...(reqWithMode.systemPromptMode && { mode: reqWithMode.systemPromptMode }),
-    ...(reqWithMode.systemPromptIncludeAgentDef !== undefined && {
-      includeAgentDef: reqWithMode.systemPromptIncludeAgentDef,
+    ...(req.systemPromptMode !== undefined && { mode: req.systemPromptMode }),
+    ...(req.systemPromptIncludeAgentDef !== undefined && {
+      includeAgentDef: req.systemPromptIncludeAgentDef,
     }),
   })
 }
