@@ -152,9 +152,42 @@ describe('createCodexBackend.run', () => {
       makeContext(),
     )
     const ctorArgs = codexCtor.mock.calls[0]![0] as {
-      config?: { mcp_servers?: Record<string, unknown> }
+      config?: Record<string, unknown>
     }
-    expect(Object.keys(ctorArgs.config?.mcp_servers ?? {})).toEqual(['srvA'])
+    expect(Object.keys((ctorArgs.config?.mcp_servers as object) ?? {})).toEqual(['srvA'])
+    // The `dropped` bookkeeping field MUST NOT leak into Codex's config.
+    expect(ctorArgs.config).not.toHaveProperty('dropped')
+    expect(Object.keys(ctorArgs.config ?? {})).toEqual(['mcp_servers'])
+  })
+
+  it('drops HTTP/SSE MCP servers from the Codex config and audits them', async () => {
+    startThread.mockReturnValue(makeThread(okStream()))
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await createCodexBackend().run!(
+        {
+          prompt: '.',
+          permissions: policy({ fsWrite: [], allowedMcpServers: ['stdio-ok', 'remote'] }),
+          mcpServers: [
+            { id: 'stdio-ok', transport: 'stdio', command: 'a-cmd' },
+            { id: 'remote', transport: 'http', url: 'https://example.com/mcp' },
+          ],
+        } as AgentRequest,
+        makeContext(),
+      )
+      const ctorArgs = codexCtor.mock.calls[0]![0] as {
+        config?: Record<string, unknown>
+      }
+      // Only the stdio server should reach Codex.
+      expect(Object.keys((ctorArgs.config?.mcp_servers as object) ?? {})).toEqual(['stdio-ok'])
+      // The dropped HTTP server must surface as an audit warning.
+      const payloads = warnSpy.mock.calls.map((c) => c[0] as string)
+      const droppedAudit = payloads.find((p) => p.includes('transport-unsupported'))
+      expect(droppedAudit).toBeDefined()
+      expect(droppedAudit).toContain('"ids":["remote"]')
+    } finally {
+      warnSpy.mockRestore()
+    }
   })
 
   it('forwards BackendContext.proxyEnv into the spawned codex env', async () => {
@@ -231,5 +264,41 @@ describe('createCodexBackend.run', () => {
     await expect(backend.run!({ prompt: '.' } as AgentRequest, makeContext())).rejects.toThrow(
       /permission policy/,
     )
+  })
+
+  it('honors options.timeoutMs via the SDK TurnOptions.signal', async () => {
+    // Capture the signal the backend passes to runStreamed and verify the
+    // timeout aborts it.
+    let captured: AbortSignal | undefined
+    startThread.mockReturnValue({
+      id: 't-timeout',
+      runStreamed: vi.fn(async (_input: string, opts: { signal?: AbortSignal }) => {
+        captured = opts.signal
+        // Never resolve — let the test drive the abort.
+        async function* gen() {
+          await new Promise((resolve) => {
+            captured?.addEventListener('abort', () => resolve(undefined), { once: true })
+          })
+          return
+        }
+        return { events: gen() }
+      }),
+    })
+
+    vi.useFakeTimers()
+    try {
+      const backend = createCodexBackend({ timeoutMs: 50 })
+      const runPromise = backend.run!(
+        { prompt: '.', permissions: policy({ fsWrite: [] }) } as AgentRequest,
+        makeContext(),
+      )
+      // Allow microtasks to schedule, then advance past the timeout.
+      await vi.advanceTimersByTimeAsync(60)
+      await runPromise
+      expect(captured?.aborted).toBe(true)
+      expect((captured?.reason as Error | undefined)?.message ?? '').toMatch(/timed out/)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

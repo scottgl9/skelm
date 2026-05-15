@@ -70,24 +70,24 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
       const allowed = filterAllowedMcp(request.mcpServers, policy.allowedMcpServers)
       const mcpConfig = buildMcpServerConfig(allowed.allowed)
       const deniedMcp = allowed.denied.map((s) => s.id)
-      if (deniedMcp.length > 0) {
-        // Audit-only: surface in console for now; the runner's audit writer
-        // is the durable record.
-        // biome-ignore lint/suspicious/noConsole: pre-audit-bus surface
+      // Audit-only for now; the runner's audit writer is the durable record.
+      // biome-ignore lint/suspicious/noConsole: pre-audit-bus surface
+      const logDenial = (dimension: string, ids: string[], reason: string) =>
         console.warn(
-          JSON.stringify({
-            event: 'permission.denied',
-            dimension: 'mcp',
-            ids: deniedMcp,
-            backend: 'codex',
-          }),
+          JSON.stringify({ event: 'permission.denied', dimension, ids, reason, backend: 'codex' }),
         )
+      if (deniedMcp.length > 0) {
+        logDenial('mcp', deniedMcp, 'not-in-allowlist')
+      }
+      if (mcpConfig !== null && mcpConfig.dropped.length > 0) {
+        logDenial('mcp', mcpConfig.dropped, 'transport-unsupported')
       }
 
-      // Construct the SDK client with config + proxy env.
+      // Construct the SDK client with config + proxy env. Only forward
+      // `mcp_servers` to Codex — never leak the `dropped` bookkeeping field.
       const codexOpts = buildCodexOptions(options, {
         ...(context.proxyEnv !== undefined && { env: context.proxyEnv }),
-        ...(mcpConfig !== null && { config: mcpConfig }),
+        ...(mcpConfig !== null && { config: { mcp_servers: mcpConfig.mcp_servers } }),
       })
       const codex = makeCodexClient(codexOpts)
 
@@ -117,15 +117,23 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
           ? codex.resumeThread(sessionId, threadOpts)
           : codex.startThread(threadOpts)
 
-      // Drive the turn. The SDK honors the abort signal natively.
+      // Compose abort: the runner-supplied `context.signal` AND the
+      // backend's `timeoutMs` (defensive ceiling). The SDK honors a single
+      // AbortSignal on TurnOptions natively.
+      const turnSignal = composeAbortSignal(context.signal, options.timeoutMs ?? 300_000)
       const { events } = await thread.runStreamed(userPrompt, {
         ...(request.outputSchema !== undefined && { outputSchema: request.outputSchema }),
-        signal: context.signal,
+        signal: turnSignal.signal,
       })
 
-      const result = await consumeStream(events, {
-        ...(context.onPartial !== undefined && { onText: context.onPartial }),
-      })
+      let result: Awaited<ReturnType<typeof consumeStream>>
+      try {
+        result = await consumeStream(events, {
+          ...(context.onPartial !== undefined && { onText: context.onPartial }),
+        })
+      } finally {
+        turnSignal.cancel()
+      }
 
       const response: AgentResponse = {
         text: result.finalText,
@@ -180,8 +188,37 @@ async function composeSystemPrompt(
 /**
  * AgentRequest doesn't have a typed sessionId field at the moment, but
  * runners may attach one through structural typing. Read defensively.
+ * TODO(@skelm/core): promote `sessionId?: string` to AgentRequest so this
+ * cast goes away.
  */
 function readSessionId(request: AgentRequest): string | undefined {
   const sid = (request as { sessionId?: unknown }).sessionId
   return typeof sid === 'string' && sid.length > 0 ? sid : undefined
+}
+
+/**
+ * Compose the runner's signal with a backend-side timeout. The returned
+ * signal aborts when either fires; `cancel()` clears the timer so a
+ * successful run doesn't leak it.
+ */
+function composeAbortSignal(
+  upstream: AbortSignal,
+  timeoutMs: number,
+): { signal: AbortSignal; cancel: () => void } {
+  const controller = new AbortController()
+  if (upstream.aborted) controller.abort(upstream.reason)
+  const onAbort = () => controller.abort(upstream.reason)
+  upstream.addEventListener('abort', onAbort, { once: true })
+  const timer = setTimeout(() => {
+    controller.abort(new Error(`codex backend timed out after ${timeoutMs}ms`))
+  }, timeoutMs)
+  // Don't keep the event loop alive solely for this timer.
+  if (typeof timer === 'object' && 'unref' in timer) timer.unref()
+  return {
+    signal: controller.signal,
+    cancel: () => {
+      clearTimeout(timer)
+      upstream.removeEventListener('abort', onAbort)
+    },
+  }
 }

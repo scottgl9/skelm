@@ -108,6 +108,57 @@ describe('consumeStream', () => {
     expect(onText).toHaveBeenCalledWith('hello world')
   })
 
+  it('emits text DELTAS to onText when Codex streams cumulative agent_message updates', async () => {
+    // Codex's `agent_message.text` is cumulative; skelm's onPartial contract
+    // is incremental. consumeStream must compute the suffix.
+    const onText = vi.fn()
+    await consumeStream(
+      scripted([
+        { type: 'item.completed', item: { id: 'a', type: 'agent_message', text: 'hello' } },
+        { type: 'item.completed', item: { id: 'a', type: 'agent_message', text: 'hello world' } },
+        {
+          type: 'item.completed',
+          item: { id: 'a', type: 'agent_message', text: 'hello world!' },
+        },
+        {
+          type: 'turn.completed',
+          usage: {
+            input_tokens: 0,
+            cached_input_tokens: 0,
+            output_tokens: 0,
+            reasoning_output_tokens: 0,
+          },
+        },
+      ]),
+      { onText },
+    )
+    expect(onText.mock.calls.map((c) => c[0])).toEqual(['hello', ' world', '!'])
+  })
+
+  it("falls back to the full text when a later agent_message doesn't share the running prefix", async () => {
+    // Defensive: if Codex ever emits a fully replaced message (not a strict
+    // append), we should still forward the new content rather than slicing
+    // off a prefix that doesn't match.
+    const onText = vi.fn()
+    await consumeStream(
+      scripted([
+        { type: 'item.completed', item: { id: 'a', type: 'agent_message', text: 'foo' } },
+        { type: 'item.completed', item: { id: 'a', type: 'agent_message', text: 'BAR' } },
+        {
+          type: 'turn.completed',
+          usage: {
+            input_tokens: 0,
+            cached_input_tokens: 0,
+            output_tokens: 0,
+            reasoning_output_tokens: 0,
+          },
+        },
+      ]),
+      { onText },
+    )
+    expect(onText.mock.calls.map((c) => c[0])).toEqual(['foo', 'BAR'])
+  })
+
   it('throws on turn.failed and surfaces the error message', async () => {
     await expect(
       consumeStream(
