@@ -93,6 +93,55 @@ describe('/v1/config', () => {
     }
   })
 
+  it('GET succeeds when config holds live backend instances with non-cloneable functions', async () => {
+    // Regression for F020: structuredClone(config) used to throw
+    // DataCloneError when `instances[]` carried closures like an
+    // `infer` function on a backend factory. sanitize() now JSON
+    // round-trips and PATCH no longer clones the entire config.
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      runStore: new MemoryRunStore(),
+      config: {
+        server: { auth: { mode: 'none' }, maxConcurrentRuns: 2 },
+        instances: [
+          // Live backend instance — `run`/`infer` are closures that
+          // structuredClone cannot copy.
+          {
+            id: 'fake-backend',
+            capabilities: { prompt: true, streaming: false },
+            async run() {
+              return { text: 'ok', stopReason: 'stop' }
+            },
+            async infer() {
+              return { text: 'ok' }
+            },
+          } as unknown as never,
+        ],
+      },
+    })
+    await gw.start()
+    try {
+      const getRes = await fetch(`http://127.0.0.1:${port}/v1/config`)
+      expect(getRes.status).toBe(200)
+      const getBody = await getRes.json()
+      expect(getBody.server.maxConcurrentRuns).toBe(2)
+
+      const patchRes = await fetch(`http://127.0.0.1:${port}/v1/config`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ 'server.maxConcurrentRuns': 5 }),
+      })
+      expect(patchRes.status).toBe(200)
+      expect(gw.getConfig().server?.maxConcurrentRuns).toBe(5)
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('redacts sensitive env vars on agents, mcpServers, and backends', async () => {
     const port = await pickFreePort()
     const gw = new Gateway({

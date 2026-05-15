@@ -55,8 +55,11 @@ export function registerConfigRoutes(router: Router, gateway: Gateway): void {
         }
       }
       const current = gateway.getConfig()
-      const next = structuredClone(current) as typeof current
-      next.server = next.server ?? {}
+      // Shallow copy with a fresh `server` branch — the only branch we
+      // mutate here. Avoid structuredClone on `current` because backend
+      // instances under `instances[]` / `backends.<id>` are live objects
+      // with non-cloneable functions.
+      const next = { ...current, server: { ...(current.server ?? {}) } } as typeof current
       for (const [key, value] of entries) {
         if (key === 'server.maxConcurrentRuns') {
           if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) {
@@ -81,7 +84,13 @@ export function registerConfigRoutes(router: Router, gateway: Gateway): void {
  * branch that can hold credentials should run through the same keyword scan.
  */
 function sanitize(config: import('@skelm/core').SkelmConfig): Record<string, unknown> {
-  const clone = structuredClone(config) as Record<string, unknown>
+  // The runtime SkelmConfig can carry live backend instances (functions
+  // closed over BackendContext) under `instances[]` and `backends.<id>`.
+  // `structuredClone` throws DataCloneError on those — and the public
+  // /v1/config response shouldn't expose them anyway. JSON round-trip
+  // both deep-copies and strips the non-cloneable branches; everything
+  // we redact below is pure data.
+  const clone = JSON.parse(JSON.stringify(config)) as Record<string, unknown>
 
   const server = (clone.server ?? {}) as Record<string, unknown>
   if (server.auth !== undefined && typeof server.auth === 'object' && server.auth !== null) {
