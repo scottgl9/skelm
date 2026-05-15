@@ -15,7 +15,7 @@ Codex authenticates via the host `codex` CLI (`codex login`) or the `CODEX_API_K
 | `sessionLifecycle` | `true` (`request.sessionId` → `Codex.resumeThread`)            |
 | `mcp`              | `true` (skelm MCP servers injected via `config.mcp_servers`)   |
 | `skills`           | `true` (skill bodies concatenated into the system prompt)      |
-| `toolPermissions`  | `'wrapped'` (Codex enforces sandbox; skelm enforces boundary)  |
+| `toolPermissions`  | `'native'` (Codex enforces sandbox / approval / network in its own process; skelm checks at the boundary) |
 
 ## Prerequisites
 

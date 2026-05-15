@@ -11,7 +11,7 @@ describe('CodexBackend (skeleton)', () => {
     expect(backend.capabilities.sessionLifecycle).toBe(true)
     expect(backend.capabilities.mcp).toBe(true)
     expect(backend.capabilities.skills).toBe(true)
-    expect(backend.capabilities.toolPermissions).toBe('wrapped')
+    expect(backend.capabilities.toolPermissions).toBe('native')
   })
 
   it('reports modelSelection: true only when model is set', () => {

@@ -7,7 +7,12 @@
  * `CODEX_API_KEY` env var.
  */
 
-import type { ApprovalMode, ModelReasoningEffort, SandboxMode } from '@openai/codex-sdk'
+import type {
+  ApprovalMode,
+  ModelReasoningEffort,
+  SandboxMode,
+  WebSearchMode,
+} from '@openai/codex-sdk'
 
 export interface CodexBackendOptions {
   /** Backend id. Defaults to 'codex' when only one codex backend is registered. */
@@ -59,6 +64,14 @@ export interface MappedCodexPolicy {
   sandboxMode: SandboxMode
   approvalPolicy: ApprovalMode
   networkAccessEnabled: boolean
+  /**
+   * Codex's built-in web search bypasses `networkAccessEnabled` (that flag
+   * governs sandbox-shell egress only). When networkEgress is 'deny' we set
+   * webSearchMode to 'disabled' too so the agent cannot reach the public
+   * web through its built-in tool.
+   */
+  webSearchMode: WebSearchMode
+  webSearchEnabled: boolean
   /** Primary working directory (== WorkspaceHandle.path when present). */
   workingDirectory?: string
   /** Extra writable directories beyond `workingDirectory`. */

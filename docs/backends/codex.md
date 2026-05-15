@@ -49,7 +49,7 @@ The full type is `CodexBackendOptions` — see [`packages/codex/src/types.ts`](h
 | `mcp`              | `true` (skelm MCP servers injected via Codex `config.mcp_servers`) |
 | `skills`           | `true` (skill bodies concatenated into the system prompt) |
 | `modelSelection`   | `true` when `options.model` is set |
-| `toolPermissions`  | `'wrapped'` (Codex enforces its sandbox in-process; skelm enforces at the boundary) |
+| `toolPermissions`  | `'native'` (Codex enforces sandbox / approval / network in its own process; skelm checks at the boundary before dispatch) |
 
 ## Permission mapping
 
