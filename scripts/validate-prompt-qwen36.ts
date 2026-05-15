@@ -89,14 +89,14 @@ function makeCtx(opts: {
 
 async function scenarioTools(work: string): Promise<ScenarioResult> {
   const marker = 'PURPLE-OCTOPUS-9824'
-  const filePath = join(work, 'secret.txt')
-  await writeFile(filePath, `The secret word is ${marker}.\n`, 'utf8')
+  const filePath = join(work, 'fixture.txt')
+  await writeFile(filePath, `The fixture marker is ${marker}.\n`, 'utf8')
 
   const backend = makeBackend()
   const ctx = makeCtx({ cwd: work })
   const res = await backend.run?.(
     {
-      prompt: `Use the fs_read tool to read the file at this absolute path: ${filePath}\n\nThe file contains a secret word. After reading the file, reply with the secret word that appears in the file.`,
+      prompt: `Use the fs_read tool to read the file at this absolute path: ${filePath}\n\nThe file contains a fixture marker. After reading the file, reply with the marker value that appears in the file.`,
       cwd: work,
       permissions: ctx.permissions,
       maxTurns: 8,
