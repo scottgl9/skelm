@@ -32,7 +32,7 @@ describeLive('@skelm/codex — live Codex integration', () => {
       permissions: policy,
       maxTurns: 1,
     }
-    const res = await backend.run!(req, makeContext())
+    const res = await backend.run?.(req, makeContext())
     expect(res.text?.toLowerCase()).toContain('ok')
     expect(res.stopReason).toBe('turn.completed')
   }, 120_000)
@@ -72,7 +72,7 @@ describeLive('@skelm/codex — live Codex integration', () => {
       maxTurns: 1,
     }
 
-    const res = await backend.run!(req, makeContext({ loadSkill }))
+    const res = await backend.run?.(req, makeContext({ loadSkill }))
     // The agent should have learned the magic word from the skill body
     // and surfaced it. We assert case-insensitively to tolerate minor
     // capitalization differences.
