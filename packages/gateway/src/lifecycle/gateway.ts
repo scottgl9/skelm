@@ -295,10 +295,12 @@ export class Gateway {
     const controller = new AbortController()
     const runId = crypto.randomUUID()
     this.registerRun(runId, controller, runner)
-    const handle = runner.start(
-      pipeline as Parameters<Runner['start']>[0],
-      (input ?? {}) as never,
-      {
+    // If runner.start() throws synchronously the run never gets a handle, so
+    // the `.finally(unregisterRun)` below would leak the registration. Unwind
+    // here so an in-flight cancellation can't see a phantom runId.
+    let handle: ReturnType<Runner['start']>
+    try {
+      handle = runner.start(pipeline as Parameters<Runner['start']>[0], (input ?? {}) as never, {
         runId,
         signal: controller.signal,
         skillSource: createSkillSource({
@@ -306,8 +308,11 @@ export class Gateway {
           workflowPath: entry.path,
         }),
         pipelineRegistry: makeGatewayPipelineRegistry(this),
-      },
-    )
+      })
+    } catch (err) {
+      this.unregisterRun(runId)
+      throw err
+    }
     void handle
       .wait()
       .catch(() => {})

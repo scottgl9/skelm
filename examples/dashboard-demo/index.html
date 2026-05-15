@@ -323,8 +323,8 @@
           main.appendChild(
             card(
               'Gateway',
-              `<div class="big status-ok">${overview.gateway.status}</div>
-               <div class="row"><span>version</span><span>${overview.gateway.version}</span></div>
+              `<div class="big status-ok">${escapeHtml(overview.gateway.status)}</div>
+               <div class="row"><span>version</span><span>${escapeHtml(overview.gateway.version)}</span></div>
                <div class="row"><span>uptime</span><span>${fmtMs(overview.gateway.uptimeMs)}</span></div>`,
             ),
           )
@@ -363,8 +363,8 @@
           const wfRows = (workflows.workflows ?? [])
             .map(
               (w) =>
-                `<tr><td>${w.id}</td><td>${w.totalRuns}</td>
-                 <td class="${statusClass(w.lastStatus)}">${w.lastStatus ?? '—'}</td>
+                `<tr><td>${escapeHtml(w.id)}</td><td>${w.totalRuns}</td>
+                 <td class="${statusClass(w.lastStatus)}">${escapeHtml(w.lastStatus ?? '—')}</td>
                  <td>${w.successRate == null ? '—' : `${(w.successRate * 100).toFixed(0)}%`}</td>
                  <td>${fmtDate(w.lastRunAt)}</td></tr>`,
             )
@@ -380,7 +380,7 @@
           const errRows = (errors.recent ?? [])
             .map(
               (e) =>
-                `<tr><td>${e.pipelineId}</td><td class="err">${escapeHtml(e.message)}</td><td>${fmtDate(e.at)}</td></tr>`,
+                `<tr><td>${escapeHtml(e.pipelineId)}</td><td class="err">${escapeHtml(e.message)}</td><td>${fmtDate(e.at)}</td></tr>`,
             )
             .join('')
           main.appendChild(
@@ -394,9 +394,9 @@
           const sRows = (schedules.schedules ?? [])
             .map(
               (s) =>
-                `<tr><td>${s.id}</td><td>${s.kind}</td><td>${s.fired}</td>
+                `<tr><td>${escapeHtml(s.id)}</td><td>${escapeHtml(s.kind)}</td><td>${escapeHtml(String(s.fired))}</td>
                  <td>${fmtDate(s.lastFiredAt ? Date.parse(s.lastFiredAt) : null)}</td>
-                 <td class="${s.lastError ? 'status-failed' : ''}">${s.lastError ?? '—'}</td></tr>`,
+                 <td class="${s.lastError ? 'status-failed' : ''}">${escapeHtml(s.lastError ?? '—')}</td></tr>`,
             )
             .join('')
           main.appendChild(
