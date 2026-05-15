@@ -65,7 +65,7 @@ The HTTP API speaks JSON over `h3`, with SSE for run event streams.
 | `GET`  | `/v1/workflows`                     | List explicitly registered workflows |
 | `POST` | `/v1/workflows/{validate,register}` | Compile-check or register a workflow source path |
 | `PUT`/`DELETE` | `/v1/workflows/:id`         | Replace / unregister a registered workflow |
-| `POST` | `/v1/batch/{runs,cancel}`           | Fan-out start / cancel (per-item outcome, 50-item cap on runs) |
+| `POST` | `/v1/batch/{runs,cancel}`           | Fan-out start / cancel; per-item outcome with stable `description` category; default 50-item cap (configurable via `GatewayOptions.batch.maxItemsPerRequest`) |
 | `GET`/`PATCH` | `/v1/config`                 | Sanitized config + hot-update whitelist |
 
 See [`docs/reference/`](https://github.com/scottgl9/skelm/tree/main/docs/reference) for the full schema, and [`docs/guides/production-hardening.md`](https://github.com/scottgl9/skelm/blob/main/docs/guides/production-hardening.md) for the production deployment checklist (reverse proxy, Postgres, secrets).

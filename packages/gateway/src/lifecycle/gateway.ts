@@ -194,6 +194,20 @@ export class Gateway {
     return this.options.allowedRegistrationDirs ?? []
   }
 
+  /** Maximum items accepted by a single POST /v1/batch/runs request. */
+  getBatchMaxItemsPerRequest(): number {
+    const value = this.options.batch?.maxItemsPerRequest
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 1) return value
+    return 50
+  }
+
+  /** Maximum byte size of an uploaded workflow .zip. */
+  getWorkflowMaxArchiveBytes(): number {
+    const value = this.options.workflows?.maxArchiveBytes
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 1) return value
+    return 5 * 1024 * 1024
+  }
+
   /**
    * The workflow-registration service backs /v1/workflows/* routes. Lazily
    * constructed once registries are available and replayed from disk during

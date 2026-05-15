@@ -55,7 +55,7 @@ The gateway is required for:
 | POST | `/v1/workflows/register` | Register a workflow source path; persisted under `${stateDir}/registered-workflows/` |
 | PUT | `/v1/workflows/:id` | Replace a registered workflow |
 | DELETE | `/v1/workflows/:id` | Unregister a workflow (existing runs preserved) |
-| POST | `/v1/batch/runs` | Fan-out async starts (cap 50 items); per-item outcome |
+| POST | `/v1/batch/runs` | Fan-out async starts (default cap 50 items, configurable); per-item outcome |
 | POST | `/v1/batch/cancel` | Cancel multiple runs by id; per-id outcome |
 | GET | `/v1/config` | Sanitized projection of the current `SkelmConfig` |
 | PATCH | `/v1/config` | Hot-update whitelist (currently `server.maxConcurrentRuns` only) |
@@ -68,11 +68,11 @@ Default port: `14738`, default host: `127.0.0.1`. Configure via `server.port` an
 
 ### Batch operations
 
-`POST /v1/batch/runs` takes `{ items: [{ id, input? }, ...] }` (max 50 items) and fans out to the same async-start path that `POST /pipelines/:id/start` uses. A per-item error never fails the whole batch — each item reports `{ id, accepted, runId?, error? }` independently. `POST /v1/batch/cancel` takes `{ runIds: [...] }` and reports per-id `cancelled: true|false`.
+`POST /v1/batch/runs` takes `{ items: [{ id, input? }, ...] }` and fans out to the same async-start path that `POST /pipelines/:id/start` uses. A per-item error never fails the whole batch — each item reports `{ id, accepted, runId?, error?, description? }` independently. `description` is a stable short category for debugging (`started`, `workflow-not-found`, `invalid-input`, `start-failed`); `error` carries the raw message. The maximum batch size defaults to 50 items and is configurable via `GatewayOptions.batch.maxItemsPerRequest`. `POST /v1/batch/cancel` takes `{ runIds: [...] }` and reports per-id `cancelled: true|false`.
 
 ### Runtime config
 
-`GET /v1/config` returns a sanitized projection of the active `SkelmConfig` — secret driver paths are redacted, no bearer tokens are echoed. `PATCH /v1/config` accepts a flat dot-keyed body and only honors keys in the hot-update whitelist (currently `server.maxConcurrentRuns`); anything else returns `400`. Updates go through `Gateway.reload()` so existing infrastructure picks them up.
+`GET /v1/config` returns a sanitized projection of the active `SkelmConfig` — secret driver paths are redacted, no bearer tokens are echoed. `PATCH /v1/config` accepts a flat dot-keyed body and only honors keys in the hot-update whitelist (currently `server.maxConcurrentRuns`); anything else returns `400`. The whitelist is intentionally narrow: only hot-reloadable, side-effect-bounded, non-security-relevant fields belong here. Auth, trust roots, secret-driver paths, and storage settings require a gateway restart so changes survive a reconcile and audit. Updates go through `Gateway.reload()` so existing infrastructure picks them up.
 
 ## Network egress proxy
 

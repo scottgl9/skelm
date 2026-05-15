@@ -4,7 +4,9 @@ import type { Gateway } from '../../lifecycle/gateway.js'
 /** Server-config keys that PATCH /v1/config is permitted to update. */
 const SERVER_PATCH_KEYS = new Set<string>(['maxConcurrentRuns'])
 
-/** Top-level config keys the PATCH route understands; nested updates use dot-notation. */
+// Intentionally narrow: only hot-reloadable, side-effect-bounded, non-security-relevant
+// fields belong here. Auth, trust roots, secret-driver paths, and storage settings require
+// a gateway restart so changes survive a reconcile and audit.
 const ALLOWED_PATCH_PATHS = new Set<string>(['server.maxConcurrentRuns'])
 
 /**

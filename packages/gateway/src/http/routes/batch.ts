@@ -4,7 +4,7 @@ import type { Gateway } from '../../lifecycle/gateway.js'
 import { createSkillSource } from '../../registries/skill-source.js'
 import { loadPipelineFromPath, makeGatewayPipelineRegistry } from './utils.js'
 
-const DEFAULT_BATCH_CAP = 50
+export const DEFAULT_BATCH_CAP = 50
 
 interface BatchRunItem {
   id?: unknown
@@ -35,10 +35,11 @@ export function registerBatchRoutes(router: Router, gateway: Gateway): void {
       if (items === null) {
         throw createError({ statusCode: 400, message: 'items must be an array' })
       }
-      if (items.length > DEFAULT_BATCH_CAP) {
+      const cap = gateway.getBatchMaxItemsPerRequest()
+      if (items.length > cap) {
         throw createError({
           statusCode: 400,
-          message: `batch size ${items.length} exceeds cap ${DEFAULT_BATCH_CAP}`,
+          message: `batch size ${items.length} exceeds cap ${cap}`,
         })
       }
       const loader = gateway.getWorkflowLoader()
@@ -81,14 +82,20 @@ async function startOne(
   accepted: boolean
   runId?: string
   error?: string
+  description?: string
 }> {
   const id = typeof item.id === 'string' ? item.id : ''
   if (id.length === 0) {
-    return { id, accepted: false, error: 'id required' }
+    return { id, accepted: false, error: 'id required', description: 'invalid-input' }
   }
   const entry = gateway.registries.workflows.get(id)
   if (entry === undefined) {
-    return { id, accepted: false, error: 'pipeline not found' }
+    return {
+      id,
+      accepted: false,
+      error: 'pipeline not found',
+      description: 'workflow-not-found',
+    }
   }
   try {
     const pipeline = await loadPipelineFromPath(loader, id, entry.path)
@@ -120,8 +127,13 @@ async function startOne(
       .wait()
       .catch(() => {})
       .finally(() => gateway.unregisterRun(runId))
-    return { id, accepted: true, runId }
+    return { id, accepted: true, runId, description: 'started' }
   } catch (err) {
-    return { id, accepted: false, error: (err as Error).message }
+    return {
+      id,
+      accepted: false,
+      error: (err as Error).message,
+      description: 'start-failed',
+    }
   }
 }
