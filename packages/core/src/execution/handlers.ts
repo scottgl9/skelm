@@ -602,7 +602,18 @@ function warnOnSharedWorkspaces(
     let cfg: ReturnType<typeof resolveWorkspaceConfig>
     try {
       cfg = resolveWorkspaceConfig(child.workspace, ctx)
-    } catch {
+    } catch (err) {
+      // The factory threw evaluating against the parent ctx. We can't tell
+      // if a workspace race would have occurred. Surface it as a separate
+      // warning so the shared-workspace hazard is not silently hidden.
+      events.publish({
+        type: 'run.warning',
+        runId: ctx.run.runId,
+        stepId: step.id,
+        code: 'parallel.workspace-resolve-failed',
+        message: `parallel(${step.id}): workspace factory for child "${child.id}" threw during shared-workspace inspection: ${err instanceof Error ? err.message : String(err)}. The shared-workspace warning cannot be evaluated for this child.`,
+        at: Date.now(),
+      })
       continue
     }
     if (cfg === undefined) continue
@@ -696,23 +707,21 @@ async function runForEach(
   // Duplicate ids would make the egress token key (runId:stepId) collide
   // across iterations: the first iteration to unregister deletes the token
   // out from under siblings still in flight, silently disabling network
-  // policy enforcement. Suffixing the id with the iteration index keeps the
-  // token key unique per iteration.
+  // policy enforcement. Suffix only the *colliding* ids with the iteration
+  // index so non-colliding ids stay user-visible-unchanged.
   const children = new Array<Step>(items.length)
-  const seenIds = new Set<string>()
-  let needsSuffix = false
+  const idCounts = new Map<string, number>()
   for (let i = 0; i < items.length; i++) {
     const child = step.step(items[i], i)
-    if (seenIds.has(child.id)) {
-      needsSuffix = true
-    }
-    seenIds.add(child.id)
+    idCounts.set(child.id, (idCounts.get(child.id) ?? 0) + 1)
     children[i] = child
   }
-  if (needsSuffix && concurrency > 1) {
+  if (concurrency > 1) {
     for (let i = 0; i < children.length; i++) {
       const child = children[i] as Step
-      children[i] = { ...child, id: `${child.id}#${i}` } as Step
+      if ((idCounts.get(child.id) ?? 0) > 1) {
+        children[i] = { ...child, id: `${child.id}#${i}` } as Step
+      }
     }
   }
   const results = new Array<unknown>(items.length)

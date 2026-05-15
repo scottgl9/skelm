@@ -458,10 +458,15 @@ function assertNoWaitInside(containerKind: string, containerId: StepId, step: St
     case 'idempotent':
       assertNoWaitInside(containerKind, containerId, step.step)
       return
-    // forEach steps are factory-built lazily, so we can't statically inspect
-    // their child. The runtime's existing wait handling will still surface
-    // any nested-wait misuse there (the wait would fire under whatever
-    // waitForInput slot the parent set up). Leaving this case to runtime.
+    case 'pipelineStep':
+      // The nested pipeline is embedded directly, so we can recurse statically.
+      // (invoke() resolves from a registry at runtime and is left to the
+      // runtime to surface; forEach() is factory-built lazily for the same
+      // reason.)
+      for (const child of step.pipeline.steps) {
+        assertNoWaitInside(containerKind, containerId, child)
+      }
+      return
     default:
       return
   }
