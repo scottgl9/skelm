@@ -118,5 +118,5 @@ Notes:
   * stderr receives human progress lines.
   * Exit codes:
       0 ok | 1 cli error | 2 schema validation | 3 run failed
-      4 cancelled | 5 wait timeout | 6 permission denied
+      4 cancelled | 5 wait timeout | 6 permission denied | 7 step timed out
 `
