@@ -9,6 +9,8 @@ import type { WorkflowEntry, WorkflowRegistry } from '../registries/workflow-reg
 export interface RegisteredWorkflowRecord {
   id: string
   sourcePath: string
+  /** Where the source came from: a host filesystem path or an extracted archive. */
+  sourceKind?: 'path' | 'archive'
   description?: string
   version?: string
   registeredAt: string
@@ -22,6 +24,11 @@ export interface WorkflowRegistrationServiceOptions {
   projectRoot: string
   /** Additional permitted source roots (resolved to realpath at check time). */
   allowedDirs: string[]
+  /**
+   * Gateway-owned root for extracted workflow archives. Always treated as an
+   * allowed source root since the gateway itself controls the contents.
+   */
+  archiveRoot?: string
 }
 
 export class WorkflowRegistrationError extends Error {
@@ -90,7 +97,11 @@ export class WorkflowRegistrationService {
         `cannot resolve source path: ${(err as Error).message}`,
       )
     }
-    const roots = [this.options.projectRoot, ...this.options.allowedDirs]
+    const roots = [
+      this.options.projectRoot,
+      ...this.options.allowedDirs,
+      ...(this.options.archiveRoot !== undefined ? [this.options.archiveRoot] : []),
+    ]
     const resolvedRoots = await Promise.all(
       roots.map(async (r) => {
         try {
@@ -127,6 +138,7 @@ export class WorkflowRegistrationService {
   async upsert(input: {
     id: string
     sourcePath: string
+    sourceKind?: 'path' | 'archive'
     description?: string
     version?: string
   }): Promise<RegisteredWorkflowRecord> {
@@ -134,6 +146,7 @@ export class WorkflowRegistrationService {
     const record: RegisteredWorkflowRecord = {
       id: input.id,
       sourcePath: input.sourcePath,
+      sourceKind: input.sourceKind ?? 'path',
       ...(input.description !== undefined && { description: input.description }),
       ...(input.version !== undefined && { version: input.version }),
       registeredAt: new Date().toISOString(),
@@ -141,6 +154,16 @@ export class WorkflowRegistrationService {
     await writeFile(this.recordPath(record.id), JSON.stringify(record, null, 2), 'utf8')
     await this.options.registry.addRegistered({ id: record.id, path: record.sourcePath })
     return record
+  }
+
+  /** Read a persisted record by id without touching the registry. Returns undefined if missing. */
+  async getRecord(id: string): Promise<RegisteredWorkflowRecord | undefined> {
+    try {
+      const text = await readFile(this.recordPath(id), 'utf8')
+      return JSON.parse(text) as RegisteredWorkflowRecord
+    } catch {
+      return undefined
+    }
   }
 
   /** Remove a registration from disk and from the registry. */

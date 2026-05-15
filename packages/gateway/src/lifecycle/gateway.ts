@@ -31,6 +31,7 @@ import {
 import { FileSecretResolver } from '../secrets/file-driver.js'
 import { TriggerCoordinator } from '../triggers/coordinator.js'
 import { createTriggerDispatcher } from '../triggers/dispatcher.js'
+import type { WorkflowArchiveService } from '../workflows/workflow-archive-service.js'
 import type { WorkflowRegistrationService } from '../workflows/workflow-registration-service.js'
 import { type DiscoveryRecord, removeDiscovery, writeDiscovery } from './discovery.js'
 import type {
@@ -81,6 +82,7 @@ export class Gateway {
   private metricsBus: import('@skelm/core').EventBus | null = null
   private readonly breakpointsInternal: import('../debug/breakpoint-registry.js').BreakpointRegistry
   private workflowRegistrationInternal: WorkflowRegistrationService | null = null
+  private workflowArchiveInternal: WorkflowArchiveService | null = null
 
   constructor(private readonly options: GatewayOptions = {}) {
     this.stateDir = options.stateDir ?? join(homedir(), '.skelm')
@@ -220,6 +222,14 @@ export class Gateway {
     return this.workflowRegistrationInternal
   }
 
+  /** The archive-extraction service backing multipart .zip uploads. */
+  getWorkflowArchiveService(): WorkflowArchiveService {
+    if (this.workflowArchiveInternal === null) {
+      throw new Error('workflow archive service is not available — start() the gateway first')
+    }
+    return this.workflowArchiveInternal
+  }
+
   /**
    * The breakpoint registry. Operators add step ids via the /debug HTTP
    * routes; the dispatcher's beforeStep hook consults this registry to
@@ -341,6 +351,7 @@ export class Gateway {
       this.enforcementInternal = this.buildEnforcement()
       this.registriesInternal = await this.buildRegistries()
       this.managersInternal = await this.buildManagers()
+      this.workflowArchiveInternal = await this.buildWorkflowArchiveService()
       this.workflowRegistrationInternal = await this.buildWorkflowRegistrationService()
       // Wire the trigger dispatcher now that managers + registries exist.
       // Without a loadWorkflow option the coordinator keeps its no-op
@@ -374,6 +385,7 @@ export class Gateway {
       this.egressProxy = null
       this.tokenPolicyStore = null
       this.workflowRegistrationInternal = null
+      this.workflowArchiveInternal = null
       throw err
     }
   }
@@ -458,6 +470,7 @@ export class Gateway {
       this.egressProxy = null
       this.tokenPolicyStore = null
       this.workflowRegistrationInternal = null
+      this.workflowArchiveInternal = null
     }
   }
 
@@ -639,9 +652,22 @@ export class Gateway {
       registry: this.registriesInternal.workflows,
       projectRoot: this.projectRoot,
       allowedDirs: this.options.allowedRegistrationDirs ?? [],
+      ...(this.workflowArchiveInternal !== null && {
+        archiveRoot: this.workflowArchiveInternal.uploadRoot,
+      }),
     })
     await service.loadFromDisk()
     return service
+  }
+
+  private async buildWorkflowArchiveService(): Promise<WorkflowArchiveService> {
+    const { WorkflowArchiveService: Ctor } = await import(
+      '../workflows/workflow-archive-service.js'
+    )
+    return new Ctor({
+      uploadRoot: join(this.stateDir, 'uploaded-workflows'),
+      maxBytes: this.getWorkflowMaxArchiveBytes(),
+    })
   }
 
   private attachSignals(): void {
