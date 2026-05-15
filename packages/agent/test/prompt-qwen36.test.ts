@@ -59,14 +59,14 @@ function makeCtx(extra: Partial<BackendContext> = {}): BackendContext {
 skipUnlessSet('system prompt against local qwen36', () => {
   it('drives fs_read tool use', async () => {
     const marker = 'PURPLE-OCTOPUS-9824'
-    const filePath = join(workDir, 'secret.txt')
-    await writeFile(filePath, `The secret word is ${marker}.\n`, 'utf8')
+    const filePath = join(workDir, 'fixture.txt')
+    await writeFile(filePath, `The fixture marker is ${marker}.\n`, 'utf8')
 
     const backend = createSkelmAgentBackend({ baseUrl: baseUrl ?? '', model, timeoutMs: 120_000 })
     const ctx = makeCtx()
     const res = await backend.run?.(
       {
-        prompt: `Use the fs_read tool to read the file at this absolute path: ${filePath}\n\nThe file contains a secret word. After reading the file, reply with the secret word that appears in the file.`,
+        prompt: `Use the fs_read tool to read the file at this absolute path: ${filePath}\n\nThe file contains a fixture marker. After reading the file, reply with the marker value that appears in the file.`,
         cwd: workDir,
         permissions: ctx.permissions,
         maxTurns: 8,

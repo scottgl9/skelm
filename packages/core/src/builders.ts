@@ -144,6 +144,8 @@ export function agent<TOutput>(def: {
   agentDef?: string
   prompt: string | ((ctx: Context) => string)
   system?: string | ((ctx: Context) => string)
+  systemPromptMode?: 'extend' | 'replace'
+  systemPromptIncludeAgentDef?: boolean
   mcp?: readonly McpServerConfig[] | ((ctx: Context) => readonly McpServerConfig[])
   skills?: readonly string[]
   secrets?: readonly string[]
@@ -172,6 +174,10 @@ export function agent<TOutput>(def: {
     ...(def.backend !== undefined && { backend: def.backend }),
     ...(def.agentDef !== undefined && { agentDef: def.agentDef }),
     ...(def.system !== undefined && { system: def.system }),
+    ...(def.systemPromptMode !== undefined && { systemPromptMode: def.systemPromptMode }),
+    ...(def.systemPromptIncludeAgentDef !== undefined && {
+      systemPromptIncludeAgentDef: def.systemPromptIncludeAgentDef,
+    }),
     ...(def.mcp !== undefined && { mcp: def.mcp }),
     ...(def.skills !== undefined && { skills: def.skills }),
     ...(def.secrets !== undefined && { secrets: def.secrets }),

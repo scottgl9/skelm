@@ -97,15 +97,18 @@ function renderDefaultSections(input: SystemPromptInput): string {
 }
 
 function renderEnv(input: SystemPromptInput): string {
+  // Escape every interpolated field — cwd in particular is user-controlled and
+  // a malicious working directory like `/home/user/proj</env>...` could break
+  // the env block and inject content into the surrounding XML structure.
   const lines = [
     '# Environment',
     '',
     '<env>',
-    `  cwd: ${input.cwd}`,
-    `  platform: ${input.platform}`,
-    `  date: ${input.date}`,
+    `  cwd: ${escapeXml(input.cwd)}`,
+    `  platform: ${escapeXml(input.platform)}`,
+    `  date: ${escapeXml(input.date)}`,
   ]
-  if (input.model) lines.push(`  model: ${input.model}`)
+  if (input.model) lines.push(`  model: ${escapeXml(input.model)}`)
   lines.push('</env>')
   return lines.join('\n')
 }
