@@ -54,7 +54,7 @@ backends: {
   pi: {
     command:  'pi',          // optional; default: 'pi' on $PATH
     provider: 'anthropic',   // pi provider; omit for pi's default
-    model:    'claude-opus-4-5',
+    model:    'claude-opus-4-7',
     timeout:  300_000,
     maxConcurrent: 4,
   },
