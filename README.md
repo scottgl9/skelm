@@ -156,9 +156,3 @@ See [Backend documentation](./docs/backends/README.md) for setup guides, and [Co
 ## License
 
 [MIT](LICENSE)
-
----
-
-**Author:** Scott Glover — `scottgl@gmail.com`
-
-If you build something interesting on skelm, open an issue with the `showcase` label — we want to hear about it.
