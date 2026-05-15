@@ -208,6 +208,7 @@ export function parallel(def: {
       throw new Error(`parallel(${def.id}): duplicate child step id "${s.id}"`)
     }
     seen.add(s.id)
+    assertNoWaitInside('parallel', def.id, s)
   }
   return Object.freeze({
     kind: 'parallel',
@@ -279,7 +280,16 @@ export function branch(def: {
   })
 }
 
-/** Iterate a step while a predicate holds, bounded by maxIterations. */
+/**
+ * Iterate a step while a predicate holds, bounded by `maxIterations`.
+ *
+ * Note: `timeoutMs` on the inner step (e.g. `agent({ timeoutMs })`) bounds
+ * each iteration individually, not the total loop wall-clock. A loop with
+ * `maxIterations: 20` and a child `timeoutMs: 60_000` may therefore run for
+ * up to 20 minutes before the loop itself terminates. There is no built-in
+ * cumulative budget; if you need one, gate the run with an outer `AbortSignal`
+ * passed via `RunOptions.signal`.
+ */
 export function loop(def: {
   id: StepId
   while: (ctx: Context) => boolean | Promise<boolean>
@@ -417,6 +427,43 @@ function assertValidRetryPolicy(kind: string, id: StepId, retry: RetryPolicy | u
   }
   if (retry.backoffMultiplier !== undefined && retry.backoffMultiplier < 1) {
     throw new Error(`${kind}(${id}): retry.backoffMultiplier must be >= 1`)
+  }
+}
+
+// Walk a Step subtree and throw if any descendant is a wait() step.
+// wait() inside parallel() has no well-defined semantics today: the runner's
+// per-run waitForInput slot is a single Map<runId, ...>, so two concurrent
+// arms reaching wait() simultaneously would either overwrite each other's
+// slot or drop a resume, leaving an arm suspended indefinitely.
+function assertNoWaitInside(containerKind: string, containerId: StepId, step: Step): void {
+  if (step.kind === 'wait') {
+    throw new Error(
+      `${containerKind}(${containerId}): wait(${step.id}) is not allowed inside ${containerKind}() — concurrent waits share a single resume slot and would hang. Move the wait() outside ${containerKind}() or use sequential steps.`,
+    )
+  }
+  switch (step.kind) {
+    case 'parallel':
+      for (const child of step.steps) assertNoWaitInside(containerKind, containerId, child)
+      return
+    case 'branch': {
+      for (const child of Object.values(step.cases)) {
+        assertNoWaitInside(containerKind, containerId, child)
+      }
+      if (step.default !== undefined) {
+        assertNoWaitInside(containerKind, containerId, step.default)
+      }
+      return
+    }
+    case 'loop':
+    case 'idempotent':
+      assertNoWaitInside(containerKind, containerId, step.step)
+      return
+    // forEach steps are factory-built lazily, so we can't statically inspect
+    // their child. The runtime's existing wait handling will still surface
+    // any nested-wait misuse there (the wait would fire under whatever
+    // waitForInput slot the parent set up). Leaving this case to runtime.
+    default:
+      return
   }
 }
 
