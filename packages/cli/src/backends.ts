@@ -1,3 +1,4 @@
+import { type CodexBackendOptions, createCodexBackend } from '@skelm/codex'
 import {
   BackendRegistry,
   type Pipeline,
@@ -192,6 +193,28 @@ function createBackend(backendId: string, config: SkelmConfig) {
       if (maxRetries !== undefined) cfg.maxRetries = maxRetries
       if (logLevel !== undefined) cfg.logLevel = logLevel
       return createOpencodeBackendFromConfig(cfg)
+    }
+    case 'codex': {
+      const directApiKey = readString(entry.apiKey)
+      const resolvedApiKey = directApiKey ?? resolveSecret(entry.apiKey)
+      const codexPathOverride = readString(entry.codexPathOverride) ?? readString(entry.command)
+      const baseUrl = readString(entry.baseUrl)
+      const model = readString(entry.model)
+      const modelReasoningEffort = readString(
+        entry.modelReasoningEffort,
+      ) as CodexBackendOptions['modelReasoningEffort']
+      const skipGitRepoCheck =
+        typeof entry.skipGitRepoCheck === 'boolean' ? entry.skipGitRepoCheck : undefined
+      const timeoutMs = readNumber(entry.timeoutMs)
+      const opts: CodexBackendOptions = { id: backendId }
+      if (resolvedApiKey !== undefined) opts.apiKey = resolvedApiKey
+      if (codexPathOverride !== undefined) opts.codexPathOverride = codexPathOverride
+      if (baseUrl !== undefined) opts.baseUrl = baseUrl
+      if (model !== undefined) opts.model = model
+      if (modelReasoningEffort !== undefined) opts.modelReasoningEffort = modelReasoningEffort
+      if (skipGitRepoCheck !== undefined) opts.skipGitRepoCheck = skipGitRepoCheck
+      if (timeoutMs !== undefined) opts.timeoutMs = timeoutMs
+      return createCodexBackend(opts)
     }
     case 'pi': {
       const cmd = readString(entry.command)
