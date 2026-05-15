@@ -225,6 +225,8 @@ export {
   resolvePermissions,
   TrustEnforcer,
 } from './permissions.js'
+export { buildSystemPrompt, buildSystemPromptFromRequest } from './system-prompt.js'
+export type { SystemPromptInput, BuildFromRequestContext } from './system-prompt.js'
 export type {
   AgentPermissions,
   ApprovalPolicy,
