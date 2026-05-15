@@ -1,8 +1,5 @@
-import { Runner } from '@skelm/core'
 import { type Router, createError, eventHandler, readBody } from 'h3'
 import type { Gateway } from '../../lifecycle/gateway.js'
-import { createSkillSource } from '../../registries/skill-source.js'
-import { loadPipelineFromPath, makeGatewayPipelineRegistry } from './utils.js'
 
 export const DEFAULT_BATCH_CAP = 50
 
@@ -22,9 +19,10 @@ interface BatchCancelBody {
 /**
  * Mount POST /v1/batch/runs and POST /v1/batch/cancel. Both endpoints
  * accept a list and report per-item outcome. The /runs handler fans out
- * to the same async-start path /pipelines/:id/start uses; the /cancel
- * handler forwards to gateway.cancel(runId). Per-item errors never fail
- * the whole batch.
+ * to gateway.startPipelineAsync — the same code path /pipelines/:id/start
+ * uses — so new options (enforcement hooks, context propagation) reach
+ * the batch path automatically. Per-item errors never fail the whole
+ * batch; the /cancel handler forwards to gateway.cancel(runId).
  */
 export function registerBatchRoutes(router: Router, gateway: Gateway): void {
   router.post(
@@ -42,11 +40,7 @@ export function registerBatchRoutes(router: Router, gateway: Gateway): void {
           message: `batch size ${items.length} exceeds cap ${cap}`,
         })
       }
-      const loader = gateway.getWorkflowLoader()
-      if (loader === undefined) {
-        throw createError({ statusCode: 501, message: 'gateway has no workflow loader' })
-      }
-      const results = await Promise.all(items.map(async (item) => startOne(gateway, loader, item)))
+      const results = await Promise.all(items.map(async (item) => startOne(gateway, item)))
       return { items: results }
     }),
   )
@@ -75,7 +69,6 @@ export function registerBatchRoutes(router: Router, gateway: Gateway): void {
 
 async function startOne(
   gateway: Gateway,
-  loader: (registryId: string, absolutePath: string) => Promise<unknown>,
   item: BatchRunItem,
 ): Promise<{
   id: string
@@ -88,52 +81,17 @@ async function startOne(
   if (id.length === 0) {
     return { id, accepted: false, error: 'id required', description: 'invalid-input' }
   }
-  const entry = gateway.registries.workflows.get(id)
-  if (entry === undefined) {
-    return {
-      id,
-      accepted: false,
-      error: 'pipeline not found',
-      description: 'workflow-not-found',
-    }
-  }
   try {
-    const pipeline = await loadPipelineFromPath(loader, id, entry.path)
-    const enforcement = gateway.enforcement
-    const runner = new Runner({
-      approvalGate: enforcement.approvalGate,
-      secretResolver: enforcement.secretResolver,
-      auditWriter: enforcement.auditWriter,
-      store: gateway.runStore,
-    })
-    gateway.attachMetricsBus(runner.events)
-    const controller = new AbortController()
-    const runId = crypto.randomUUID()
-    gateway.registerRun(runId, controller, runner)
-    const handle = runner.start(
-      pipeline as Parameters<Runner['start']>[0],
-      (item.input ?? {}) as never,
-      {
-        runId,
-        signal: controller.signal,
-        skillSource: createSkillSource({
-          registry: gateway.registries.skills,
-          workflowPath: entry.path,
-        }),
-        pipelineRegistry: makeGatewayPipelineRegistry(gateway),
-      },
-    )
-    void handle
-      .wait()
-      .catch(() => {})
-      .finally(() => gateway.unregisterRun(runId))
+    const { runId } = await gateway.startPipelineAsync(id, item.input ?? {})
     return { id, accepted: true, runId, description: 'started' }
   } catch (err) {
+    const status = (err as { statusCode?: number }).statusCode
+    const description = status === 404 ? 'workflow-not-found' : 'start-failed'
     return {
       id,
       accepted: false,
       error: (err as Error).message,
-      description: 'start-failed',
+      description,
     }
   }
 }

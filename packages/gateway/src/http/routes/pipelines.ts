@@ -133,14 +133,6 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
     eventHandler(async (event) => {
       const id = decodeMaybe(event.context.params?.id)
       if (!id) throw createError({ statusCode: 400, message: 'pipeline id required' })
-      const entry = gateway.registries.workflows.get(id)
-      if (entry === undefined) {
-        throw createError({ statusCode: 404, message: 'pipeline not found' })
-      }
-      const loader = gateway.getWorkflowLoader()
-      if (loader === undefined) {
-        throw createError({ statusCode: 501, message: 'gateway has no workflow loader' })
-      }
       const idemKey = event.headers.get('idempotency-key')
       if (idemKey !== null) {
         const cached = idempotency.get(`${id}:${idemKey}`)
@@ -151,33 +143,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
       const rawBody = await readBody(event).catch(() => undefined)
       const body =
         rawBody !== null && typeof rawBody === 'object' ? (rawBody as { input?: unknown }) : {}
-      const input = body.input ?? {}
-      const pipeline = await loadPipelineFromPath(loader, id, entry.path)
-      const enforcement = gateway.enforcement
-      const runner = new Runner({
-        approvalGate: enforcement.approvalGate,
-        secretResolver: enforcement.secretResolver,
-        auditWriter: enforcement.auditWriter,
-        store: gateway.runStore,
-      })
-      gateway.attachMetricsBus(runner.events)
-      const controller = new AbortController()
-      const runId = crypto.randomUUID()
-      gateway.registerRun(runId, controller, runner)
-      const handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
-        runId,
-        signal: controller.signal,
-        skillSource: createSkillSource({
-          registry: gateway.registries.skills,
-          workflowPath: entry.path,
-        }),
-        pipelineRegistry: makeGatewayPipelineRegistry(gateway),
-      })
-      // Fire and forget; cleanup on settle.
-      void handle
-        .wait()
-        .catch(() => {})
-        .finally(() => gateway.unregisterRun(runId))
+      const { runId } = await gateway.startPipelineAsync(id, body.input ?? {})
       if (idemKey !== null) idempotency.set(`${id}:${idemKey}`, runId)
       return { runId, status: 'running' as const }
     }),

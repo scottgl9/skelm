@@ -10,6 +10,7 @@ import {
   NoopAuditWriter,
   PermissionResolver,
   type RunStore,
+  Runner,
   type SecretResolver,
   type SkelmConfig,
   SqliteRunStore,
@@ -18,6 +19,7 @@ import { SuspendApprovalGate } from '../approvals/suspend-gate.js'
 import { ChainAuditWriter } from '../audit/chain.js'
 import { BreakpointRegistry } from '../debug/breakpoint-registry.js'
 import { type SkelmServer, createServer } from '../http/index.js'
+import { loadPipelineFromPath, makeGatewayPipelineRegistry } from '../http/routes/utils.js'
 import { AcpSessionManager, defaultAcpSessionStorePath } from '../managers/acp-session-manager.js'
 import { CodingAgentManager } from '../managers/coding-agent-manager.js'
 import { McpServerManager } from '../managers/mcp-server-manager.js'
@@ -28,6 +30,7 @@ import {
   SkillRegistry,
   WorkflowRegistry,
 } from '../registries/index.js'
+import { createSkillSource } from '../registries/skill-source.js'
 import { FileSecretResolver } from '../secrets/file-driver.js'
 import { TriggerCoordinator } from '../triggers/coordinator.js'
 import { createTriggerDispatcher } from '../triggers/dispatcher.js'
@@ -257,6 +260,59 @@ export class Gateway {
   attachMetricsBus(bus: import('@skelm/core').EventBus): void {
     if (this.metricsInternal === null) return
     this.metricsInternal.attach(bus)
+  }
+
+  /**
+   * Shared async-start path used by `POST /pipelines/:id/start` and the batch
+   * fan-out route. Constructs a Runner with the gateway's enforcement, wires
+   * skills + sub-pipeline lookup, registers the run for cancellation, and
+   * fires it without awaiting. Returns the registered runId; callers handle
+   * idempotency and response shaping.
+   *
+   * Thrown errors carry a `.statusCode` so h3 surfaces them with the right
+   * HTTP status (404 for unknown id, 501 when no loader is wired). Errors
+   * raised by `loadPipelineFromPath` (load failure, missing default export)
+   * propagate through unchanged.
+   */
+  async startPipelineAsync(pipelineId: string, input: unknown): Promise<{ runId: string }> {
+    const entry = this.registries.workflows.get(pipelineId)
+    if (entry === undefined) {
+      throw startPipelineError(404, 'pipeline not found')
+    }
+    const loader = this.getWorkflowLoader()
+    if (loader === undefined) {
+      throw startPipelineError(501, 'gateway has no workflow loader')
+    }
+    const pipeline = await loadPipelineFromPath(loader, pipelineId, entry.path)
+    const enforcement = this.enforcement
+    const runner = new Runner({
+      approvalGate: enforcement.approvalGate,
+      secretResolver: enforcement.secretResolver,
+      auditWriter: enforcement.auditWriter,
+      store: this.runStore,
+    })
+    this.attachMetricsBus(runner.events)
+    const controller = new AbortController()
+    const runId = crypto.randomUUID()
+    this.registerRun(runId, controller, runner)
+    const handle = runner.start(
+      pipeline as Parameters<Runner['start']>[0],
+      (input ?? {}) as never,
+      {
+        runId,
+        signal: controller.signal,
+        skillSource: createSkillSource({
+          registry: this.registries.skills,
+          workflowPath: entry.path,
+        }),
+        pipelineRegistry: makeGatewayPipelineRegistry(this),
+      },
+    )
+    void handle
+      .wait()
+      .catch(() => {})
+      .finally(() => this.unregisterRun(runId))
+    return { runId }
   }
 
   cancel(runId: string, reason?: string): boolean {
@@ -695,6 +751,12 @@ export class Gateway {
     this.handlers.clear()
     this.signalsAttached = false
   }
+}
+
+function startPipelineError(statusCode: number, message: string): Error & { statusCode: number } {
+  const err = new Error(message) as Error & { statusCode: number }
+  err.statusCode = statusCode
+  return err
 }
 
 function expandHome(p: string): string {
