@@ -25,7 +25,7 @@ skelm is a TypeScript framework for authoring and running **workflows** — type
 
 - **TypeScript-native** — Real `.ts` modules, no DSL or JSON config
 - **Default-deny security** — Every permission must be explicitly declared
-- **Multi-backend agents** — First-party agent, Pi, Opencode (native or ACP), Vercel AI, ACP (Copilot, Claude Code, Gemini), Anthropic, OpenAI
+- **Multi-backend agents** — First-party agent, Pi, Opencode (native or ACP), Codex, Vercel AI, ACP (Copilot, Claude Code, Gemini), Anthropic, OpenAI
 - **MCP-native** — Model Context Protocol servers lifecycle-managed by the gateway
 - **Scheduler-built-in** — Cron, intervals, webhooks, polling, queues, or long-running gateway service
 
@@ -66,6 +66,7 @@ skelm supports multiple AI backends through pluggable adapters. Choose the one t
 | **First-party** | `@skelm/agent` | OpenAI-compatible LLM, in-process permission enforcement, built-in tool surface, no external runtime dependency |
 | **Pi** | `@skelm/pi` | Pi coding agent with full permission enforcement |
 | **Opencode** | `@skelm/opencode` | Open-source coding agent backend (native; ACP transport also supported) |
+| **Codex** | `@skelm/codex` | OpenAI Codex via the official `@openai/codex-sdk` — sandbox-aware, MCP/skills injection, streaming, thread resumption |
 | **Vercel AI** | `@skelm/vercel-ai` | Vercel AI SDK with streaming support |
 | **ACP** | Built-in | GitHub Copilot, Claude Code, Gemini via ACP (Opencode also available as native — see above) |
 
@@ -125,6 +126,7 @@ See [Backend documentation](./docs/backends/README.md) for setup guides and comp
 | `@skelm/integrations` | Typed connectors for GitHub, Slack, Telegram |
 | `@skelm/pi` | Pi coding-agent backend |
 | `@skelm/opencode` | Opencode coding-agent backend |
+| `@skelm/codex` | OpenAI Codex backend via the official `@openai/codex-sdk` |
 | `@skelm/vercel-ai` | Vercel AI SDK backend with streaming |
 | `@skelm/agent` | First-party native agent backend with built-in tools |
 | `@skelm/metrics` | Prometheus-format metrics |
