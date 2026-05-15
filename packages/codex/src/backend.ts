@@ -1,10 +1,11 @@
-import { loadSkillBodies } from '@skelm/core'
+import { buildSystemPromptFromRequest, loadSkillBodies, resolvePermissions } from '@skelm/core'
 import type {
   AgentRequest,
   AgentResponse,
   BackendCapabilities,
   BackendContext,
   McpServerConfig,
+  ResolvedPolicy,
   SkelmBackend,
 } from '@skelm/core'
 
@@ -55,10 +56,17 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
     ...(options.label !== undefined && { label: options.label }),
 
     async run(request: AgentRequest, context: BackendContext): Promise<AgentResponse> {
-      const policy = request.permissions ?? context.permissions
-      if (policy === undefined) {
-        throw new Error('codex backend requires a resolved permission policy')
-      }
+      // When neither the request nor the context carries a resolved policy,
+      // synthesize an empty-deny ResolvedPolicy from `resolvePermissions(
+      // undefined, undefined)`. This matches the documented default-deny
+      // intent of skelm: an omitted policy must deny everything, not crash
+      // the run. Previously we threw "codex backend requires a resolved
+      // permission policy" here, which forced every codex agent() step to
+      // restate the same empty allowlists even when config-level defaults
+      // were set. The mapper below still translates this into Codex's
+      // strictest sandbox/approval/network settings.
+      const policy: ResolvedPolicy =
+        request.permissions ?? context.permissions ?? resolvePermissions(undefined, undefined)
 
       // Boundary check + sandbox/approval translation. Throws on refusal.
       const mapped = mapPermissionsToCodex({
@@ -71,7 +79,6 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
       const mcpConfig = buildMcpServerConfig(allowed.allowed)
       const deniedMcp = allowed.denied.map((s) => s.id)
       // Audit-only for now; the runner's audit writer is the durable record.
-      // biome-ignore lint/suspicious/noConsole: pre-audit-bus surface
       const logDenial = (dimension: string, ids: string[], reason: string) =>
         console.warn(
           JSON.stringify({ event: 'permission.denied', dimension, ids, reason, backend: 'codex' }),
@@ -91,8 +98,9 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
       })
       const codex = makeCodexClient(codexOpts)
 
-      // Compose the system prompt: agentDef + step.system + skill bodies.
-      const systemPrompt = await composeSystemPrompt(request, context)
+      // Compose the system prompt via @skelm/core's shared builder so
+      // systemPromptMode / systemPromptIncludeAgentDef take effect here.
+      const systemPrompt = await composeSystemPrompt(request, context, options.model)
       const userPrompt =
         systemPrompt === undefined ? request.prompt : `${systemPrompt}\n\n---\n\n${request.prompt}`
 
@@ -174,12 +182,29 @@ function filterAllowedMcp(
 async function composeSystemPrompt(
   req: AgentRequest,
   ctx: BackendContext,
+  model: string | undefined,
 ): Promise<string | undefined> {
-  const parts: string[] = []
-  if (req.agentDef?.soul !== undefined) parts.push(req.agentDef.soul)
-  if (req.agentDef !== undefined) parts.push(req.agentDef.instructions)
-  if (req.system !== undefined) parts.push(req.system)
+  // Route through @skelm/core's shared builder so `systemPromptMode` and
+  // `systemPromptIncludeAgentDef` actually take effect on codex. Without
+  // this, codex previously hand-rolled the prompt out of soul +
+  // instructions + system + skills, ignoring both flags — the same input
+  // produced identical token counts in extend vs replace mode.
+  //
+  // The builder owns the "extend" vs "replace" composition and the
+  // "include AGENTS.md/SOUL.md when replacing" carve-out. We pass an
+  // empty tool list because codex enforces its tool surface natively and
+  // skelm doesn't dispatch tools through this backend — there's no
+  // skelm-side tool inventory worth injecting.
+  const base = buildSystemPromptFromRequest(req, {
+    cwd: req.cwd ?? process.cwd(),
+    platform: process.platform,
+    date: new Date().toISOString().slice(0, 10),
+    ...(model !== undefined && { model }),
+    tools: [],
+  })
   const skillBodies = await loadSkillBodies(req, ctx)
+  const parts: string[] = []
+  if (base.length > 0) parts.push(base)
   parts.push(...skillBodies)
   if (parts.length === 0) return undefined
   return parts.join('\n\n---\n\n')
