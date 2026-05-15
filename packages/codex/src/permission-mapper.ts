@@ -88,14 +88,21 @@ export function mapPermissionsToCodex(input: MapInputs): MappedCodexPolicy {
 
   // Network. Codex has two distinct network surfaces:
   //   1. `networkAccessEnabled` — sandbox-shell egress (curl, wget, etc).
-  //   2. `webSearchEnabled` / `webSearchMode` — the model's built-in web tool.
-  // The second is NOT gated by the first. To honor `networkEgress: 'deny'`,
-  // we must disable BOTH; otherwise Codex can still reach the public web
-  // through its native web_search tool. This is a real bypass otherwise.
-  const networkDenied = policy.networkEgress === 'deny'
-  const networkAccessEnabled = !networkDenied
-  const webSearchEnabled = !networkDenied
-  const webSearchMode: WebSearchMode = networkDenied ? 'disabled' : 'live'
+  //      The gateway egress proxy can enforce host allowlists for this
+  //      surface when `networkEgress: { allowHosts }` is set.
+  //   2. `webSearchEnabled` / `webSearchMode` — the model's built-in web
+  //      tool. This runs INSIDE the Codex process and does NOT go through
+  //      the gateway proxy, so per-host allowlists cannot be enforced.
+  //
+  // Implication: a `{ allowHosts: ['api.example.com'] }` policy would, if
+  // we left web_search enabled, let Codex reach arbitrary URLs through its
+  // built-in tool — bypassing the allowlist the user just declared. To
+  // honor the policy faithfully, web_search is enabled ONLY when
+  // networkEgress === 'allow' (blanket allow). Anything else disables it.
+  const networkAccessEnabled = policy.networkEgress !== 'deny'
+  const webSearchAllowed = policy.networkEgress === 'allow'
+  const webSearchEnabled = webSearchAllowed
+  const webSearchMode: WebSearchMode = webSearchAllowed ? 'live' : 'disabled'
 
   // Approval mode.
   const approvalPolicy: ApprovalMode = pickApprovalMode(policy)

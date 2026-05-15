@@ -53,21 +53,30 @@ describe('mapPermissionsToCodex', () => {
     ).toThrow(CodexPermissionError)
   })
 
-  it('maps networkEgress: "deny" → networkAccessEnabled: false', () => {
+  it('maps networkEgress: "deny" → networkAccessEnabled + webSearch all disabled', () => {
     const mapped = mapPermissionsToCodex({ policy: resolve({ networkEgress: 'deny' }) })
     expect(mapped.networkAccessEnabled).toBe(false)
+    expect(mapped.webSearchEnabled).toBe(false)
+    expect(mapped.webSearchMode).toBe('disabled')
   })
 
-  it('maps networkEgress: "allow" → networkAccessEnabled: true', () => {
+  it('maps networkEgress: "allow" → networkAccessEnabled + webSearch enabled', () => {
     const mapped = mapPermissionsToCodex({ policy: resolve({ networkEgress: 'allow' }) })
     expect(mapped.networkAccessEnabled).toBe(true)
+    expect(mapped.webSearchEnabled).toBe(true)
+    expect(mapped.webSearchMode).toBe('live')
   })
 
-  it('maps host-allowlisted networkEgress → networkAccessEnabled: true (proxy enforces hosts)', () => {
+  it('host-allowlisted networkEgress: shell allowed (proxy enforces) but webSearch DISABLED', () => {
+    // The proxy enforces hostnames for shell egress, but Codex's built-in
+    // web_search runs in-process and can't be host-gated by the proxy. The
+    // mapper disables it so allowHosts is faithfully honored.
     const mapped = mapPermissionsToCodex({
       policy: resolve({ networkEgress: { allowHosts: ['example.com'] } }),
     })
     expect(mapped.networkAccessEnabled).toBe(true)
+    expect(mapped.webSearchEnabled).toBe(false)
+    expect(mapped.webSearchMode).toBe('disabled')
   })
 
   it('defaults approvalPolicy to "never" when no approval is set (sandbox is the deny)', () => {

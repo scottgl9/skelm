@@ -135,10 +135,15 @@ export async function consumeStream(
   for await (const ev of events) {
     switch (ev.type) {
       case 'item.completed': {
-        // Aggregate assistant message text and stream it to onText.
+        // Aggregate assistant message text. `agent_message.text` is the
+        // full cumulative text up to this point — `onText` per skelm's
+        // BackendContext.onPartial contract should receive *deltas*, so we
+        // emit only the new suffix on each event.
         if (ev.item.type === 'agent_message') {
-          finalText = ev.item.text
-          callbacks.onText?.(ev.item.text)
+          const next = ev.item.text
+          const delta = next.startsWith(finalText) ? next.slice(finalText.length) : next
+          finalText = next
+          if (delta.length > 0) callbacks.onText?.(delta)
         }
         callbacks.onItem?.(ev)
         break
