@@ -94,6 +94,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@skelm/codex':
+        specifier: workspace:*
+        version: link:../codex
       '@skelm/core':
         specifier: workspace:*
         version: link:../core
