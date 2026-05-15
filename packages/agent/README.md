@@ -98,6 +98,19 @@ createSkelmAgentBackend({
 
 The backend issues `POST {baseUrl}/v1/chat/completions`. If your provider exposes a different path (e.g. `/v1` already in `baseUrl`), pass the host root — the `/v1/chat/completions` suffix is appended.
 
+## System prompt
+
+Every `agent()` step gets a structured default system prompt — Identity, environment, tool-use discipline, available tools (built-ins + MCP), skills inventory, safety, tone, and coding-agent guidance — followed by your `agentDef` (AGENTS.md / SOUL.md) and `step.system` so user content lands last and carries recency weight. The builder lives in `@skelm/core/system-prompt`.
+
+Override surface on each `agent()` step:
+
+- `agentDef: './agents/foo'` — append AGENTS.md (and optional SOUL.md) to the prompt.
+- `system: string | (ctx) => string` — append a free-form `# Instructions` block.
+- `systemPromptMode: 'extend' | 'replace'` — `'replace'` drops the built-in default; default is `'extend'`.
+- `systemPromptIncludeAgentDef: boolean` — when replacing, keep AGENTS.md/SOUL.md anyway (default `true`).
+
+See [`docs/concepts/system-prompt.md`](../../docs/concepts/system-prompt.md) for the full section list and per-backend behavior.
+
 ## Built-in tools
 
 Every tool calls `TrustEnforcer` before its side effect. Denials emit `permission.denied` events and surface to the model as a `Permission denied: <reason>` tool result, so the model can recover or report.
