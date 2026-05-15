@@ -66,11 +66,11 @@ skelm supports multiple AI backends through pluggable adapters. Choose the one t
 | **First-party** | `@skelm/agent` | OpenAI-compatible LLM, in-process permission enforcement, built-in tool surface, no external runtime dependency |
 | **Pi** | `@skelm/pi` | Pi coding agent with full permission enforcement |
 | **Opencode** | `@skelm/opencode` | Open-source coding agent backend (native; ACP transport also supported) |
-| **Codex** | `@skelm/codex` | OpenAI Codex via the official `@openai/codex-sdk` — sandbox-aware, MCP/skills injection, streaming, thread resumption |
+| **Codex** | `@skelm/codex` | OpenAI Codex via the official `@openai/codex-sdk` — sandbox-aware (`read-only` / `workspace-write`), MCP + skills injection, streaming, thread resumption |
 | **Vercel AI** | `@skelm/vercel-ai` | Vercel AI SDK with streaming support |
 | **ACP** | Built-in | GitHub Copilot, Claude Code, Gemini via ACP (Opencode also available as native — see above) |
 
-See [Backend documentation](./docs/backends/README.md) for setup guides and comparison.
+See [Backend documentation](./docs/backends/README.md) for setup guides, and [Codex backend](./docs/backends/codex.md) for OpenAI Codex specifically. Codex authenticates via the host `codex` CLI (`codex login`) or `CODEX_API_KEY`; skelm validates permissions at the boundary while Codex enforces its sandbox in-process.
 
 ---
 

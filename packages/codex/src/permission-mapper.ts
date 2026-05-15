@@ -25,7 +25,7 @@
  * Refusals throw `CodexPermissionError` and are emitted as audit entries.
  */
 
-import type { ApprovalMode, SandboxMode } from '@openai/codex-sdk'
+import type { ApprovalMode, SandboxMode, WebSearchMode } from '@openai/codex-sdk'
 import type { ResolvedPolicy } from '@skelm/core'
 import type { CodexPermissionAuditEntry, MappedCodexPolicy } from './types.js'
 
@@ -86,8 +86,16 @@ export function mapPermissionsToCodex(input: MapInputs): MappedCodexPolicy {
   // unrestricted by default; the read allowlist is informational here).
   void fsRead
 
-  // Network.
-  const networkAccessEnabled = policy.networkEgress !== 'deny'
+  // Network. Codex has two distinct network surfaces:
+  //   1. `networkAccessEnabled` — sandbox-shell egress (curl, wget, etc).
+  //   2. `webSearchEnabled` / `webSearchMode` — the model's built-in web tool.
+  // The second is NOT gated by the first. To honor `networkEgress: 'deny'`,
+  // we must disable BOTH; otherwise Codex can still reach the public web
+  // through its native web_search tool. This is a real bypass otherwise.
+  const networkDenied = policy.networkEgress === 'deny'
+  const networkAccessEnabled = !networkDenied
+  const webSearchEnabled = !networkDenied
+  const webSearchMode: WebSearchMode = networkDenied ? 'disabled' : 'live'
 
   // Approval mode.
   const approvalPolicy: ApprovalMode = pickApprovalMode(policy)
@@ -96,6 +104,8 @@ export function mapPermissionsToCodex(input: MapInputs): MappedCodexPolicy {
     sandboxMode,
     approvalPolicy,
     networkAccessEnabled,
+    webSearchEnabled,
+    webSearchMode,
     ...(primary !== undefined && { workingDirectory: primary }),
     ...(extras.length > 0 && { additionalDirectories: extras }),
   }
@@ -103,14 +113,19 @@ export function mapPermissionsToCodex(input: MapInputs): MappedCodexPolicy {
 }
 
 function pickApprovalMode(policy: ResolvedPolicy): ApprovalMode {
-  // No explicit approval policy → safest default that still lets the agent
-  // ask for human escalation when it hits an unsafe action.
-  if (policy.approval === null) return 'on-request'
-  // Approval covers everything → use the strictest mode.
-  if (policy.approval.on.length === 0) return 'on-request'
-  return policy.approval.on.some((d) => d === 'tool' || d === 'executable')
-    ? 'untrusted'
-    : 'on-request'
+  // No explicit approval policy → don't escalate. Codex's sandbox is already
+  // enforcing what's allowed (sandboxMode + workingDirectory + network); the
+  // skelm boundary check has already refused unsafe combinations before we
+  // got here. Using 'on-request' here would deadlock every shell command in
+  // automated environments because skelm doesn't supply a Codex-side
+  // approval handler. Per project tenet "default-deny is structural": the
+  // sandbox is the deny, not approval prompts.
+  if (policy.approval === null) return 'never'
+  // Explicit approval policy from the workflow author → respect it.
+  if (policy.approval.on.some((d) => d === 'tool' || d === 'executable')) {
+    return 'untrusted'
+  }
+  return 'on-request'
 }
 
 /**

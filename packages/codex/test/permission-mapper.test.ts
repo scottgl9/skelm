@@ -70,9 +70,9 @@ describe('mapPermissionsToCodex', () => {
     expect(mapped.networkAccessEnabled).toBe(true)
   })
 
-  it('defaults approvalPolicy to "on-request" when no approval is set', () => {
+  it('defaults approvalPolicy to "never" when no approval is set (sandbox is the deny)', () => {
     const mapped = mapPermissionsToCodex({ policy: resolve({ fsWrite: [] }) })
-    expect(mapped.approvalPolicy).toBe('on-request')
+    expect(mapped.approvalPolicy).toBe('never')
   })
 
   it('picks "untrusted" approvalPolicy when approval covers tool/executable', () => {
