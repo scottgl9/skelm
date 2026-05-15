@@ -134,6 +134,7 @@ export default defineConfig({
             { text: 'skelm agent', link: '/backends/skelm-agent' },
             { text: 'Pi', link: '/backends/pi' },
             { text: 'Opencode', link: '/backends/opencode' },
+            { text: 'Codex', link: '/backends/codex' },
             { text: 'ACP Backends', link: '/backends/acp-backends' },
             { text: 'Vercel AI', link: '/backends/vercel-ai' },
           ],
