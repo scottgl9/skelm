@@ -96,6 +96,14 @@ export type RunEvent =
   | { type: 'secret.accessed'; runId: RunId; stepId: string; name: string; at: number }
   | { type: 'secret.not_found'; runId: RunId; stepId: string; name: string; at: number }
   | {
+      type: 'run.warning'
+      runId: RunId
+      stepId?: StepId
+      code: string
+      message: string
+      at: number
+    }
+  | {
       type: 'step.partial'
       runId: RunId
       stepId: StepId
