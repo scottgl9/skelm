@@ -461,6 +461,22 @@ describe('wait()', () => {
     ).toThrow(/wait\(pause\) is not allowed inside parallel/)
   })
 
+  it('rejects wait() nested transitively (via pipelineStep) inside parallel()', () => {
+    const inner = pipeline({
+      id: 'inner-with-wait',
+      steps: [wait({ id: 'gate' })],
+    })
+    expect(() =>
+      parallel({
+        id: 'race',
+        steps: [
+          code({ id: 'fast', run: () => ({}) }),
+          pipelineStep({ id: 'slow', pipeline: inner }),
+        ],
+      }),
+    ).toThrow(/wait\(gate\) is not allowed inside parallel/)
+  })
+
   it('rejects wait() nested transitively (via branch) inside parallel()', () => {
     expect(() =>
       parallel({
@@ -564,6 +580,61 @@ describe('forEach() egress token isolation (ISSUE-001)', () => {
     })
     expect(registered).toEqual(['analyze', 'analyze'])
     expect(unregistered).toEqual(['analyze', 'analyze'])
+  })
+
+  it('only suffixes ids that actually collide (mixed unique + duplicate factory ids)', async () => {
+    // Factory returns ['a', 'b', 'b', 'c'] — only 'b' collides. The unique
+    // 'a' and 'c' must keep their original ids; both 'b' instances get
+    // suffixed with #i so the egress token keys are unique.
+    const ids = ['a', 'b', 'b', 'c']
+    const registered: string[] = []
+
+    const backend: SkelmBackend = {
+      id: 'mixed-mock',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'native',
+      },
+      async run() {
+        return { text: 'ok' }
+      },
+    }
+    const registry = new BackendRegistry()
+    registry.register(backend)
+
+    const wf = pipeline({
+      id: 'fe-mixed',
+      steps: [
+        forEach({
+          id: 'each',
+          items: () => ids,
+          concurrency: 4,
+          step: (item) =>
+            agent({
+              id: item as string,
+              backend: 'mixed-mock',
+              prompt: 'noop',
+              permissions: { networkEgress: 'deny' },
+            }),
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined, {
+      backends: registry,
+      registerEgressToken: (runId, stepId) => {
+        registered.push(stepId)
+        return `${runId}:${stepId}`
+      },
+      unregisterEgressToken: () => {},
+    })
+    expect(run.status).toBe('completed')
+    expect(registered.sort()).toEqual(['a', 'b#1', 'b#2', 'c'])
   })
 
   it('does not rewrite ids when factory returns unique ids per iteration', async () => {
@@ -715,6 +786,49 @@ describe('parallel() shared-workspace warning (ISSUE-002)', () => {
     })
     await runner.start(wf, undefined).wait()
     expect(warnings).toEqual([])
+  })
+
+  it('emits parallel.workspace-resolve-failed when a workspace factory throws', async () => {
+    const warnings: Array<{ code: string; message: string }> = []
+    const { registry } = makeMockBackend()
+
+    const wf = pipeline({
+      id: 'p-ws-throw',
+      steps: [
+        parallel({
+          id: 'twins',
+          onError: 'continue',
+          steps: [
+            agent({
+              id: 'left',
+              backend: 'ws-mock',
+              prompt: 'noop',
+              workspace: () => {
+                throw new Error('cannot resolve workspace name')
+              },
+            }),
+            agent({
+              id: 'right',
+              backend: 'ws-mock',
+              prompt: 'noop',
+              workspace: { mode: 'persistent', name: 'right' },
+            }),
+          ],
+        }),
+      ],
+    })
+
+    const runner = new Runner({ backends: registry })
+    runner.events.subscribe((event) => {
+      if (event.type === 'run.warning') {
+        warnings.push({ code: event.code, message: event.message })
+      }
+    })
+    await runner.start(wf, undefined).wait()
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]?.code).toBe('parallel.workspace-resolve-failed')
+    expect(warnings[0]?.message).toMatch(/child "left"/)
+    expect(warnings[0]?.message).toMatch(/cannot resolve workspace name/)
   })
 
   it('does not warn for code() children (no workspace declarations)', async () => {
