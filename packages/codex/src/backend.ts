@@ -30,9 +30,10 @@ import type { CodexBackendOptions } from './types.js'
  *   - Session resumption via `Codex.resumeThread`.
  *   - Cancellation via the SDK's per-turn `signal: AbortSignal`.
  *
- * Permission enforcement is `'wrapped'`: Codex enforces its own sandbox
- * in-process; skelm enforces at the boundary (pre-run refusal, workspace
- * pinning, egress proxy envelope, post-event audit).
+ * Permission enforcement is `'native'`: Codex enforces sandbox / approval /
+ * network natively in its own process. Skelm validates at the boundary
+ * (pre-run refusal, workspace pinning, egress proxy envelope, post-event
+ * audit) — never widening what the policy permits.
  */
 export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBackend {
   const capabilities: BackendCapabilities = {
@@ -42,7 +43,10 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
     mcp: true,
     skills: true,
     modelSelection: options.model !== undefined,
-    toolPermissions: 'wrapped',
+    // Codex enforces sandbox / approval / network natively in its own process.
+    // Skelm checks at the boundary (refusing unsafe combinations before any
+    // Codex call); Codex enforces at runtime.
+    toolPermissions: 'native',
   }
 
   const backend: SkelmBackend = {
@@ -97,6 +101,8 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
         sandboxMode: mapped.sandboxMode,
         approvalPolicy: mapped.approvalPolicy,
         networkAccessEnabled: mapped.networkAccessEnabled,
+        webSearchEnabled: mapped.webSearchEnabled,
+        webSearchMode: mapped.webSearchMode,
         ...(mapped.workingDirectory !== undefined && {
           workingDirectory: mapped.workingDirectory,
         }),
