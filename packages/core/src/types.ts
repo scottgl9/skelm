@@ -204,6 +204,23 @@ export interface AgentStep<TOutput = unknown> {
   readonly agentDef?: string
   readonly prompt: string | ((ctx: Context) => string)
   readonly system?: string | ((ctx: Context) => string)
+  /**
+   * How `system` (and any AGENTS.md/SOUL.md) should compose with the backend's
+   * built-in default system prompt.
+   *   - `'extend'` (default): prepend the built-in default, then SOUL.md /
+   *     AGENTS.md / `system` last so user content carries recency weight.
+   *   - `'replace'`: drop the built-in default and use only the user-supplied
+   *     content. Backend will still inject AGENTS.md/SOUL.md unless
+   *     `systemPromptIncludeAgentDef: false`.
+   */
+  readonly systemPromptMode?: 'extend' | 'replace'
+  /**
+   * Only meaningful with `systemPromptMode: 'replace'`. Default true — keeps
+   * the agent's AGENTS.md / SOUL.md even when the rest of the built-in default
+   * is dropped. Set false to send the user's `system` verbatim with no other
+   * skelm-authored content.
+   */
+  readonly systemPromptIncludeAgentDef?: boolean
   readonly mcp?:
     | readonly import('./backend.js').McpServerConfig[]
     | ((ctx: Context) => readonly import('./backend.js').McpServerConfig[])

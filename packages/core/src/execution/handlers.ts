@@ -394,6 +394,10 @@ async function runAgentStep(
       ...(step.skills !== undefined && { skills: step.skills }),
       ...(resolvedSecrets !== undefined && { secrets: resolvedSecrets }),
       ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
+      ...(step.systemPromptMode !== undefined && { systemPromptMode: step.systemPromptMode }),
+      ...(step.systemPromptIncludeAgentDef !== undefined && {
+        systemPromptIncludeAgentDef: step.systemPromptIncludeAgentDef,
+      }),
     }
     const mcpHost =
       mcpServers !== undefined &&

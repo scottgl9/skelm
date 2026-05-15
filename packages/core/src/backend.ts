@@ -103,6 +103,16 @@ export interface AgentRequest {
   prompt: string
   /** Optional system prompt. */
   system?: string
+  /**
+   * How `system` composes with the backend's built-in default. `'extend'`
+   * (default) prepends the default; `'replace'` drops it.
+   */
+  systemPromptMode?: 'extend' | 'replace'
+  /**
+   * When `systemPromptMode === 'replace'`, controls whether AGENTS.md / SOUL.md
+   * still get injected. Default true.
+   */
+  systemPromptIncludeAgentDef?: boolean
   /** Hard cap on agent turns. */
   maxTurns?: number
   /** Optional working directory hint for the agent. */
