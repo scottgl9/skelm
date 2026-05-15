@@ -71,9 +71,15 @@ export class WorkflowRegistrationService {
         const rec = JSON.parse(text) as RegisteredWorkflowRecord
         if (typeof rec.id === 'string' && typeof rec.sourcePath === 'string') {
           records.push(rec)
+        } else {
+          // Visible to operators so a corrupted record doesn't make a workflow
+          // silently vanish across a restart.
+          console.warn(`[skelm] workflow registration record missing required fields: ${path}`)
         }
-      } catch {
-        // Best-effort: skip malformed files. They can be removed by hand.
+      } catch (err) {
+        console.warn(
+          `[skelm] failed to read workflow registration record ${path}: ${(err as Error).message}`,
+        )
       }
     }
     await this.options.registry.setRegistered(

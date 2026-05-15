@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { MemoryRunStore } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Gateway } from '../../src/index.js'
+import { pickFreePort } from '../utils/pick-free-port.js'
 
 let stateDir: string
 
@@ -92,22 +93,3 @@ describe('/v1/config', () => {
     }
   })
 })
-
-async function pickFreePort(): Promise<number> {
-  const { createServer } = await import('node:net')
-  return new Promise((resolve, reject) => {
-    const srv = createServer()
-    srv.unref()
-    srv.once('error', reject)
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address()
-      if (addr === null || typeof addr === 'string') {
-        srv.close()
-        reject(new Error('port pick failed'))
-        return
-      }
-      const port = addr.port
-      srv.close(() => resolve(port))
-    })
-  })
-}
