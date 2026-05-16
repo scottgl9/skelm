@@ -4,7 +4,7 @@ info:
   description: |
     Control plane and runs surface for the skelm gateway. The gateway is the
     trust boundary — every privileged action is enforced and audited here.
-  version: 0.3.8
+  version: 0.3.9
   license:
     name: MIT
 servers:

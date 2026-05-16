@@ -1,6 +1,6 @@
 {
   "name": "skelm-workspace",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "private": true,
   "description": "skelm monorepo workspace root",
   "license": "MIT",
