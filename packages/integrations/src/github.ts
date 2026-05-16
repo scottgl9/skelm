@@ -1,157 +1,100 @@
-import { IntegrationBase } from '@skelm/integration-sdk'
-import type { GitHubConfig, GitHubIssueTrigger, GitHubWebhookEvent } from '@skelm/integration-sdk'
+import { defineIntegration } from '@skelm/integration-sdk'
+import { z } from 'zod'
+import type { GitHubIssueTrigger, GitHubWebhookEvent } from '@skelm/integration-sdk'
+
+const githubCredentialsSchema = z.object({
+  token: z.string().min(1, 'GitHub token is required'),
+  ownerId: z.string().min(1, 'GitHub ownerId is required'),
+  repoName: z.string().min(1, 'GitHub repoName is required'),
+})
 
 /**
- * GitHub integration for skelm pipelines
+ * GitHub integration for skelm pipelines.
  *
  * Supports:
  * - Issue/PR triggers
  * - Webhook event handling
  * - Repository polling
+ * - Notifications via issue/PR comments
  */
-export class GitHubIntegration extends IntegrationBase {
-  override readonly id = 'github' as const
-  override readonly name = 'GitHub'
-  readonly capabilities = {
+export const GitHubIntegration = defineIntegration({
+  id: 'github',
+  name: 'GitHub',
+
+  capabilities: {
     canTrigger: true,
     canReceiveWebhooks: true,
     canPoll: true,
     canSendNotifications: true,
-  }
+  },
 
-  private apiBaseUrl = 'https://api.github.com'
-  private octokit: unknown | null = null // Would use @octokit/rest in production
+  credentialsSchema: githubCredentialsSchema,
 
-  protected async validateCredentials(): Promise<void> {
-    const { token, ownerId, repoName } = this.config.credentials
-
-    if (!token || !ownerId || !repoName) {
-      throw new Error('GitHub credentials missing: token, ownerId, and repoName required')
-    }
-
-    // In production, validate the token with GitHub API
-    // For now, we just check it exists and has reasonable format
-    const tokenStr = String(token)
+  async validateCredentials(creds) {
+    // Warn on unexpected token formats but don't hard-fail — fine-grained
+    // tokens don't share the ghp_/gho_ prefixes.
+    const { token } = creds
     if (
-      !tokenStr.startsWith('ghp_') &&
-      !tokenStr.startsWith('gho_') &&
-      !tokenStr.startsWith('github_')
+      !token.startsWith('ghp_') &&
+      !token.startsWith('gho_') &&
+      !token.startsWith('github_')
     ) {
-      // Warning only - might be a fine-grained token
-      console.warn('GitHub token does not match expected patterns')
+      console.warn('GitHub token does not match expected patterns (ghp_/gho_/github_)')
     }
-  }
+  },
 
-  protected async performHealthCheck(): Promise<boolean> {
-    try {
-      // In production, make a simple API call to verify connectivity
-      // For now, just check we have credentials
-      return !!this.config.credentials.token
-    } catch {
-      return false
-    }
-  }
+  async performHealthCheck(creds) {
+    // In production: call GET /user or GET /repos/:owner/:repo
+    return typeof creds.token === 'string' && creds.token.length > 0
+  },
 
-  protected async setupWebhook(): Promise<void> {
-    const { webhook } = this.config
-    if (!webhook) {
-      return
-    }
+  async setupWebhook(_creds, config, webhook) {
+    // In production: POST /repos/:owner/:repo/hooks
+    console.log(`GitHub webhook would be registered at ${webhook.path} for ${config.name}`)
+  },
 
-    // In production, register webhook with GitHub
-    // This would use the GitHub API to create a repo webhook
-    console.log(`GitHub webhook would be registered at ${webhook.path}`)
-  }
-
-  protected async cleanupWebhook(): Promise<void> {
-    // In production, unregister webhook from GitHub
+  async cleanupWebhook() {
+    // In production: DELETE /repos/:owner/:repo/hooks/:hook_id
     console.log('GitHub webhook would be unregistered')
-  }
+  },
 
-  /**
-   * Convert GitHub webhook event to RunInput
-   */
-  async eventToRunInput(event: GitHubWebhookEvent): Promise<Record<string, unknown> | null> {
-    if (!this.capabilities.canTrigger) {
-      return null
-    }
+  async eventToRunInput(event, creds) {
+    const { event: eventType, payload } = event as GitHubWebhookEvent
 
-    const { event: eventType, payload } = event
-
-    // Handle issue events
     if (eventType === 'issues') {
-      const issuePayload = payload as GitHubIssueTrigger
+      const p = payload as GitHubIssueTrigger
       return {
         trigger: {
           type: 'github-issue',
           event: eventType,
-          action: issuePayload.action,
-          owner: issuePayload.owner,
-          repo: issuePayload.repo,
-          issueNumber: issuePayload.issueNumber,
-          title: issuePayload.title,
-          body: issuePayload.body,
-          labels: issuePayload.labels,
+          action: p.action,
+          owner: p.owner ?? creds.ownerId,
+          repo: p.repo ?? creds.repoName,
+          issueNumber: p.issueNumber,
+          title: p.title,
+          body: p.body,
+          labels: p.labels,
         },
       }
     }
 
-    // Handle pull request events
     if (eventType === 'pull_request') {
-      return {
-        trigger: {
-          type: 'github-pr',
-          event: eventType,
-          payload: payload,
-        },
-      }
+      return { trigger: { type: 'github-pr', event: eventType, payload } }
     }
 
-    // Handle push events
     if (eventType === 'push') {
-      return {
-        trigger: {
-          type: 'github-push',
-          event: eventType,
-          payload: payload,
-        },
-      }
+      return { trigger: { type: 'github-push', event: eventType, payload } }
     }
 
-    // Other events can be ignored or handled as needed
     return null
-  }
+  },
 
-  /**
-   * Send notification to GitHub (issue comment, PR comment, etc.)
-   */
-  async sendNotification(
-    message: string,
-    options?: {
-      issueNumber?: number
-      prNumber?: number
-      commentOn?: 'issue' | 'pr'
-    },
-  ): Promise<void> {
-    // In production, use GitHub API to post comments
+  async sendNotification(message, options) {
+    // In production: POST /repos/:owner/:repo/issues/:issue_number/comments
     console.log(`GitHub notification: ${message}`, options)
-  }
+  },
+})
 
-  /**
-   * Poll for new issues/PRs
-   */
-  async pollForChanges(since?: Date): Promise<unknown[]> {
-    // In production, query GitHub API for changes
-    console.log(`Polling GitHub for changes since ${since?.toISOString()}`)
-    return []
-  }
-
-  /**
-   * Get issue or PR details
-   */
-  async getIssueOrPr(owner: string, repo: string, number: number): Promise<unknown> {
-    // In production, fetch from GitHub API
-    console.log(`Fetching ${owner}/${repo}#${number}`)
-    return {}
-  }
-}
+// Keep the type alias so callers can do `new GitHubIntegration(config)` and
+// also reference `typeof GitHubIntegration` for type narrowing.
+export type GitHubIntegrationType = InstanceType<typeof GitHubIntegration>
