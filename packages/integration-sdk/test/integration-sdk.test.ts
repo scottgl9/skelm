@@ -217,16 +217,9 @@ describe('defineIntegration', () => {
     expect(cleanupSpy).toHaveBeenCalledOnce()
   })
 
-  it('throws accessing credentials before init', () => {
-    // Access parsedCredentials indirectly via eventToRunInput before init
+  it('healthCheck returns false before init (pre-init guard)', async () => {
     const inst = new TestIntegration(makeConfig())
-    // eventToRunInput internally calls this.creds — should throw
-    expect(() => {
-      // Trigger the getter synchronously via a sync path isn't possible since
-      // eventToRunInput is async and guards happen inside. Test that init
-      // gates the state correctly instead.
-      expect(inst.healthCheck()).resolves.toBe(false)
-    }).not.toThrow()
+    await expect(inst.healthCheck()).resolves.toBe(false)
   })
 })
 

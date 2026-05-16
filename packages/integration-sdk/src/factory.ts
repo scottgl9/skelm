@@ -13,7 +13,9 @@ import type {
  *
  * @typeParam TCreds - The shape of the credentials object, validated by `credentialsSchema`.
  */
-export interface DefineIntegrationOptions<TCreds extends Record<string, string | number | boolean>> {
+export interface DefineIntegrationOptions<
+  TCreds extends Record<string, string | number | boolean | undefined>,
+> {
   /** Unique integration identifier (e.g. 'google', 'notion') */
   id: string
 
@@ -87,7 +89,9 @@ export interface DefineIntegrationOptions<TCreds extends Record<string, string |
  * A class constructor that produces an `IntegrationBase` for the given options.
  * Instantiate with `new MyIntegration(config)`.
  */
-export type IntegrationClass<TCreds extends Record<string, string | number | boolean>> = new (
+export type IntegrationClass<
+  TCreds extends Record<string, string | number | boolean | undefined>,
+> = new (
   config: IntegrationConfig,
 ) => IntegrationBase & Integration
 
@@ -128,7 +132,9 @@ export type IntegrationClass<TCreds extends Record<string, string | number | boo
  * })
  * ```
  */
-export function defineIntegration<TCreds extends Record<string, string | number | boolean>>(
+export function defineIntegration<
+  TCreds extends Record<string, string | number | boolean | undefined>,
+>(
   options: DefineIntegrationOptions<TCreds>,
 ): IntegrationClass<TCreds> {
   class DefinedIntegration extends IntegrationBase {
