@@ -493,6 +493,14 @@ async function runAgentStep(
           ...(egressToken !== undefined && { egressToken }),
           ...(proxyEnv !== undefined && { proxyEnv }),
           ...(onPartial !== undefined && { onPartial }),
+          // Plumb the runner's event bus + run/step identifiers so any
+          // McpHost the backend brings up itself can publish tool.call /
+          // tool.result events that the runner audits. Without this,
+          // native-tool backends (toolPermissions:'native') leave no MCP
+          // audit trail.
+          ...(events !== undefined && { events }),
+          runId: ctx.run.runId,
+          stepId: step.id,
         })
       } catch (err) {
         if (stepSignal.aborted && stepSignal.reason instanceof StepTimeoutError) {
