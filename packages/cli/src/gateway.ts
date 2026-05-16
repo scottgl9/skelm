@@ -1,8 +1,16 @@
+import { spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { Gateway, createTriggerDispatcher, readDiscovery, readLockfile } from '@skelm/gateway'
+// @subprocess-ok: re-spawning the CLI itself for `gateway start --detach`.
+import {
+  Gateway,
+  createTriggerDispatcher,
+  isProcessAlive,
+  readDiscovery,
+  readLockfile,
+} from '@skelm/gateway'
 import { tsImport } from 'tsx/esm/api'
 import { buildBackendRegistry } from './backends.js'
 import { EXIT } from './exit-codes.js'
@@ -14,6 +22,10 @@ export interface GatewayArgs {
   foreground?: boolean
   detach?: boolean
   json?: boolean
+  /** Override HTTP listening port (also configurable via `server.port` in skelm.config.ts). */
+  httpPort?: number
+  /** Override HTTP bind host. */
+  httpHost?: string
   /** For `install --systemd`. */
   systemd?: boolean
 }
@@ -47,16 +59,16 @@ export async function gatewayCommand(args: GatewayArgs, io: MainIO): Promise<Mai
 
 async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> {
   if (args.detach) {
-    io.stderr.write(
-      'gateway start --detach: spawn `nohup skelm gateway start --foreground &` from your shell, or use the systemd unit (`skelm gateway install --systemd`).\n',
-    )
-    return { exitCode: EXIT.CLI_ERROR }
+    return detachGateway(args, io)
   }
 
   // Load skelm.config.ts from cwd (walking up). Config drives port, host,
   // registry globs, and default permissions.
   const { config } = await loadSkelmConfig({ fromDir: process.cwd() })
   const serverCfg = config.server ?? {}
+  // CLI flags (--http-port / --http-host) win over skelm.config.ts.
+  const httpPort = args.httpPort ?? serverCfg.port
+  const httpHost = args.httpHost ?? serverCfg.host
 
   // Loader used by both the trigger dispatcher AND the HTTP /pipelines/:id/run
   // path (so invoke() steps and `POST /pipelines/<id>/run` can resolve
@@ -68,8 +80,8 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
   const gateway = new Gateway({
     installSignalHandlers: true,
     enableHttp: true,
-    ...(serverCfg.port !== undefined && { httpPort: serverCfg.port }),
-    ...(serverCfg.host !== undefined && { httpHost: serverCfg.host }),
+    ...(httpPort !== undefined && { httpPort }),
+    ...(httpHost !== undefined && { httpHost }),
     config,
     loadWorkflow,
   })
@@ -163,17 +175,27 @@ async function statusGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
   const probe = new Gateway()
   const lock = await readLockfile(probe.lockfilePath)
   const disc = await readDiscovery(probe.discoveryPath)
+  // A lockfile alone is not enough — if the PID is dead (kill -9, crash,
+  // PID reuse) the gateway is gone. Always probe the PID before reporting
+  // `running: true`. Without this, downstream CLI commands trust a stale
+  // discovery URL and fail with "fetch failed".
+  const pidAlive = lock !== null && isProcessAlive(lock.pid)
   const status = {
-    running: lock !== null,
+    running: lock !== null && pidAlive,
     pid: lock?.pid ?? null,
     startedAt: lock?.startedAt ?? null,
     url: disc?.url ?? null,
+    ...(lock !== null && !pidAlive && { stale: true as const }),
   }
   if (args.json) {
     io.stdout.write(`${JSON.stringify(status, null, 2)}\n`)
   } else if (status.running) {
     io.stdout.write(
       `gateway: running\n  pid: ${status.pid}\n  startedAt: ${status.startedAt}\n  url: ${status.url ?? '(unknown)'}\n`,
+    )
+  } else if (lock !== null && !pidAlive) {
+    io.stdout.write(
+      `gateway: not running (stale lockfile — pid ${lock.pid} is dead; will be reclaimed on next 'skelm gateway start')\n`,
     )
   } else {
     io.stdout.write('gateway: not running\n')
@@ -188,6 +210,12 @@ async function signalGateway(sig: 'SIGTERM' | 'SIGHUP', io: MainIO): Promise<Mai
     io.stderr.write('gateway: not running\n')
     return { exitCode: EXIT.CLI_ERROR }
   }
+  if (!isProcessAlive(lock.pid)) {
+    io.stderr.write(
+      `gateway: not running (stale lockfile — pid ${lock.pid} is dead; will be reclaimed on next 'skelm gateway start')\n`,
+    )
+    return { exitCode: EXIT.CLI_ERROR }
+  }
   try {
     process.kill(lock.pid, sig)
     io.stdout.write(`sent ${sig} to pid ${lock.pid}\n`)
@@ -196,6 +224,47 @@ async function signalGateway(sig: 'SIGTERM' | 'SIGHUP', io: MainIO): Promise<Mai
     io.stderr.write(`failed to signal pid ${lock.pid}: ${(err as Error).message}\n`)
     return { exitCode: EXIT.CLI_ERROR }
   }
+}
+
+/**
+ * Spawn ourselves in the background and exit, leaving the gateway running
+ * as a detached process. Mirrors what `nohup skelm gateway start &` would
+ * do, but builds it into the CLI so users don't have to know the recipe.
+ *
+ * We re-exec via `process.execPath` + the resolved bin script, *without*
+ * `--detach` (otherwise infinite recursion), preserving `--http-port` /
+ * `--http-host` overrides so the child binds where the parent intended.
+ */
+async function detachGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> {
+  const argv = [process.argv[1] ?? 'skelm', 'gateway', 'start']
+  if (args.httpPort !== undefined) argv.push('--http-port', String(args.httpPort))
+  if (args.httpHost !== undefined) argv.push('--http-host', args.httpHost)
+  const child = spawn(process.execPath, argv, {
+    detached: true,
+    stdio: 'ignore',
+    env: process.env,
+  })
+  child.unref()
+  // Give the child a moment to acquire the lockfile and write discovery, so
+  // a follow-up `skelm gateway status` (the typical next step) doesn't race
+  // ahead of it. Bounded poll, not a fixed sleep.
+  const probe = new Gateway()
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    const lock = await readLockfile(probe.lockfilePath)
+    if (lock !== null && lock.pid === child.pid && isProcessAlive(lock.pid)) {
+      const disc = await readDiscovery(probe.discoveryPath)
+      io.stdout.write(
+        `skelm gateway started (detached)\n  pid: ${lock.pid}\n  url: ${disc?.url ?? '(pending)'}\n`,
+      )
+      return { exitCode: EXIT.OK }
+    }
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  io.stderr.write(
+    `gateway start --detach: child pid ${child.pid} did not acquire lockfile within 5s. Inspect logs via journalctl or rerun in foreground.\n`,
+  )
+  return { exitCode: EXIT.CLI_ERROR }
 }
 
 const SYSTEMD_DIR = `${process.env.HOME ?? homedir()}/.config/systemd/user`

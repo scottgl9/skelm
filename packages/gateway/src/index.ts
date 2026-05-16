@@ -23,6 +23,7 @@ export {
   type GatewayState,
   type LockfileContents,
   LockfileError,
+  isProcessAlive,
   readDiscovery,
   readLockfile,
   releaseLockfile,

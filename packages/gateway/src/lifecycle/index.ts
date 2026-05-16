@@ -9,6 +9,7 @@ export type {
 export {
   LockfileError,
   acquireLockfile,
+  isProcessAlive,
   readLockfile,
   releaseLockfile,
 } from './lockfile.js'

@@ -31,18 +31,36 @@ export async function initCommand(
   io: InitCommandIO,
 ): Promise<InitCommandResult> {
   const dir = resolve(process.cwd(), args.dir)
+  let mergeMode = false
   if (existsSync(dir) && !args.force) {
     const stat = await import('node:fs/promises').then((fs) => fs.stat(dir))
     if (stat.isDirectory() && (await isNonEmpty(dir))) {
-      io.stderr.write(`error: target directory is not empty: ${dir}\n`)
-      io.stderr.write('hint: pass --force to scaffold over an existing tree\n')
-      return { exitCode: EXIT.CLI_ERROR }
+      // Allow the common onboarding sequence:
+      //   mkdir foo && cd foo && npm init -y && npm i skelm && skelm init .
+      // by detecting the well-known npm-init residue (package.json,
+      // node_modules/, package-lock.json) and merging the scaffold into the
+      // existing tree. Anything beyond that demands --force so we don't
+      // silently overwrite a real project.
+      if (await onlyHasNpmInitResidue(dir)) {
+        mergeMode = true
+      } else {
+        io.stderr.write(`error: target directory is not empty: ${dir}\n`)
+        io.stderr.write('hint: pass --force to scaffold over an existing tree\n')
+        return { exitCode: EXIT.CLI_ERROR }
+      }
     }
   }
 
   const files = scaffoldFiles()
   for (const [relPath, contents] of files) {
     const fullPath = join(dir, relPath)
+    // In merge mode, don't clobber an existing package.json — the user's
+    // `npm init` filled in name/version; we add a `skelm` dep + start script
+    // via mergePackageJson instead.
+    if (mergeMode && relPath === 'package.json' && existsSync(fullPath)) {
+      await mergePackageJson(fullPath, contents)
+      continue
+    }
     await mkdir(dirname(fullPath), { recursive: true })
     await writeFile(fullPath, contents, 'utf8')
   }
@@ -59,6 +77,35 @@ async function isNonEmpty(dir: string): Promise<boolean> {
   const fs = await import('node:fs/promises')
   const entries = await fs.readdir(dir)
   return entries.length > 0
+}
+
+const NPM_INIT_RESIDUE = new Set([
+  'package.json',
+  'package-lock.json',
+  'node_modules',
+  '.gitignore',
+  '.npmrc',
+  'README.md',
+])
+
+async function onlyHasNpmInitResidue(dir: string): Promise<boolean> {
+  const fs = await import('node:fs/promises')
+  const entries = await fs.readdir(dir)
+  if (entries.length === 0) return true
+  return entries.every((e) => NPM_INIT_RESIDUE.has(e))
+}
+
+async function mergePackageJson(path: string, scaffold: string): Promise<void> {
+  const fs = await import('node:fs/promises')
+  const existing = JSON.parse(await fs.readFile(path, 'utf8'))
+  const fresh = JSON.parse(scaffold)
+  const merged = {
+    ...existing,
+    type: existing.type ?? fresh.type,
+    scripts: { ...fresh.scripts, ...(existing.scripts ?? {}) },
+    dependencies: { ...(existing.dependencies ?? {}), ...fresh.dependencies },
+  }
+  await fs.writeFile(path, `${JSON.stringify(merged, null, 2)}\n`, 'utf8')
 }
 
 function getSkelmVersion(): string {
