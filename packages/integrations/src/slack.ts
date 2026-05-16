@@ -1,6 +1,6 @@
 import { defineIntegration } from '@skelm/integration-sdk'
-import { z } from 'zod'
 import type { SlackWebhookEvent } from '@skelm/integration-sdk'
+import { z } from 'zod'
 
 const slackCredentialsSchema = z.object({
   botToken: z.string().startsWith('xoxb-', 'Slack bot token must start with xoxb-'),
@@ -105,7 +105,7 @@ export const SlackIntegration = defineIntegration({
 
   async sendNotification(message, options, creds) {
     const channelId = (options?.channelId as string | undefined) ?? creds.channelId
-    if (!channelId && !(options?.userId)) {
+    if (!channelId && !options?.userId) {
       throw new Error('No channel or user specified for Slack notification')
     }
     // In production: call slack.chat.postMessage

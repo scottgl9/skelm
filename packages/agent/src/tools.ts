@@ -385,11 +385,7 @@ export const BUILTIN_TOOLS: BuiltInToolDef[] = [
         //      fails. Surface that as a hint so users know where to
         //      widen the policy.
         return {
-          content:
-            `Skill "${p.skillId}" not found or not accessible (either the skill is missing from ` +
-            `the project's skills registry, or the resolved \`allowedSkills\` policy is empty — ` +
-            `step-level grants intersect with project defaults and cannot widen them, so set ` +
-            `\`defaults.permissions.allowedSkills: ['${p.skillId}']\` in skelm.config.ts).`,
+          content: `Skill "${p.skillId}" not found or not accessible (either the skill is missing from the project's skills registry, or the resolved \`allowedSkills\` policy is empty — step-level grants intersect with project defaults and cannot widen them, so set \`defaults.permissions.allowedSkills: ['${p.skillId}']\` in skelm.config.ts).`,
           isError: true,
         }
       }

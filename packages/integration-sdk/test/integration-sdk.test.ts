@@ -185,7 +185,9 @@ describe('defineIntegration', () => {
     })
     const inst = new Cls(makeConfig())
     await inst.init()
-    await expect(inst.sendNotification('hello')).rejects.toThrow('does not support sendNotification')
+    await expect(inst.sendNotification('hello')).rejects.toThrow(
+      'does not support sendNotification',
+    )
   })
 
   it('calls setupWebhook and cleanupWebhook when configured', async () => {

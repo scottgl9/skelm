@@ -117,6 +117,16 @@ The same gates run in CI. Do not skip them locally; the round-trip from CI failu
 
 A pre-commit hook runs format-and-restage on staged files. Do not bypass it (`--no-verify`) without an explicit justification line in the commit body explaining why.
 
+### Opt-in pre-push gate
+
+CI is the merge gate (`.github/workflows/ci.yml` runs `pnpm check` on every push and PR, with no `continue-on-error` anywhere). To catch the same class of regression before push instead of after, run:
+
+```
+bash scripts/install-git-hooks.sh
+```
+
+This sets `core.hooksPath` for the repo and installs a `pre-push` hook that runs `pnpm check` locally. Bypass with `git push --no-verify` if you really mean to push a red branch. Uninstall with `git config --unset core.hooksPath`.
+
 ## Self-review before opening a PR
 
 skelm is dogfood-driven: there is an internal `branch-review` pipeline (under `pipelines/internal/`) that runs an agent-driven review of your branch against `main`. Run it before opening a PR:

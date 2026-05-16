@@ -89,11 +89,10 @@ export interface DefineIntegrationOptions<
  * A class constructor that produces an `IntegrationBase` for the given options.
  * Instantiate with `new MyIntegration(config)`.
  */
-export type IntegrationClass<
-  TCreds extends Record<string, string | number | boolean | undefined>,
-> = new (
-  config: IntegrationConfig,
-) => IntegrationBase & Integration
+export type IntegrationClass<TCreds extends Record<string, string | number | boolean | undefined>> =
+  new (
+    config: IntegrationConfig,
+  ) => IntegrationBase & Integration
 
 /**
  * Define a custom skelm integration.
@@ -134,9 +133,7 @@ export type IntegrationClass<
  */
 export function defineIntegration<
   TCreds extends Record<string, string | number | boolean | undefined>,
->(
-  options: DefineIntegrationOptions<TCreds>,
-): IntegrationClass<TCreds> {
+>(options: DefineIntegrationOptions<TCreds>): IntegrationClass<TCreds> {
   class DefinedIntegration extends IntegrationBase {
     override readonly id = options.id
     override readonly name = options.name
@@ -189,10 +186,7 @@ export function defineIntegration<
       return options.eventToRunInput(event, this.creds, this.config)
     }
 
-    async sendNotification(
-      message: string,
-      opts?: Record<string, unknown>,
-    ): Promise<void> {
+    async sendNotification(message: string, opts?: Record<string, unknown>): Promise<void> {
       if (!options.sendNotification) {
         throw new Error(`Integration "${options.id}" does not support sendNotification`)
       }
@@ -228,8 +222,16 @@ export class IntegrationWorkflowPlugin {
   readonly name: string
   readonly version = '0.0.0'
   readonly type = 'workflow' as const
-  state: 'loading' | 'loaded' | 'initializing' | 'initialized' | 'starting' | 'active' | 'stopping' | 'stopped' | 'error' =
-    'loaded'
+  state:
+    | 'loading'
+    | 'loaded'
+    | 'initializing'
+    | 'initialized'
+    | 'starting'
+    | 'active'
+    | 'stopping'
+    | 'stopped'
+    | 'error' = 'loaded'
 
   private readonly integration: Integration
   private readonly eventHandlers = new Map<string, Array<(...args: unknown[]) => void>>()
