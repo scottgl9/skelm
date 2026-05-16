@@ -1,10 +1,14 @@
 /**
- * @skelm/integrations - Third-party integration abstractions
+ * @skelm/integrations — built-in third-party integrations for skelm pipelines.
  *
- * Provides typed connectors for GitHub, Slack, Jira, IMAP, Telegram, etc.
+ * Types and the IntegrationBase class are re-exported from @skelm/integration-sdk
+ * so existing consumers of this package continue to work without changes.
+ * New integrations should depend directly on @skelm/integration-sdk.
  */
 
+// Re-export everything from @skelm/integration-sdk for backwards compatibility
 export type {
+  RunInput,
   IntegrationConfig,
   WebhookConfig,
   RateLimitConfig,
@@ -22,12 +26,16 @@ export type {
   TelegramConfig,
   TelegramWebhookEvent,
   TelegramMessageTrigger,
-} from './types.js'
+} from '@skelm/integration-sdk'
 
-// Integration base class
-export { IntegrationBase } from './base.js'
+export {
+  IntegrationBase,
+  defineIntegration,
+  createIntegrationPlugin,
+} from '@skelm/integration-sdk'
+export type { DefineIntegrationOptions, IntegrationClass } from '@skelm/integration-sdk'
 
-// Integration implementations
+// Built-in integration implementations
 export { GitHubIntegration } from './github.js'
 export { SlackIntegration } from './slack.js'
 export {

@@ -1,5 +1,5 @@
-import { IntegrationBase } from './base.js'
-import type { SlackConfig, SlackWebhookEvent } from './types.js'
+import { IntegrationBase } from '@skelm/integration-sdk'
+import type { SlackConfig, SlackWebhookEvent } from '@skelm/integration-sdk'
 
 /**
  * Slack integration for skelm pipelines

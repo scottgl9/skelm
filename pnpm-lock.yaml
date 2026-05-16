@@ -147,6 +147,10 @@ importers:
       vitest:
         specifier: ^2.1.5
         version: 2.1.9(@types/node@22.19.17)
+    optionalDependencies:
+      '@skelm/integration-sdk':
+        specifier: workspace:*
+        version: link:../integration-sdk
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.13
@@ -180,11 +184,33 @@ importers:
         specifier: ^2.1.5
         version: 2.1.9(@types/node@22.19.17)
 
+  packages/integration-sdk:
+    dependencies:
+      zod:
+        specifier: ^4.4.2
+        version: 4.4.2
+    devDependencies:
+      '@skelm/core':
+        specifier: workspace:*
+        version: link:../core
+      '@types/node':
+        specifier: ^22.9.0
+        version: 22.19.17
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.5
+        version: 2.1.9(@types/node@22.19.17)
+
   packages/integrations:
     dependencies:
       '@skelm/core':
         specifier: workspace:*
         version: link:../core
+      '@skelm/integration-sdk':
+        specifier: workspace:*
+        version: link:../integration-sdk
     devDependencies:
       typescript:
         specifier: ^5.6.3
