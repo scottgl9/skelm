@@ -35,7 +35,7 @@ if [ -z "${GH_PACKAGES_TOKEN:-}" ]; then
 fi
 
 VERSION="${1:-$(node -p "require('./packages/skelm/package.json').version")}"
-PUBLISH_ORDER=(core scheduler integrations metrics otel opencode pi vercel-ai agent gateway cli skelm)
+PUBLISH_ORDER=(core scheduler integrations metrics otel opencode codex pi vercel-ai agent gateway cli skelm)
 
 echo "==> skelm publish to GitHub Packages"
 echo "    version: $VERSION"
