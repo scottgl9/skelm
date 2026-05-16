@@ -53,8 +53,9 @@ function parseSidebarLinks(configSrc: string): Set<string> {
   // less fragile than importing the TS module for a CI guard.
   const links = new Set<string>()
   const re = /link:\s*['"]([^'"]+)['"]/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(configSrc))) {
+  for (;;) {
+    const m = re.exec(configSrc)
+    if (m === null) break
     const link = m[1]
     if (!link || link.startsWith('http')) continue
     links.add(link)
@@ -80,8 +81,9 @@ async function extractLinksFrom(file: string): Promise<string[]> {
   const out: string[] = []
   // Match markdown links [text](target)
   const re = /\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(src))) {
+  for (;;) {
+    const m = re.exec(src)
+    if (m === null) break
     const target = m[1].split('#')[0]
     if (!target || target.startsWith('http') || target.startsWith('mailto:')) continue
     out.push(target)
@@ -106,8 +108,7 @@ function resolveLink(fromFile: string, target: string): string | null {
     // Could be a clean-URL link to a page; try .md then /README.md
     const asMd = `${resolved}.md`
     const asIndex = join(resolved, 'README.md')
-    return asMd
-      .startsWith(DOCS_DIR) // both candidates live under DOCS_DIR; prefer .md
+    return asMd.startsWith(DOCS_DIR) // both candidates live under DOCS_DIR; prefer .md
       ? asMd
       : asIndex
   }
@@ -147,11 +148,17 @@ async function main() {
 
   // BFS through markdown links.
   while (queue.length) {
-    const cur = queue.shift()!
+    const cur = queue.shift()
+    if (cur === undefined) break
     const links = await extractLinksFrom(cur)
     for (const link of links) {
       // .yaml / .png / etc. — non-markdown assets, not part of the orphan check
-      if (link.includes('.') && !link.match(/\.md(#|$)/) && !link.endsWith('/') && !link.match(/[^./]$/)) {
+      if (
+        link.includes('.') &&
+        !link.match(/\.md(#|$)/) &&
+        !link.endsWith('/') &&
+        !link.match(/[^./]$/)
+      ) {
         continue
       }
       const resolved = resolveLink(cur, link)
@@ -174,7 +181,9 @@ async function main() {
   })
 
   if (orphans.length) {
-    console.error('docs orphan guard: the following docs are not reachable from .vitepress/config.ts:')
+    console.error(
+      'docs orphan guard: the following docs are not reachable from .vitepress/config.ts:',
+    )
     for (const o of orphans) console.error(`  - docs/${o}`)
     console.error(
       '\nFix: add the page to a sidebar in docs/.vitepress/config.ts, link it from a reachable page, or delete it.',

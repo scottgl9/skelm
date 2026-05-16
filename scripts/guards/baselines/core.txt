@@ -68,6 +68,8 @@ value:WorkspaceManager
 value:agent
 value:assertEgressEnforceable
 value:branch
+value:buildSystemPrompt
+value:buildSystemPromptFromRequest
 value:code
 value:combineSignals
 value:createAcpBackend
@@ -138,6 +140,7 @@ type:BackendCapabilities
 type:BackendContext
 type:BackendId
 type:BranchStep
+type:BuildFromRequestContext
 type:ChatMessage
 type:ClientCapabilities
 type:CodeStep
@@ -257,6 +260,7 @@ type:StepKind
 type:StepResult
 type:StepStatus
 type:StopReason
+type:SystemPromptInput
 type:TaskRequirements
 type:ToolCallResponse
 type:ToolContent

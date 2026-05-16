@@ -472,11 +472,12 @@ async function runAgentStep(
         if (ctx.signal.aborted) stepController.abort(ctx.signal.reason)
         else ctx.signal.addEventListener('abort', onParentAbort, { once: true })
       }
+      const timeoutMs = step.timeoutMs
       const timeoutHandle =
-        step.timeoutMs !== undefined && stepController !== undefined
+        timeoutMs !== undefined && stepController !== undefined
           ? setTimeout(
-              () => stepController.abort(new StepTimeoutError(step.id, step.timeoutMs!)),
-              step.timeoutMs,
+              () => stepController.abort(new StepTimeoutError(step.id, timeoutMs)),
+              timeoutMs,
             )
           : undefined
       let response: import('../backend.js').AgentResponse
