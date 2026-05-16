@@ -1,6 +1,6 @@
 {
   "name": "@skelm/integration-sdk",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "Authoring SDK for building custom skelm integrations",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",

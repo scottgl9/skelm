@@ -6,7 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-05-16
+
 ### Added
+- **`@skelm/codex` backend** (#106) — new first-party backend wrapping the Codex SDK. Includes a permission mapper that translates skelm policy into Codex SDK options, a client wrapper + run loop covering skelm's full feature surface (tools, skills, MCP, secrets, streaming deltas), `codex` backend registration in the CLI, a backend-contract suite, and a live integration test with skill-injection coverage. Package README and `docs/backends/codex.md` ship with the release.
+- **`@skelm/integration-sdk`** — extracted authoring SDK with `defineIntegration()` so third parties can build integrations without depending on `@skelm/integrations` internals. `@skelm/integrations` (GitHub, Slack) is rewritten on top of this SDK.
+- **Sectioned system-prompt builder** — `@skelm/agent` replaces the prompt stub with a sectioned builder; the implementation is hoisted to `@skelm/core` and adopted by the Anthropic backend. New `systemPromptMode` and `systemPromptIncludeAgentDef` fields on `AgentStep` control how the agent definition and built-in sections are composed.
+- **Gateway workflow registration API** — `/v1/workflows` registers workflows over HTTP, including registration from `.zip` archive uploads. `loadPipelineFromPath` extracted for reuse.
+- **Gateway `/v1/batch/*` and `/v1/config` routes** — batch run dispatch and runtime config inspection endpoints, documented under `docs/gateway/`.
+- **Gateway dashboard API** (`/v1/dashboard/*`) — read-only aggregations composed from the run store, registries, trigger coordinator, and approval gate. Endpoints: `overview`, `workflows`, `runs`, `analytics` (time-bucketed), `errors`, `schedules`, `approvals`. Five-second in-memory TTL on overview and analytics. Same bearer auth as the rest of the control surface. Reference dashboard demo under `examples/dashboard-demo/`.
+- **`RunFilter.startedAfter` / `RunFilter.startedBefore`** — date-range filtering on `listRuns()`, pushed into the SQL `WHERE` clause for the SQLite-backed store. Powers the analytics endpoint without scanning the full run table.
+- **`triggerId` recorded on runs** — `core`/`gateway` persist the originating trigger id on every run; `GET /v1/runs?triggerId=…` filters accordingly.
+- **CLI gateway lifecycle UX** — `skelm gateway start --detach` and `--http-port`, plus `status` now performs a real pid-alive check. `skelm init` merges into an existing `npm init`-created directory rather than refusing to run.
 - **`skelm approvals config` CLI** — manage the approval policy file:
   - `skelm approvals config show [--json]` — print the effective policy.
   - `skelm approvals config validate [--json]` — static-check the policy (parse error, bad timeout, unknown step kind, duplicate approver id, missing approver id).
@@ -14,8 +25,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   - `skelm approvals config approvers add|remove <id>` — manage the approver registry.
 
   Reads/writes `$SKELM_APPROVALS_CONFIG` (default `~/.skelm/approvals.config.json`), with file mode `0600`. The gateway re-reads the policy on `skelm gateway reload`. Routing the writes through the gateway HTTP surface (so policy changes land in the audit chain) remains a follow-up.
-- **Gateway dashboard API** (`/v1/dashboard/*`) — read-only aggregations composed from the run store, registries, trigger coordinator, and approval gate. Endpoints: `overview`, `workflows`, `runs`, `analytics` (time-bucketed), `errors`, `schedules`, `approvals`. Five-second in-memory TTL on overview and analytics. Same bearer auth as the rest of the control surface. Reference dashboard demo under `examples/dashboard-demo/`.
-- **`RunFilter.startedAfter` / `RunFilter.startedBefore`** — date-range filtering on `listRuns()`, pushed into the SQL `WHERE` clause for the SQLite-backed store. Powers the analytics endpoint without scanning the full run table.
+- **Examples** — `incident-response`, `approval-workflow`, and `sprint-planning` pipelines; `dashboard-demo` static HTML exercising the new dashboard / workflow / batch / config routes.
+- **`@skelm/agent` qwen36 validation** — script plus integration test covering tools, skills, and MCP against a local qwen36 model.
+
+### Changed
+- **`@skelm/integrations` rewritten on `@skelm/integration-sdk`** — `GitHubIntegration` and `SlackIntegration` now use `defineIntegration()`; runtime behaviour preserved.
+- **System-prompt builder lives in `@skelm/core`** — shared between `@skelm/agent` and the Anthropic backend.
+- **Examples cleanup** — `matrix-coding-agent` example removed; assorted PR #83 review fixes applied to the remaining examples.
+- **Branding** — skelm wordmark removed from the logo; author byline removed from `README.md` footer.
+
+### Fixed
+- **`@skelm/agent`**: actionable denial messages for `http_fetch` and `load_skill` (previously surfaced as generic permission errors).
+- **`mcp.tool.invoked` / `mcp.tool.completed` audit events** for the native-agent `McpHost` (#107) — closes an audit-blind spot when agents dispatch MCP tools through the in-process host.
+- **`@skelm/codex`**: default-deny synthesis, `systemPromptMode` wiring, web-search bypass, request timeout, and streaming-delta handling (#106 review).
+- **Gateway `/v1/config`** no longer 500s when live backend instances are present; **`/v1/workflows`** lists workflows discovered via glob.
+- **Core nesting-safety gaps** closed in `forEach`, `parallel`, `loop`, and `wait` (#102 follow-up).
+- **`@skelm/agent` system-prompt** — PR #104 review feedback applied.
+- **Docs** — double-base on the `openapi.yaml` download link fixed.
+
+### Security
+- **`@skelm/codex` default-deny synthesis** — Codex backend policy now denies by omission rather than inheriting Codex SDK defaults; web-search bypass closed in the same pass.
+
+### Docs
+- **Accuracy sweep across reference, guides, recipes, and example READMEs**; full root markdown content relocated into `docs/` with section indexes; `.github/` carries equivalent content.
+- **Generated API reference** + promoted skill references under `docs/reference/`.
+- **Backends page** fleshes out `@skelm/agent` and leads the backend table.
+- **Gateway docs** for `/v1/dashboard`, `/v1/workflows`, `/v1/batch`, `/v1/config`.
+- **Site polish** — dead links fixed, OpenAPI rendered, orphan guard added, landing and quickstart pages tightened.
+- **System-prompt builder** documented along with override modes and `AGENTS.md` extension.
+- **Source-tree links** converted from `../../` to absolute `github.com` URLs.
+
+### CI
+- **`pnpm check` regression firewall** (#108) — lint + baseline + workflow-archive test now gate `pnpm check`; CI stops letting `pnpm check` regress silently.
+- **Docs build** runs after package builds.
+- **Publish pipeline** — `@skelm/codex`, `@skelm/agent`, and `@skelm/vercel-ai` included in publish order / gh-packages publish; rescope map updated.
 
 ## [0.3.8] - 2026-05-13
 

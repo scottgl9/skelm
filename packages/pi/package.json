@@ -1,6 +1,6 @@
 {
   "name": "@skelm/pi",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "Pi coding-agent backend for skelm with full permission enforcement",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
