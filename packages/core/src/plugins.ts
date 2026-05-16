@@ -446,7 +446,7 @@ export class PluginLoader {
       'id' in value &&
       'capabilities' in value &&
       'init' in value &&
-      typeof (value as Record<string, unknown>)['init'] === 'function' &&
+      typeof (value as Record<string, unknown>).init === 'function' &&
       'shutdown' in value &&
       'healthCheck' in value &&
       // Distinguish from SkelmPlugin (which has 'type' and 'initialize')
@@ -462,8 +462,9 @@ export class PluginLoader {
   private async wrapIntegration(integration: unknown): Promise<SkelmPlugin> {
     let sdk: { createIntegrationPlugin: (i: unknown) => unknown }
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      sdk = await import('@skelm/integration-sdk' as string) as any
+      sdk = (await import('@skelm/integration-sdk' as string)) as {
+        createIntegrationPlugin: (i: unknown) => unknown
+      }
     } catch {
       throw new Error(
         '@skelm/integration-sdk is required to load Integration plugins — add it as a dependency',

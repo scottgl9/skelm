@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Pre-push gate — runs the same `pnpm check` CI runs. Bypass with
+# `git push --no-verify` if you really mean to push a red branch.
+set -euo pipefail
+echo "→ pre-push: running pnpm check (build/typecheck/lint/guards/test)"
+echo "  bypass with: git push --no-verify"
+pnpm check
