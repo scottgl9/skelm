@@ -24,7 +24,10 @@ export interface McpHost {
 
 export interface McpHostOptions {
   enforcer?: TrustEnforcer
-  events?: EventBus
+  // McpHost only calls `publish` on this — widened to a publish-only
+  // shape so backends that don't hold a full EventBus can still forward
+  // their `BackendContext.events` channel without an upcast.
+  events?: Pick<EventBus, 'publish'>
   runId?: RunId
   stepId?: StepId
 }
