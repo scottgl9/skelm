@@ -8,9 +8,8 @@ outline: false
 
 The gateway's HTTP surface is described by an OpenAPI 3.1 spec. The rendered reference below is the canonical contract for `/v1/*` endpoints — request bodies, response shapes, status codes, error envelopes.
 
-[Download spec (YAML)](/skelm/openapi.yaml)
-
 <ClientOnly>
+  <a :href="withBase('/openapi.yaml')">Download spec (YAML)</a>
   <div id="redoc-container"></div>
 </ClientOnly>
 
