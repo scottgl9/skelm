@@ -16,6 +16,8 @@ export interface RunSummary {
   readonly pipelineId: string
   /** Absolute path to the workflow file, when known. */
   readonly workflowPath?: string
+  /** Trigger id, when this run was started by a gateway-managed trigger. */
+  readonly triggerId?: string
   readonly status: RunStatus
   readonly startedAt: number
   readonly completedAt?: number
@@ -24,6 +26,8 @@ export interface RunSummary {
 export interface RunFilter {
   readonly pipelineId?: string
   readonly status?: RunStatus
+  /** Narrow to runs started by this trigger id. */
+  readonly triggerId?: string
   readonly limit?: number
   /** Inclusive lower bound on `startedAt` (epoch ms). */
   readonly startedAfter?: number
@@ -92,6 +96,7 @@ export class MemoryRunStore implements RunStore {
     const runs = [...this.runs.values()]
       .filter((run) => filter.pipelineId === undefined || run.pipelineId === filter.pipelineId)
       .filter((run) => filter.status === undefined || run.status === filter.status)
+      .filter((run) => filter.triggerId === undefined || run.triggerId === filter.triggerId)
       .filter((run) => filter.startedAfter === undefined || run.startedAt >= filter.startedAfter)
       .filter((run) => filter.startedBefore === undefined || run.startedAt <= filter.startedBefore)
       .sort((a, b) => b.startedAt - a.startedAt)
@@ -101,6 +106,8 @@ export class MemoryRunStore implements RunStore {
       yield {
         runId: run.runId,
         pipelineId: run.pipelineId,
+        ...(run.workflowPath !== undefined && { workflowPath: run.workflowPath }),
+        ...(run.triggerId !== undefined && { triggerId: run.triggerId }),
         status: run.status,
         startedAt: run.startedAt,
         ...(run.completedAt !== undefined && { completedAt: run.completedAt }),
@@ -238,11 +245,12 @@ export class SqliteRunStore implements RunStore {
     this.db
       .prepare(
         `INSERT INTO runs (
-          run_id, pipeline_id, workflow_path, status, input_json, steps_json, output_json, error_json, started_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id) DO UPDATE SET
           pipeline_id = excluded.pipeline_id,
           workflow_path = excluded.workflow_path,
+          trigger_id = excluded.trigger_id,
           status = excluded.status,
           input_json = excluded.input_json,
           steps_json = excluded.steps_json,
@@ -255,6 +263,7 @@ export class SqliteRunStore implements RunStore {
         run.runId,
         run.pipelineId,
         run.workflowPath ?? null,
+        run.triggerId ?? null,
         run.status,
         encodeValue(run.input),
         encodeValue(run.steps),
@@ -274,7 +283,7 @@ export class SqliteRunStore implements RunStore {
   async getRun(runId: RunId): Promise<Run | null> {
     const row = this.db
       .prepare(
-        `SELECT run_id, pipeline_id, workflow_path, status, input_json, steps_json, output_json, error_json, started_at, completed_at
+        `SELECT run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at
          FROM runs WHERE run_id = ?`,
       )
       .get(runId) as
@@ -282,6 +291,7 @@ export class SqliteRunStore implements RunStore {
           run_id: string
           pipeline_id: string
           workflow_path: string | null
+          trigger_id: string | null
           status: RunStatus
           input_json: string
           steps_json: string
@@ -296,6 +306,7 @@ export class SqliteRunStore implements RunStore {
       runId: row.run_id,
       pipelineId: row.pipeline_id,
       ...(row.workflow_path !== null && { workflowPath: row.workflow_path }),
+      ...(row.trigger_id !== null && { triggerId: row.trigger_id }),
       status: row.status,
       input: decodeValue(row.input_json),
       steps: decodeValue(row.steps_json),
@@ -317,6 +328,10 @@ export class SqliteRunStore implements RunStore {
       clauses.push('status = ?')
       params.push(filter.status)
     }
+    if (filter.triggerId !== undefined) {
+      clauses.push('trigger_id = ?')
+      params.push(filter.triggerId)
+    }
     if (filter.startedAfter !== undefined) {
       clauses.push('started_at >= ?')
       params.push(filter.startedAfter)
@@ -329,7 +344,7 @@ export class SqliteRunStore implements RunStore {
     const limit = filter.limit !== undefined ? `LIMIT ${filter.limit}` : ''
     const rows = this.db
       .prepare(
-        `SELECT run_id, pipeline_id, workflow_path, status, started_at, completed_at
+        `SELECT run_id, pipeline_id, workflow_path, trigger_id, status, started_at, completed_at
          FROM runs ${where}
          ORDER BY started_at DESC ${limit}`,
       )
@@ -337,6 +352,7 @@ export class SqliteRunStore implements RunStore {
       run_id: string
       pipeline_id: string
       workflow_path: string | null
+      trigger_id: string | null
       status: RunStatus
       started_at: number
       completed_at: number | null
@@ -346,6 +362,7 @@ export class SqliteRunStore implements RunStore {
         runId: row.run_id,
         pipelineId: row.pipeline_id,
         ...(row.workflow_path !== null && { workflowPath: row.workflow_path }),
+        ...(row.trigger_id !== null && { triggerId: row.trigger_id }),
         status: row.status,
         startedAt: row.started_at,
         ...(row.completed_at !== null && { completedAt: row.completed_at }),
@@ -519,6 +536,7 @@ export class SqliteRunStore implements RunStore {
         run_id TEXT PRIMARY KEY,
         pipeline_id TEXT NOT NULL,
         workflow_path TEXT,
+        trigger_id TEXT,
         status TEXT NOT NULL,
         input_json TEXT NOT NULL,
         steps_json TEXT NOT NULL,
@@ -562,10 +580,14 @@ export class SqliteRunStore implements RunStore {
       CREATE INDEX IF NOT EXISTS state_journal_namespace_idx
         ON state_journal(namespace, stream, at, id);
     `)
-    // Migration: add workflow_path column if it doesn't exist (added in v1.1)
+    // Migration: add columns added after initial schema. Idempotent — only
+    // runs when the column is missing, so re-applies cleanly on every boot.
     const cols = this.db.prepare('PRAGMA table_info(runs)').all() as Array<{ name: string }>
     if (!cols.some((c) => c.name === 'workflow_path')) {
       this.db.exec('ALTER TABLE runs ADD COLUMN workflow_path TEXT')
+    }
+    if (!cols.some((c) => c.name === 'trigger_id')) {
+      this.db.exec('ALTER TABLE runs ADD COLUMN trigger_id TEXT')
     }
   }
 

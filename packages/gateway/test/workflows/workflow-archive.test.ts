@@ -116,7 +116,9 @@ describe('/v1/workflows/* zip upload', () => {
       const stats = await fs.stat(body.workflow.sourcePath)
       expect(stats.isFile()).toBe(true)
       const list = await (await fetch(`${base}/v1/workflows`)).json()
-      expect(list).toEqual([{ id: 'zipped-wf', file: body.workflow.sourcePath }])
+      expect(list).toEqual([
+        { id: 'zipped-wf', file: body.workflow.sourcePath, source: 'registered' },
+      ])
     } finally {
       await gw.stop()
     }

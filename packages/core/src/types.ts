@@ -400,6 +400,13 @@ export interface Run<TInput = unknown, TOutput = unknown> {
    * for runs started directly via `runPipeline()` or the CLI.
    */
   readonly workflowPath?: string
+  /**
+   * Id of the trigger that produced this run, when the run was started by a
+   * cron / webhook / queue / interval / manual trigger via the gateway.
+   * Absent for runs started directly via `runPipeline()` or HTTP `/runs`.
+   * Used by `/runs?triggerId=…` filters and dashboard groupings.
+   */
+  readonly triggerId?: string
   readonly status: RunStatus
   readonly input: TInput
   readonly steps: readonly StepResult[]
