@@ -148,6 +148,9 @@ planning/
 # Generated TypeDoc API reference (built by `pnpm --filter @skelm/docs docs:api`)
 docs/reference/api/
 
+# OpenAPI spec copied to docs/public/ at build time (canonical source: docs/reference/openapi.yaml)
+docs/public/openapi.yaml
+
 # TypeScript build artifacts that escape into src/ (compiled output belongs in dist/)
 packages/*/src/**/*.js
 packages/*/src/**/*.js.map

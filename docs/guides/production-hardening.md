@@ -89,4 +89,4 @@ do not fully control.
 - [`.github/SECURITY.md`](https://github.com/scottgl9/skelm/blob/main/.github/SECURITY.md) — vulnerability reporting
 - [`docs/reference/cli.md`](../reference/cli.md)
 - [`docs/reference/http.md`](../reference/http.md)
-- [`docs/reference/openapi.yaml`](../reference/openapi.yaml)
+- [OpenAPI spec](../reference/openapi.md)
