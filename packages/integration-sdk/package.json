@@ -1,19 +1,19 @@
 {
-  "name": "@skelm/integrations",
+  "name": "@skelm/integration-sdk",
   "version": "0.3.8",
-  "description": "Third-party integrations for skelm pipelines",
+  "description": "Authoring SDK for building custom skelm integrations",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
   "homepage": "https://skelm.dev/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/scottgl9/skelm.git",
-    "directory": "packages/integrations"
+    "directory": "packages/integration-sdk"
   },
   "bugs": {
     "url": "https://github.com/scottgl9/skelm/issues"
   },
-  "keywords": ["skelm", "integrations", "github", "slack", "jira", "telegram"],
+  "keywords": ["skelm", "integration", "sdk", "plugin", "authoring"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -32,14 +32,19 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@skelm/core": "workspace:*",
-    "@skelm/integration-sdk": "workspace:*"
+    "zod": "^4.4.2"
+  },
+  "peerDependencies": {
+    "@skelm/core": "workspace:*"
   },
   "devDependencies": {
+    "@skelm/core": "workspace:*",
+    "@types/node": "^22.9.0",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.5"
   }
 }

@@ -100,6 +100,7 @@ export default defineConfig({
           items: [
             { text: 'Writing a Backend', link: '/guides/writing-a-backend' },
             { text: 'Writing a Plugin', link: '/guides/writing-a-plugin' },
+            { text: 'Writing a Custom Integration', link: '/guides/writing-a-custom-integration' },
             { text: 'Testing Workflows', link: '/guides/testing-workflows' },
           ],
         },

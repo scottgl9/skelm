@@ -349,36 +349,39 @@ export class PluginRegistry {
  */
 export class PluginLoader {
   /**
-   * Load a plugin from a package name
+   * Load a plugin from a package name.
+   * Handles three export shapes:
+   *   1. A SkelmPlugin (id + type + initialize + start + stop)
+   *   2. An Integration (id + capabilities + init + shutdown + healthCheck) —
+   *      wrapped as a WorkflowPlugin via @skelm/integration-sdk
+   *   3. A factory function `createPlugin()` or named export `plugin`
    */
   async loadFromPackage(packageName: string): Promise<SkelmPlugin> {
     try {
       const module = await import(packageName)
 
-      // Look for default export that implements SkelmPlugin
+      // Shape 1 & 2: default export
       if (module.default && typeof module.default === 'object') {
-        const plugin = module.default as unknown
-        if (this.isSkelmPlugin(plugin)) {
-          return plugin
-        }
+        const exported = module.default as unknown
+        if (this.isSkelmPlugin(exported)) return exported
+        if (this.isIntegration(exported)) return await this.wrapIntegration(exported)
       }
 
-      // Look for named export 'createPlugin' or 'plugin'
+      // Shape 3: createPlugin factory
       if (typeof module.createPlugin === 'function') {
         const plugin = await module.createPlugin()
-        if (this.isSkelmPlugin(plugin)) {
-          return plugin
-        }
+        if (this.isSkelmPlugin(plugin)) return plugin
+        if (this.isIntegration(plugin)) return await this.wrapIntegration(plugin)
       }
 
+      // Shape 3b: named `plugin` export
       if (typeof module.plugin === 'object' && module.plugin !== null) {
         const plugin = module.plugin as unknown
-        if (this.isSkelmPlugin(plugin)) {
-          return plugin
-        }
+        if (this.isSkelmPlugin(plugin)) return plugin
+        if (this.isIntegration(plugin)) return await this.wrapIntegration(plugin)
       }
 
-      throw new Error(`Package ${packageName} does not export a valid SkelmPlugin`)
+      throw new Error(`Package ${packageName} does not export a valid SkelmPlugin or Integration`)
     } catch (error) {
       throw new Error(
         `Failed to load plugin from ${packageName}: ${error instanceof Error ? error.message : error}`,
@@ -422,6 +425,51 @@ export class PluginLoader {
       'start' in value &&
       'stop' in value
     )
+  }
+
+  /**
+   * Type guard for the Integration interface from @skelm/integration-sdk.
+   * Detects the shape without a hard import — avoids a potential circular dep.
+   */
+  private isIntegration(value: unknown): value is {
+    id: string
+    name: string
+    capabilities: Record<string, boolean>
+    config: unknown
+    init(): Promise<void>
+    shutdown(): Promise<void>
+    healthCheck(): Promise<boolean>
+  } {
+    return (
+      typeof value === 'object' &&
+      value !== null &&
+      'id' in value &&
+      'capabilities' in value &&
+      'init' in value &&
+      typeof (value as Record<string, unknown>)['init'] === 'function' &&
+      'shutdown' in value &&
+      'healthCheck' in value &&
+      // Distinguish from SkelmPlugin (which has 'type' and 'initialize')
+      !('type' in value && 'initialize' in value)
+    )
+  }
+
+  /**
+   * Dynamically import @skelm/integration-sdk and wrap an Integration as a
+   * WorkflowPlugin. The dynamic import keeps @skelm/core free of a hard dep
+   * on @skelm/integration-sdk.
+   */
+  private async wrapIntegration(integration: unknown): Promise<SkelmPlugin> {
+    let sdk: { createIntegrationPlugin: (i: unknown) => unknown }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sdk = await import('@skelm/integration-sdk' as string) as any
+    } catch {
+      throw new Error(
+        '@skelm/integration-sdk is required to load Integration plugins — add it as a dependency',
+      )
+    }
+    return sdk.createIntegrationPlugin(integration) as SkelmPlugin
   }
 }
 

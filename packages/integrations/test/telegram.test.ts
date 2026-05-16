@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TelegramIntegration, telegramUpdateToInput } from '../src/telegram.js'
-import type { TelegramConfig } from '../src/types.js'
+import type { TelegramConfig } from '@skelm/integration-sdk'
 
 const validToken = '123456:AAEPSM2FNFp4ux-rWo9d97UNybRhJ4TffBU'
 

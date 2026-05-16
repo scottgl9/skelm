@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GitHubIntegration } from '../src/github.js'
 import { IntegrationRegistry } from '../src/registry.js'
 import { SlackIntegration } from '../src/slack.js'
-import type { GitHubConfig, SlackConfig } from '../src/types.js'
+import type { GitHubConfig, SlackConfig } from '@skelm/integration-sdk'
 
 describe('IntegrationRegistry', () => {
   let registry: IntegrationRegistry
