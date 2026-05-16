@@ -75,6 +75,7 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         runId,
         signal: controller.signal,
         workflowPath: entry.path,
+        triggerId: ctx.triggerId,
         registerEgressToken: (runId, stepId, policy) =>
           opts.gateway.registerEgressToken(runId, stepId, policy),
         unregisterEgressToken: (runId, stepId) => opts.gateway.unregisterEgressToken(runId, stepId),

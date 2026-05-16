@@ -108,6 +108,14 @@ export interface RunOptions {
    */
   workflowPath?: string
   /**
+   * Optional id of the trigger (cron / webhook / queue / interval / manual)
+   * that produced this run. Stored on the Run record so consumers can
+   * `listRuns({ triggerId })` to find every run a given schedule fired.
+   * Set by the gateway dispatcher; absent for runs started directly via
+   * `runPipeline()` or HTTP `POST /pipelines/<id>/run`.
+   */
+  triggerId?: string
+  /**
    * Optional skill source consulted when an agent step's resolved policy
    * declares allowedSkills. The runner wraps this with canLoadSkill checks
    * so each lookup is gated by the step's permission policy. If omitted,
@@ -519,6 +527,8 @@ export async function runPipeline<TInput, TOutput>(
         Object.freeze({
           runId,
           pipelineId: pipeline.id,
+          ...(options.workflowPath !== undefined && { workflowPath: options.workflowPath }),
+          ...(options.triggerId !== undefined && { triggerId: options.triggerId }),
           status: runStatus,
           input,
           steps: Object.freeze(stepResults),
@@ -702,6 +712,7 @@ export async function runPipeline<TInput, TOutput>(
       runId,
       pipelineId: pipeline.id,
       ...(options.workflowPath !== undefined && { workflowPath: options.workflowPath }),
+      ...(options.triggerId !== undefined && { triggerId: options.triggerId }),
       status: runStatus,
       input: resolvedInput,
       steps: Object.freeze(stepResults),
