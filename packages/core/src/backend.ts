@@ -220,6 +220,21 @@ export interface BackendContext {
    * can ignore it.
    */
   onPartial?: (delta: string) => void
+  /**
+   * Optional event bus the backend (or any sub-component it manages, like
+   * an McpHost it brought up itself) can publish to. The runner subscribes
+   * to `tool.call` / `tool.result` events on this bus to write audit
+   * entries. Without this, native-tool backends (e.g. `@skelm/agent` when
+   * it owns its own McpHost) emit no audit trail for tool dispatch.
+   *
+   * Backends should pair `events` with `runId` and `stepId` when forwarding
+   * to McpHost so the audit entries are correctly attributed.
+   */
+  events?: { publish(event: unknown): void }
+  /** Run id of the active run; supplied alongside `events`. */
+  runId?: string
+  /** Step id of the active step; supplied alongside `events`. */
+  stepId?: string
 }
 
 /**

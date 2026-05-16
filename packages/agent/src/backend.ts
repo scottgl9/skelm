@@ -123,6 +123,14 @@ async function runAgentLoop(
   if (ctx.mcpHost === undefined && req.mcpServers !== undefined && req.mcpServers.length > 0) {
     ownMcpHost = await createMcpHost(req.mcpServers, {
       ...(ctx.permissions !== undefined && { enforcer }),
+      // Forward the runner's event bus + identifiers so MCP tool dispatch
+      // emits tool.call / tool.result events the runner audits. Without
+      // this branch the McpHost's `publishToolCall` short-circuits on
+      // undefined `events`/`runId`/`stepId` and the audit log is empty
+      // for every MCP-driven native-agent run (F018).
+      ...(ctx.events !== undefined && { events: ctx.events }),
+      ...(ctx.runId !== undefined && { runId: ctx.runId }),
+      ...(ctx.stepId !== undefined && { stepId: ctx.stepId }),
     })
   }
   const mcpHost = ctx.mcpHost ?? ownMcpHost
