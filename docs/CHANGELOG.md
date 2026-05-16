@@ -112,7 +112,7 @@ Publish-pipeline fixes on top of 0.3.5.
 - **Pi SDK backend** — `pi-sdk` backend with native tool allowlist enforcement via Pi's `tools[]`/`noTools` API; system prompt injection and per-agent sandbox defaults.
 - **opencode backend improvements** — non-blocking `promptAsync`+SSE streaming; `OPENCODE_CONFIG_CONTENT` injection at spawn time for model/logLevel config; `serverPermissions` field for server-level bash/edit/webfetch defaults.
 - **Core permission enforcement wired** — runtime call sites for `canLoadSkill`, `canRead`, `canWrite`, and expanded `canExec` are now active.
-- **skelm Agent Skill** — published at `docs/skill/skelm` for use as a Claude Code skill.
+- **skelm Agent Skill** — published at `skill/skelm` for use as a Claude Code skill.
 - **VitePress documentation site** — scaffolded at `docs/`; `PUBLISHING.md` and publish scripts added.
 
 ### Changed

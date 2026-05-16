@@ -9,6 +9,7 @@ This directory is the home for scripts that enforce skelm's architectural invari
 | `gateway-only-enforcement.ts` | `node:child_process` use outside `packages/gateway/` must be either on the explicit allowlist or carry a `// @subprocess-ok: <reason>` annotation. | **Implemented.** Run via `pnpm guards`. Allowlisted paths: MCP stdio client, ACP stdio client/backend, script trigger, workspace manager, pi backend. New callers must annotate or extend the allowlist. |
 | `default-deny-permissions.ts` | Every field on `AgentPermissions` ships with adversarial fixture coverage under `packages/core/test/security/`. | **Implemented.** Reads the `AgentPermissions` interface, asserts each non-exempt field name appears somewhere in the security corpus. Run via `pnpm guards`. Mechanical check only — fixtures are still reviewed by humans. |
 | `public-export-baseline.ts` | Public-API changes (`packages/*/src/index.ts` exports) update the baseline file in the same commit. | **Implemented.** Each package's exports captured in `scripts/guards/baselines/<pkg>.txt`. New or removed exports require running `pnpm exec tsx scripts/guards/public-export-baseline.ts --update` and committing the diff. |
+| `docs-orphans.ts` | Every authored `*.md` under `docs/` is reachable from the VitePress nav/sidebar in `.vitepress/config.ts` (directly or transitively). | **Implemented.** Walks `docs/` (skipping `reference/api/` typedoc output), seeds reachability from sidebar `link:` entries, BFSes through markdown links. Fails listing any orphans. |
 
 ## How to land a guard
 

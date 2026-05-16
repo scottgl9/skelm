@@ -268,7 +268,7 @@ Never claim a task done until `pnpm check` is green.
 ## Scaffold a new pipeline
 
 ```bash
-bash docs/skill/skelm/scripts/new-pipeline.sh my-pipeline "What this pipeline does"
+bash skill/skelm/scripts/new-pipeline.sh my-pipeline "What this pipeline does"
 ```
 
 This copies `assets/pipeline.template.ts` to `./my-pipeline.pipeline.ts` and substitutes the id and description. Use `assets/agent-pipeline.template.ts` for pipelines that include an agent step.

@@ -18,4 +18,4 @@ Authoritative specifications for the skelm public surface.
 
 - [API](./api.md) — generated TypeDoc per-package reference.
 - [HTTP](./http.md) — gateway HTTP routes (prose).
-- [OpenAPI](./openapi.yaml) — machine-readable OpenAPI 3.1 spec.
+- [OpenAPI](./openapi.md) — rendered OpenAPI 3.1 reference (with a download link to the raw YAML).

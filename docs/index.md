@@ -5,14 +5,17 @@ titleTemplate: TypeScript framework for secure, agentic workflows
 
 hero:
   name: skelm
-  text: Build secure, agentic, long-running workflows in TypeScript
-  tagline: Default-deny permissions · Multi-backend agents · MCP-native · Self-hosted
+  text: Agentic workflows you can actually ship to production
+  tagline: Author pipelines as typed TypeScript. Compose them with Skills (and MCP servers when you need them). Run under default-deny permissions on a gateway you own.
   actions:
     - theme: brand
       text: Quick Start
       link: /quickstart/
     - theme: alt
-      text: View on GitHub
+      text: Browse Recipes
+      link: /recipes/
+    - theme: alt
+      text: GitHub
       link: https://github.com/scottgl9/skelm
   image:
     src: /logo.svg
@@ -20,21 +23,29 @@ hero:
 
 features:
   - icon: 🔒
-    title: Default-Deny Security
-    details: Every agent step declares allowed tools, executables, MCP servers, network egress, and filesystem roots.
-  - icon: ⚡
-    title: TypeScript-Native
-    details: Workflows are real .ts modules — refactor, test, type-check, version like any other code.
+    title: Default-deny by design
+    details: Every agent step declares its tools, executables, MCP servers, network egress, and filesystem roots. Anything not listed is denied — and the gateway is the only thing that enforces it.
+  - icon: 🧠
+    title: Code-first, not config-first
+    details: Pipelines are real `.ts` modules. Refactor with your editor, type-check with `tsc`, version with git, test with vitest. No YAML DSL to learn.
   - icon: 🧩
-    title: Multi-Backend Agents
-    details: Opencode, ACP (Copilot, Claude Code, Gemini), OpenAI, Anthropic, Pi — provider SPI for custom ones.
+    title: Backend-agnostic agents
+    details: Opencode, ACP (Copilot, Claude Code, Gemini), OpenAI, Anthropic, Pi — swap providers without rewriting a step. Bring your own via the backend SPI.
+  - icon: 📚
+    title: Skills-first capability model
+    details: Package procedural knowledge — playbooks, API recipes, internal know-how — as Skills the agent loads on demand. MCP servers plug in as first-class registry citizens alongside them when you need live tools.
   - icon: 🌐
-    title: MCP-Native
-    details: Model Context Protocol servers are first-class registry citizens, lifecycle-managed by the gateway.
-  - icon: 🔄
-    title: Long-Running Gateway
-    details: Hosts workflows over HTTP + SSE, drives the scheduler, owns the trust boundary.
+    title: Gateway-hosted runtime
+    details: A long-running gateway hosts pipelines over HTTP + SSE, drives the scheduler, manages MCP-server lifecycles, and owns the trust boundary. Nothing privileged runs outside it.
   - icon: 💾
-    title: Local-First
-    details: SQLite by default; Postgres + vault drivers for production. No managed cloud, no telemetry.
+    title: Self-hosted, local-first
+    details: SQLite + filesystem out of the box; Postgres and external vaults for production. No managed cloud, no telemetry phone-home, no vendor lock-in.
 ---
+
+## Why skelm?
+
+Most "agent frameworks" make it easy to demo a chatbot and impossible to operate one. Tool calls leak credentials, prompts mutate at runtime, and the production story is "trust us." Skelm is the opposite: every privileged action — exec, network, filesystem, tool dispatch, MCP — flows through a gateway under permissions you declare in code, and every workflow is a typed module you can grep, refactor, and unit-test.
+
+It sits in a deliberately narrow niche: between a one-off LangChain script and a managed agent platform. If you want to run agentic and deterministic workflows on your own infrastructure, with security primitives that don't disappear when the demo ends, that's what skelm is for.
+
+Start with the [Quickstart](/quickstart/) for the five-minute path, or skim the [Recipes](/recipes/) to see complete examples.
