@@ -1,6 +1,6 @@
 import { defineIntegration } from '@skelm/integration-sdk'
-import { z } from 'zod'
 import type { GitHubIssueTrigger, GitHubWebhookEvent } from '@skelm/integration-sdk'
+import { z } from 'zod'
 
 const githubCredentialsSchema = z.object({
   token: z.string().min(1, 'GitHub token is required'),
@@ -34,11 +34,7 @@ export const GitHubIntegration = defineIntegration({
     // Warn on unexpected token formats but don't hard-fail — fine-grained
     // tokens don't share the ghp_/gho_ prefixes.
     const { token } = creds
-    if (
-      !token.startsWith('ghp_') &&
-      !token.startsWith('gho_') &&
-      !token.startsWith('github_')
-    ) {
+    if (!token.startsWith('ghp_') && !token.startsWith('gho_') && !token.startsWith('github_')) {
       console.warn('GitHub token does not match expected patterns (ghp_/gho_/github_)')
     }
   },
