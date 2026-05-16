@@ -37,7 +37,7 @@ export type { DefineIntegrationOptions, IntegrationClass } from '@skelm/integrat
 
 // Built-in integration implementations
 export { GitHubIntegration } from './github.js'
-export { SlackIntegration } from './slack.js'
+export { SlackIntegration, verifySlackSignature } from './slack.js'
 export {
   TelegramIntegration,
   telegramUpdateToInput,

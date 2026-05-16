@@ -230,7 +230,9 @@ defineConfig({
 
 ## 7. Extending IntegrationBase directly
 
-`defineIntegration()` covers most use cases, but if you need full control — custom constructor arguments, additional public methods, complex internal state — extend `IntegrationBase` directly:
+`defineIntegration()` covers most use cases, but if you need full control — custom constructor arguments, additional public methods, complex internal state — extend `IntegrationBase` directly. The built-in `TelegramIntegration` is a good reference: it injects a `fetch` implementation for testability and exposes methods like `sendMessage()`, `getMe()`, and `createTriggerSource()` that go beyond the standard `Integration` interface.
+
+Note that `GitHubIntegration` and `SlackIntegration` are authored with `defineIntegration()`, so they're also good reference implementations for the typical case:
 
 ```ts
 import { IntegrationBase } from '@skelm/integration-sdk'
