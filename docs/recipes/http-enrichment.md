@@ -147,10 +147,26 @@ chmod 600 ~/.skelm/token
 For a persistent deployment, install it as a systemd user service instead:
 
 ```sh
+# Generate token and save it
 export SKELM_TOKEN=$(openssl rand -hex 32)
 echo $SKELM_TOKEN > ~/.skelm/token && chmod 600 ~/.skelm/token
+
+# Make the token available to the systemd service
+systemctl --user set-environment SKELM_TOKEN=$SKELM_TOKEN
+
+# Install and start the service
 skelm gateway install
 ```
+
+> **Note:** `systemctl --user set-environment` sets the variable for the current user manager session. To make it persistent across reboots, add `Environment=SKELM_TOKEN=<token>` to a systemd drop-in (e.g. `~/.config/systemd/user/skelm-gateway.service.d/token.env`):
+>
+> ```sh
+> mkdir -p ~/.config/systemd/user/skelm-gateway.service.d
+> echo -e '[Service]\nEnvironment=SKELM_TOKEN='$SKELM_TOKEN \
+>   > ~/.config/systemd/user/skelm-gateway.service.d/token.env
+> chmod 600 ~/.config/systemd/user/skelm-gateway.service.d/token.env
+> systemctl --user daemon-reload
+> ```
 
 ## Call it from your existing infrastructure
 
