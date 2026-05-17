@@ -1,5 +1,15 @@
+import type { AuditEvent, AuditWriter } from '@skelm/core'
 import { describe, expect, it } from 'vitest'
 import { SuspendApprovalGate } from '../src/index.js'
+
+class CapturingAuditWriter implements AuditWriter {
+  events: AuditEvent[] = []
+  async write(e: AuditEvent): Promise<void> {
+    this.events.push(e)
+  }
+}
+
+const tick = (): Promise<void> => new Promise((r) => setImmediate(r))
 
 describe('SuspendApprovalGate', () => {
   it('suspends until approve() delivers a decision', async () => {
@@ -54,5 +64,77 @@ describe('SuspendApprovalGate', () => {
     const gate = new SuspendApprovalGate({ timeoutMs: 10 })
     const p = gate.request({ runId: 'r5', stepId: 's5', action: 'x', context: {} })
     await expect(p).rejects.toThrow(/timed out/)
+  })
+
+  it('emits audit entries for request → resolve', async () => {
+    const audit = new CapturingAuditWriter()
+    const gate = new SuspendApprovalGate({ auditWriter: audit })
+    const p = gate.request({
+      runId: 'rA',
+      stepId: 'sA',
+      action: 'tool.exec',
+      context: { tool: 'shell' },
+    })
+    await tick()
+    gate.approve('rA:sA', 'alice', 'ok')
+    await p
+    await tick()
+    expect(audit.events.map((e) => e.action)).toEqual(['approval.requested', 'approval.resolved'])
+    const resolved = audit.events[1]
+    expect(resolved?.actor).toBe('alice')
+    expect(resolved?.details).toMatchObject({
+      approvalId: 'rA:sA',
+      stepId: 'sA',
+      requestedAction: 'tool.exec',
+      approved: true,
+      reason: 'ok',
+    })
+  })
+
+  it('emits approval.resolved with approved=false on deny', async () => {
+    const audit = new CapturingAuditWriter()
+    const gate = new SuspendApprovalGate({ auditWriter: audit })
+    const p = gate.request({ runId: 'rB', stepId: 'sB', action: 'fs.write', context: {} })
+    await tick()
+    gate.deny('rB:sB', 'bob', 'risky')
+    await expect(p).resolves.toMatchObject({ approved: false })
+    await tick()
+    const resolved = audit.events.find((e) => e.action === 'approval.resolved')
+    expect(resolved?.actor).toBe('bob')
+    expect(resolved?.details).toMatchObject({ approved: false, reason: 'risky' })
+  })
+
+  it('emits approval.expired on timeout', async () => {
+    const audit = new CapturingAuditWriter()
+    const gate = new SuspendApprovalGate({ timeoutMs: 5, auditWriter: audit })
+    const p = gate.request({ runId: 'rC', stepId: 'sC', action: 'x', context: {} })
+    await expect(p).rejects.toThrow(/timed out/)
+    await tick()
+    expect(audit.events.map((e) => e.action)).toEqual(['approval.requested', 'approval.expired'])
+  })
+
+  it('emits approval.cancelled on drain()', async () => {
+    const audit = new CapturingAuditWriter()
+    const gate = new SuspendApprovalGate({ auditWriter: audit })
+    const p = gate.request({ runId: 'rD', stepId: 'sD', action: 'x', context: {} })
+    await tick()
+    gate.drain('shutdown')
+    await expect(p).rejects.toThrow(/cancelled: shutdown/)
+    await tick()
+    const cancelled = audit.events.find((e) => e.action === 'approval.cancelled')
+    expect(cancelled?.details).toMatchObject({ reason: 'shutdown' })
+  })
+
+  it('swallows audit writer failures without breaking the gate', async () => {
+    const failing: AuditWriter = {
+      async write() {
+        throw new Error('disk full')
+      },
+    }
+    const gate = new SuspendApprovalGate({ auditWriter: failing })
+    const p = gate.request({ runId: 'rE', stepId: 'sE', action: 'x', context: {} })
+    await tick()
+    gate.approve('rE:sE', 'alice')
+    await expect(p).resolves.toMatchObject({ approved: true })
   })
 })
