@@ -12,6 +12,7 @@ The gateway is a long-running process that is the **trust boundary** for all ske
 - **Trigger dispatch** — receives cron, webhook, interval, and queue triggers; starts runs accordingly.
 - **Registry management** — watches workflow, skill, and MCP server directories; hot-reloads on change.
 - **ACP session persistence** — survives gateway restarts; sessions are re-attached on startup.
+- **Crash recovery** — on cold start, any Run records left in `running` state from a previous process are finalized to `failed` with `RunCrashedError`. The runner persists a `running` Run row up-front so this recovery sweep has a seed; without it, an interrupted run would be invisible to `skelm runs list` after restart.
 
 **Never write enforcement logic in pipeline or step code.** Pipelines are the user layer; the gateway is the trust layer.
 

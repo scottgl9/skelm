@@ -500,6 +500,30 @@ export async function runPipeline<TInput, TOutput>(
   })
   events.publish({ type: 'run.started', runId, at: startedAt })
 
+  // Persist a `running` Run record up-front so a gateway crash leaves a
+  // recoverable seed in the store. Without this, events stream out but no
+  // Run row exists until finalizeStoredRun() at the end — a mid-run crash
+  // would orphan the events and break listRuns({status: 'running'}).
+  if (store !== undefined) {
+    storeWrites.push(
+      store.putRun(
+        Object.freeze({
+          runId,
+          pipelineId: pipeline.id,
+          ...(options.workflowPath !== undefined && { workflowPath: options.workflowPath }),
+          ...(options.triggerId !== undefined && { triggerId: options.triggerId }),
+          status: 'running',
+          input,
+          steps: Object.freeze([]),
+          output: undefined,
+          error: undefined,
+          startedAt,
+          completedAt: undefined,
+        }) as Run,
+      ),
+    )
+  }
+
   const runMeta: RunMetadata = {
     runId,
     pipelineId: pipeline.id,
