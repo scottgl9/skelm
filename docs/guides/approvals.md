@@ -38,15 +38,16 @@ skelm approvals deny    <id> --reason "too risky"
 
 ## Audit trail
 
-Every approval request and resolution is appended to the audit chain:
+`SuspendApprovalGate` records every approval lifecycle transition to the gateway audit chain when constructed with an `auditWriter` (wired automatically when the gateway builds the default gate):
 
 ```
-approval.request   { runId, stepId, action, contextHash }
-approval.approve   { id, approver, reason? }
-approval.deny      { id, approver, reason? }
+approval.requested  actor=gateway              details={ approvalId, stepId, requestedAction, context }
+approval.resolved   actor=<approver|"unknown"> details={ approvalId, stepId, requestedAction, approved, reason? }
+approval.expired    actor=gateway              details={ approvalId, stepId, requestedAction, timeoutMs }
+approval.cancelled  actor=gateway              details={ approvalId, stepId, requestedAction, reason }
 ```
 
-The contextHash is a SHA-256 of the request context so the audit reader can confirm which payload the human saw without storing the raw payload.
+A single `approval.resolved` entry covers both approve and deny — `approved: true|false` carries the decision, and the approver identity becomes the audit `actor`. Decisions survive gateway restart because the chain writer is append-only and tamper-evident; audit-write failures never block the approval flow.
 
 ## Status
 
