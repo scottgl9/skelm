@@ -4,6 +4,7 @@
 // the final policy (project defaults + profile + step-level + workspace
 // intersections) and enforces it through a single helper: TrustEnforcer.
 
+import { isAbsolute, resolve as resolvePath } from 'node:path'
 import { PermissionDeniedError } from './errors.js'
 //
 // Backends and tools never branch on policy themselves — they call the
@@ -208,14 +209,24 @@ export class TrustEnforcer {
   ): EnforceDecision {
     if (!roots || roots.size === 0)
       return { allow: false, reason: 'path-not-in-allowlist', dimension }
+    const normalized = normalizeFsPath(path)
     for (const rawRoot of roots) {
-      const root = rawRoot.endsWith('/') ? rawRoot.slice(0, -1) : rawRoot
-      if (path === root || path.startsWith(`${root}/`)) {
+      const root = normalizeFsPath(rawRoot.endsWith('/') ? rawRoot.slice(0, -1) : rawRoot)
+      if (normalized === root || normalized.startsWith(`${root}/`)) {
         return { allow: true }
       }
     }
     return { allow: false, reason: 'path-not-in-allowlist', dimension }
   }
+}
+
+// Collapses `.` and `..` segments so a request for `/data/../etc/passwd`
+// cannot satisfy a `/data` allowlist root via a string-prefix shortcut.
+// Relative inputs resolve against `/` deliberately — fs allowlists are
+// declared as absolute paths and we want to compare on the same axis.
+function normalizeFsPath(p: string): string {
+  const abs = isAbsolute(p) ? p : `/${p}`
+  return resolvePath(abs)
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────

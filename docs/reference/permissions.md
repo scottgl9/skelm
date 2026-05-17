@@ -155,7 +155,7 @@ Default-deny applies: omitting `permissions` (or omitting `allowedExecutables`) 
 | `'not-in-allowlist'` | Target not in the allow set |
 | `'in-denylist'` | Target matched `deniedTools` |
 | `'host-not-allowed'` | Hostname not in `allowHosts` |
-| `'path-not-in-allowlist'` | File path not under any allowed root |
+| `'path-not-in-allowlist'` | File path not under any allowed root (paths are normalized with `path.resolve` before the boundary check, so `..` segments cannot escape an allowed root) |
 | `'star-disallowed-in-prod'` | `*` wildcard blocked in production mode |
 
 ## Testing permissions
