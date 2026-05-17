@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-16
+
+### Added
+- **`skelm gateway install`** — single-step install that writes the systemd user unit, runs `daemon-reload`, and `enable --now`s the service. Drops the previous `--systemd` flag requirement. Hints `loginctl enable-linger <user>` when lingering is off and warns on success if it remains disabled.
+- **`skelm gateway uninstall`** — stops and disables the service before removing the unit file and reloading systemd.
+- **`skelm gateway status` reachability probe** — probes the HTTP endpoint and reports a `reachable` field (`yes` / `no` text, included in `--json`); value is `unknown` / `null` when no URL is known.
+- **README** — Key capabilities list now documents the `SKILL.md` system (reusable capability bundles, `allowedSkills` permission gating, auto-discovery from `skills/**/SKILL.md`).
+
+### Changed
+- **`skelm gateway start` is context-aware** — when the systemd unit is installed, delegates to `systemctl --user start` and exits; otherwise falls back to foreground and suggests `skelm gateway install`. `--foreground` forces foreground regardless.
+- **`skelm gateway stop`** — delegates to `systemctl --user stop` when the unit is installed (keeps systemd in sync and prevents auto-restart); falls back to `SIGTERM` otherwise. Writes to stderr with a non-zero exit when the gateway is not running.
+
+### Fixed
+- **Docs: gateway reference** — `reachable` is documented as `unknown` (text) / `null` (JSON) when no URL is known, not omitted.
+- **Docs: http-enrichment recipe** — `SKELM_TOKEN` set in shell env is not inherited by the systemd unit; the recipe now shows the `systemctl set-environment` + drop-in override pattern.
+
+### Build
+- **No more `.map` files in published tarballs** — `sourceMap` and `declarationMap` dropped from `agent`, `codex`, `integration-sdk`, `integrations`, `opencode`, `pi`, `vercel-ai`, and `scheduler` tsconfigs to match the `@skelm/core` baseline. Source maps referenced `src/` paths the tarballs don't ship, so they only bloated the package.
+
 ## [0.3.9] - 2026-05-16
 
 ### Added
