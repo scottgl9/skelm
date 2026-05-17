@@ -89,6 +89,7 @@ export function code<TOutput>(def: {
   state?: StateConfig
   retry?: RetryPolicy
   permissions?: AgentPermissions
+  timeoutMs?: number
 }): CodeStep<TOutput> {
   if (!def.id) {
     throw new Error('code(): id is required')
@@ -116,6 +117,7 @@ export function code<TOutput>(def: {
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
     ...(def.permissions !== undefined && { permissions: def.permissions }),
+    ...(def.timeoutMs !== undefined && { timeoutMs: def.timeoutMs }),
   })
 }
 
