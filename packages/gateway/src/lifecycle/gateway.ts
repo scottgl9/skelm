@@ -690,7 +690,10 @@ export class Gateway {
     // an approver. AutoApproveGate is an explicit opt-in for tests.
     const approvalGate =
       this.options.approvalGate ??
-      new SuspendApprovalGate({ persistPath: join(this.stateDir, 'approvals.json') })
+      new SuspendApprovalGate({
+        persistPath: join(this.stateDir, 'approvals.json'),
+        auditWriter,
+      })
 
     return {
       permissionResolver: new PermissionResolver({
