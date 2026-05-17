@@ -74,14 +74,15 @@ skelm workspace clean <pipeline-id> <name> --force
 Manage the long-running gateway service. The gateway is the trust boundary —
 every privileged action is enforced and audited there.
 
-| Subcommand    | Description                                              |
-| ------------- | -------------------------------------------------------- |
-| `start`       | Start the gateway. `--foreground` to run in this process |
-| `stop`        | SIGTERM the running gateway                              |
-| `reload`      | SIGHUP the running gateway                               |
-| `status`      | Print pid, url, and lifecycle state. `--json` available  |
-| `install`     | `--systemd` writes a user systemd unit                   |
-| `uninstall`   | `--systemd` removes the unit                             |
+| Subcommand    | Description                                                                  |
+| ------------- | ---------------------------------------------------------------------------- |
+| `install`     | Write systemd unit, reload, enable, and start the service in the background  |
+| `uninstall`   | Stop, disable, and remove the systemd unit                                   |
+| `start`       | Start the gateway. Delegates to systemd if installed; foreground otherwise. `--foreground` forces foreground mode. |
+| `start --detach` | Start the gateway as a detached background process                        |
+| `stop`        | Stop the running gateway (delegates to systemd if the unit is installed)     |
+| `reload`      | SIGHUP the running gateway (hot-reload config)                               |
+| `status`      | Print pid, url, reachability, and lifecycle state. `--json` available        |
 
 `pause` and `resume` are exposed via the HTTP control surface
 (`POST /gateway/pause|resume`); see the [HTTP reference](./http.md).
