@@ -144,6 +144,14 @@ echo $SKELM_TOKEN > ~/.skelm/token
 chmod 600 ~/.skelm/token
 ```
 
+For a persistent deployment, install it as a systemd user service instead:
+
+```sh
+export SKELM_TOKEN=$(openssl rand -hex 32)
+echo $SKELM_TOKEN > ~/.skelm/token && chmod 600 ~/.skelm/token
+skelm gateway install
+```
+
 ## Call it from your existing infrastructure
 
 ```sh

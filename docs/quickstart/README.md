@@ -128,14 +128,20 @@ For long-running schedules (cron, webhook, poll, queue) to fire continuously, st
 skelm gateway start
 ```
 
-The gateway listens on `127.0.0.1:14738` by default and runs your schedules. Press Ctrl-C to stop with a graceful drain.
+The gateway listens on `127.0.0.1:14738` by default and runs your schedules. Press Ctrl-C to stop with a graceful drain. It will also remind you to install it as a background service.
 
-To install it as a systemd user service so it runs across reboots:
+To install it as a persistent systemd user service that starts automatically on login and restarts on failure:
 
 ```sh
-skelm gateway install --systemd
-systemctl --user enable --now skelm-gateway
-systemctl --user status skelm-gateway
+skelm gateway install
+```
+
+This writes the unit file, reloads systemd, and starts the service immediately. If user lingering is not enabled, you'll see a warning with the command to enable it so the service also starts at boot without a login session.
+
+To view logs from the running service:
+
+```sh
+journalctl --user -u skelm-gateway -f
 ```
 
 ## 7. Inspect runs

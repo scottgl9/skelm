@@ -18,14 +18,69 @@ The gateway is a long-running process that is the **trust boundary** for all ske
 ## Starting the gateway
 
 ```bash
-skelm gateway start               # foreground; SIGTERM/Ctrl-C drains and exits
-skelm gateway status              # pid, URL, state
-skelm gateway stop                # SIGTERM a running gateway
-skelm gateway reload              # SIGHUP — hot-reloads skelm.config.ts
-skelm gateway install --systemd   # install ~/.config/systemd/user/skelm-gateway.service
+skelm gateway install              # install + start as a systemd user service (recommended)
+skelm gateway start                # start in the foreground; Ctrl-C to stop
+skelm gateway start --detach       # start as a detached background process
+skelm gateway status               # pid, URL, reachability, state
+skelm gateway stop                 # stop the running gateway (systemd-aware)
+skelm gateway reload               # SIGHUP — hot-reloads skelm.config.ts
 ```
 
-`skelm gateway start` always runs in the foreground; pass `--detach` and the CLI will tell you to spawn it via systemd or a shell wrapper instead. For long-running deployments, install the systemd unit.
+### Background service (recommended)
+
+`skelm gateway install` is the recommended way to run the gateway in production:
+
+1. Writes `~/.config/systemd/user/skelm-gateway.service`
+2. Runs `systemctl --user daemon-reload`
+3. Runs `systemctl --user enable --now skelm-gateway` to start immediately and enable on login
+4. Warns if user lingering is not enabled
+
+If the service cannot be started because user lingering is not enabled (no D-Bus session at boot), you will see:
+
+```
+warning: user lingering is not enabled. The gateway will stop when you log out
+and will not start automatically at boot. To fix this:
+
+  loginctl enable-linger <username>
+```
+
+`skelm gateway stop` delegates to `systemctl --user stop` when the unit is installed, keeping systemd's state in sync and preventing auto-restart. It falls back to SIGTERM if systemctl fails.
+
+### Foreground start
+
+`skelm gateway start` is now context-aware:
+
+- **If the systemd unit is installed** — delegates to `systemctl --user start` and returns immediately, leaving the gateway running as a managed background service. Equivalent to having run `skelm gateway install` once and then just using `start` going forward.
+- **If the systemd unit is not installed** — runs in the foreground (blocks your terminal) and prints a tip:
+
+  ```
+  tip: run `skelm gateway install` to install the gateway as a persistent background service.
+  ```
+
+Pass `--foreground` to force foreground mode even when the unit is installed.
+
+Pass `--detach` to spawn an unmanaged background process and return immediately (useful when systemd is not available):
+
+```bash
+skelm gateway start --detach
+# skelm gateway started (detached)
+#   pid: 12345
+#   url: http://127.0.0.1:14738
+```
+
+### Status
+
+`skelm gateway status` checks whether the process is alive and, when a URL is known, probes it over HTTP:
+
+```
+gateway: running
+  pid: 12345
+  startedAt: 2025-01-01T00:00:00.000Z
+  url: http://127.0.0.1:14738
+  reachable: yes
+```
+
+The `reachable` field is `yes` when the HTTP endpoint responds to a probe, `no (port may not be bound yet)` when the process is alive but not yet accepting connections, and omitted when no URL is known.
 
 The gateway is required for:
 - Agent steps (permission enforcement, backend lifecycle)
@@ -128,7 +183,8 @@ skelm audit query --action permission.denied --since 2025-01-01T00:00:00Z
 ## systemd integration
 
 ```bash
-skelm gateway install --systemd    # writes ~/.config/systemd/user/skelm-gateway.service
-systemctl --user enable skelm-gateway
-systemctl --user start  skelm-gateway
+skelm gateway install     # writes unit, daemon-reload, enable --now
+                          # warns if loginctl linger is not enabled
+skelm gateway stop        # systemd-aware stop
+skelm gateway uninstall   # stop, disable, remove unit, daemon-reload
 ```

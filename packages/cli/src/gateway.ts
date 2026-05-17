@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -26,12 +26,51 @@ export interface GatewayArgs {
   httpPort?: number
   /** Override HTTP bind host. */
   httpHost?: string
-  /** For `install --systemd`. */
+  /** @deprecated Kept for backwards compatibility — `gateway install` no longer requires this flag. */
   systemd?: boolean
 }
 
 function defaultStateDir(): string {
   return process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm')
+}
+
+const SYSTEMD_DIR = `${process.env.HOME ?? homedir()}/.config/systemd/user`
+const SYSTEMD_UNIT_PATH = `${SYSTEMD_DIR}/skelm-gateway.service`
+
+/** Returns true if the skelm-gateway systemd unit file is installed. */
+async function isSystemdInstalled(): Promise<boolean> {
+  try {
+    await fs.access(SYSTEMD_UNIT_PATH)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Run a command synchronously and return exit code + captured output.
+ * Used for quick systemctl / loginctl calls.
+ */
+function runSync(
+  cmd: string,
+  args: string[],
+): { exitCode: number; stdout: string; stderr: string } {
+  const result = spawnSync(cmd, args, { encoding: 'utf8' })
+  return {
+    exitCode: result.status ?? 1,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+  }
+}
+
+/** Returns true if user lingering is enabled for the current user. */
+function isLingeringEnabled(): boolean {
+  const result = runSync('loginctl', [
+    'show-user',
+    process.env.USER ?? process.env.LOGNAME ?? '',
+    '--property=Linger',
+  ])
+  return result.stdout.trim() === 'Linger=yes'
 }
 
 export async function gatewayCommand(args: GatewayArgs, io: MainIO): Promise<MainResult> {
@@ -41,7 +80,7 @@ export async function gatewayCommand(args: GatewayArgs, io: MainIO): Promise<Mai
     case 'status':
       return statusGateway(args, io)
     case 'stop':
-      return signalGateway('SIGTERM', io)
+      return stopGateway(io)
     case 'reload':
       return signalGateway('SIGHUP', io)
     case 'pause':
@@ -51,7 +90,7 @@ export async function gatewayCommand(args: GatewayArgs, io: MainIO): Promise<Mai
       )
       return { exitCode: EXIT.CLI_ERROR }
     case 'install':
-      return installSystemd(args, io)
+      return installSystemd(io)
     case 'uninstall':
       return uninstallSystemd(io)
   }
@@ -60,6 +99,38 @@ export async function gatewayCommand(args: GatewayArgs, io: MainIO): Promise<Mai
 async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> {
   if (args.detach) {
     return detachGateway(args, io)
+  }
+
+  // If the systemd unit is installed, delegate to `systemctl --user start`
+  // so the service runs in the background under systemd supervision.
+  // Skip this when --foreground is explicitly requested.
+  if (!args.foreground) {
+    const installed = await isSystemdInstalled()
+    if (installed) {
+      const result = runSync('systemctl', ['--user', 'start', 'skelm-gateway'])
+      if (result.exitCode === 0) {
+        // Wait briefly for the gateway to write its discovery file.
+        const probe = new Gateway()
+        const deadline = Date.now() + 5_000
+        let disc = await readDiscovery(probe.discoveryPath)
+        while (disc === null && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 100))
+          disc = await readDiscovery(probe.discoveryPath)
+        }
+        io.stdout.write(
+          `skelm gateway started (background service)\n  url: ${disc?.url ?? '(pending)'}\n\nTo view logs:  journalctl --user -u skelm-gateway -f\nTo stop:       skelm gateway stop\n`,
+        )
+        return { exitCode: EXIT.OK }
+      }
+      // systemctl failed — fall through to foreground start and report the error.
+      io.stderr.write(
+        `warning: systemctl start failed (${result.stderr.trim()}); starting in foreground instead.\n\n`,
+      )
+    } else {
+      io.stderr.write(
+        'tip: run `skelm gateway install` to install the gateway as a persistent background service.\n\n',
+      )
+    }
   }
 
   // Load skelm.config.ts from cwd (walking up). Config drives port, host,
@@ -180,18 +251,34 @@ async function statusGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
   // `running: true`. Without this, downstream CLI commands trust a stale
   // discovery URL and fail with "fetch failed".
   const pidAlive = lock !== null && isProcessAlive(lock.pid)
+  const isRunning = lock !== null && pidAlive
+
+  // Probe HTTP reachability if the gateway appears to be running.
+  let reachable: boolean | null = null
+  if (isRunning && disc?.url) {
+    reachable = await probeGatewayUrl(disc.url)
+  }
+
   const status = {
-    running: lock !== null && pidAlive,
+    running: isRunning,
     pid: lock?.pid ?? null,
     startedAt: lock?.startedAt ?? null,
     url: disc?.url ?? null,
+    reachable,
     ...(lock !== null && !pidAlive && { stale: true as const }),
   }
+
   if (args.json) {
     io.stdout.write(`${JSON.stringify(status, null, 2)}\n`)
-  } else if (status.running) {
+  } else if (isRunning) {
+    const reachableStr =
+      reachable === true
+        ? 'yes'
+        : reachable === false
+          ? 'no (port may not be bound yet)'
+          : 'unknown'
     io.stdout.write(
-      `gateway: running\n  pid: ${status.pid}\n  startedAt: ${status.startedAt}\n  url: ${status.url ?? '(unknown)'}\n`,
+      `gateway: running\n  pid: ${status.pid}\n  startedAt: ${status.startedAt}\n  url: ${status.url ?? '(unknown)'}\n  reachable: ${reachableStr}\n`,
     )
   } else if (lock !== null && !pidAlive) {
     io.stdout.write(
@@ -201,6 +288,70 @@ async function statusGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
     io.stdout.write('gateway: not running\n')
   }
   return { exitCode: EXIT.OK }
+}
+
+/**
+ * Probe the gateway's HTTP URL to verify it is reachable and the port is
+ * bound. Returns true if any HTTP response is received (any status code),
+ * false if the connection is refused or times out.
+ */
+async function probeGatewayUrl(url: string): Promise<boolean> {
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 3_000)
+    try {
+      await fetch(url, { signal: controller.signal, method: 'GET' })
+      return true
+    } finally {
+      clearTimeout(timeout)
+    }
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Stop the gateway. If the systemd unit is installed and the service is
+ * active, delegate to `systemctl --user stop` so systemd tracks the state
+ * correctly. Otherwise, send SIGTERM to the PID from the lockfile.
+ */
+async function stopGateway(io: MainIO): Promise<MainResult> {
+  const probe = new Gateway()
+  const lock = await readLockfile(probe.lockfilePath)
+
+  // If nothing is running at all, say so clearly.
+  if (lock === null || !isProcessAlive(lock.pid)) {
+    if (lock !== null) {
+      io.stderr.write(
+        `gateway: not running (stale lockfile — pid ${lock.pid} is dead; will be reclaimed on next 'skelm gateway start')\n`,
+      )
+    } else {
+      io.stderr.write('gateway: not running\n')
+    }
+    return { exitCode: EXIT.CLI_ERROR }
+  }
+
+  // If the systemd unit is installed, prefer `systemctl stop` so systemd
+  // stays in sync and won't auto-restart the process.
+  if (await isSystemdInstalled()) {
+    const result = runSync('systemctl', ['--user', 'stop', 'skelm-gateway'])
+    if (result.exitCode === 0) {
+      io.stdout.write('skelm gateway stopped (via systemd)\n')
+      return { exitCode: EXIT.OK }
+    }
+    // Fall through to direct SIGTERM if systemctl failed for some reason
+    // (e.g. the unit is installed but the service isn't currently tracked).
+    io.stderr.write(`systemctl stop failed (${result.stderr.trim()}); falling back to SIGTERM\n`)
+  }
+
+  try {
+    process.kill(lock.pid, 'SIGTERM')
+    io.stdout.write(`sent SIGTERM to pid ${lock.pid}\n`)
+    return { exitCode: EXIT.OK }
+  } catch (err) {
+    io.stderr.write(`failed to signal pid ${lock.pid}: ${(err as Error).message}\n`)
+    return { exitCode: EXIT.CLI_ERROR }
+  }
 }
 
 async function signalGateway(sig: 'SIGTERM' | 'SIGHUP', io: MainIO): Promise<MainResult> {
@@ -267,9 +418,6 @@ async function detachGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
   return { exitCode: EXIT.CLI_ERROR }
 }
 
-const SYSTEMD_DIR = `${process.env.HOME ?? homedir()}/.config/systemd/user`
-const SYSTEMD_UNIT_PATH = `${SYSTEMD_DIR}/skelm-gateway.service`
-
 const SYSTEMD_UNIT = `[Unit]
 Description=skelm gateway
 After=network.target
@@ -290,18 +438,70 @@ NoNewPrivileges=true
 WantedBy=default.target
 `
 
-async function installSystemd(args: GatewayArgs, io: MainIO): Promise<MainResult> {
-  if (!args.systemd) {
-    io.stderr.write('error: gateway install requires --systemd\n')
-    return { exitCode: EXIT.CLI_ERROR }
-  }
+/**
+ * Install and start the skelm gateway as a systemd user service.
+ *
+ * Steps:
+ *  1. Write the unit file to ~/.config/systemd/user/skelm-gateway.service
+ *  2. daemon-reload
+ *  3. enable --now (starts immediately + enables on login)
+ *  4. Warn if user lingering is not enabled (service won't survive logout)
+ */
+async function installSystemd(io: MainIO): Promise<MainResult> {
   await fs.mkdir(SYSTEMD_DIR, { recursive: true })
   await fs.writeFile(SYSTEMD_UNIT_PATH, SYSTEMD_UNIT)
-  io.stdout.write(
-    `wrote ${SYSTEMD_UNIT_PATH}\n\nNext:\n  systemctl --user daemon-reload\n  systemctl --user enable --now skelm-gateway\n  journalctl --user -u skelm-gateway -f\n`,
-  )
+  io.stdout.write(`wrote ${SYSTEMD_UNIT_PATH}\n`)
+
   // Touch defaultStateDir so PrivateTmp + ReadWritePaths land cleanly when the unit runs.
   await fs.mkdir(defaultStateDir(), { recursive: true })
+
+  // Reload systemd so it picks up the new unit.
+  const reload = runSync('systemctl', ['--user', 'daemon-reload'])
+  if (reload.exitCode !== 0) {
+    io.stderr.write(
+      'warning: systemctl daemon-reload failed — you may need to run it manually:\n  systemctl --user daemon-reload\n',
+    )
+  }
+
+  // Enable and start the service.
+  const enable = runSync('systemctl', ['--user', 'enable', '--now', 'skelm-gateway'])
+  if (enable.exitCode !== 0) {
+    const errMsg = enable.stderr.trim()
+    io.stderr.write(`error: failed to enable/start skelm-gateway service\n  ${errMsg}\n\n`)
+
+    // Check if this is a lingering/D-Bus issue.
+    const isLingerIssue =
+      errMsg.includes('linger') ||
+      errMsg.includes('D-Bus') ||
+      errMsg.includes('dbus') ||
+      errMsg.includes('No such file or directory') ||
+      errMsg.includes('connect to bus')
+
+    if (isLingerIssue) {
+      io.stderr.write(
+        `hint: user lingering may not be enabled. Lingering allows user services to\nstart at boot and survive without an active login session. Enable it with:\n\n  loginctl enable-linger ${process.env.USER ?? process.env.LOGNAME ?? '$USER'}\n\nThen re-run: skelm gateway install\n`,
+      )
+    } else {
+      io.stderr.write(
+        'To start manually: systemctl --user enable --now skelm-gateway\n' +
+          'To view logs:      journalctl --user -u skelm-gateway -f\n',
+      )
+    }
+    return { exitCode: EXIT.CLI_ERROR }
+  }
+
+  io.stdout.write('skelm gateway service installed and started\n')
+
+  // Warn about lingering if not enabled — service won't survive user logout.
+  if (!isLingeringEnabled()) {
+    io.stdout.write(
+      `\nwarning: user lingering is not enabled. The gateway will stop when you log out\nand will not start automatically at boot. To fix this:\n\n  loginctl enable-linger ${process.env.USER ?? process.env.LOGNAME ?? '$USER'}\n`,
+    )
+  }
+
+  io.stdout.write(
+    '\nTo view logs:  journalctl --user -u skelm-gateway -f\nTo stop:       skelm gateway stop\nTo uninstall:  skelm gateway uninstall\n',
+  )
   return { exitCode: EXIT.OK }
 }
 
@@ -350,12 +550,14 @@ function pipelineTriggerToSpec(
 }
 
 async function uninstallSystemd(io: MainIO): Promise<MainResult> {
+  // Stop the service first if it's running.
+  const stopResult = runSync('systemctl', ['--user', 'stop', 'skelm-gateway'])
+  if (stopResult.exitCode === 0) {
+    runSync('systemctl', ['--user', 'disable', 'skelm-gateway'])
+  }
+
   try {
     await fs.rm(SYSTEMD_UNIT_PATH)
-    io.stdout.write(
-      `removed ${SYSTEMD_UNIT_PATH}\n\nNext:\n  systemctl --user daemon-reload\n  systemctl --user disable skelm-gateway || true\n`,
-    )
-    return { exitCode: EXIT.OK }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       io.stderr.write('skelm-gateway.service not installed\n')
@@ -363,4 +565,8 @@ async function uninstallSystemd(io: MainIO): Promise<MainResult> {
     }
     throw err
   }
+
+  runSync('systemctl', ['--user', 'daemon-reload'])
+  io.stdout.write('skelm gateway service uninstalled\n')
+  return { exitCode: EXIT.OK }
 }
