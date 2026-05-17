@@ -8,10 +8,13 @@ import {
 import { type ApprovalGate, EnvSecretResolver } from '../enforcement/index.js'
 import {
   ApprovalDeniedError,
+  BranchExhaustionError,
   InvokePipelineNotFoundError,
   PermissionDeniedError,
   RunCancelledError,
+  StepKindError,
   StepTimeoutError,
+  WaitConfigError,
   serializeError,
 } from '../errors.js'
 import { EventBus } from '../events.js'
@@ -131,7 +134,7 @@ async function runStep(
       return await runInvokeStep(step, ctx, backends, waitForInput, events, runtime)
     default: {
       const exhaustive: never = step
-      throw new Error(`unknown step kind: ${(exhaustive as { kind: string }).kind}`)
+      throw new StepKindError((exhaustive as { kind: string }).kind)
     }
   }
 }
@@ -847,7 +850,7 @@ async function runBranch(
   const key = step.on(ctx)
   const chosen = step.cases[key] ?? step.default
   if (chosen === undefined) {
-    throw new Error(`branch(${step.id}): no case matched "${key}" and no default was provided`)
+    throw new BranchExhaustionError(step.id, key)
   }
   return await runStep(chosen, ctx, backends, waitForInput, events, runtime)
 }
@@ -888,9 +891,7 @@ async function runWait(
   events?: EventBus,
 ): Promise<unknown> {
   if (!waitForInput) {
-    throw new Error(
-      `wait(${step.id}): no wait handler configured; use Runner.start() or pass waitForInput to runPipeline()`,
-    )
+    throw new WaitConfigError(step.id)
   }
   const message =
     step.message === undefined
