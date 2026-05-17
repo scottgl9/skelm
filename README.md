@@ -27,6 +27,7 @@ skelm is a TypeScript framework for authoring and running **workflows** — type
 - **Default-deny security** — Every permission must be explicitly declared
 - **Multi-backend agents** — First-party agent, Pi, Opencode (native or ACP), Codex, Vercel AI, ACP (Copilot, Claude Code, Gemini), Anthropic, OpenAI
 - **MCP-native** — Model Context Protocol servers lifecycle-managed by the gateway
+- **Skill support** — Reusable `SKILL.md` capability bundles injected into agent system prompts; permission-gated via `allowedSkills`; auto-discovered from `skills/**/SKILL.md` by the gateway registry
 - **Scheduler-built-in** — Cron, intervals, webhooks, polling, queues, or long-running gateway service
 
 > **Status:** Early development. APIs are unstable until v1. Feedback and contributions welcome.
