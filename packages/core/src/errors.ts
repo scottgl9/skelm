@@ -70,6 +70,35 @@ export class StepTimeoutError extends Error {
   }
 }
 
+/** Thrown when runStep encounters an unrecognized step kind (exhaustiveness break). */
+export class StepKindError extends Error {
+  override readonly name = 'StepKindError'
+  constructor(readonly kind: string) {
+    super(`unknown step kind: ${kind}`)
+  }
+}
+
+/** Thrown when a branch() step's discriminator matches no case and no default. */
+export class BranchExhaustionError extends Error {
+  override readonly name = 'BranchExhaustionError'
+  constructor(
+    readonly stepId: string,
+    readonly key: string,
+  ) {
+    super(`branch(${stepId}): no case matched "${key}" and no default was provided`)
+  }
+}
+
+/** Thrown when a wait() step runs without a waitForInput handler wired by the runner. */
+export class WaitConfigError extends Error {
+  override readonly name = 'WaitConfigError'
+  constructor(readonly stepId: string) {
+    super(
+      `wait(${stepId}): no wait handler configured; use Runner.start() or pass waitForInput to runPipeline()`,
+    )
+  }
+}
+
 /** Convert any thrown value to the serializable error shape we record. */
 export function serializeError(err: unknown): SerializedError {
   if (err instanceof Error) {
