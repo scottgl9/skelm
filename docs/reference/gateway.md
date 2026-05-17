@@ -80,7 +80,7 @@ gateway: running
   reachable: yes
 ```
 
-The `reachable` field is `yes` when the HTTP endpoint responds to a probe, `no (port may not be bound yet)` when the process is alive but not yet accepting connections, and omitted when no URL is known.
+The `reachable` field is `yes` when the HTTP endpoint responds to a probe, `no (port may not be bound yet)` when the process is alive but not yet accepting connections, and `unknown` when the gateway is running but no URL is known (e.g. before the discovery file is written). In `--json` output the field is `null` instead of `"unknown"`.
 
 The gateway is required for:
 - Agent steps (permission enforcement, backend lifecycle)
