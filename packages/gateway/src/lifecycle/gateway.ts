@@ -45,6 +45,7 @@ import type {
   GatewayState,
 } from './gateway-types.js'
 import { type LockfileContents, acquireLockfile, releaseLockfile } from './lockfile.js'
+import { recoverInterruptedRuns } from './recovery.js'
 
 export type {
   GatewayEnforcement,
@@ -409,6 +410,11 @@ export class Gateway {
       }
       await writeDiscovery(this.discoveryPath, this.discovery)
       this.runStoreInternal = this.buildRunStore()
+      // Finalize any Run records left in `running` state from a previous
+      // process — those runs were interrupted by crash/SIGKILL/restart and
+      // must be marked failed before new runs start so listRuns reflects
+      // ground truth and operators can see what was lost.
+      await recoverInterruptedRuns(this.runStoreInternal)
       this.enforcementInternal = this.buildEnforcement()
       this.registriesInternal = await this.buildRegistries()
       this.managersInternal = await this.buildManagers()
