@@ -32,35 +32,35 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "default": "./dist/index.js"
     },
     "./backend": {
       "types": "./dist/backend.d.ts",
-      "import": "./dist/backend.js"
+      "default": "./dist/backend.js"
     },
     "./permissions": {
       "types": "./dist/permissions.d.ts",
-      "import": "./dist/permissions.js"
+      "default": "./dist/permissions.js"
     },
     "./schema": {
       "types": "./dist/schema.d.ts",
-      "import": "./dist/schema.js"
+      "default": "./dist/schema.js"
     },
     "./skills": {
       "types": "./dist/skills.d.ts",
-      "import": "./dist/skills.js"
+      "default": "./dist/skills.js"
     },
     "./system-prompt": {
       "types": "./dist/system-prompt.d.ts",
-      "import": "./dist/system-prompt.js"
+      "default": "./dist/system-prompt.js"
     },
     "./types": {
       "types": "./dist/types.d.ts",
-      "import": "./dist/types.js"
+      "default": "./dist/types.js"
     },
     "./testing": {
       "types": "./dist/testing.d.ts",
-      "import": "./dist/testing.js"
+      "default": "./dist/testing.js"
     }
   },
   "files": ["dist", "README.md", "LICENSE"],
