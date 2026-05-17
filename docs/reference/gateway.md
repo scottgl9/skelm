@@ -13,6 +13,7 @@ The gateway is a long-running process that is the **trust boundary** for all ske
 - **Registry management** — watches workflow, skill, and MCP server directories; hot-reloads on change.
 - **ACP session persistence** — survives gateway restarts; sessions are re-attached on startup.
 - **Crash recovery** — on cold start, any Run records left in `running` state from a previous process are finalized to `failed` with `RunCrashedError`. The runner persists a `running` Run row up-front so this recovery sweep has a seed; without it, an interrupted run would be invisible to `skelm runs list` after restart.
+- **Store backpressure signal** — when `RunStore.appendEvent` falls behind, the runner emits a single `run.warning(code='store.saturated')` and a matching `store.recovered` event when the queue drains. No events are dropped; the signal is informational so operators can spot a slow store before runs silently stall.
 
 **Never write enforcement logic in pipeline or step code.** Pipelines are the user layer; the gateway is the trust layer.
 
