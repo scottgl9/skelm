@@ -419,11 +419,42 @@ export async function runPipeline<TInput, TOutput>(
   const workspaceManager = options.workspaceManager ?? new WorkspaceManager()
   const deferredWorkspaceFinalizers: Array<(status: RunStatus) => Promise<void>> = []
   let currentWorkspace: Context['workspace']
+  // Bounded backpressure on store.appendEvent: cap concurrent fs writes and
+  // emit a single run.warning when the queue depth crosses the saturation
+  // threshold so operators can see a slow store before runs silently stall.
+  const APPEND_BACKPRESSURE_CAP = 256
+  let appendInflight = 0
+  let appendSaturated = false
   const unsubscribeStore =
     store === undefined
       ? undefined
       : events.subscribe((event) => {
-          storeWrites.push(store.appendEvent(event))
+          appendInflight += 1
+          if (appendInflight >= APPEND_BACKPRESSURE_CAP && !appendSaturated) {
+            appendSaturated = true
+            events.publish({
+              type: 'run.warning',
+              runId,
+              code: 'store.saturated',
+              message: `appendEvent queue depth reached ${appendInflight} (cap ${APPEND_BACKPRESSURE_CAP})`,
+              at: Date.now(),
+            })
+          }
+          storeWrites.push(
+            store.appendEvent(event).finally(() => {
+              appendInflight -= 1
+              if (appendSaturated && appendInflight === 0) {
+                appendSaturated = false
+                events.publish({
+                  type: 'run.warning',
+                  runId,
+                  code: 'store.recovered',
+                  message: 'appendEvent queue drained',
+                  at: Date.now(),
+                })
+              }
+            }),
+          )
         })
   // Bridge permission denials and MCP tool dispatch into the audit log.
   // Mirrors the same subscriptions installed by the Runner constructor, so
