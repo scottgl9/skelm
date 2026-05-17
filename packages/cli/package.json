@@ -1,6 +1,6 @@
 {
   "name": "@skelm/cli",
-  "version": "0.3.9",
+  "version": "0.4.0",
   "description": "skelm CLI primitives. End users install the meta-package `skelm`, which depends on this and exposes the `skelm` bin. This package is the programmatic entry point for tooling that wants to drive the CLI directly.",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
