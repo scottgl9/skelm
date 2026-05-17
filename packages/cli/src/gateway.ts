@@ -418,14 +418,28 @@ async function detachGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
   return { exitCode: EXIT.CLI_ERROR }
 }
 
-const SYSTEMD_UNIT = `[Unit]
+/**
+ * Build the systemd unit body, embedding absolute paths to the current node
+ * binary and skelm CLI entrypoint. systemd-user services run with a minimal
+ * PATH (`/usr/local/bin:/usr/bin:/bin`) that does NOT include npm-global bins,
+ * nvm shims, or local `node_modules/.bin`, so a unit relying on `/usr/bin/env
+ * skelm` crash-loops with status 127 whenever skelm isn't on that minimal
+ * PATH. Using absolute paths makes the unit self-contained.
+ */
+export function buildSystemdUnit(): string {
+  const nodePath = process.execPath
+  const skelmBin = process.argv[1] ?? ''
+  if (!skelmBin) {
+    throw new Error('cannot determine skelm bin path (process.argv[1] is empty)')
+  }
+  return `[Unit]
 Description=skelm gateway
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env skelm gateway start --foreground
-ExecReload=/usr/bin/env skelm gateway reload
+ExecStart=${nodePath} ${skelmBin} gateway start --foreground
+ExecReload=${nodePath} ${skelmBin} gateway reload
 Environment=NODE_ENV=production
 Restart=on-failure
 RestartSec=5s
@@ -437,6 +451,7 @@ NoNewPrivileges=true
 [Install]
 WantedBy=default.target
 `
+}
 
 /**
  * Install and start the skelm gateway as a systemd user service.
@@ -449,7 +464,7 @@ WantedBy=default.target
  */
 async function installSystemd(io: MainIO): Promise<MainResult> {
   await fs.mkdir(SYSTEMD_DIR, { recursive: true })
-  await fs.writeFile(SYSTEMD_UNIT_PATH, SYSTEMD_UNIT)
+  await fs.writeFile(SYSTEMD_UNIT_PATH, buildSystemdUnit())
   io.stdout.write(`wrote ${SYSTEMD_UNIT_PATH}\n`)
 
   // Touch defaultStateDir so PrivateTmp + ReadWritePaths land cleanly when the unit runs.

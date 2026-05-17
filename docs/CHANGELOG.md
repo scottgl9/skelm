@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-17
+
+### Fixed
+- **`skelm gateway install` produces a working systemd unit** — the v0.4.0 unit hardcoded `ExecStart=/usr/bin/env skelm gateway start --foreground`, but systemd-user services run with a minimal PATH (`/usr/local/bin:/usr/bin:/bin`) that does not include npm-global bins, nvm shims, or local `node_modules/.bin`. The unit crash-looped with `/usr/bin/env: 'skelm': No such file or directory` (status 127) on every install. The unit template now embeds absolute paths derived from `process.execPath` (node) and `process.argv[1]` (the running skelm bin), so the service starts regardless of how skelm was installed. A new `packages/cli/test/gateway-systemd-unit.test.ts` locks down the absolute-path invariant.
+
 ## [0.4.0] - 2026-05-16
 
 ### Added
