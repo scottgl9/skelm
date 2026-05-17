@@ -18,7 +18,13 @@ export async function loadWorkflowFromFile(filePath: string): Promise<Pipeline> 
   }
   const url = pathToFileURL(absolute).href
   const mod = (await tsImport(url, import.meta.url)) as Record<string, unknown>
-  const candidate = mod.default ?? mod.workflow ?? mod.pipeline
+  // Under Node's require(esm) interop (Node 22+), tsx's CJS loader returns
+  // `{ default: { default: <pipeline> } }` for a user file that does
+  // `export default pipeline(...)`. The native ESM loader returns
+  // `{ default: <pipeline> }`. Accept both shapes so the same workflow
+  // file works regardless of which loader path tsx picks.
+  const defaultExport = pickDefaultExport(mod)
+  const candidate = defaultExport ?? mod.workflow ?? mod.pipeline
   if (!isPipelineValue(candidate)) {
     throw new CliError(
       `workflow file does not export a pipeline (default export): ${absolute}`,
@@ -26,6 +32,18 @@ export async function loadWorkflowFromFile(filePath: string): Promise<Pipeline> 
     )
   }
   return candidate
+}
+
+function pickDefaultExport(mod: Record<string, unknown>): unknown {
+  const direct = mod.default
+  if (direct === undefined || direct === null) return direct
+  if (isPipelineValue(direct)) return direct
+  // Unwrap the require(esm) double-default shape.
+  if (typeof direct === 'object') {
+    const inner = (direct as Record<string, unknown>).default
+    if (isPipelineValue(inner)) return inner
+  }
+  return direct
 }
 
 function isPipelineValue(v: unknown): v is Pipeline {

@@ -91,6 +91,14 @@ export function extractPipeline(mod: unknown): Pipeline | undefined {
   if (typeof mod === 'object' && mod !== null) {
     const m = mod as Record<string, unknown>
     if (isPipelineish(m.default)) return m.default as Pipeline
+    // Node 22+'s require(esm) interop double-wraps the default export
+    // when the loader follows the CJS->ESM path (tsx does this):
+    // `{ default: { default: <pipeline> } }`. Accept that shape too so
+    // the same workflow file works under both native ESM and require(esm).
+    if (typeof m.default === 'object' && m.default !== null) {
+      const inner = (m.default as Record<string, unknown>).default
+      if (isPipelineish(inner)) return inner as Pipeline
+    }
   }
   return undefined
 }
