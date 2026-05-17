@@ -161,16 +161,53 @@ async function runCodeStep(
     runtime?.permissionProfiles ?? {},
   )
   const enforcer = new TrustEnforcer(policy)
-  const exec = createExec(enforcer, ctx.signal)
 
+  // Same per-step timeout pattern used by runAgentStep: chain a fresh
+  // AbortController to ctx.signal so a runaway code step's budget aborts
+  // ctx.signal and the wrapping promise rejects with StepTimeoutError.
+  // Authors that ignore ctx.signal still lose the race; the run will not
+  // block the gateway indefinitely.
+  const stepController = step.timeoutMs !== undefined ? new AbortController() : undefined
+  const stepSignal = stepController?.signal ?? ctx.signal
+  const onParentAbort =
+    stepController !== undefined ? () => stepController.abort(ctx.signal.reason) : undefined
+  if (stepController !== undefined && onParentAbort !== undefined) {
+    if (ctx.signal.aborted) stepController.abort(ctx.signal.reason)
+    else ctx.signal.addEventListener('abort', onParentAbort, { once: true })
+  }
+  const timeoutMs = step.timeoutMs
+  const timeoutHandle =
+    timeoutMs !== undefined && stepController !== undefined
+      ? setTimeout(() => stepController.abort(new StepTimeoutError(step.id, timeoutMs)), timeoutMs)
+      : undefined
+
+  const exec = createExec(enforcer, stepSignal)
   const stepCtx = freezeContext({
     ...ctx,
+    signal: stepSignal,
     ...(secretsAccessor !== undefined && { secrets: secretsAccessor }),
     exec,
   })
 
   const runFn = await resolveCodeRun(step, runtime?.pipelineBaseDir)
-  return await runFn(stepCtx)
+  try {
+    if (timeoutMs === undefined) return await runFn(stepCtx)
+    return await Promise.race([
+      Promise.resolve().then(() => runFn(stepCtx)),
+      new Promise<never>((_resolve, reject) => {
+        stepSignal.addEventListener(
+          'abort',
+          () => {
+            if (stepSignal.reason instanceof StepTimeoutError) reject(stepSignal.reason)
+          },
+          { once: true },
+        )
+      }),
+    ])
+  } finally {
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle)
+    if (onParentAbort !== undefined) ctx.signal.removeEventListener('abort', onParentAbort)
+  }
 }
 
 async function resolveCodeRun(

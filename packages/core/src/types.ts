@@ -239,6 +239,8 @@ export interface CodeStep<TOutput = unknown> {
    * `ctx.exec` call.
    */
   readonly permissions?: import('./permissions.js').AgentPermissions
+  /** Aborts ctx.signal and rejects with StepTimeoutError after this many ms. */
+  readonly timeoutMs?: number
 }
 
 /** An `llm()` step: single-shot inference against a backend. */
