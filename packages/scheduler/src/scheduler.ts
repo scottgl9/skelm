@@ -22,6 +22,7 @@ export class Scheduler {
   private webhookServer: unknown | null = null
   private pollJobs = new Map<string, NodeJS.Timeout>()
   private queueJobs = new Map<string, NodeJS.Timeout>()
+  private readonly inFlight = new Set<Promise<unknown>>()
   private isRunning = false
   private readonly runStore: { putRun: (run: unknown) => Promise<void> }
   private readonly pipelineLoader: (pipelineId: string) => Promise<unknown>
@@ -189,9 +190,16 @@ export class Scheduler {
     }
   }
 
-  /** Stop all triggers */
+  /**
+   * Stop all triggers. Clears the interval timers, then waits up to 30s
+   * for any in-flight executeTrigger callbacks to settle so a SIGTERM
+   * does not leave fire-and-forget executions racing the process exit.
+   *
+   * Runs unconditionally — `register()` arms timers immediately without
+   * setting isRunning, so a stop() that gated on isRunning would leak
+   * those timers when the scheduler is constructed without start().
+   */
   async stop(): Promise<void> {
-    if (!this.isRunning) return
     this.isRunning = false
 
     // Clear all jobs
@@ -211,6 +219,22 @@ export class Scheduler {
       clearInterval(job)
       this.queueJobs.delete(id)
     }
+
+    await this.drainInFlight(30_000)
+  }
+
+  /** Track a fire-and-forget execution so stop() can drain it. */
+  private track(promise: Promise<unknown>): void {
+    this.inFlight.add(promise)
+    promise.finally(() => this.inFlight.delete(promise))
+  }
+
+  private async drainInFlight(timeoutMs: number): Promise<void> {
+    if (this.inFlight.size === 0) return
+    await Promise.race([
+      Promise.allSettled([...this.inFlight]),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs).unref?.()),
+    ])
   }
 
   private startCronTrigger(trigger: CronTrigger): void {
@@ -218,9 +242,9 @@ export class Scheduler {
     // In production, use 'cron' package for proper cron expression parsing
     const intervalMs = this.parseCronToInterval(trigger.schedule)
 
-    const job = setInterval(async () => {
+    const job = setInterval(() => {
       if (trigger.enabled && this.triggers.get(trigger.id)?.status === 'active') {
-        await this.executeTrigger(trigger)
+        this.track(this.executeTrigger(trigger))
       }
     }, intervalMs)
 
@@ -236,9 +260,9 @@ export class Scheduler {
   }
 
   private startIntervalTrigger(trigger: IntervalTrigger): void {
-    const job = setInterval(async () => {
+    const job = setInterval(() => {
       if (trigger.enabled && this.triggers.get(trigger.id)?.status === 'active') {
-        await this.executeTrigger(trigger)
+        this.track(this.executeTrigger(trigger))
       }
     }, trigger.intervalMs)
 
@@ -254,9 +278,9 @@ export class Scheduler {
   }
 
   private startPollTrigger(trigger: PollTrigger): void {
-    const job = setInterval(async () => {
+    const job = setInterval(() => {
       if (trigger.enabled && this.triggers.get(trigger.id)?.status === 'active') {
-        await this.executePollTrigger(trigger)
+        this.track(this.executePollTrigger(trigger))
       }
     }, trigger.intervalMs)
 
@@ -272,9 +296,9 @@ export class Scheduler {
   }
 
   private startQueueTrigger(trigger: QueueTrigger): void {
-    const job = setInterval(async () => {
+    const job = setInterval(() => {
       if (trigger.enabled && this.triggers.get(trigger.id)?.status === 'active') {
-        await this.executeQueueTrigger(trigger)
+        this.track(this.executeQueueTrigger(trigger))
       }
     }, this.config.queuePollIntervalMs)
 
