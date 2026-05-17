@@ -32,6 +32,7 @@ code({
   permissions?: AgentPermissions  // required to call `ctx.exec(...)`
   secrets?: string[]
   retry?: RetryPolicy
+  timeoutMs?: number              // aborts ctx.signal and rejects with StepTimeoutError
 })
 ```
 
@@ -79,6 +80,8 @@ code({
 - `throwOnNonZero` — when true, a non-zero exit throws; default is to return the result.
 
 The allowlist is checked against the **basename of the resolved binary** (`git`, `python3`, `bash`), not the user's input. Spawns never go through `shell: true`. See [permissions.md](./permissions.md#code-step-permissions) for the security model.
+
+When `timeoutMs` is set, the runtime chains an `AbortController` to `ctx.signal` and races `run()` against the budget. Authors that ignore `ctx.signal` still lose the race — the wrapping promise rejects with `StepTimeoutError` so a runaway code step cannot block the gateway.
 
 ### `llm(def)` — single-shot inference
 
