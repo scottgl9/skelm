@@ -105,7 +105,7 @@ export function normalizeGitHubPrEvent(
   const action = typeof b.action === 'string' ? b.action : ''
 
   // Map (event, action) → kind. Reject events that aren't PR-related.
-  const kind = mapKind(githubEvent, action, b)
+  const kind = mapKind(githubEvent, action)
   if (kind === null) return null
 
   // The PR object lives under different paths depending on the event:
@@ -144,11 +144,7 @@ export function normalizeGitHubPrEvent(
   return payload
 }
 
-function mapKind(
-  githubEvent: string,
-  action: string,
-  _body: Record<string, unknown>,
-): GitHubPrEventKind | null {
+function mapKind(githubEvent: string, action: string): GitHubPrEventKind | null {
   if (githubEvent === 'pull_request') {
     if (action === 'opened') return 'opened'
     if (action === 'synchronize') return 'synchronize'
@@ -187,13 +183,12 @@ function passesFilter(
 
 /**
  * Verify GitHub's `x-hub-signature-256` HMAC against the raw body. The
- * gateway's body parser may have already deserialized the body to JSON; we
- * canonicalize by stringifying the parsed JSON, which matches the form
- * GitHub computes the signature over only when no whitespace was preserved
- * in the original request. For exact verification operators should configure
- * a raw-body shim. This helper is opportunistic — it rejects clearly invalid
- * signatures but does not guarantee constant-time semantics on
- * already-parsed bodies.
+ * comparison itself is constant-time (`timingSafeEqual`), but the *bytes*
+ * passed as `rawBody` must match what GitHub signed — and a parsed-then-
+ * re-stringified JSON body generally won't, because JSON serialization
+ * isn't round-trip-stable (whitespace, key ordering, unicode escapes).
+ * For exact verification operators should configure a raw-body shim and
+ * pass the original request bytes here.
  */
 export function verifyGitHubSignature(rawBody: string, signature: string, secret: string): boolean {
   if (!signature.startsWith('sha256=')) return false

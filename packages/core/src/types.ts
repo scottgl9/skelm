@@ -229,15 +229,17 @@ export interface ExecResult {
 export type ExecFn = (req: ExecRequest) => Promise<ExecResult>
 
 /**
- * Predicate evaluated by the runtime before a top-level step runs. When it
- * returns false the step is skipped: no handler is invoked, the step result
- * is recorded with status `'skipped'` and `output: undefined`, and a
- * `step.skipped` event is published. Reading `ctx.get(skippedStepId)` from a
- * later step yields `undefined`.
+ * Predicate evaluated by the runtime before a step runs. When it returns
+ * false the step is skipped: no handler is invoked, the step result is
+ * recorded with `status: 'skipped'` and `output: undefined` (for top-level
+ * steps), and a `step.skipped` event is published. Reading
+ * `ctx.get(skippedStepId)` from a later step yields `undefined`.
  *
- * The predicate is evaluated at top-level pipeline steps only; predicates on
- * steps nested inside `parallel()` / `forEach()` / `branch()` / `loop()` are
- * not currently consulted by the runtime.
+ * The predicate is evaluated at every dispatch site — top-level pipeline
+ * steps *and* steps nested inside `parallel()` / `forEach()` / `branch()` /
+ * `loop()` / `idempotent()` / `pipelineStep()`. Nested skips do not produce
+ * a `StepResult` (since nested steps never produce one), but they do emit a
+ * `step.skipped` event for observability.
  */
 export type WhenPredicate = (ctx: Context) => boolean | Promise<boolean>
 

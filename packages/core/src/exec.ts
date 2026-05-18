@@ -141,21 +141,29 @@ async function runChild(
   if (runSignal.aborted) onAbort()
   else runSignal.addEventListener('abort', onAbort, { once: true })
 
-  const { exitCode, signal } = await new Promise<{
-    exitCode: number
-    signal: NodeJS.Signals | null
-  }>((resolve, reject) => {
-    child.once('error', (err) => {
-      cleanup()
-      reject(err)
+  let exitCode: number
+  let signal: NodeJS.Signals | null
+  try {
+    const result = await new Promise<{
+      exitCode: number
+      signal: NodeJS.Signals | null
+    }>((resolve, reject) => {
+      child.once('error', (err) => {
+        cleanup()
+        reject(err)
+      })
+      child.once('close', (code, sig) => {
+        cleanup()
+        resolve({ exitCode: code ?? -1, signal: sig })
+      })
     })
-    child.once('close', (code, sig) => {
-      cleanup()
-      resolve({ exitCode: code ?? -1, signal: sig })
-    })
-  })
-
-  runSignal.removeEventListener('abort', onAbort)
+    exitCode = result.exitCode
+    signal = result.signal
+  } finally {
+    // Always detach the abort listener, even when the child errored before
+    // close — otherwise each failed exec call leaks a listener on runSignal.
+    runSignal.removeEventListener('abort', onAbort)
+  }
 
   const result: ExecResult = {
     exitCode,

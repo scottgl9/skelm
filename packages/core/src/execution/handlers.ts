@@ -109,6 +109,24 @@ async function runStep(
   events?: EventBus,
   runtime?: ExecutionRuntime,
 ): Promise<unknown> {
+  // Evaluate `when` on every dispatch site (top-level steps short-circuit
+  // *before* this is reached so the top-level event sequence stays
+  // `step.skipped`-only with no preceding `step.start`; nested steps
+  // dispatched via parallel / forEach / branch / loop / idempotent /
+  // pipelineStep land here and emit `step.skipped` for observability).
+  if (step.when !== undefined) {
+    const shouldRun = await step.when(ctx)
+    if (!shouldRun) {
+      events?.publish({
+        type: 'step.skipped',
+        runId: ctx.run.runId,
+        stepId: step.id,
+        kind: step.kind,
+        at: Date.now(),
+      })
+      return undefined
+    }
+  }
   switch (step.kind) {
     case 'code':
       return await runCodeStep(step, ctx, runtime)

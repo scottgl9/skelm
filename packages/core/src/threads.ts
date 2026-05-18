@@ -34,6 +34,11 @@ export interface Thread {
    * Iterate appended comments newer than `sinceCommentId`. When the id is
    * omitted (or not found in the local record) every appended comment is
    * yielded. Comments are yielded in insertion order.
+   *
+   * `commentId` values must be unique within a thread. The iterator stops
+   * skipping at the *first* match for `sinceCommentId`, so appending the
+   * same id twice would cause the iterator to yield the second occurrence
+   * (and any later entries) on a subsequent run.
    */
   unseenSince(sinceCommentId?: string): AsyncIterable<{
     readonly commentId: string

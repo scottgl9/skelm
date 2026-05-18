@@ -213,20 +213,25 @@ export class WorkspaceManager {
   ): Promise<PreparedWorkspace> {
     const url = resolveRepoUrl(workspace.repo)
     const path = resolvePath(workspace.cacheDir ?? defaultGitRepoCacheDir(workspace.repo))
-    const extraHeader = workspace.auth ? readAuthHeader(workspace.auth.env) : undefined
-    const gitArgs = extraHeader ? ['-c', `http.extraheader=${extraHeader}`] : []
+    // Inject auth via GIT_CONFIG_* env vars rather than `-c` flags so the
+    // token never appears in argv (and therefore not in `/proc/<pid>/cmdline`
+    // or structured process logs).
+    const env = buildGitAuthEnv(workspace.auth)
 
     const gitDirExists = await exists(join(path, '.git'))
     if (!gitDirExists) {
       await mkdir(dirname(path), { recursive: true })
-      await execFileAsync('git', [...gitArgs, 'clone', '--filter=blob:none', url, path])
+      await execFileAsync('git', ['clone', '--filter=blob:none', url, path], { env })
     }
-    await execFileAsync('git', [...gitArgs, '-C', path, 'fetch', 'origin', workspace.ref])
+    await execFileAsync('git', ['-C', path, 'fetch', 'origin', workspace.ref], { env })
+    // Resolve `ref` to its SHA *before* the optional `baseRef` fetch — the
+    // second `fetch` overwrites `FETCH_HEAD`, so the only reliable way to
+    // check out `ref` afterwards is by SHA.
+    const { stdout: refSha } = await execFileAsync('git', ['-C', path, 'rev-parse', 'FETCH_HEAD'])
     if (workspace.baseRef !== undefined) {
-      await execFileAsync('git', [...gitArgs, '-C', path, 'fetch', 'origin', workspace.baseRef])
+      await execFileAsync('git', ['-C', path, 'fetch', 'origin', workspace.baseRef], { env })
     }
-    // Resolve ref to a SHA via FETCH_HEAD (works for branches, tags, SHAs).
-    await execFileAsync('git', ['-C', path, 'checkout', '--detach', 'FETCH_HEAD'])
+    await execFileAsync('git', ['-C', path, 'checkout', '--detach', refSha.trim()])
 
     // Seed: copy files into the workspace before the step runs
     if (workspace.seed?.copy) {
@@ -293,10 +298,25 @@ function defaultGitRepoCacheDir(spec: string): string {
   return join(DEFAULT_GIT_REPO_BASE, safe || 'repo')
 }
 
-function readAuthHeader(envName: string): string | undefined {
-  const token = process.env[envName]
-  if (token === undefined || token === '') return undefined
-  return `AUTHORIZATION: bearer ${token}`
+/**
+ * Build an env block for git invocations that injects an `http.extraheader`
+ * config entry via `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_0` / `GIT_CONFIG_VALUE_0`
+ * when an auth env var is provided. Using the env-var mechanism (rather than
+ * `git -c http.extraheader=...`) keeps the bearer token out of argv, so it
+ * does not show up in `/proc/<pid>/cmdline` or process-listing tooling.
+ */
+function buildGitAuthEnv(
+  auth: Extract<WorkspaceConfig, { mode: 'git-repo' }>['auth'],
+): NodeJS.ProcessEnv {
+  if (auth === undefined) return process.env
+  const token = process.env[auth.env]
+  if (token === undefined || token === '') return process.env
+  return {
+    ...process.env,
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'http.extraheader',
+    GIT_CONFIG_VALUE_0: `AUTHORIZATION: bearer ${token}`,
+  }
 }
 
 async function ensureGitRoot(path: string): Promise<void> {

@@ -113,6 +113,33 @@ describe('WorkspaceManager — git-repo mode', () => {
     await prepared.finishStep('completed')
   })
 
+  it('checks out `ref` (not `baseRef`) when both are supplied — guards FETCH_HEAD clobber', async () => {
+    const manager = new WorkspaceManager()
+    const cacheDir = join(cacheRoot, 'repo')
+    await manager.prepare({
+      pipelineId: 'pipe',
+      runId: 'run-1',
+      workspace: {
+        mode: 'git-repo',
+        repo: originDir,
+        ref: 'feature', // contains feature.txt
+        baseRef: 'main', // fetched second, would clobber FETCH_HEAD
+        cacheDir,
+      },
+    })
+    // After prepare, the working tree must reflect `feature`, not `main`.
+    const featurePresent = await readFile(join(cacheDir, 'feature.txt'), 'utf8')
+    expect(featurePresent).toBe('feature\n')
+    const { stdout: headSha } = await execFileAsync('git', ['-C', cacheDir, 'rev-parse', 'HEAD'])
+    const { stdout: featureSha } = await execFileAsync('git', [
+      '-C',
+      cacheDir,
+      'rev-parse',
+      'origin/feature',
+    ])
+    expect(headSha.trim()).toBe(featureSha.trim())
+  })
+
   it('resolves owner/name shorthand to a default GitHub URL (no network call here)', async () => {
     // We only verify the URL-resolver path: a missing remote URL must surface
     // as a clone failure rather than being silently rewritten to the local path.
