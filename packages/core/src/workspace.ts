@@ -299,23 +299,50 @@ function defaultGitRepoCacheDir(spec: string): string {
 }
 
 /**
- * Build an env block for git invocations that injects an `http.extraheader`
- * config entry via `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_0` / `GIT_CONFIG_VALUE_0`
- * when an auth env var is provided. Using the env-var mechanism (rather than
- * `git -c http.extraheader=...`) keeps the bearer token out of argv, so it
- * does not show up in `/proc/<pid>/cmdline` or process-listing tooling.
+ * Build an env block for git invocations that supplies the token via a
+ * one-shot credential helper. Two requirements drive the shape:
+ *
+ *   1. The token must not appear in argv (no `git -c http.extraheader=...`),
+ *      so it stays out of `/proc/<pid>/cmdline` and process listings.
+ *   2. The auth must be accepted by GitHub's git HTTPS endpoint, which
+ *      rejects `Authorization: bearer/Bearer/token <tok>` headers for git
+ *      operations (those formats only work against `api.github.com`).
+ *
+ * The previous implementation used `http.extraheader=AUTHORIZATION: bearer
+ * <token>`, which broke (1) cleanly but failed (2) — GitHub git HTTPS would
+ * return `remote: invalid credentials`. We now register a `credential.helper`
+ * that writes username + password lines to stdout: git accepts the credential
+ * exactly as if it had been entered interactively, with no argv exposure.
+ *
+ * Throws when `auth: { env: ... }` is declared but the variable is unset or
+ * empty — silently falling back to anonymous access made typos invisible.
+ *
+ * Returns `process.env` directly (no clone) when no auth is requested, so
+ * callers don't pay an allocation on every git invocation.
  */
 function buildGitAuthEnv(
   auth: Extract<WorkspaceConfig, { mode: 'git-repo' }>['auth'],
 ): NodeJS.ProcessEnv {
   if (auth === undefined) return process.env
   const token = process.env[auth.env]
-  if (token === undefined || token === '') return process.env
+  if (token === undefined || token === '') {
+    throw new Error(
+      `workspace auth env var "${auth.env}" is not set; export it or remove auth: { env: ... } to clone anonymously`,
+    )
+  }
+  // `!f() { ... }; f` is the canonical inline-helper pattern from
+  // git-credential(7) — the leading `!` tells git the value is a shell
+  // command rather than the name of a helper binary. The helper emits
+  // username + password when invoked as `git credential get` and stays
+  // silent for store/erase. The token is read from $SKELM_GIT_AUTH_TOKEN
+  // (set below), so it never appears in argv.
   return {
     ...process.env,
+    SKELM_GIT_AUTH_TOKEN: token,
     GIT_CONFIG_COUNT: '1',
-    GIT_CONFIG_KEY_0: 'http.extraheader',
-    GIT_CONFIG_VALUE_0: `AUTHORIZATION: bearer ${token}`,
+    GIT_CONFIG_KEY_0: 'credential.helper',
+    GIT_CONFIG_VALUE_0:
+      '!f() { test "$1" = get && printf "username=x-access-token\\npassword=%s\\n" "$SKELM_GIT_AUTH_TOKEN"; }; f',
   }
 }
 

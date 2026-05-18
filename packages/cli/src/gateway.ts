@@ -530,7 +530,7 @@ async function installSystemd(io: MainIO): Promise<MainResult> {
  * may omit `id` (defaulted to `<workflowId>#<kind>[-i]`). Returns undefined
  * when the kind is unrecognized.
  */
-function pipelineTriggerToSpec(
+export function pipelineTriggerToSpec(
   workflowId: string,
   trigger: Record<string, unknown>,
   index: number,
@@ -558,11 +558,44 @@ function pipelineTriggerToSpec(
         path: trigger.path as string,
         ...(trigger.method !== undefined && { method: trigger.method as string }),
         ...(trigger.secret !== undefined && { secret: trigger.secret as string }),
+        // Without forwarding `dedupe`, every pipeline-declared webhook ran
+        // without idempotency; same delivery id dispatched twice. The
+        // coordinator + HTTP route both honor the field once the spec
+        // carries it.
+        ...(trigger.dedupe !== undefined && {
+          dedupe: trigger.dedupe as { header: string; ttlMs?: number },
+        }),
       }
     case 'cron':
       return { kind: 'cron', id, workflowId, cron: trigger.cron as string }
     case 'interval':
       return { kind: 'interval', id, workflowId, everyMs: trigger.everyMs as number }
+    case 'github-pr':
+      // The github-pr primitive (commit e08f167) is sugar over a webhook
+      // trigger with GitHub-Delivery dedupe pre-configured. Translate here
+      // so a pipeline can declare it without manually wiring
+      // registerGitHubPrTrigger() from @skelm/integrations.
+      //
+      // Per-event filtering (events/filter.dropBotAuthors/filter.repos) and
+      // payload normalization to GitHubPrPayload are still the pipeline's
+      // responsibility — the first step should call
+      // `normalizeGitHubPrEvent(headers['x-github-event'], body, spec)`
+      // from `@skelm/integrations`. Until a kind-aware pre-dispatch hook
+      // lands on TriggerCoordinator, the run input is the raw
+      // `{body, headers, path, method, deliveredAt}` envelope produced by
+      // the underlying webhook trigger.
+      return {
+        kind: 'webhook',
+        id,
+        workflowId,
+        path: trigger.path as string,
+        method: 'POST',
+        ...(trigger.secret !== undefined && { secret: trigger.secret as string }),
+        dedupe: {
+          header: 'X-GitHub-Delivery',
+          ttlMs: (trigger.dedupeTtlMs as number | undefined) ?? 24 * 60 * 60 * 1000,
+        },
+      }
     default:
       return undefined
   }
