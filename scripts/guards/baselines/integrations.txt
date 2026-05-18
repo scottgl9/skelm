@@ -9,10 +9,13 @@ value:defineIntegration
 value:deleteWebhook
 value:getAuthenticatedUser
 value:githubFetch
+value:normalizeGitHubPrEvent
 value:postIssueComment
 value:postPullRequestReview
+value:registerGitHubPrTrigger
 value:registerWebhook
 value:telegramUpdateToInput
+value:verifyGitHubSignature
 value:verifySlackSignature
 type:CreateTelegramTriggerSourceOptions
 type:DefineIntegrationOptions
@@ -22,6 +25,10 @@ type:GitHubAuth
 type:GitHubConfig
 type:GitHubHook
 type:GitHubIssueTrigger
+type:GitHubPrEventKind
+type:GitHubPrPayload
+type:GitHubPrTriggerCoordinator
+type:GitHubPrTriggerSpec
 type:GitHubWebhookEvent
 type:IMAPConfig
 type:Integration
