@@ -45,6 +45,7 @@ import {
 } from './runner-utils.js'
 import { SchemaValidationError, validate } from './schema.js'
 import { createStateHandle } from './state.js'
+import { createThreadHost } from './threads.js'
 import type {
   Context,
   Pipeline,
@@ -415,6 +416,7 @@ export async function runPipeline<TInput, TOutput>(
   const events = options.events ?? new EventBus()
   const store = options.store
   const stateStore = options.stateStore ?? options.store ?? defaultStateStore
+  const threadHost = createThreadHost(stateStore)
   const storeWrites: Promise<void>[] = []
   const workspaceManager = options.workspaceManager ?? new WorkspaceManager()
   const deferredWorkspaceFinalizers: Array<(status: RunStatus) => Promise<void>> = []
@@ -614,6 +616,7 @@ export async function runPipeline<TInput, TOutput>(
         run: runMeta,
         signal: controller.signal,
         state: createStateHandle(stateStore, { pipelineId: pipeline.id, stepId: step.id }),
+        threads: threadHost,
         workspace: currentWorkspace as WorkspaceHandle | undefined,
         get<T = unknown>(stepId: StepId): T | undefined {
           return stepOutputs[stepId] as T | undefined
@@ -677,6 +680,7 @@ export async function runPipeline<TInput, TOutput>(
           stepId: step.id,
           ...(step.state !== undefined && { config: step.state }),
         }),
+        threads: threadHost,
         workspace: currentWorkspace as WorkspaceHandle | undefined,
         get<T = unknown>(stepId: StepId): T | undefined {
           return stepOutputs[stepId] as T | undefined
@@ -774,6 +778,7 @@ export async function runPipeline<TInput, TOutput>(
         run: runMeta,
         signal: controller.signal,
         state: createStateHandle(stateStore, { pipelineId: pipeline.id }),
+        threads: threadHost,
         workspace: currentWorkspace as WorkspaceHandle | undefined,
         get<T = unknown>(stepId: StepId): T | undefined {
           return stepOutputs[stepId] as T | undefined

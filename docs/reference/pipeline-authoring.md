@@ -265,7 +265,38 @@ interface Context<TInput = unknown> {
   input: TInput
   steps: Record<string, unknown>    // keyed by step id
   run: RunMetadata                  // runId, pipelineId, startedAt
+  state: State                      // typed KV + append-only streams
+  threads: ThreadHost               // see "Threaded conversations"
 }
 ```
 
 Cast step outputs when accessing: `ctx.steps['my-step'] as MyType`.
+
+## Threaded conversations — `ctx.threads`
+
+For PR / issue / Slack threads the runtime exposes a small helper that keeps
+"last-seen" markers and appended comments in a dedicated namespace so they
+don't collide with regular `ctx.state` keys.
+
+```ts
+const t = ctx.threads.get({ kind: 'github-pr', key: `${owner}/${repo}#${number}` })
+
+// Note when a new comment arrives:
+await t.appendComment(comment.id, comment)
+
+// On the next run, replay only what we haven't seen:
+const lastSeen = await t.lastSeen()
+for await (const c of t.unseenSince(lastSeen)) {
+  await handle(c.comment)
+}
+await t.markSeen(latestId)
+```
+
+`kind` and `key` are opaque to the framework — `key` is whatever string
+uniquely identifies one thread within `kind`. By convention,
+`github-pr` / `github-issue` use `${owner}/${repo}#${number}` and `slack`
+uses `${channelId}:${threadTs}`. State persists for as long as the
+configured `StateStore` retains it.
+
+Replaces hand-managed `last-comment-seen:<repo>#<n>` keys in pipelines that
+track ongoing PR / issue conversations.
