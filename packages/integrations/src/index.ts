@@ -36,7 +36,23 @@ export {
 export type { DefineIntegrationOptions, IntegrationClass } from '@skelm/integration-sdk'
 
 // Built-in integration implementations
-export { GitHubIntegration } from './github.js'
+export {
+  GitHubIntegration,
+  GitHubApiError,
+  githubFetch,
+  getAuthenticatedUser,
+  registerWebhook,
+  deleteWebhook,
+  postIssueComment,
+  postPullRequestReview,
+  type GitHubAuth,
+  type GitHubHook,
+  type RegisterWebhookParams,
+  type DeleteWebhookParams,
+  type PostIssueCommentParams,
+  type PostPullRequestReviewParams,
+  type PullRequestReviewComment,
+} from './github.js'
 export { SlackIntegration, verifySlackSignature } from './slack.js'
 export {
   TelegramIntegration,
