@@ -37,8 +37,6 @@ export type RunEvent =
       runId: RunId
       stepId: StepId
       kind: StepKind
-      /** Authored reason returned by the step's `when` predicate, if it threw with a message. Empty when the predicate simply returned false. */
-      reason?: string
       at: number
     }
   | {

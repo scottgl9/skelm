@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agent, code, pipeline, pipelineStep } from '../src/builders.js'
+import { agent, code, forEach, parallel, pipeline, pipelineStep } from '../src/builders.js'
 import { EventBus, type RunEvent } from '../src/events.js'
 import { runPipeline } from '../src/runner.js'
 
@@ -133,6 +133,67 @@ describe('runtime — when predicate', () => {
     })
     const run = await runPipeline(wf, undefined)
     expect(run.steps[0]?.status).toBe('skipped')
+  })
+
+  it('evaluates `when` on steps nested inside parallel() and emits step.skipped', async () => {
+    const ran: string[] = []
+    const events: RunEvent[] = []
+    const bus = new EventBus()
+    bus.subscribe((e) => events.push(e))
+    const wf = pipeline({
+      id: 'nested-when',
+      steps: [
+        parallel({
+          id: 'fan',
+          steps: [
+            code({
+              id: 'a',
+              run: () => {
+                ran.push('a')
+                return {}
+              },
+            }),
+            code({
+              id: 'skip-me',
+              when: () => false,
+              run: () => {
+                ran.push('skip-me')
+                return {}
+              },
+            }),
+          ],
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, undefined, { events: bus })
+    expect(run.status).toBe('completed')
+    expect(ran).toEqual(['a'])
+    expect(events.some((e) => e.type === 'step.skipped' && e.stepId === 'skip-me')).toBe(true)
+  })
+
+  it('evaluates `when` on each forEach() child independently', async () => {
+    const ran: number[] = []
+    const wf = pipeline({
+      id: 'foreach-when',
+      steps: [
+        forEach({
+          id: 'each',
+          items: () => [1, 2, 3, 4],
+          step: (item, i) =>
+            code({
+              id: `child-${i}`,
+              when: () => (item as number) % 2 === 0,
+              run: () => {
+                ran.push(item as number)
+                return item
+              },
+            }),
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, undefined)
+    expect(run.status).toBe('completed')
+    expect(ran).toEqual([2, 4])
   })
 
   it('agent() accepts a when predicate at the type level', () => {
