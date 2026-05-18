@@ -12,13 +12,17 @@ describe('systemd unit template', () => {
     expect(execReload).not.toBe('')
 
     const [startNode, startBin, ...startArgs] = execStart.split(' ')
-    expect(isAbsolute(startNode!)).toBe(true)
-    expect(isAbsolute(startBin!)).toBe(true)
+    expect(startNode).toBeDefined()
+    expect(startBin).toBeDefined()
+    expect(isAbsolute(startNode as string)).toBe(true)
+    expect(isAbsolute(startBin as string)).toBe(true)
     expect(startArgs).toEqual(['gateway', 'start', '--foreground'])
 
     const [reloadNode, reloadBin, ...reloadArgs] = execReload.split(' ')
-    expect(isAbsolute(reloadNode!)).toBe(true)
-    expect(isAbsolute(reloadBin!)).toBe(true)
+    expect(reloadNode).toBeDefined()
+    expect(reloadBin).toBeDefined()
+    expect(isAbsolute(reloadNode as string)).toBe(true)
+    expect(isAbsolute(reloadBin as string)).toBe(true)
     expect(reloadArgs).toEqual(['gateway', 'reload'])
   })
 

@@ -110,7 +110,7 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
       const result = runSync('systemctl', ['--user', 'start', 'skelm-gateway'])
       if (result.exitCode === 0) {
         // Wait briefly for the gateway to write its discovery file.
-        const probe = new Gateway()
+        const probe = new Gateway({ stateDir: defaultStateDir() })
         const deadline = Date.now() + 5_000
         let disc = await readDiscovery(probe.discoveryPath)
         while (disc === null && Date.now() < deadline) {
@@ -148,9 +148,13 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
   const loadWorkflow = async (_id: string, absolutePath: string): Promise<unknown> =>
     tsImport(pathToFileURL(absolutePath).href, import.meta.url)
 
+  // F043: SKELM_STATE_DIR env override must thread through to the Gateway
+  // constructor; without an explicit option the constructor falls back to
+  // `homedir() + '/.skelm'`, ignoring the operator's isolation choice.
   const gateway = new Gateway({
     installSignalHandlers: true,
     enableHttp: true,
+    stateDir: defaultStateDir(),
     ...(httpPort !== undefined && { httpPort }),
     ...(httpHost !== undefined && { httpHost }),
     config,
@@ -243,7 +247,7 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
 }
 
 async function statusGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> {
-  const probe = new Gateway()
+  const probe = new Gateway({ stateDir: defaultStateDir() })
   const lock = await readLockfile(probe.lockfilePath)
   const disc = await readDiscovery(probe.discoveryPath)
   // A lockfile alone is not enough — if the PID is dead (kill -9, crash,
@@ -316,7 +320,7 @@ async function probeGatewayUrl(url: string): Promise<boolean> {
  * correctly. Otherwise, send SIGTERM to the PID from the lockfile.
  */
 async function stopGateway(io: MainIO): Promise<MainResult> {
-  const probe = new Gateway()
+  const probe = new Gateway({ stateDir: defaultStateDir() })
   const lock = await readLockfile(probe.lockfilePath)
 
   // If nothing is running at all, say so clearly.
@@ -355,7 +359,7 @@ async function stopGateway(io: MainIO): Promise<MainResult> {
 }
 
 async function signalGateway(sig: 'SIGTERM' | 'SIGHUP', io: MainIO): Promise<MainResult> {
-  const probe = new Gateway()
+  const probe = new Gateway({ stateDir: defaultStateDir() })
   const lock = await readLockfile(probe.lockfilePath)
   if (lock === null) {
     io.stderr.write('gateway: not running\n')
@@ -399,7 +403,7 @@ async function detachGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
   // Give the child a moment to acquire the lockfile and write discovery, so
   // a follow-up `skelm gateway status` (the typical next step) doesn't race
   // ahead of it. Bounded poll, not a fixed sleep.
-  const probe = new Gateway()
+  const probe = new Gateway({ stateDir: defaultStateDir() })
   const deadline = Date.now() + 5_000
   while (Date.now() < deadline) {
     const lock = await readLockfile(probe.lockfilePath)

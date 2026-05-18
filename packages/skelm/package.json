@@ -50,7 +50,9 @@
   },
   "dependencies": {
     "@skelm/core": "workspace:*",
-    "@skelm/cli": "workspace:*"
+    "@skelm/cli": "workspace:*",
+    "@skelm/scheduler": "workspace:*",
+    "@skelm/integration-sdk": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

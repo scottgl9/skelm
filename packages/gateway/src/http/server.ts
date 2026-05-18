@@ -383,11 +383,31 @@ export function createServer(
     async start() {
       const http = await import('node:http')
       server = http.createServer(toNodeListener(app))
-      await new Promise<void>((resolve) => {
-        server?.listen({ port, host }, () => {
+      // F042: an EADDRINUSE (or any other listen-time error) used to fall
+      // through as an unhandled `error` event because the Promise only
+      // resolved on the listening callback. That crashed the process and
+      // — because the caller had already written the lockfile — left a
+      // stale lockfile on disk. Reject the promise instead so the caller
+      // can run its catch block.
+      await new Promise<void>((resolve, reject) => {
+        if (server === null) {
+          reject(new Error('gateway server was disposed before start'))
+          return
+        }
+        const onError = (err: Error) => {
+          server?.off('listening', onListening)
+          server = null
+          isRunningFlag = false
+          reject(err)
+        }
+        const onListening = () => {
+          server?.off('error', onError)
           isRunningFlag = true
           resolve()
-        })
+        }
+        server.once('error', onError)
+        server.once('listening', onListening)
+        server.listen({ port, host })
       })
     },
 
