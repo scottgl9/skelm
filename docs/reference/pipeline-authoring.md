@@ -220,6 +220,32 @@ export default pipeline({
 
 ---
 
+## Conditional execution — `when`
+
+Every top-level step accepts an optional `when: (ctx) => boolean | Promise<boolean>`
+predicate. When it returns `false`, the step is skipped: its handler does not
+run, its result is recorded with `status: 'skipped'` and `output: undefined`,
+and a `step.skipped` event is published. Later steps reading the skipped
+step's output via `ctx.get(id)` see `undefined`.
+
+```ts
+agent({
+  id: 'review',
+  prompt: 'Review the diff.',
+  when: (ctx) => ctx.get<{ authorIsBot: boolean }>('classify')?.authorIsBot === false,
+})
+```
+
+A predicate that throws is treated as a step failure (the run fails the same
+way as if the step body had thrown). For conditional dispatch the recommended
+pattern is `when` over `branch({ cases: { run, skip } })`.
+
+The predicate is consulted on top-level steps only; predicates on steps
+nested inside `parallel()`, `forEach()`, `branch()`, or `loop()` are not
+currently evaluated by the runtime.
+
+---
+
 ## RetryPolicy
 
 ```ts

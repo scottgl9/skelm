@@ -302,6 +302,7 @@ export type {
   StepResult,
   StepStatus,
   WaitStep,
+  WhenPredicate,
   ExecFn,
   ExecRequest,
   ExecResult,

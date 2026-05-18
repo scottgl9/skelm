@@ -186,6 +186,19 @@ export interface ExecResult {
 
 export type ExecFn = (req: ExecRequest) => Promise<ExecResult>
 
+/**
+ * Predicate evaluated by the runtime before a top-level step runs. When it
+ * returns false the step is skipped: no handler is invoked, the step result
+ * is recorded with status `'skipped'` and `output: undefined`, and a
+ * `step.skipped` event is published. Reading `ctx.get(skippedStepId)` from a
+ * later step yields `undefined`.
+ *
+ * The predicate is evaluated at top-level pipeline steps only; predicates on
+ * steps nested inside `parallel()` / `forEach()` / `branch()` / `loop()` are
+ * not currently consulted by the runtime.
+ */
+export type WhenPredicate = (ctx: Context) => boolean | Promise<boolean>
+
 /** Per-step retry policy applied by the runner around step execution. */
 export interface RetryPolicy {
   readonly maxAttempts: number
@@ -241,6 +254,7 @@ export interface CodeStep<TOutput = unknown> {
   readonly permissions?: import('./permissions.js').AgentPermissions
   /** Aborts ctx.signal and rejects with StepTimeoutError after this many ms. */
   readonly timeoutMs?: number
+  readonly when?: WhenPredicate
 }
 
 /** An `llm()` step: single-shot inference against a backend. */
@@ -257,6 +271,7 @@ export interface LlmStep<TOutput = unknown> {
   readonly secrets?: readonly string[]
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** An `agent()` step: full agentic loop against a backend.run(). */
@@ -310,6 +325,7 @@ export interface AgentStep<TOutput = unknown> {
   readonly timeoutMs?: number
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 export interface IdempotentStep<TOutput = unknown> {
@@ -320,6 +336,7 @@ export interface IdempotentStep<TOutput = unknown> {
   readonly ttlMs?: number
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 export type ParallelWaitFor = 'all' | 'any' | { atLeast: number }
@@ -334,6 +351,7 @@ export interface ParallelStep {
   readonly onError?: ParallelOnError
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** A `forEach()` step: maps a step factory over a collection. */
@@ -345,6 +363,7 @@ export interface ForEachStep {
   readonly step: (item: unknown, index: number) => Step
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** A `branch()` step: discriminator-driven case selection. */
@@ -356,6 +375,7 @@ export interface BranchStep {
   readonly default?: Step
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** A `loop()` step: bounded iteration while a predicate holds. */
@@ -367,6 +387,7 @@ export interface LoopStep {
   readonly step: Step
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** A `wait()` step: pause until a caller resumes the run with input. */
@@ -378,6 +399,7 @@ export interface WaitStep<TOutput = unknown> {
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** A `pipelineStep()` step: run a nested pipeline and adopt its output. */
@@ -388,6 +410,7 @@ export interface PipelineStep<TInput = unknown, TOutput = unknown> {
   readonly input?: TInput | ((ctx: Context) => TInput)
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** An `invoke()` step: run a pipeline looked up by ID from the workflow registry at runtime. */
@@ -400,6 +423,7 @@ export interface InvokeStep<TInput = unknown, TOutput = unknown> {
   readonly input?: TInput | ((ctx: Context) => TInput)
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** Discriminated union of all step kinds. */

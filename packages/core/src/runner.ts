@@ -607,6 +607,60 @@ export async function runPipeline<TInput, TOutput>(
       break
     }
 
+    if (step.when !== undefined) {
+      const predicateCtx: Context<TInput> = freezeContext({
+        input: resolvedInput,
+        steps: { ...stepOutputs },
+        run: runMeta,
+        signal: controller.signal,
+        state: createStateHandle(stateStore, { pipelineId: pipeline.id, stepId: step.id }),
+        workspace: currentWorkspace as WorkspaceHandle | undefined,
+        get<T = unknown>(stepId: StepId): T | undefined {
+          return stepOutputs[stepId] as T | undefined
+        },
+      } as Context<TInput>)
+      let shouldRun: boolean
+      try {
+        shouldRun = await step.when(predicateCtx)
+      } catch (err) {
+        const completedAt = Date.now()
+        const serialized = serializeError(err)
+        stepResults.push({
+          id: step.id,
+          kind: step.kind,
+          status: 'failed',
+          output: undefined,
+          startedAt: completedAt,
+          completedAt,
+          error: serialized,
+        })
+        events.publish({
+          type: 'step.error',
+          runId,
+          stepId: step.id,
+          kind: step.kind,
+          error: serialized,
+          at: completedAt,
+        })
+        runStatus = err instanceof RunCancelledError ? 'cancelled' : 'failed'
+        runError = serialized
+        break
+      }
+      if (!shouldRun) {
+        const at = Date.now()
+        stepResults.push({
+          id: step.id,
+          kind: step.kind,
+          status: 'skipped',
+          output: undefined,
+          startedAt: at,
+          completedAt: at,
+        })
+        events.publish({ type: 'step.skipped', runId, stepId: step.id, kind: step.kind, at })
+        continue
+      }
+    }
+
     const stepStart = Date.now()
     events.publish({ type: 'step.start', runId, stepId: step.id, kind: step.kind, at: stepStart })
     if (options.beforeStep !== undefined) {
