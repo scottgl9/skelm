@@ -6,6 +6,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-05-18
+
+### Added
+- **`code({ module, export })` module refs and `ctx.exec` helper** — `code()` steps can now load their `run` function from an external `.ts`/`.js` file resolved against `pipeline.baseDir`; `loadTsModule` is exported from `@skelm/core` for imperative use. New `ctx.exec({ command | python | bash, args, cwd, env, stdin, timeoutMs, throwOnNonZero })` spawns external executables under `TrustEnforcer.canExec`, with default-deny when `permissions.allowedExecutables` is omitted. `python:` / `bash:` shortcuts resolve through `$SKELM_PYTHON` / `$SKELM_BASH`; the basename of the resolved binary is what the allowlist checks.
+- **`code()` step `timeoutMs`** — `code()` builder accepts a per-step `timeoutMs`; the handler races `step.run` against the budget and fires `StepTimeoutError` even when the author ignores `ctx.signal`. Previously a runaway code step could block the gateway indefinitely.
+- **Crash recovery for interrupted runs** — the gateway persists the `Run` record up-front (before the first step). On cold start, a recovery sweep finds runs left in `running` state and reconciles them.
+- **Backpressure signal on slow run-store `appendEvent`** — the runner tracks in-flight append depth; crossing the saturation cap (256) emits `run.warning(code='store.saturated')` once, and `run.warning(code='store.recovered')` when the queue drains. No events are dropped; the signal is informational.
+- **Approval lifecycle audit** — `SuspendApprovalGate` accepts an `AuditWriter` and emits `approval.requested` / `approval.resolved` / `approval.expired` / `approval.cancelled` entries. Wired by default to the gateway's `ChainAuditWriter` so approver, decision, and reason survive restart and are tamper-evident. Audit write failures are swallowed to keep the approval flow live.
+- **`pnpm guards` dist-invariants check + `prepublishOnly` hooks** — `scripts/guards/dist-invariants.ts` reads a feature → expected-dist-substring manifest and fails if a built `dist/` is missing a feature its source advertises. Wired into `pnpm guards` / `pnpm check`, and into `prepublishOnly` for `@skelm/core`, `@skelm/cli`, and `@skelm/gateway` so stale tarballs are blocked even when `scripts/publish-npm.sh` is bypassed. Defense-in-depth against the v0.4.1 F038 stale-`dist/` publish.
+
+### Changed
+- **Typed errors for handler exhaustion paths** — `handlers.ts` no longer throws bare `new Error(...)` for unknown step kind, branch-no-match, and wait-without-handler. New internal `StepKindError`, `BranchExhaustionError`, and `WaitConfigError` (not re-exported on the public surface) keep `StepError` audit serialization keyed off `error.name` meaningful.
+
+### Fixed
+- **Workflow / skills glob walk no longer hangs on `$HOME`** (#127) — `walkGlob` previously scanned the entire `projectRoot` (= `process.cwd()`, which is `$HOME` under systemd-user services) looking for `workflows/**/*.workflow.ts`, and stalled in `buildRegistries()` before `startHttp()` could bind. The walk is now bounded to the static prefix of the pattern (`${rootDir}/workflows`, `${rootDir}/skills`). Patterns with no static prefix (`**/*.ts`) still walk from the root.
+- **`ERR_PACKAGE_PATH_NOT_EXPORTED` on Node 22+** (#128) — every `@skelm/*` package's `exports` map now uses `default` instead of `import`, so both ESM `import` and CJS `require(esm)` resolution succeed. `loadWorkflowFromFile` (`@skelm/cli`) and `extractPipeline` (`@skelm/gateway`) also unwrap the `{ default: { default: <pipeline> } }` shape Node returns via `require(esm)`.
+- **`require(esm)` double-default in the `skelm.config.ts` loader** — Node 22+ produces `{ default: { default: <config> } }` for `skelm.config.ts` under tsx's CJS path, so user `allowedExecutables` silently fell back to `DEFAULT_CONFIG` (empty allowlists). Both workflow and config loaders now route through the shared `pickExport` from `@skelm/core`.
+- **`skelm schedule add` resolves the workflow path to the gateway registry id** (#143, F044) — the CLI used to submit the user-typed path verbatim as the trigger's `workflowId`, but the gateway stores workflows by their registry-relative id, so the dispatcher's `workflows.get()` returned `undefined` every fire and parked errors on the registration. `scheduleAdd` now fetches `GET /pipelines` and resolves the user input to the canonical registry id via (1) exact id, (2) absolute path, (3) unique suffix; ambiguous suffixes and unknown ids fail fast with the candidate list. Empty registries pass the user input through untouched.
+- **PR #146 review — explicit stderr on `/pipelines` fetch failure, warn on empty registry** — `resolveWorkflowId` now writes `error: failed to reach gateway at <baseUrl>/pipelines` instead of a silent non-zero exit; empty-registry passthrough emits a `warn:` line.
+- **Scheduler drains in-flight triggers on stop** — timers used to fire-and-forget `executeTrigger` calls, and `SIGTERM` cleared the timers but raced in-flight executions against process exit. `stop()` also short-circuited when `isRunning` was false (which it always is when triggers are registered without an explicit `start()`), so the timers themselves leaked. Each `executeTrigger` promise is now tracked; `stop()` clears timers then awaits `allSettled` with a 30s cap, unconditionally.
+- **`skelm init .` over an `npm init`-created directory merges instead of erroring** (F036) — the previous gate only accepted a hardcoded `NPM_INIT_RESIDUE` set, so any stray dotfile, log, or editor swap broke the documented `npm init -y && npm i skelm && skelm init .` onboarding flow. Replaced with `isMergeableNpmInitDir`, which still refuses anything that looks like a skelm project (`skelm.config.{ts,js,mjs}` or `workflows/`) but tolerates incidental files alongside npm residue.
+- **`skelm` meta-package transitively installs `@skelm/scheduler` and `@skelm/integration-sdk`** (F039, F040) — `npm i skelm` previously omitted both. Added to `packages/skelm/package.json` dependencies.
+- **`skelm gateway start` exits cleanly on `EADDRINUSE` without leaking the lockfile** (F042) — listen-time errors used to fall through as an unhandled `'error'` event, crashing the process after the lockfile and discovery JSON were already on disk. The HTTP server now attaches an `'error'` listener before `.listen()` and reflects it into the `start()` promise; the lifecycle catch block calls `removeDiscovery()` + `releaseLockfile()` + `stopEgressProxy()` before resetting state, so a failed start is truly idempotent.
+- **`SKELM_STATE_DIR` env override honored by every `skelm gateway` subcommand** (F043) — the CLI had a `defaultStateDir()` helper, but every `new Gateway(...)` callsite ignored it. Threaded `stateDir: defaultStateDir()` through `startGateway`, `statusGateway`, `stopGateway`, `signalGateway`, `detachGateway`, and the systemd start probe.
+
+### Security
+- **Path traversal closed at the fs allowlist boundary** — `TrustEnforcer.canRead` / `canWrite` compared raw strings, so a root of `/data` admitted `/data/../etc/passwd` via path-string prefix. Both the root and requested path are now normalized with `path.resolve` before the comparison, collapsing `..` / `.` segments first. New adversarial coverage for the traversal case and the existing sibling-root rejection (`/data-evil/`).
+
+### Tests
+- Coverage gaps closed in `@skelm/otel` (failure, cancel, tool, dispose event paths), `@skelm/integrations` (GitHub and Slack webhook event mappings), and `@skelm/agent` (MCP-tool permission enforcement in the native loop).
+
+### Docs
+- **`loadTsModule` cache contract** — JSDoc spells out that the module cache is process-global with no TTL/mtime check, and how to clear it from tests. Dropped the unused `fileUrlToPath` export; restored the `secrets?: string[]` line in skill/skelm/references that was inadvertently dropped from the `code()` signature block.
+- **README** — `@skelm/integration-sdk` listed in the packages table.
+
 ## [0.4.1] - 2026-05-17
 
 ### Fixed
