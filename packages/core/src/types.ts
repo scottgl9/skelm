@@ -143,7 +143,48 @@ export interface Context<TInput = unknown> {
    * for an id that does not exist).
    */
   get<T = unknown>(stepId: StepId): T | undefined
+  /**
+   * Spawn an external executable. Available inside `code()` steps when the
+   * step's `permissions.allowedExecutables` includes the resolved binary name
+   * (basename of the resolved path: e.g. `git`, `python3`, `bash`). Omitted
+   * for steps that have no exec capability wired (e.g. inside a `forEach`
+   * iteration context derived from a non-code step).
+   */
+  readonly exec?: ExecFn
 }
+
+/** Execution request accepted by `ctx.exec`. */
+export interface ExecRequest {
+  /** Bare name or absolute path. Mutually exclusive with `python` / `bash`. */
+  readonly command?: string
+  /** Convenience: run `python3 <script> [...args]`. */
+  readonly python?: string
+  /** Convenience: run `bash <script> [...args]`. */
+  readonly bash?: string
+  readonly args?: readonly string[]
+  readonly cwd?: string
+  readonly env?: Readonly<Record<string, string>>
+  readonly stdin?: string | Uint8Array
+  readonly timeoutMs?: number
+  /** When true, non-zero exit codes throw instead of returning the result. */
+  readonly throwOnNonZero?: boolean
+  /** Cap on captured stdout bytes; default 10 MiB. */
+  readonly maxStdoutBytes?: number
+  /** Cap on captured stderr bytes; default 10 MiB. */
+  readonly maxStderrBytes?: number
+}
+
+/** Result of a completed `ctx.exec` call. */
+export interface ExecResult {
+  readonly exitCode: number
+  readonly stdout: string
+  readonly stderr: string
+  readonly signal: NodeJS.Signals | null
+  readonly durationMs: number
+  readonly timedOut: boolean
+}
+
+export type ExecFn = (req: ExecRequest) => Promise<ExecResult>
 
 /** Per-step retry policy applied by the runner around step execution. */
 export interface RetryPolicy {
@@ -174,10 +215,30 @@ export interface SerializedError {
 export interface CodeStep<TOutput = unknown> {
   readonly kind: 'code'
   readonly id: StepId
-  readonly run: (ctx: Context) => TOutput | Promise<TOutput>
+  /**
+   * Inline run function. Mutually exclusive with `module`: exactly one must
+   * be supplied to `code()`. When `module` is set, the runner loads the file
+   * once on first execution and uses its exported function as `run`.
+   */
+  readonly run?: (ctx: Context) => TOutput | Promise<TOutput>
+  /**
+   * Path to an external `.ts`/`.js` module exporting the step's run function.
+   * Resolved relative to the owning pipeline's `baseDir` (or `process.cwd()`
+   * if absent). Absolute paths and `file://` URLs are accepted as-is.
+   */
+  readonly module?: string
+  /** Name of the export to use from `module`. Defaults to `'default'`. */
+  readonly export?: string
   readonly secrets?: readonly string[]
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  /**
+   * Permission policy for this step. Today only `allowedExecutables` is
+   * enforced (via `ctx.exec`); other dimensions are accepted for forward
+   * compatibility. Default-deny: omitting this field denies every
+   * `ctx.exec` call.
+   */
+  readonly permissions?: import('./permissions.js').AgentPermissions
 }
 
 /** An `llm()` step: single-shot inference against a backend. */
@@ -373,6 +434,14 @@ export interface Pipeline<TInput = unknown, TOutput = unknown> {
   readonly description?: string
   readonly version?: string
   readonly steps: readonly Step[]
+  /**
+   * Absolute directory used to resolve relative paths declared on steps
+   * (e.g. `code({ module: './step.ts' })`). Populated by the CLI workflow
+   * loader from the pipeline file's location; left undefined when a pipeline
+   * is constructed programmatically, in which case relative paths resolve
+   * against `process.cwd()`.
+   */
+  readonly baseDir?: string
   readonly finalize?: (ctx: Context<TInput>) => TOutput | Promise<TOutput>
   /** Optional input schema; validated at run start. */
   readonly inputSchema?: import('./schema.js').SkelmSchema<TInput>

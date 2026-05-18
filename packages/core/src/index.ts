@@ -302,4 +302,9 @@ export type {
   StepResult,
   StepStatus,
   WaitStep,
+  ExecFn,
+  ExecRequest,
+  ExecResult,
 } from './types.js'
+export { loadTsModule, pickExport, clearTsModuleCache } from './ts-loader.js'
+export type { LoadTsModuleOptions } from './ts-loader.js'

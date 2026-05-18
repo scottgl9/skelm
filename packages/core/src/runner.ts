@@ -602,6 +602,7 @@ export async function runPipeline<TInput, TOutput>(
             pipelineRegistry: options.pipelineRegistry,
           }),
           currentWorkspace,
+          ...(pipeline.baseDir !== undefined && { pipelineBaseDir: pipeline.baseDir }),
           ...(store !== undefined && { store }),
           setCurrentWorkspace: (workspace) => {
             currentWorkspace = workspace

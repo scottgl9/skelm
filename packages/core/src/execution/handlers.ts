@@ -15,6 +15,7 @@ import {
   serializeError,
 } from '../errors.js'
 import { EventBus } from '../events.js'
+import { createExec } from '../exec.js'
 import { extractJsonFromText, tryParseJson } from '../json-utils.js'
 import { createMcpHost } from '../mcp/host.js'
 import type { AgentPermissions, NetworkPolicy, PermissionDimension } from '../permissions.js'
@@ -35,6 +36,7 @@ import { runPipeline } from '../runner.js'
 import type { RunOptions, WaitRequest } from '../runner.js'
 import { SchemaValidationError, validate } from '../schema.js'
 import { createStateHandle } from '../state.js'
+import { loadTsModule, pickExport } from '../ts-loader.js'
 import type {
   Context,
   Pipeline,
@@ -152,9 +154,42 @@ async function runCodeStep(
           get: (name: string) => resolvedSecrets[name],
         }
       : undefined
-  const stepCtx =
-    secretsAccessor !== undefined ? freezeContext({ ...ctx, secrets: secretsAccessor }) : ctx
-  return await step.run(stepCtx)
+
+  const policy = resolvePermissions(
+    runtime?.defaultPermissions,
+    step.permissions,
+    runtime?.permissionProfiles ?? {},
+  )
+  const enforcer = new TrustEnforcer(policy)
+  const exec = createExec(enforcer, ctx.signal)
+
+  const stepCtx = freezeContext({
+    ...ctx,
+    ...(secretsAccessor !== undefined && { secrets: secretsAccessor }),
+    exec,
+  })
+
+  const runFn = await resolveCodeRun(step, runtime?.pipelineBaseDir)
+  return await runFn(stepCtx)
+}
+
+async function resolveCodeRun(
+  step: Extract<Step, { kind: 'code' }>,
+  baseDir: string | undefined,
+): Promise<(ctx: Context) => unknown | Promise<unknown>> {
+  if (step.run !== undefined) return step.run
+  if (step.module === undefined) {
+    throw new Error(`code(${step.id}): neither "run" nor "module" is set`)
+  }
+  const mod = await loadTsModule(step.module, baseDir !== undefined ? { baseDir } : {})
+  const exportName = step.export ?? 'default'
+  const exported = pickExport(mod, exportName)
+  if (typeof exported !== 'function') {
+    throw new Error(
+      `code(${step.id}): module "${step.module}" export "${exportName}" is not a function`,
+    )
+  }
+  return exported as (ctx: Context) => unknown | Promise<unknown>
 }
 
 async function runLlmStep(

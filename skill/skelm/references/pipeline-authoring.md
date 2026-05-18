@@ -25,12 +25,30 @@ pipeline({
 ```ts
 code({
   id: string
-  run: (ctx: Context) => TOutput | Promise<TOutput>
+  // Exactly one of `run` or `module` is required.
+  run?: (ctx: Context) => TOutput | Promise<TOutput>
+  module?: string                 // path to a .ts/.js file exporting the run function
+  export?: string                 // export name from `module` (default: 'default')
+  permissions?: AgentPermissions  // required to call `ctx.exec(...)`
   retry?: RetryPolicy
 })
 ```
 
 Access prior step outputs: `ctx.steps['step-id']` (cast to the output type). Access run metadata: `ctx.run.runId`, `ctx.run.pipelineId`, `ctx.run.startedAt`.
+
+To run an external `.ts`/`.js` module instead of an inline function: `code({ id, module: './step.ts' })`. Paths resolve relative to the pipeline file's directory.
+
+To spawn external executables from a `code()` step, use `ctx.exec(...)`. The call is gated by `permissions.allowedExecutables` (default-deny):
+
+```ts
+code({
+  id: 'render',
+  permissions: { allowedExecutables: ['python3'] },
+  run: async (ctx) => await ctx.exec!({ python: './render.py' }),
+})
+```
+
+`ctx.exec` accepts `{ command | python | bash }` plus `args`, `cwd`, `env`, `stdin`, `timeoutMs`, `throwOnNonZero`. The allowlist is checked against the resolved binary's basename (e.g. `python3`, `bash`, `git`).
 
 ### `llm(def)` — single-shot inference
 

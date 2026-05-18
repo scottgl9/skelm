@@ -133,6 +133,20 @@ const decision = enforcer.canCallTool('gh.list_issues')
 // { allow: true } or { allow: false, reason: 'not-in-allowlist', dimension: 'tool' }
 ```
 
+## Code-step permissions
+
+`code()` steps accept the same `permissions` shape as `agent()` steps, but only `allowedExecutables` is enforced today. The runner builds a `TrustEnforcer` for every `code()` step from `defaultPermissions` ∩ step-level `permissions` and uses it to gate `ctx.exec(...)`:
+
+```ts
+code({
+  id: 'render',
+  permissions: { allowedExecutables: ['python3'] },
+  run: async (ctx) => ctx.exec!({ python: './render.py' }),
+})
+```
+
+Default-deny applies: omitting `permissions` (or omitting `allowedExecutables`) denies every `ctx.exec` call with `PermissionDeniedError` and `dimension: 'executable'`. The check uses the basename of the resolved binary (`python3` / `bash` for the `python:` / `bash:` shortcuts), not the user's input string.
+
 ## Denial reasons
 
 | Reason | Meaning |

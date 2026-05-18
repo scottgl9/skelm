@@ -1,15 +1,15 @@
 import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Pipeline } from '@skelm/core'
-import { tsImport } from 'tsx/esm/api'
+import { loadTsModule, pickExport } from '@skelm/core'
 
 /**
  * Load a workflow module by file path. The module's default export must be
- * a `Pipeline` value produced by `pipeline()` from @skelm/core.
- *
- * The loader uses tsx's programmatic API so customers can author workflows
- * in TypeScript without a build step.
+ * a `Pipeline` value produced by `pipeline()` from @skelm/core. The
+ * pipeline file's directory is recorded on the returned value as
+ * `baseDir` so steps that declare relative paths (e.g.
+ * `code({ module: './step.ts' })`) resolve consistently.
  */
 export async function loadWorkflowFromFile(filePath: string): Promise<Pipeline> {
   const absolute = resolve(process.cwd(), filePath)
@@ -17,33 +17,17 @@ export async function loadWorkflowFromFile(filePath: string): Promise<Pipeline> 
     throw new CliError(`workflow file not found: ${absolute}`, 'workflow-not-found')
   }
   const url = pathToFileURL(absolute).href
-  const mod = (await tsImport(url, import.meta.url)) as Record<string, unknown>
-  // Under Node's require(esm) interop (Node 22+), tsx's CJS loader returns
-  // `{ default: { default: <pipeline> } }` for a user file that does
-  // `export default pipeline(...)`. The native ESM loader returns
-  // `{ default: <pipeline> }`. Accept both shapes so the same workflow
-  // file works regardless of which loader path tsx picks.
-  const defaultExport = pickDefaultExport(mod)
-  const candidate = defaultExport ?? mod.workflow ?? mod.pipeline
+  const mod = await loadTsModule(url)
+  const defaultExport = pickExport(mod, 'default')
+  const candidate =
+    (isPipelineValue(defaultExport) ? defaultExport : undefined) ?? mod.workflow ?? mod.pipeline
   if (!isPipelineValue(candidate)) {
     throw new CliError(
       `workflow file does not export a pipeline (default export): ${absolute}`,
       'workflow-invalid',
     )
   }
-  return candidate
-}
-
-function pickDefaultExport(mod: Record<string, unknown>): unknown {
-  const direct = mod.default
-  if (direct === undefined || direct === null) return direct
-  if (isPipelineValue(direct)) return direct
-  // Unwrap the require(esm) double-default shape.
-  if (typeof direct === 'object') {
-    const inner = (direct as Record<string, unknown>).default
-    if (isPipelineValue(inner)) return inner
-  }
-  return direct
+  return Object.freeze({ ...candidate, baseDir: dirname(absolute) })
 }
 
 function isPipelineValue(v: unknown): v is Pipeline {
