@@ -33,6 +33,15 @@ export type RunEvent =
       at: number
     }
   | {
+      type: 'step.skipped'
+      runId: RunId
+      stepId: StepId
+      kind: StepKind
+      /** Authored reason returned by the step's `when` predicate, if it threw with a message. Empty when the predicate simply returned false. */
+      reason?: string
+      at: number
+    }
+  | {
       type: 'tool.call'
       runId: RunId
       stepId: StepId

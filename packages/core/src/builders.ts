@@ -21,6 +21,7 @@ import type {
   Step,
   StepId,
   WaitStep,
+  WhenPredicate,
   WorkspaceConfig,
 } from './types.js'
 
@@ -90,6 +91,7 @@ export function code<TOutput>(def: {
   retry?: RetryPolicy
   permissions?: AgentPermissions
   timeoutMs?: number
+  when?: WhenPredicate
 }): CodeStep<TOutput> {
   if (!def.id) {
     throw new Error('code(): id is required')
@@ -118,6 +120,7 @@ export function code<TOutput>(def: {
     ...(def.retry !== undefined && { retry: def.retry }),
     ...(def.permissions !== undefined && { permissions: def.permissions }),
     ...(def.timeoutMs !== undefined && { timeoutMs: def.timeoutMs }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -139,6 +142,7 @@ export function llm<TOutput>(def: {
   secrets?: readonly string[]
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): LlmStep<TOutput> {
   if (!def.id) {
     throw new Error('llm(): id is required')
@@ -160,6 +164,7 @@ export function llm<TOutput>(def: {
     ...(def.secrets !== undefined && { secrets: def.secrets }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -187,6 +192,7 @@ export function agent<TOutput>(def: {
   timeoutMs?: number
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): AgentStep<TOutput> {
   if (!def.id) {
     throw new Error('agent(): id is required')
@@ -219,6 +225,7 @@ export function agent<TOutput>(def: {
     ...(def.timeoutMs !== undefined && { timeoutMs: def.timeoutMs }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -230,6 +237,7 @@ export function parallel(def: {
   onError?: ParallelOnError
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): ParallelStep {
   if (!def.id) throw new Error('parallel(): id is required')
   if (!def.steps || def.steps.length === 0) {
@@ -255,6 +263,7 @@ export function parallel(def: {
     ...(def.onError !== undefined && { onError: def.onError }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -266,6 +275,7 @@ export function forEach(def: {
   step: (item: unknown, index: number) => Step
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): ForEachStep {
   if (!def.id) throw new Error('forEach(): id is required')
   if (typeof def.items !== 'function') {
@@ -286,6 +296,7 @@ export function forEach(def: {
     ...(def.concurrency !== undefined && { concurrency: def.concurrency }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -297,6 +308,7 @@ export function branch(def: {
   default?: Step
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): BranchStep {
   if (!def.id) throw new Error('branch(): id is required')
   if (typeof def.on !== 'function') {
@@ -314,6 +326,7 @@ export function branch(def: {
     ...(def.default !== undefined && { default: def.default }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -334,6 +347,7 @@ export function loop(def: {
   step: Step
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): LoopStep {
   if (!def.id) throw new Error('loop(): id is required')
   if (typeof def.while !== 'function') {
@@ -351,6 +365,7 @@ export function loop(def: {
     step: def.step,
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -362,6 +377,7 @@ export function wait<TOutput>(def: {
   output?: SkelmSchema<TOutput>
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): WaitStep<TOutput> {
   if (!def.id) throw new Error('wait(): id is required')
   if (def.timeoutMs !== undefined && def.timeoutMs < 1) {
@@ -376,6 +392,7 @@ export function wait<TOutput>(def: {
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -386,6 +403,7 @@ export function pipelineStep<TInput, TOutput>(def: {
   input?: TInput | ((ctx: Context) => TInput)
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): PipelineStep<TInput, TOutput> {
   if (!def.id) throw new Error('pipelineStep(): id is required')
   if (!def.pipeline) {
@@ -399,6 +417,7 @@ export function pipelineStep<TInput, TOutput>(def: {
     ...(def.input !== undefined && { input: def.input }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -409,6 +428,7 @@ export function invoke<TOutput>(def: {
   input?: unknown | ((ctx: Context) => unknown)
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): InvokeStep<unknown, TOutput> {
   if (!def.id) throw new Error('invoke(): id is required')
   if (!def.pipelineId) {
@@ -422,6 +442,7 @@ export function invoke<TOutput>(def: {
     ...(def.input !== undefined && { input: def.input }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -437,6 +458,7 @@ export function idempotent<TOutput>(def: {
   ttlMs?: number
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): IdempotentStep<TOutput> {
   if (!def.step) {
     throw new Error('idempotent(): step is required')
@@ -451,6 +473,7 @@ export function idempotent<TOutput>(def: {
     ...(def.ttlMs !== undefined && { ttlMs: def.ttlMs }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
