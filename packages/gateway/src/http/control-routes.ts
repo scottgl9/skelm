@@ -1,5 +1,6 @@
 import { type App, type H3Event, createError, createRouter, eventHandler } from 'h3'
 import type { Gateway } from '../lifecycle/gateway.js'
+import { DEFAULT_WEBHOOK_DEDUPE_TTL_MS } from '../triggers/dedupe-store.js'
 import { registerApprovalRoutes } from './routes/approvals.js'
 import { registerBatchRoutes } from './routes/batch.js'
 import { registerConfigRoutes } from './routes/config.js'
@@ -59,6 +60,30 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
         const provided = event.headers.get('x-webhook-secret')
         if (provided !== reg.spec.secret) {
           throw createError({ statusCode: 401, message: 'webhook secret mismatch' })
+        }
+      }
+      if (reg.spec.dedupe !== undefined) {
+        const headerName = reg.spec.dedupe.header.toLowerCase()
+        const deliveryId = event.headers.get(headerName)
+        if (deliveryId !== null && deliveryId !== '') {
+          const ttlMs = reg.spec.dedupe.ttlMs ?? DEFAULT_WEBHOOK_DEDUPE_TTL_MS
+          const fresh = gateway.managers.triggers.webhookDedupe.recordIfFresh(
+            triggerId,
+            deliveryId,
+            ttlMs,
+          )
+          if (!fresh) {
+            await gateway.enforcement.auditWriter.write({
+              actor: 'gateway',
+              action: 'webhook.deduped',
+              details: {
+                triggerId,
+                header: reg.spec.dedupe.header,
+                deliveryId,
+              },
+            })
+            return { ok: true, triggerId, deduped: true }
+          }
         }
       }
       await gateway.managers.triggers.fire(triggerId)

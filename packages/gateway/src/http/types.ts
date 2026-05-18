@@ -87,7 +87,13 @@ export type ScheduleTrigger =
   | { kind: 'at'; when: string } // ISO 8601
   | { kind: 'cron'; expression: string; timezone?: string }
   | { kind: 'interval'; everyMs: number; initialDelayMs?: number }
-  | { kind: 'webhook'; path: string; method?: string; secret?: string }
+  | {
+      kind: 'webhook'
+      path: string
+      method?: string
+      secret?: string
+      dedupe?: { header: string; ttlMs?: number }
+    }
   | { kind: 'poll'; everyMs: number; sourceFnId: string; dedupeKeyFnId?: string }
   | { kind: 'queue'; driver: string; config: Record<string, unknown> }
 
