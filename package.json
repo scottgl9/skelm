@@ -17,7 +17,7 @@
     "format": "biome format --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "guards": "tsx scripts/guards/default-deny-permissions.ts && tsx scripts/guards/public-export-baseline.ts && tsx scripts/guards/gateway-only-enforcement.ts && tsx scripts/guards/docs-orphans.ts",
+    "guards": "tsx scripts/guards/default-deny-permissions.ts && tsx scripts/guards/public-export-baseline.ts && tsx scripts/guards/gateway-only-enforcement.ts && tsx scripts/guards/docs-orphans.ts && tsx scripts/guards/dist-invariants.ts",
     "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm guards && pnpm test",
     "clean": "pnpm -r clean && rm -rf node_modules",
     "release:dry": "DRY_RUN=1 ./scripts/publish-npm.sh",

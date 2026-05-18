@@ -72,7 +72,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "tsx ../../scripts/guards/dist-invariants.ts"
   },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
