@@ -131,11 +131,11 @@ describe('builders — validation', () => {
     ).toThrow(/duplicate step id/)
   })
 
-  it('rejects a code step with no run function', () => {
+  it('rejects a code step with no run function and no module', () => {
     expect(() =>
       // biome-ignore lint/suspicious/noExplicitAny: deliberate misuse for the test
       code({ id: 'bad', run: undefined as any }),
-    ).toThrow(/run must be a function/)
+    ).toThrow(/exactly one of "run" or "module"/)
   })
 
   it('rejects an invalid retry policy', () => {

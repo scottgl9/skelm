@@ -70,6 +70,7 @@ value:assertEgressEnforceable
 value:branch
 value:buildSystemPrompt
 value:buildSystemPromptFromRequest
+value:clearTsModuleCache
 value:code
 value:combineSignals
 value:createAcpBackend
@@ -100,9 +101,11 @@ value:invoke
 value:llm
 value:loadAgentDefinition
 value:loadSkillBodies
+value:loadTsModule
 value:loop
 value:parallel
 value:parseSkill
+value:pickExport
 value:pipeline
 value:pipelineStep
 value:resolvePermissions
@@ -155,6 +158,9 @@ type:DiscordMessage
 type:DiscordTriggerConfig
 type:EnforceDecision
 type:EventListener
+type:ExecFn
+type:ExecRequest
+type:ExecResult
 type:ExecutionStore
 type:ForEachStep
 type:GitHubIssueCommentEvent
@@ -173,6 +179,7 @@ type:JsonRpcResponse
 type:LlmCompletion
 type:LlmStep
 type:LoadAgentDefinitionOptions
+type:LoadTsModuleOptions
 type:LoopStep
 type:MatrixEvent
 type:MatrixMessageEvent

@@ -102,6 +102,7 @@ export default defineConfig({
             { text: 'Writing a Plugin', link: '/guides/writing-a-plugin' },
             { text: 'Writing a Custom Integration', link: '/guides/writing-a-custom-integration' },
             { text: 'Testing Workflows', link: '/guides/testing-workflows' },
+            { text: 'External Scripts', link: '/guides/external-scripts' },
           ],
         },
         {

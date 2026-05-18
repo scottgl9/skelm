@@ -26,6 +26,11 @@ export interface ExecutionRuntime {
     pipelineId: string,
   ) => Pipeline | undefined | Promise<Pipeline | undefined>
   readonly currentWorkspace: Context['workspace']
+  /**
+   * Directory used to resolve relative paths declared on steps. Mirrors
+   * `pipeline.baseDir`; set by the runner from the running pipeline value.
+   */
+  readonly pipelineBaseDir?: string
   setCurrentWorkspace(workspace: Context['workspace']): void
   deferRunWorkspaceFinalizer(finalizer: (status: RunStatus) => Promise<void>): void
 }

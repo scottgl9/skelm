@@ -39,6 +39,12 @@ export function pipeline<TInput, TOutput>(def: {
   steps: readonly Step[]
   finalize?: (ctx: Context<TInput>) => TOutput | Promise<TOutput>
   triggers?: readonly import('./types.js').PipelineTrigger[]
+  /**
+   * Directory used to resolve relative paths declared on steps (e.g.
+   * `code({ module: './x.ts' })`). Normally set by the CLI workflow loader;
+   * authors only set this when constructing a pipeline programmatically.
+   */
+  baseDir?: string
 }): Pipeline<TInput, TOutput> {
   if (!def.id) {
     throw new Error('pipeline(): id is required')
@@ -57,6 +63,7 @@ export function pipeline<TInput, TOutput>(def: {
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.finalize !== undefined && { finalize: def.finalize }),
     ...(def.triggers !== undefined && { triggers: Object.freeze([...def.triggers]) }),
+    ...(def.baseDir !== undefined && { baseDir: def.baseDir }),
   }
   return Object.freeze(out)
 }
@@ -68,25 +75,47 @@ export function pipeline<TInput, TOutput>(def: {
  */
 export function code<TOutput>(def: {
   id: StepId
-  run: (ctx: Context) => TOutput | Promise<TOutput>
+  /** Inline run function. Mutually exclusive with `module`. */
+  run?: (ctx: Context) => TOutput | Promise<TOutput>
+  /**
+   * Path to an external `.ts` / `.js` module that exports the step's run
+   * function. Resolved relative to the owning pipeline's `baseDir` (or
+   * `process.cwd()` when absent).
+   */
+  module?: string
+  /** Name of the export to use from `module`. Defaults to `'default'`. */
+  export?: string
   secrets?: readonly string[]
   state?: StateConfig
   retry?: RetryPolicy
+  permissions?: AgentPermissions
 }): CodeStep<TOutput> {
   if (!def.id) {
     throw new Error('code(): id is required')
   }
-  if (typeof def.run !== 'function') {
-    throw new Error(`code(${def.id}): run must be a function`)
+  const hasRun = typeof def.run === 'function'
+  const hasModule = typeof def.module === 'string' && def.module.length > 0
+  if (hasRun === hasModule) {
+    throw new Error(
+      `code(${def.id}): must supply exactly one of "run" or "module" (got ${
+        hasRun && hasModule ? 'both' : 'neither'
+      })`,
+    )
+  }
+  if (!hasModule && def.export !== undefined) {
+    throw new Error(`code(${def.id}): "export" only applies when "module" is set`)
   }
   assertValidRetryPolicy('code', def.id, def.retry)
   return Object.freeze({
     kind: 'code',
     id: def.id,
-    run: def.run,
+    ...(def.run !== undefined && { run: def.run }),
+    ...(def.module !== undefined && { module: def.module }),
+    ...(def.export !== undefined && { export: def.export }),
     ...(def.secrets !== undefined && { secrets: def.secrets }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.permissions !== undefined && { permissions: def.permissions }),
   })
 }
 

@@ -25,12 +25,60 @@ pipeline({
 ```ts
 code({
   id: string
-  run: (ctx: Context) => TOutput | Promise<TOutput>
+  // Exactly one of `run` or `module` is required.
+  run?: (ctx: Context) => TOutput | Promise<TOutput>
+  module?: string                 // path to a .ts/.js file exporting the run function
+  export?: string                 // export name from `module` (default: 'default')
+  permissions?: AgentPermissions  // required to call `ctx.exec(...)`
+  secrets?: string[]
   retry?: RetryPolicy
 })
 ```
 
 Access prior step outputs: `ctx.steps['step-id']` (cast to the output type). Access run metadata: `ctx.run.runId`, `ctx.run.pipelineId`, `ctx.run.startedAt`.
+
+#### Loading the run function from a file
+
+Use `module:` to keep the step's body in its own file. Paths resolve relative to the pipeline file's directory (the CLI sets that automatically; programmatic callers can pass `pipeline({ baseDir, ... })`).
+
+```ts
+// steps/enrich.ts
+export default async function enrich(ctx) {
+  return { enriched: true }
+}
+
+// pipeline.ts
+code({ id: 'enrich', module: './steps/enrich.ts' })
+```
+
+Imperative loads from inside `run` are also supported — call `loadTsModule` from `@skelm/core` so transpilation matches the CLI loader.
+
+#### Spawning external executables — `ctx.exec(...)`
+
+`code()` steps can invoke binaries, Python scripts, or Bash scripts via `ctx.exec`. The call is gated by `permissions.allowedExecutables` on the step (default-deny — omitting the field denies every call):
+
+```ts
+code({
+  id: 'render',
+  permissions: { allowedExecutables: ['python3'] },
+  run: async (ctx) => {
+    const r = await ctx.exec!({ python: './scripts/render.py', args: ['--out', 'tmp/'] })
+    if (r.exitCode !== 0) throw new Error(r.stderr)
+    return r.stdout
+  },
+})
+```
+
+`ctx.exec` request fields:
+
+- `command` — bare name or absolute path. Mutually exclusive with `python` / `bash`.
+- `python` — runs `$SKELM_PYTHON` (default `python3`) with the script as the first argv.
+- `bash` — runs `$SKELM_BASH` (default `bash`) with the script as the first argv.
+- `args`, `cwd`, `env`, `stdin` — passed through to the child.
+- `timeoutMs` — kills with `SIGTERM` then `SIGKILL` after a 5s grace; result reports `timedOut: true`.
+- `throwOnNonZero` — when true, a non-zero exit throws; default is to return the result.
+
+The allowlist is checked against the **basename of the resolved binary** (`git`, `python3`, `bash`), not the user's input. Spawns never go through `shell: true`. See [permissions.md](./permissions.md#code-step-permissions) for the security model.
 
 ### `llm(def)` — single-shot inference
 
