@@ -127,6 +127,60 @@ triggers: [{
 
 The first delivery dispatches as usual. A replay carrying the same header value within `ttlMs` responds 200 with `{ deduped: true }` and emits a `webhook.deduped` audit entry. Deliveries past the TTL — or missing the header entirely — dispatch normally. The store is keyed by `(triggerId, deliveryId)` so two webhook triggers can share an idempotency header without colliding.
 
+## GitHub PR trigger
+
+`@skelm/integrations` ships a `github-pr` helper that compiles a declarative PR-aware trigger spec down to a `webhook` trigger (with `X-GitHub-Delivery` dedupe enabled) plus a normalized payload mapper:
+
+```ts
+import { pipeline } from 'skelm'
+import { code, agent } from '@skelm/core'
+
+export default pipeline({
+  id: 'review-pr',
+  triggers: [{
+    kind: 'github-pr',
+    path: '/hooks/gh-pr',
+    secret: process.env.GITHUB_WEBHOOK_SECRET,
+    events: ['opened', 'synchronize', 'review_requested', 'commented'],
+    filter: { dropBotAuthors: true, repos: ['octo/demo'] },
+  }],
+  steps: [/* … */],
+})
+```
+
+At gateway startup, bind the declared spec with `registerGitHubPrTrigger()` so the coordinator owns the webhook route and the helper returns a `normalize()` you apply to each delivery's `{ body, headers }` envelope:
+
+```ts
+import { registerGitHubPrTrigger } from '@skelm/integrations'
+
+const { normalize } = registerGitHubPrTrigger(gateway.managers.triggers, {
+  id: 'gh-pr',
+  workflowId: 'review-pr',
+  path: '/hooks/gh-pr',
+  events: ['opened', 'synchronize', 'review_requested', 'commented'],
+  filter: { dropBotAuthors: true, repos: ['octo/demo'] },
+})
+
+// In your run dispatcher: normalize(ctx.payload) → { pr, kind, authorIsBot, … }
+// then either dispatch the run with the normalized payload as input, or skip
+// silently when normalize() returns null (event filtered out).
+```
+
+The normalized `GitHubPrPayload`:
+
+```ts
+{
+  kind: 'opened' | 'synchronize' | 'reopened' | 'closed' | 'review_requested' | 'commented' | 'submitted',
+  pr: { owner, repo, number, headSha, baseSha, author, labels },
+  authorIsBot: boolean,
+  githubEvent: string,    // raw GitHub event name
+  action: string,         // raw GitHub action
+  raw: unknown,           // original webhook payload, for fields not yet normalized
+}
+```
+
+This combination — typed events, payload normalization, bot/repo filtering, and 24 h dedupe on `X-GitHub-Delivery` — absorbs the webhook + cron + dedupe + bot-filter boilerplate every PR-aware agent would otherwise rewrite.
+
 ## Audit
 
 Every fire emits, through the dispatcher's run lifecycle:

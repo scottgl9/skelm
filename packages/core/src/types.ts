@@ -509,6 +509,36 @@ export type PipelineTrigger =
     }
   | { kind: 'cron'; id?: string; cron: string }
   | { kind: 'interval'; id?: string; everyMs: number }
+  | {
+      /**
+       * GitHub PR-aware trigger. The gateway wires this to a `webhook` trigger
+       * with dedupe on `X-GitHub-Delivery` (item 4) and delivers a normalized
+       * `{ pr, kind, raw, authorIsBot }` payload to the pipeline. Use
+       * `registerGitHubPrTrigger()` from `@skelm/integrations` to bind a
+       * declared trigger to a running gateway at startup.
+       */
+      kind: 'github-pr'
+      id?: string
+      /** Webhook receive path, e.g. `/hooks/github/prs`. */
+      path: string
+      /** HMAC shared secret for `x-hub-signature-256` (verified by the helper). */
+      secret?: string
+      /** GitHub event kinds to forward. Default: every kind. */
+      events?: readonly (
+        | 'opened'
+        | 'synchronize'
+        | 'reopened'
+        | 'closed'
+        | 'review_requested'
+        | 'commented'
+        | 'submitted'
+      )[]
+      /** Filters applied to the normalized payload before firing the pipeline. */
+      filter?: {
+        readonly dropBotAuthors?: boolean
+        readonly repos?: readonly string[]
+      }
+    }
 
 /** A pipeline value produced by `pipeline()`. */
 export interface Pipeline<TInput = unknown, TOutput = unknown> {

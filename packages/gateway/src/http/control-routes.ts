@@ -1,4 +1,4 @@
-import { type App, type H3Event, createError, createRouter, eventHandler } from 'h3'
+import { type App, type H3Event, createError, createRouter, eventHandler, readBody } from 'h3'
 import type { Gateway } from '../lifecycle/gateway.js'
 import { DEFAULT_WEBHOOK_DEDUPE_TTL_MS } from '../triggers/dedupe-store.js'
 import { registerApprovalRoutes } from './routes/approvals.js'
@@ -86,7 +86,23 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
           }
         }
       }
-      await gateway.managers.triggers.fire(triggerId)
+      // Capture the request body so webhook-triggered pipelines can take the
+      // delivery payload (plus a small set of headers) as input. h3 swallows
+      // body-read failures and returns undefined; we tolerate that and pass
+      // payload: undefined like the legacy behaviour.
+      let body: unknown
+      try {
+        body = await readBody(event)
+      } catch {
+        body = undefined
+      }
+      const headers: Record<string, string> = {}
+      for (const [k, v] of event.headers.entries()) headers[k.toLowerCase()] = v
+      const payload =
+        body === undefined
+          ? undefined
+          : { body, headers, path, method, deliveredAt: new Date().toISOString() }
+      await gateway.managers.triggers.fire(triggerId, undefined, payload)
       return { ok: true, triggerId }
     }),
   )
