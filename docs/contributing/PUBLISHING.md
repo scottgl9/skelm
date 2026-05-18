@@ -42,6 +42,20 @@ Every user-visible change goes in [`CHANGELOG.md`](../CHANGELOG.md) under a clea
 - For npmjs publishing: account that owns the `skelm` package + `@skelm` scope. `npm whoami` should report your user.
 - For GitHub Packages publishing: a classic PAT (`ghp_…`) with `write:packages, read:packages, repo` scope. The `repo` scope is required so the published package links to its source repository — that link drives the "Public" visibility setting (see below).
 
+## Pre-publish gates
+
+Every publishable package (`@skelm/core`, `@skelm/cli`, `@skelm/gateway`, …) has a `prepublishOnly` script that runs `scripts/guards/dist-invariants.ts`. The guard reads a manifest of "feature → expected dist substring" pairs and refuses to publish if any built `dist/` is missing a feature its source advertises. The same guard runs as part of `pnpm guards` / `pnpm check`, so a stale `dist/` is caught in PR CI long before publish.
+
+Concretely:
+
+- `pnpm publish` (or `npm publish`) in any package transparently runs the guard via `prepublishOnly`. If `dist/` is stale you get an actionable diagnostic and a non-zero exit before anything reaches the registry.
+- `pnpm check` runs the same guard.
+- The canonical publish script (`scripts/publish-npm.sh`) does `pnpm install --frozen-lockfile && pnpm build && pnpm typecheck && pnpm test` before publish, so the guard is a belt-and-suspenders backstop.
+
+If you bypass the orchestration script (`cd packages/core && npm publish`), the guard still runs.
+
+To add a new invariant: append an entry to `MANIFEST` in `scripts/guards/dist-invariants.ts`. Keep needles small and specific — the goal is "this feature actually shipped," not full coverage.
+
 ## Releasing — the canonical flow
 
 Run from `main`. Replace `0.X.Y` with the new version.
@@ -192,6 +206,8 @@ Transitive `@skelm/*` deps install anonymously from npmjs.org — the GitHub Pac
 **`E400 cannot publish over previously published version`** — npm forbids re-publishing the same version. Bump and retry.
 
 **Consumers get `EUNSUPPORTEDPROTOCOL: workspace:*`** — the tarball shipped with literal `workspace:*` deps. The publish path lost the on-disk rewrite (or someone bypassed `scripts/publish-npm.sh`). Bump and re-release; once a broken tarball is on the registry the version is burnt.
+
+**Consumers get `TypeError: step.run is not a function` (or another "feature was supposed to ship") error** — the published tarball is built from a stale `dist/` that pre-dates the feature. This is what `prepublishOnly` exists to prevent; verify the package was published from a clean `pnpm install --frozen-lockfile && pnpm build` tree. Once a broken tarball is on the registry the version is burnt — bump and re-publish from a clean checkout.
 
 **GitHub Packages publish succeeds but the package isn't visible to anonymous consumers** — visibility is still `private`. Run `node scripts/check-gh-visibility.mjs` and follow the printed URLs.
 
