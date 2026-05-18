@@ -285,6 +285,67 @@ describe('Gateway HTTP webhook trigger dispatch', () => {
       await gw.stop()
     }
   })
+
+  it('deduplicates webhook deliveries by header within the TTL', async () => {
+    const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      httpProxyPort: proxyPort,
+      config: {},
+    })
+    await gw.start()
+    const base = `http://127.0.0.1:${port}`
+    try {
+      const fired: string[] = []
+      gw.managers.triggers.setOnFire(async (ctx) => {
+        fired.push(ctx.triggerId)
+      })
+      gw.managers.triggers.register({
+        kind: 'webhook',
+        id: 'gh-pr',
+        workflowId: 'wf',
+        path: '/hooks/gh-pr',
+        method: 'POST',
+        dedupe: { header: 'X-GitHub-Delivery', ttlMs: 60_000 },
+      })
+
+      // First delivery fires.
+      const first = await fetch(`${base}/hooks/gh-pr`, {
+        method: 'POST',
+        headers: { 'x-github-delivery': 'abc-123' },
+      })
+      expect(first.status).toBe(200)
+      expect(await first.json()).toEqual({ ok: true, triggerId: 'gh-pr' })
+
+      // Replay with the same delivery id is deduped.
+      const replay = await fetch(`${base}/hooks/gh-pr`, {
+        method: 'POST',
+        headers: { 'x-github-delivery': 'abc-123' },
+      })
+      expect(replay.status).toBe(200)
+      expect(await replay.json()).toEqual({ ok: true, triggerId: 'gh-pr', deduped: true })
+
+      // A fresh delivery id fires again.
+      const second = await fetch(`${base}/hooks/gh-pr`, {
+        method: 'POST',
+        headers: { 'x-github-delivery': 'def-456' },
+      })
+      expect(second.status).toBe(200)
+
+      expect(fired).toEqual(['gh-pr', 'gh-pr'])
+
+      // Missing delivery header — defensive default: fire (do not silently drop).
+      const noHeader = await fetch(`${base}/hooks/gh-pr`, { method: 'POST' })
+      expect(noHeader.status).toBe(200)
+      expect(fired).toEqual(['gh-pr', 'gh-pr', 'gh-pr'])
+    } finally {
+      await gw.stop()
+    }
+  })
 })
 
 describe('Gateway HTTP /schedules', () => {

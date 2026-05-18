@@ -13,6 +13,14 @@ export type TriggerSpec =
       path: string
       method?: string
       secret?: string
+      /**
+       * Optional pre-dispatch deduplication. When set, the gateway reads the
+       * named request header and skips dispatch if the same value has been
+       * seen within `ttlMs` (default 24 hours). A `webhook.deduped` audit
+       * event is emitted on hit; the HTTP response is still 200 so the
+       * webhook source treats the delivery as accepted.
+       */
+      dedupe?: { header: string; ttlMs?: number }
     }
   | {
       kind: 'poll'
