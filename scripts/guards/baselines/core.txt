@@ -87,6 +87,7 @@ value:createPolicyFetch
 value:createRoutingBackend
 value:createScriptTrigger
 value:createSlackTrigger
+value:createThreadHost
 value:createWebhookTrigger
 value:defineConfig
 value:describePipeline
@@ -269,6 +270,9 @@ type:StepStatus
 type:StopReason
 type:SystemPromptInput
 type:TaskRequirements
+type:Thread
+type:ThreadHost
+type:ThreadRef
 type:ToolCallResponse
 type:ToolContent
 type:ToolDefinition

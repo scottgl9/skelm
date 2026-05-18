@@ -304,6 +304,10 @@ export type {
   WaitStep,
   WhenPredicate,
   ExecFn,
+} from './types.js'
+export { createThreadHost } from './threads.js'
+export type { Thread, ThreadHost, ThreadRef } from './threads.js'
+export type {
   ExecRequest,
   ExecResult,
 } from './types.js'

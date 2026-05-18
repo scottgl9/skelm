@@ -143,6 +143,18 @@ export interface Context<TInput = unknown> {
   readonly run: RunMetadata
   readonly signal: AbortSignal
   readonly state: State
+  /**
+   * Per-run accessor for tracking threaded conversation state (PR/issue
+   * threads, Slack threads, …). Use over hand-rolled `last-comment-seen:*`
+   * keys in `ctx.state` — entries written through `threads` live in a
+   * dedicated namespace (`thread:<kind>:<key>`) so they don't collide with
+   * regular pipeline state.
+   *
+   *   const t = ctx.threads.get({ kind: 'github-pr', key: 'octo/demo#42' })
+   *   await t.markSeen(commentId)
+   *   for await (const c of t.unseenSince(await t.lastSeen())) { ... }
+   */
+  readonly threads: import('./threads.js').ThreadHost
   readonly workspace?: WorkspaceHandle
   /**
    * Current item when inside a `forEach` step. Undefined outside forEach.
