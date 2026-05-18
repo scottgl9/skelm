@@ -284,6 +284,7 @@ type:Usage
 type:WaitRequest
 type:WaitStep
 type:WebhookTriggerConfig
+type:WhenPredicate
 type:WorkflowInvocation
 type:WorkflowPlugin
 type:WorkspaceManagerOptions
