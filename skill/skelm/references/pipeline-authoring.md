@@ -30,6 +30,7 @@ code({
   module?: string                 // path to a .ts/.js file exporting the run function
   export?: string                 // export name from `module` (default: 'default')
   permissions?: AgentPermissions  // required to call `ctx.exec(...)`
+  secrets?: string[]
   retry?: RetryPolicy
 })
 ```

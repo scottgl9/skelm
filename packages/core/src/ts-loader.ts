@@ -8,7 +8,7 @@
 
 import { existsSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pathToFileURL } from 'node:url'
 import { tsImport } from 'tsx/esm/api'
 
 export interface LoadTsModuleOptions {
@@ -24,6 +24,14 @@ const moduleCache = new Map<string, Promise<Record<string, unknown>>>()
 /**
  * Load a `.ts` / `.js` module by path or `file://` URL and return its
  * namespace object. Repeat calls for the same absolute URL are deduplicated.
+ *
+ * **Caching:** the loader memoizes resolved modules in a process-global
+ * `Map` keyed by absolute `file://` URL. The entry lives for the lifetime
+ * of the process — there is no TTL, no file-mtime check, and no eviction.
+ * If a module file changes on disk after first load (e.g. a deployment that
+ * swaps a step file under a long-running gateway), the stale module keeps
+ * being served until restart. Tests can call `clearTsModuleCache()` to
+ * force a fresh import.
  *
  * The returned object is the raw namespace as resolved by tsx; callers that
  * need a specific export should reach for `pickExport()`.
@@ -76,9 +84,4 @@ function toFileUrl(path: string | URL, baseDir: string | undefined): string {
     throw new Error(`ts-loader: module not found: ${absolute}`)
   }
   return pathToFileURL(absolute).href
-}
-
-/** Resolve a `file://` URL to an absolute filesystem path. */
-export function fileUrlToPath(url: string): string {
-  return fileURLToPath(url)
 }
