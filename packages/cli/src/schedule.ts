@@ -1,5 +1,5 @@
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve as pathResolve } from 'node:path'
 import { readDiscovery } from '@skelm/gateway'
 import { EXIT } from './exit-codes.js'
 import type { MainIO, MainResult } from './main.js'
@@ -292,7 +292,14 @@ async function resolveWorkflowId(
   io: MainIO,
 ): Promise<string | null> {
   const res = await fetchHttp(`${baseUrl}/pipelines`, { headers })
-  if (res === null) return null
+  if (res === null) {
+    // fetchHttp already wrote a stderr line on the underlying network error,
+    // but it identified the request as "gateway HTTP request failed" without
+    // saying which call — be explicit so the operator sees what was being
+    // resolved.
+    io.stderr.write(`error: failed to reach gateway at ${baseUrl}/pipelines\n`)
+    return null
+  }
   if (!res.ok) {
     // /pipelines is a documented endpoint; a non-200 here is a real gateway
     // problem, not "user typed a bad path". Surface and abort.
@@ -303,14 +310,19 @@ async function resolveWorkflowId(
   // Empty registry: the gateway has not indexed any workflows yet (common
   // in tests that boot a bare gateway, or when the workflow is registered
   // later via /v1/workflows). Trust the user input — the alternative is
-  // breaking valid setups for a hypothetical wrong path.
-  if (pipelines.length === 0) return userInput
+  // breaking valid setups for a hypothetical wrong path. Emit a warn so the
+  // operator knows we couldn't actually validate the path.
+  if (pipelines.length === 0) {
+    io.stderr.write(
+      `warn: gateway has no registered workflows yet — submitting "${userInput}" as-is (run \`skelm list\` once workflows are indexed to confirm the canonical id)\n`,
+    )
+    return userInput
+  }
   // 1. exact match against registry id
   const exact = pipelines.find((p) => p.id === userInput)
   if (exact !== undefined) return exact.id
   // 2. exact match against the absolute file path
-  const path = await import('node:path')
-  const absUser = path.resolve(process.cwd(), userInput)
+  const absUser = pathResolve(process.cwd(), userInput)
   const byFile = pipelines.find((p) => p.file === absUser)
   if (byFile !== undefined) return byFile.id
   // 3. unique suffix match
