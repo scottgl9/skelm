@@ -286,6 +286,53 @@ describe('Gateway HTTP webhook trigger dispatch', () => {
     }
   })
 
+  it('forwards the parsed body + headers as the trigger payload', async () => {
+    const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      httpProxyPort: proxyPort,
+      config: {},
+    })
+    await gw.start()
+    const base = `http://127.0.0.1:${port}`
+    try {
+      const payloads: unknown[] = []
+      gw.managers.triggers.setOnFire(async (ctx) => {
+        payloads.push(ctx.payload)
+      })
+      gw.managers.triggers.register({
+        kind: 'webhook',
+        id: 'echo',
+        workflowId: 'wf',
+        path: '/hooks/echo',
+        method: 'POST',
+      })
+      const res = await fetch(`${base}/hooks/echo`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-github-event': 'pull_request' },
+        body: JSON.stringify({ action: 'opened' }),
+      })
+      expect(res.status).toBe(200)
+      expect(payloads).toHaveLength(1)
+      const p = payloads[0] as {
+        body: { action: string }
+        headers: Record<string, string>
+        path: string
+        method: string
+      }
+      expect(p.body).toEqual({ action: 'opened' })
+      expect(p.headers['x-github-event']).toBe('pull_request')
+      expect(p.path).toBe('/hooks/echo')
+      expect(p.method).toBe('POST')
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('deduplicates webhook deliveries by header within the TTL', async () => {
     const port = await pickFreePort()
     const proxyPort = await pickFreePort()

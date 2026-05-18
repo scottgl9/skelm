@@ -53,6 +53,15 @@ export {
   type PostPullRequestReviewParams,
   type PullRequestReviewComment,
 } from './github.js'
+export {
+  registerGitHubPrTrigger,
+  normalizeGitHubPrEvent,
+  verifyGitHubSignature,
+  type GitHubPrEventKind,
+  type GitHubPrPayload,
+  type GitHubPrTriggerSpec,
+  type GitHubPrTriggerCoordinator,
+} from './github-pr-trigger.js'
 export { SlackIntegration, verifySlackSignature } from './slack.js'
 export {
   TelegramIntegration,
