@@ -480,7 +480,21 @@ export type Step =
  */
 export type PipelineTrigger =
   | { kind: 'queue'; id?: string; sourceId: string; config?: Record<string, unknown> }
-  | { kind: 'webhook'; id?: string; path: string; method?: string; secret?: string }
+  | {
+      kind: 'webhook'
+      id?: string
+      path: string
+      method?: string
+      secret?: string
+      /**
+       * Optional pre-dispatch deduplication. The gateway reads the named
+       * request header on each delivery and skips dispatch when the same
+       * value has been seen within `ttlMs` (default 24 hours, i.e. matches
+       * GitHub's `X-GitHub-Delivery` retry window). A `webhook.deduped`
+       * audit event is emitted on a hit; the HTTP response is still 200.
+       */
+      dedupe?: { header: string; ttlMs?: number }
+    }
   | { kind: 'cron'; id?: string; cron: string }
   | { kind: 'interval'; id?: string; everyMs: number }
 

@@ -1,4 +1,5 @@
 import { type ParsedCron, nextFireTime, parseCron } from './cron-parser.js'
+import { type DedupeStore, InMemoryDedupeStore } from './dedupe-store.js'
 import type { QueueDriver } from './queue-driver.js'
 import type {
   FireContext,
@@ -13,6 +14,8 @@ export interface TriggerCoordinatorOptions {
   onFire: RunCallback
   /** Default overlap policy. Default: 'skip'. */
   defaultOverlap?: OverlapPolicy
+  /** Optional dedupe store backing webhook idempotency. Defaults to InMemoryDedupeStore. */
+  webhookDedupe?: DedupeStore
 }
 
 /**
@@ -47,8 +50,15 @@ export class TriggerCoordinator {
   private queueDriverBindings: Map<string, string> = new Map() // triggerId → driverId
   private queues: Map<string, FireContext[]> = new Map()
   private stopping = false
+  /**
+   * Per-trigger webhook deduplication store. Public so the HTTP dispatch
+   * layer (control-routes) can consult it before invoking `fire()`.
+   */
+  readonly webhookDedupe: DedupeStore
 
-  constructor(private opts: TriggerCoordinatorOptions) {}
+  constructor(private opts: TriggerCoordinatorOptions) {
+    this.webhookDedupe = opts.webhookDedupe ?? new InMemoryDedupeStore()
+  }
 
   /**
    * Register a source function that poll triggers reference by `sourceFnId`.

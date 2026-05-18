@@ -112,6 +112,21 @@ triggers: [{ kind: 'webhook', path: '/hooks/github', secret: process.env.GH_HOOK
 
 The gateway's HTTP server resolves `POST /hooks/github` to the trigger id and fires it. Webhook payload extraction is currently handled by the route handler — see `packages/gateway/src/http/control-routes.ts`. (Carrying request bodies into `payload` is on the roadmap so webhook-triggered pipelines can take request data as input.)
 
+### Idempotency / dedupe
+
+For sources that retry deliveries with a stable idempotency header (GitHub's `X-GitHub-Delivery`, Slack's `X-Slack-Request-Id`, the generic `Idempotency-Key`), declare the header on the trigger and the gateway short-circuits replays before dispatch:
+
+```ts
+triggers: [{
+  kind: 'webhook',
+  path: '/hooks/github',
+  secret: process.env.GH_HOOK_SECRET,
+  dedupe: { header: 'X-GitHub-Delivery', ttlMs: 86_400_000 },  // 24 h default
+}]
+```
+
+The first delivery dispatches as usual. A replay carrying the same header value within `ttlMs` responds 200 with `{ deduped: true }` and emits a `webhook.deduped` audit entry. Deliveries past the TTL — or missing the header entirely — dispatch normally. The store is keyed by `(triggerId, deliveryId)` so two webhook triggers can share an idempotency header without colliding.
+
 ## Audit
 
 Every fire emits, through the dispatcher's run lifecycle:
