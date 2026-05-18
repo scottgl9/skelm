@@ -125,6 +125,7 @@ See [Backend documentation](./docs/backends/README.md) for setup guides, and [Co
 | `@skelm/gateway` | Long-running orchestrator: HTTP, scheduler, agent lifecycle |
 | `@skelm/scheduler` | Cron, interval, webhook, poll, queue triggers |
 | `@skelm/integrations` | Typed connectors for GitHub, Slack, Telegram |
+| `@skelm/integration-sdk` | Authoring SDK for building custom skelm integrations |
 | `@skelm/pi` | Pi coding-agent backend |
 | `@skelm/opencode` | Opencode coding-agent backend |
 | `@skelm/codex` | OpenAI Codex backend via the official `@openai/codex-sdk` |
