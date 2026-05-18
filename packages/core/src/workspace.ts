@@ -61,6 +61,8 @@ export class WorkspaceManager {
         return await this.prepareEphemeral(params.pipelineId, params.runId, params.workspace)
       case 'mounted':
         return await this.prepareMounted(params.pipelineId, params.workspace)
+      case 'git-repo':
+        return await this.prepareGitRepo(params.workspace)
     }
   }
 
@@ -206,6 +208,43 @@ export class WorkspaceManager {
     }
   }
 
+  private async prepareGitRepo(
+    workspace: Extract<WorkspaceConfig, { mode: 'git-repo' }>,
+  ): Promise<PreparedWorkspace> {
+    const url = resolveRepoUrl(workspace.repo)
+    const path = resolvePath(workspace.cacheDir ?? defaultGitRepoCacheDir(workspace.repo))
+    const extraHeader = workspace.auth ? readAuthHeader(workspace.auth.env) : undefined
+    const gitArgs = extraHeader ? ['-c', `http.extraheader=${extraHeader}`] : []
+
+    const gitDirExists = await exists(join(path, '.git'))
+    if (!gitDirExists) {
+      await mkdir(dirname(path), { recursive: true })
+      await execFileAsync('git', [...gitArgs, 'clone', '--filter=blob:none', url, path])
+    }
+    await execFileAsync('git', [...gitArgs, '-C', path, 'fetch', 'origin', workspace.ref])
+    if (workspace.baseRef !== undefined) {
+      await execFileAsync('git', [...gitArgs, '-C', path, 'fetch', 'origin', workspace.baseRef])
+    }
+    // Resolve ref to a SHA via FETCH_HEAD (works for branches, tags, SHAs).
+    await execFileAsync('git', ['-C', path, 'checkout', '--detach', 'FETCH_HEAD'])
+
+    // Seed: copy files into the workspace before the step runs
+    if (workspace.seed?.copy) {
+      await seedWorkspace(path, workspace.seed.copy)
+    }
+
+    const handle: WorkspaceHandle = Object.freeze({
+      path,
+      mode: 'git-repo',
+    })
+    return {
+      handle,
+      exposeAfterStep: true,
+      async finishStep(): Promise<void> {},
+      async finishRun(): Promise<void> {},
+    }
+  }
+
   private async prepareMounted(
     _pipelineId: string,
     workspace: Extract<WorkspaceConfig, { mode: 'mounted' }>,
@@ -234,6 +273,30 @@ export class WorkspaceManager {
     const base = resolvePath(this.options.persistentBase ?? DEFAULT_PERSISTENT_BASE)
     return join(base, pipelineId, name)
   }
+}
+
+const DEFAULT_GIT_REPO_BASE = join(homedir(), '.skelm', 'repos')
+
+function resolveRepoUrl(spec: string): string {
+  if (/^[\w-]+\/[\w.-]+$/.test(spec)) {
+    return `https://github.com/${spec}.git`
+  }
+  return spec
+}
+
+function defaultGitRepoCacheDir(spec: string): string {
+  const match = spec.match(/^([\w-]+)\/([\w.-]+?)(\.git)?$/)
+  if (match) {
+    return join(DEFAULT_GIT_REPO_BASE, `${match[1]}__${match[2]}`)
+  }
+  const safe = spec.replace(/[^A-Za-z0-9_.-]+/g, '_').replace(/^_+|_+$/g, '')
+  return join(DEFAULT_GIT_REPO_BASE, safe || 'repo')
+}
+
+function readAuthHeader(envName: string): string | undefined {
+  const token = process.env[envName]
+  if (token === undefined || token === '') return undefined
+  return `AUTHORIZATION: bearer ${token}`
 }
 
 async function ensureGitRoot(path: string): Promise<void> {

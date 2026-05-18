@@ -64,6 +64,36 @@ export type WorkspaceConfig =
       /** Seed files copied into the workspace before the step runs. */
       readonly seed?: { readonly copy: readonly string[] }
     }
+  | {
+      readonly mode: 'git-repo'
+      /**
+       * Repo spec. Accepts `owner/name` (resolved to `https://github.com/owner/name.git`)
+       * or a full git URL (`https://`, `ssh://`, `git@host:owner/name`).
+       */
+      readonly repo: string
+      /** Branch, tag, or commit SHA to check out. */
+      readonly ref: string
+      /**
+       * Optional base ref to also fetch. Useful for PR review pipelines that
+       * need both the head and the base commits to compute `git diff base..head`.
+       */
+      readonly baseRef?: string
+      /**
+       * Cache directory for the clone. Defaults to
+       * `~/.skelm/repos/<owner>__<name>`. Repeated runs against the same repo
+       * reuse the clone and fall back to `git fetch` instead of cloning again.
+       */
+      readonly cacheDir?: string
+      /**
+       * Optional credential pulled from the process environment and passed
+       * to `git` via `http.extraheader` so it never persists in `git remote -v`.
+       * Example: `{ env: 'GITHUB_TOKEN' }` injects
+       * `AUTHORIZATION: bearer <token>` for each git invocation.
+       */
+      readonly auth?: { readonly env: string }
+      /** Seed files copied into the workspace before the step runs. */
+      readonly seed?: { readonly copy: readonly string[] }
+    }
 
 export interface WorkspaceHandle {
   readonly path: string

@@ -158,6 +158,30 @@ workspace: {
 
 The workspace path becomes the agent's cwd; coding agents read/write source files there.
 
+### `git-repo` — clone-or-fetch a remote repo at a specific ref
+
+```ts
+workspace: {
+  mode: 'git-repo',
+  repo: 'owner/name' | 'https://…',     // `owner/name` resolves to https://github.com/owner/name.git
+  ref: string,                          // branch, tag, or commit SHA
+  baseRef?: string,                     // optional second ref to fetch (e.g. PR base)
+  cacheDir?: string,                    // defaults to ~/.skelm/repos/<owner>__<name>
+  auth?: { env: string },               // env var holding a bearer token (e.g. 'GITHUB_TOKEN')
+  seed?: { copy: readonly string[] },
+}
+```
+
+First use clones with `--filter=blob:none`; subsequent runs reuse the same
+cache directory and `git fetch` the requested ref instead of cloning again.
+The repo is left in a detached-HEAD checkout at `FETCH_HEAD`. When `auth` is
+set the token is injected per-invocation via `http.extraheader` so it is not
+persisted in `git remote -v`.
+
+This mode replaces hand-rolled clone-or-fetch logic in PR-review pipelines —
+authors no longer maintain a `code()` step that calls `git clone`/`git fetch`/
+`git checkout` against a manually-managed cache dir.
+
 ## Seed files
 
 ```ts
