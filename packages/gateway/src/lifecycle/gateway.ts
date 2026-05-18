@@ -436,6 +436,33 @@ export class Gateway {
       if (this.options.installSignalHandlers) this.attachSignals()
       this.state = 'running'
     } catch (err) {
+      // F042: lockfile + discovery are acquired before the HTTP listener
+      // binds, so a listen-time failure (most commonly EADDRINUSE) would
+      // leave stale state on disk if we only nulled the in-memory refs.
+      // Release every external artefact before resetting state.
+      try {
+        await this.stopEgressProxy()
+      } catch {
+        // swallow — we're already in an error path
+      }
+      if (this.httpServer !== null) {
+        try {
+          await this.httpServer.stop()
+        } catch {
+          // swallow
+        }
+        this.httpServer = null
+      }
+      try {
+        await removeDiscovery(this.discoveryPath)
+      } catch {
+        // swallow — the file may not have been written yet
+      }
+      try {
+        await releaseLockfile(this.lockfilePath)
+      } catch {
+        // swallow — best-effort cleanup
+      }
       this.state = 'stopped'
       this.lockfile = null
       this.discovery = null
