@@ -49,6 +49,60 @@ export default pipeline({
 })
 ```
 
+## GitHub REST helpers
+
+For PR-review and webhook-management workflows the package also exports
+standalone REST helpers that take a plain `GitHubAuth` and don't require an
+integration instance. They are the recommended path for PR-review pipelines
+that previously shelled out to the `gh` CLI.
+
+```ts
+import {
+  postPullRequestReview,
+  postIssueComment,
+  registerWebhook,
+  deleteWebhook,
+  getAuthenticatedUser,
+  GitHubApiError,
+} from '@skelm/integrations'
+
+const auth = { token: process.env.GITHUB_TOKEN! }
+
+// Post a review against a PR.
+await postPullRequestReview({
+  auth,
+  owner: 'octo',
+  repo: 'demo',
+  number: 42,
+  event: 'REQUEST_CHANGES',      // 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'
+  body: 'See inline comments.',
+  comments: [{ path: 'src/x.ts', line: 12, body: 'nit: rename' }],
+})
+
+// Drop a follow-up issue comment.
+await postIssueComment({ auth, owner: 'octo', repo: 'demo', number: 42, body: 'pong' })
+
+// Register a webhook (returns the hook id for later cleanup).
+const hook = await registerWebhook({
+  auth, owner: 'octo', repo: 'demo',
+  url: 'https://gateway.example/hooks/gh',
+  secret: process.env.GITHUB_WEBHOOK_SECRET,
+  events: ['pull_request', 'issue_comment', 'pull_request_review'],
+})
+await deleteWebhook({ auth, owner: 'octo', repo: 'demo', hookId: hook.id })
+```
+
+Failed calls raise `GitHubApiError` with `status`, `method`, `path`, and the
+parsed response body. The helpers warn to stderr when GitHub's
+`X-RateLimit-Remaining` drops below 10 % of the quota so operators see
+throttling coming before it bites.
+
+The `GitHubIntegration` class wires the same helpers through
+`performHealthCheck` (`GET /user`), `setupWebhook` (`POST /hooks`),
+`cleanupWebhook` (`DELETE /hooks/:id`), and `sendNotification` (routes to
+`POST /issues/:n/comments` by default, or to `POST /pulls/:n/reviews` when
+`options.kind === 'pr-review'`).
+
 ## Built-in connectors
 
 | Connector       | Status     | Trigger types                                              |
