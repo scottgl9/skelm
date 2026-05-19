@@ -651,6 +651,53 @@ describe('Gateway HTTP /schedules', () => {
         }),
       })
       expect(badTrigger.status).toBe(400)
+
+      // Default-deny: ms-graph webhook without clientState rejected
+      // because Graph does not sign payloads (issue #161).
+      const graphNoCs = await fetch(`http://127.0.0.1:${port}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's',
+          workflowId: 'w',
+          trigger: { kind: 'webhook', path: '/h', provider: 'ms-graph' },
+        }),
+      })
+      expect(graphNoCs.status).toBe(400)
+
+      // Empty-string clientState treated the same as omitted.
+      const graphEmptyCs = await fetch(`http://127.0.0.1:${port}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's',
+          workflowId: 'w',
+          trigger: {
+            kind: 'webhook',
+            path: '/h',
+            provider: 'ms-graph',
+            clientState: '',
+          },
+        }),
+      })
+      expect(graphEmptyCs.status).toBe(400)
+
+      // Same path with a non-empty clientState registers cleanly.
+      const graphOk = await fetch(`http://127.0.0.1:${port}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 'graph-ok',
+          workflowId: 'w',
+          trigger: {
+            kind: 'webhook',
+            path: '/hooks/graph-ok',
+            provider: 'ms-graph',
+            clientState: 'shared',
+          },
+        }),
+      })
+      expect(graphOk.status).toBe(200)
     } finally {
       await gw.stop()
     }

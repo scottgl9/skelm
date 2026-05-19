@@ -133,6 +133,12 @@ function scheduleTriggerToSpec(
       if (typeof trigger.clientState === 'string' && trigger.clientState !== '') {
         spec.clientState = trigger.clientState
       }
+      // Default-deny: Graph does not sign payloads, so without clientState
+      // the webhook URL would be the only authentication boundary.
+      // Refuse to register an unauthenticated ms-graph trigger (issue #161).
+      if (spec.provider === 'ms-graph' && spec.clientState === undefined) {
+        return 'invalid'
+      }
       return spec
     }
     case 'event-source': {

@@ -162,12 +162,19 @@ describe('webhook providers', () => {
       gw.managers.triggers.setOnFire(async (ctx) => {
         fired.push(ctx.triggerId)
       })
+      // ms-graph webhooks must carry a clientState — without one any
+      // caller with the URL can fire (Graph does not sign payloads).
+      // The validation-token handshake itself doesn't require clientState
+      // but the *trigger registration* does; this keeps the test aligned
+      // with the default-deny posture and doesn't normalize the unsafe
+      // configuration.
       gw.managers.triggers.register({
         kind: 'webhook',
         id: 'graph-hook',
         workflowId: 'wf',
         path: '/hooks/graph',
         provider: 'ms-graph',
+        clientState: 'validation-token-test-state',
       })
 
       const res = await fetch(
