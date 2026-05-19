@@ -59,6 +59,7 @@ import {
   makeSkillLoader,
   resolveDeclaredSecrets,
 } from './helpers.js'
+import { createSecretsAccessor, resolveValueOrFn } from './internal.js'
 import type { ExecutionRuntime } from './runtime.js'
 
 const defaultStateStore = new MemoryRunStore()
@@ -169,12 +170,7 @@ async function runCodeStep(
     undefined,
     ctx.run.runId,
   )
-  const secretsAccessor =
-    resolvedSecrets !== undefined
-      ? {
-          get: (name: string) => resolvedSecrets[name],
-        }
-      : undefined
+  const secretsAccessor = createSecretsAccessor(resolvedSecrets)
 
   const policy = resolvePermissions(
     runtime?.defaultPermissions,
@@ -270,21 +266,11 @@ async function runLlmStep(
     undefined,
     ctx.run.runId,
   )
-  const secretsAccessor =
-    resolvedSecrets !== undefined
-      ? {
-          get: (name: string) => resolvedSecrets[name],
-        }
-      : undefined
+  const secretsAccessor = createSecretsAccessor(resolvedSecrets)
   const stepCtx =
     secretsAccessor !== undefined ? freezeContext({ ...ctx, secrets: secretsAccessor }) : ctx
-  const promptText = typeof step.prompt === 'function' ? step.prompt(stepCtx) : step.prompt
-  const systemText =
-    step.system === undefined
-      ? undefined
-      : typeof step.system === 'function'
-        ? step.system(stepCtx)
-        : step.system
+  const promptText = resolveValueOrFn(step.prompt, stepCtx)
+  const systemText = step.system === undefined ? undefined : resolveValueOrFn(step.system, stepCtx)
   const req = {
     messages: [{ role: 'user' as const, content: promptText }],
     ...(systemText !== undefined && { system: systemText }),
@@ -339,11 +325,7 @@ async function runAgentStep(
   let finishedWorkspace = false
   try {
     const workspaceConfig =
-      step.workspace === undefined
-        ? undefined
-        : typeof step.workspace === 'function'
-          ? step.workspace(ctx)
-          : step.workspace
+      step.workspace === undefined ? undefined : resolveValueOrFn(step.workspace, ctx)
     preparedWorkspace =
       workspaceConfig === undefined
         ? undefined
@@ -378,26 +360,15 @@ async function runAgentStep(
       events,
       ctx.run.runId,
     )
-    const secretsAccessor =
-      resolvedSecrets !== undefined ? { get: (name: string) => resolvedSecrets[name] } : undefined
+    const secretsAccessor = createSecretsAccessor(resolvedSecrets)
     const stepCtx =
       secretsAccessor !== undefined
         ? freezeContext({ ...workspaceCtx, secrets: secretsAccessor })
         : workspaceCtx
-    const resolvedPromptText =
-      typeof step.prompt === 'function' ? step.prompt(stepCtx) : step.prompt
+    const resolvedPromptText = resolveValueOrFn(step.prompt, stepCtx)
     const resolvedSystemText =
-      step.system === undefined
-        ? undefined
-        : typeof step.system === 'function'
-          ? step.system(stepCtx)
-          : step.system
-    const mcpServers =
-      step.mcp === undefined
-        ? undefined
-        : typeof step.mcp === 'function'
-          ? step.mcp(stepCtx)
-          : step.mcp
+      step.system === undefined ? undefined : resolveValueOrFn(step.system, stepCtx)
+    const mcpServers = step.mcp === undefined ? undefined : resolveValueOrFn(step.mcp, stepCtx)
     if (policy !== undefined && mcpServers !== undefined) {
       const enforcer = new TrustEnforcer(policy)
       for (const server of mcpServers) {
@@ -911,12 +882,7 @@ async function runWait(
   if (!waitForInput) {
     throw new WaitConfigError(step.id)
   }
-  const message =
-    step.message === undefined
-      ? undefined
-      : typeof step.message === 'function'
-        ? step.message(ctx)
-        : step.message
+  const message = step.message === undefined ? undefined : resolveValueOrFn(step.message, ctx)
   events?.publish({
     type: 'run.waiting',
     runId: ctx.run.runId,
@@ -962,12 +928,7 @@ async function runInvokeStep(
   if (pipeline === undefined) {
     throw new InvokePipelineNotFoundError(step.pipelineId, step.id)
   }
-  const nestedInput =
-    step.input === undefined
-      ? ctx.input
-      : typeof step.input === 'function'
-        ? step.input(ctx)
-        : step.input
+  const nestedInput = step.input === undefined ? ctx.input : resolveValueOrFn(step.input, ctx)
   const nestedRun = await runPipeline(pipeline, nestedInput, {
     signal: ctx.signal,
     ...(events !== undefined && { events }),
@@ -1008,12 +969,7 @@ async function runPipelineStep(
   events?: EventBus,
   runtime?: ExecutionRuntime,
 ): Promise<unknown> {
-  const nestedInput =
-    step.input === undefined
-      ? ctx.input
-      : typeof step.input === 'function'
-        ? step.input(ctx)
-        : step.input
+  const nestedInput = step.input === undefined ? ctx.input : resolveValueOrFn(step.input, ctx)
   const nestedRun = await runPipeline(step.pipeline, nestedInput, {
     signal: ctx.signal,
     ...(events !== undefined && { events }),

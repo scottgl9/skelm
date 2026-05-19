@@ -133,26 +133,17 @@ export class Gateway {
 
   /** Throws if accessed before start() succeeds or after stop(). */
   get registries(): GatewayRegistries {
-    if (this.registriesInternal === null) {
-      throw new Error('gateway registries are not available — start() the gateway first')
-    }
-    return this.registriesInternal
+    return requireStarted(this.registriesInternal, 'gateway registries are not available')
   }
 
   /** Trust-boundary instances the gateway hands to Runners it constructs. */
   get enforcement(): GatewayEnforcement {
-    if (this.enforcementInternal === null) {
-      throw new Error('gateway enforcement is not available — start() the gateway first')
-    }
-    return this.enforcementInternal
+    return requireStarted(this.enforcementInternal, 'gateway enforcement is not available')
   }
 
   /** The durable RunStore; constructed at start() per the storage config. */
   get runStore(): RunStore {
-    if (this.runStoreInternal === null) {
-      throw new Error('gateway runStore is not available — start() the gateway first')
-    }
-    return this.runStoreInternal
+    return requireStarted(this.runStoreInternal, 'gateway runStore is not available')
   }
 
   /**
@@ -224,18 +215,15 @@ export class Gateway {
    * start(); throws if accessed before start() completes.
    */
   getWorkflowRegistrationService(): WorkflowRegistrationService {
-    if (this.workflowRegistrationInternal === null) {
-      throw new Error('workflow registration service is not available — start() the gateway first')
-    }
-    return this.workflowRegistrationInternal
+    return requireStarted(
+      this.workflowRegistrationInternal,
+      'workflow registration service is not available',
+    )
   }
 
   /** The archive-extraction service backing multipart .zip uploads. */
   getWorkflowArchiveService(): WorkflowArchiveService {
-    if (this.workflowArchiveInternal === null) {
-      throw new Error('workflow archive service is not available — start() the gateway first')
-    }
-    return this.workflowArchiveInternal
+    return requireStarted(this.workflowArchiveInternal, 'workflow archive service is not available')
   }
 
   /**
@@ -335,10 +323,7 @@ export class Gateway {
 
   /** Process / session supervisors hosted by the gateway. */
   get managers(): GatewayManagers {
-    if (this.managersInternal === null) {
-      throw new Error('gateway managers are not available — start() the gateway first')
-    }
-    return this.managersInternal
+    return requireStarted(this.managersInternal, 'gateway managers are not available')
   }
 
   /**
@@ -346,11 +331,9 @@ export class Gateway {
    * The token is passed to the subprocess as SKELM_EGRESS_TOKEN.
    */
   registerEgressToken(runId: string, stepId: string, policy: NetworkPolicy): string {
-    if (this.tokenPolicyStore === null) {
-      throw new Error('egress proxy is not available — start() the gateway first')
-    }
+    const store = requireStarted(this.tokenPolicyStore, 'egress proxy is not available')
     const token = `${runId}:${stepId}`
-    this.tokenPolicyStore.set(token, policy)
+    store.set(token, policy)
     return token
   }
 
@@ -832,6 +815,14 @@ export class Gateway {
     this.handlers.clear()
     this.signalsAttached = false
   }
+}
+
+/** Narrow a lazily-initialized field to its non-null type, with a uniform suffix. */
+function requireStarted<T>(value: T | null, notAvailableMsg: string): T {
+  if (value === null) {
+    throw new Error(`${notAvailableMsg} — start() the gateway first`)
+  }
+  return value
 }
 
 function startPipelineError(statusCode: number, message: string): Error & { statusCode: number } {
