@@ -1,5 +1,6 @@
 import { type ParsedCron, nextFireTime, parseCron } from './cron-parser.js'
 import { type DedupeStore, InMemoryDedupeStore } from './dedupe-store.js'
+import { EventSourceManager } from './event-source-manager.js'
 import { FileWatchTrigger } from './file-watcher.js'
 import type { QueueDriver } from './queue-driver.js'
 import type {
@@ -42,6 +43,7 @@ export class TriggerCoordinator {
   private intervalTimers: Map<string, NodeJS.Timeout> = new Map()
   private cronTimers: Map<string, NodeJS.Timeout> = new Map()
   private fileWatchers: Map<string, FileWatchTrigger> = new Map()
+  private eventSourceManagers: Map<string, EventSourceManager> = new Map()
   private atTimers: Map<string, NodeJS.Timeout> = new Map()
   private pollTimers: Map<string, NodeJS.Timeout> = new Map()
   private webhookRoutes: Map<string, string> = new Map() // path:method → triggerId
@@ -252,6 +254,18 @@ export class TriggerCoordinator {
         }
         break
       }
+      case 'event-source': {
+        try {
+          const manager = new EventSourceManager(spec, (payload) => {
+            void this.fire(spec.id, undefined, payload)
+          })
+          manager.start()
+          this.eventSourceManagers.set(spec.id, manager)
+        } catch (err) {
+          reg.lastError = `event-source start failed: ${(err as Error).message}`
+        }
+        break
+      }
       case 'queue': {
         const driver = this.queueDrivers.get(spec.driver)
         if (driver === undefined) {
@@ -289,6 +303,7 @@ export class TriggerCoordinator {
     const t3 = this.atTimers.get(id)
     const t4 = this.pollTimers.get(id)
     const watcher = this.fileWatchers.get(id)
+    const eventSource = this.eventSourceManagers.get(id)
     if (t1 !== undefined) {
       clearInterval(t1)
       this.intervalTimers.delete(id)
@@ -308,6 +323,10 @@ export class TriggerCoordinator {
     if (watcher !== undefined) {
       watcher.stop()
       this.fileWatchers.delete(id)
+    }
+    if (eventSource !== undefined) {
+      eventSource.stop()
+      this.eventSourceManagers.delete(id)
     }
     // Remove webhook route if any.
     for (const [key, triggerId] of this.webhookRoutes.entries()) {
@@ -385,6 +404,7 @@ export class TriggerCoordinator {
     for (const t of this.atTimers.values()) clearTimeout(t)
     for (const t of this.pollTimers.values()) clearInterval(t)
     for (const watcher of this.fileWatchers.values()) watcher.stop()
+    for (const manager of this.eventSourceManagers.values()) manager.stop()
     for (const driver of this.queueDrivers.values()) {
       const r = driver.stop()
       if (r instanceof Promise) await r.catch(() => {})
@@ -394,6 +414,7 @@ export class TriggerCoordinator {
     this.atTimers.clear()
     this.pollTimers.clear()
     this.fileWatchers.clear()
+    this.eventSourceManagers.clear()
     this.webhookRoutes.clear()
     this.queueDriverBindings.clear()
   }

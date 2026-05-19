@@ -570,6 +570,16 @@ export function pipelineTriggerToSpec(
           dedupe: trigger.dedupe as { header: string; ttlMs?: number },
         }),
       }
+    case 'event-source':
+      return {
+        kind: 'event-source',
+        id,
+        workflowId,
+        source: trigger.source as 'websocket' | 'sse' | 'rss' | 'custom',
+        options: (trigger.options as Record<string, unknown>) ?? {},
+        ...(typeof trigger.filter === 'object' &&
+          trigger.filter !== null && { filter: trigger.filter as Record<string, unknown> }),
+      } as ReturnType<typeof pipelineTriggerToSpec>
     case 'file-watch':
       return {
         kind: 'file-watch',

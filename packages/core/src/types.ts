@@ -523,6 +523,45 @@ export type PipelineTrigger =
        */
       dedupe?: { header: string; ttlMs?: number }
     }
+  | {
+      /**
+       * Subscribe to an external event source. The gateway owns the
+       * connection lifecycle (open, reconnect with exponential backoff,
+       * close on unregister) and fires the pipeline with the normalized
+       * payload below. Provider-specific sockets — Slack socket mode,
+       * Discord gateway — live in `@skelm/integrations`, not here.
+       */
+      kind: 'event-source'
+      id?: string
+      /**
+       * Generic protocol used by the source:
+       *  - `websocket`: open a WebSocket; fire on each message
+       *  - `sse`: open an SSE stream; fire on each event
+       *  - `rss`: poll a feed; fire once per new item (deduped by guid)
+       *  - `custom`: the caller supplies a `start(fire, signal)` hook
+       */
+      source: 'websocket' | 'sse' | 'rss' | 'custom'
+      options: {
+        /** websocket / sse: URL to connect to */
+        url?: string
+        /** rss: feed URL to poll */
+        feedUrl?: string
+        /** rss: poll interval in ms (default 300_000 = 5 min) */
+        pollIntervalMs?: number
+        /** websocket / sse: auto-reconnect on disconnect (default true) */
+        reconnect?: boolean
+        /** websocket / sse: reconnect delay in ms (default 5_000) */
+        reconnectDelayMs?: number
+        /** websocket / sse: max reconnect attempts (default Infinity) */
+        maxReconnectAttempts?: number
+        /** rss: max items to fire on the first poll (default 0 = skip existing) */
+        initialItems?: number
+        /** custom: start/stop hook — only valid when source='custom' */
+        start?: (fire: (payload: unknown) => void, signal: AbortSignal) => void | Promise<void>
+      }
+      /** Optional payload filter; equality on each key. */
+      filter?: Record<string, unknown>
+    }
   | { kind: 'cron'; id?: string; cron: string; tz?: string }
   | { kind: 'interval'; id?: string; everyMs?: number; every?: string }
   | {

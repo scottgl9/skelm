@@ -25,6 +25,23 @@ export type TriggerSpec =
       dedupe?: { header: string; ttlMs?: number }
     }
   | {
+      kind: 'event-source'
+      id: string
+      workflowId: string
+      source: 'websocket' | 'sse' | 'rss' | 'custom'
+      options: {
+        url?: string
+        feedUrl?: string
+        pollIntervalMs?: number
+        reconnect?: boolean
+        reconnectDelayMs?: number
+        maxReconnectAttempts?: number
+        initialItems?: number
+        start?: (fire: (payload: unknown) => void, signal: AbortSignal) => void | Promise<void>
+      }
+      filter?: Record<string, unknown>
+    }
+  | {
       kind: 'file-watch'
       id: string
       workflowId: string
