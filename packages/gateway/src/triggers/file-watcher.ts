@@ -105,6 +105,12 @@ export class FileWatchTrigger {
       // Linux fs.watch rename events on a watched file path sometimes report
       // the parent filename rather than the full file path; retry the root
       // path when the basename matches.
+      //
+      // Known limitation: if another file with the same basename exists at
+      // watchedPath, a delete here can be misreported as a create. The
+      // common directory-watch case (recursive watch over a folder) is not
+      // affected; a file-watch over a sibling that shares the watched
+      // file's name is.
       if (basename(path) === basename(this.watchedPath) && path !== this.watchedPath) {
         try {
           await access(this.watchedPath, fsConstants.F_OK)
