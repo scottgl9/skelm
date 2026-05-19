@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { parseDuration } from '@skelm/core'
+import { parseDuration, pickExport } from '@skelm/core'
 // @subprocess-ok: re-spawning the CLI itself for `gateway start --detach`.
 import {
   Gateway,
@@ -537,10 +537,19 @@ export async function syncDeclaredTriggers(gateway: Gateway, io: MainIO): Promis
   for (const entry of gateway.registries.workflows.list()) {
     liveWorkflowIds.add(entry.id)
     try {
-      const mod = (await tsImport(pathToFileURL(entry.path).href, import.meta.url)) as {
-        default?: { triggers?: readonly Record<string, unknown>[] }
-      }
-      const triggers = mod.default?.triggers ?? []
+      const mod = (await tsImport(pathToFileURL(entry.path).href, import.meta.url)) as Record<
+        string,
+        unknown
+      >
+
+      // `pickExport` strips the `{ default: { default: <value> } }` wrap
+      // Node 22+ produces under tsx's CJS loader path. Without it,
+      // workflows without top-level imports (or test fixtures) silently
+      // produce zero declared triggers instead of registering correctly.
+      const pipeline = pickExport(mod, 'default') as
+        | { triggers?: readonly Record<string, unknown>[] }
+        | undefined
+      const triggers = pipeline?.triggers ?? []
       for (const [i, t] of triggers.entries()) {
         const spec = pipelineTriggerToSpec(entry.id, t, i)
         if (spec === undefined) {
