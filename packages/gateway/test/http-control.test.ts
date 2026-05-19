@@ -436,6 +436,61 @@ describe('Gateway HTTP /schedules', () => {
     }
   })
 
+  it('POST /schedules accepts `every` duration strings and round-trips through GET', async () => {
+    const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      httpProxyPort: proxyPort,
+      config: {},
+    })
+    await gw.start()
+    const base = `http://127.0.0.1:${port}`
+    try {
+      const created = (await fetch(`${base}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-interval-every',
+          workflowId: 'wf',
+          trigger: { kind: 'interval', every: '30m' },
+        }),
+      }).then((r) => r.json())) as { id: string; trigger: Record<string, unknown> }
+      expect(created.id).toBe('s-interval-every')
+      // The HTTP layer resolves `every` via parseDuration; both the resolved
+      // ms and the original string come back so observers can show either.
+      expect(created.trigger).toEqual({ kind: 'interval', everyMs: 1_800_000, every: '30m' })
+
+      const list = (await fetch(`${base}/schedules`).then((r) => r.json())) as Array<{
+        id: string
+        trigger: Record<string, unknown>
+      }>
+      expect(list.find((s) => s.id === 's-interval-every')?.trigger).toEqual({
+        kind: 'interval',
+        everyMs: 1_800_000,
+        every: '30m',
+      })
+
+      // Unparseable `every` values are rejected at the HTTP boundary rather
+      // than registering a never-firing schedule.
+      const bad = await fetch(`${base}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-interval-bad',
+          workflowId: 'wf',
+          trigger: { kind: 'interval', every: 'soon' },
+        }),
+      })
+      expect(bad.status).toBe(400)
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('POST /schedules persists `input` and GET /schedules echoes it back', async () => {
     const port = await pickFreePort()
     const proxyPort = await pickFreePort()

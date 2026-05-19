@@ -81,8 +81,10 @@ describe('webhook providers', () => {
     await gw.start()
     try {
       const fired: string[] = []
+      const payloads: unknown[] = []
       gw.managers.triggers.setOnFire(async (ctx) => {
         fired.push(ctx.triggerId)
+        payloads.push(ctx.payload)
       })
       gw.managers.triggers.register({
         kind: 'webhook',
@@ -130,6 +132,14 @@ describe('webhook providers', () => {
       })
       expect(replay.status).toBe(401)
       expect(fired).toEqual(['slack-events'])
+      // The Slack-signed body must be parsed back into the event envelope
+      // verbatim — a regression in raw-body handling or signature parsing
+      // would show up here as a JSON shape mismatch, not just a wrong count.
+      expect(payloads).toHaveLength(1)
+      expect((payloads[0] as { body?: unknown }).body).toEqual({
+        type: 'event_callback',
+        event: { type: 'message' },
+      })
     } finally {
       await gw.stop()
     }

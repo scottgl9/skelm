@@ -120,10 +120,13 @@ export const SlackIntegration = defineIntegration({
  * `signature` in constant time. The caller is responsible for rejecting
  * stale timestamps (Slack's recommended replay window is 5 minutes).
  *
- * Argument order is `(rawBody, signature, timestamp, secret)` so the
- * commonly-tampered values lead — pass the request body verbatim (the
- * unparsed UTF-8 bytes), the `X-Slack-Signature` header value, the
- * `X-Slack-Request-Timestamp` header value, and the app's signing secret.
+ * **BREAKING (vs. the pre-0.5 stub):** argument order changed to
+ * `(rawBody, signature, timestamp, secret)` — commonly-tampered values
+ * lead, matching how the gateway calls this from `control-routes.ts`. The
+ * pre-0.5 stub took `(signingSecret, timestamp, body, signature)` and
+ * always returned `true` regardless of inputs; callers using the old
+ * order will now silently get `false`. All four params are `string`, so
+ * TypeScript cannot catch the migration — audit your call sites.
  */
 export function verifySlackSignature(
   rawBody: string,

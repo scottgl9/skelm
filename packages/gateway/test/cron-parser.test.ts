@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { nextFireTime, parseCron } from '../src/triggers/cron-parser.js'
 
+// Slim ICU builds (e.g. `node --icu-data-dir=…` containers) ship only the
+// English locale and no zone offsets, which makes `Intl.DateTimeFormat` either
+// throw on a named tz or silently fall back to UTC. Skip the tz suite when
+// that's the case so the test reports the cause instead of a confusing
+// assertion failure.
+const hasFullIcu = (() => {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York' })
+    return fmt.resolvedOptions().timeZone === 'America/New_York'
+  } catch {
+    return false
+  }
+})()
+const itTz = hasFullIcu ? it : it.skip
+
 describe('parseCron', () => {
   it('rejects expressions with the wrong number of fields', () => {
     expect(parseCron('* * * *')).toBeNull()
@@ -86,7 +101,7 @@ describe('nextFireTime', () => {
     expect(nextFireTime(p as never, from)).toBeNull()
   })
 
-  it('projects cron matching into the requested timezone', () => {
+  itTz('projects cron matching into the requested timezone', () => {
     const winter = parseCron('0 9 * * *', 'America/New_York')
     const summer = parseCron('0 9 * * *', 'America/New_York')
     expect(winter).not.toBeNull()
@@ -102,7 +117,7 @@ describe('nextFireTime', () => {
     expect(summerNext?.toISOString()).toBe('2026-07-15T13:00:00.000Z')
   })
 
-  it('returns null for an invalid timezone name', () => {
+  itTz('returns null for an invalid timezone name', () => {
     expect(parseCron('0 9 * * *', 'Not/A_Real_Timezone')).toBeNull()
   })
 
