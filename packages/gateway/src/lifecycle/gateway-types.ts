@@ -89,6 +89,18 @@ export interface GatewayOptions {
     /** Maximum uploaded .zip size in bytes. Defaults to 5 MiB. */
     maxArchiveBytes?: number
   }
+  /**
+   * Called after `gateway.reload()` finishes refreshing the registries.
+   * Intended for the CLI to re-walk `pipelines[*].triggers` and register
+   * any newly-declared triggers (and sweep orphans whose backing file is
+   * gone). Without this, a `POST /gateway/reload` discovers the new
+   * workflow but leaves its declared triggers unarmed.
+   *
+   * The gateway calls this once per reload, after registries are
+   * refreshed and before reload() resolves. Errors are caught and
+   * forwarded to console.error so a broken sync doesn't poison reload.
+   */
+  onReload?: () => Promise<void> | void
 }
 
 export interface GatewayEnforcement {

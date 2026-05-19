@@ -130,6 +130,9 @@ function scheduleTriggerToSpec(
       if (trigger.provider === 'slack' || trigger.provider === 'ms-graph') {
         spec.provider = trigger.provider
       }
+      if (typeof trigger.clientState === 'string' && trigger.clientState !== '') {
+        spec.clientState = trigger.clientState
+      }
       return spec
     }
     case 'event-source': {
@@ -231,7 +234,8 @@ function registrationToSchedule(reg: TriggerRegistration): {
       trigger = { kind: 'webhook', path: spec.path }
       if (spec.method !== undefined) trigger.method = spec.method
       if (spec.provider !== undefined) trigger.provider = spec.provider
-      // Don't expose the secret on read.
+      // Don't expose the secret or the ms-graph clientState on read; they
+      // are credentials, not metadata.
       break
     case 'event-source':
       trigger = { kind: 'event-source', source: spec.source, options: spec.options }

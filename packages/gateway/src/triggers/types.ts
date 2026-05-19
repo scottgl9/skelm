@@ -16,6 +16,13 @@ export type TriggerSpec =
       /** Provider hint — see `PipelineTrigger` for protocol semantics. */
       provider?: 'slack' | 'ms-graph'
       /**
+       * For `provider: 'ms-graph'`: the shared `clientState` value the Graph
+       * subscription was created with. Every notification carries this back;
+       * the gateway rejects POSTs whose embedded `clientState` doesn't match.
+       * Required to authenticate the sender (Graph does not sign payloads).
+       */
+      clientState?: string
+      /**
        * Optional pre-dispatch deduplication. When set, the gateway reads the
        * named request header and skips dispatch if the same value has been
        * seen within `ttlMs` (default 24 hours). A `webhook.deduped` audit

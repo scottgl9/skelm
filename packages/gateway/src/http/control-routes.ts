@@ -1,4 +1,8 @@
-import { getMsGraphValidationToken, verifySlackSignature } from '@skelm/integrations'
+import {
+  getMsGraphValidationToken,
+  verifyMsGraphClientState,
+  verifySlackSignature,
+} from '@skelm/integrations'
 import {
   type App,
   type H3Event,
@@ -149,6 +153,20 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
         typeof (body as { challenge?: unknown }).challenge === 'string'
       ) {
         return { challenge: (body as { challenge: string }).challenge }
+      }
+      // MS Graph clientState enforcement: the only secret on a Graph
+      // notification — Graph does not sign payloads. Every entry under
+      // `value` must echo the clientState the subscription was created with.
+      if (reg.spec.provider === 'ms-graph' && reg.spec.clientState !== undefined) {
+        const expected = reg.spec.clientState
+        const value = (body as { value?: unknown } | undefined)?.value
+        const ok =
+          Array.isArray(value) &&
+          value.length > 0 &&
+          value.every((n) => verifyMsGraphClientState(n, expected))
+        if (!ok) {
+          throw createError({ statusCode: 401, message: 'Graph clientState mismatch' })
+        }
       }
       const headers: Record<string, string> = {}
       for (const [k, v] of event.headers.entries()) headers[k.toLowerCase()] = v
