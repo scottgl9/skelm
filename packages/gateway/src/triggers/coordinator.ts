@@ -256,9 +256,21 @@ export class TriggerCoordinator {
       }
       case 'event-source': {
         try {
-          const manager = new EventSourceManager(spec, (payload) => {
-            void this.fire(spec.id, undefined, payload)
-          })
+          const manager = new EventSourceManager(
+            spec,
+            (payload) => {
+              void this.fire(spec.id, undefined, payload)
+            },
+            // Async errors from `source: 'custom'` start() that returns a
+            // rejecting promise used to be silently swallowed; surface them
+            // through the same lastError slot a sync throw would land in.
+            (err) => {
+              const current = this.registrations.get(spec.id)
+              if (current !== undefined) {
+                current.lastError = `event-source start failed: ${err.message}`
+              }
+            },
+          )
           manager.start()
           this.eventSourceManagers.set(spec.id, manager)
         } catch (err) {
