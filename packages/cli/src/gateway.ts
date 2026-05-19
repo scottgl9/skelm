@@ -566,8 +566,16 @@ export function pipelineTriggerToSpec(
           dedupe: trigger.dedupe as { header: string; ttlMs?: number },
         }),
       }
-    case 'cron':
-      return { kind: 'cron', id, workflowId, cron: trigger.cron as string }
+    case 'cron': {
+      const tz = typeof trigger.tz === 'string' ? trigger.tz : undefined
+      return {
+        kind: 'cron',
+        id,
+        workflowId,
+        cron: trigger.cron as string,
+        ...(tz !== undefined && { tz }),
+      }
+    }
     case 'interval':
       return { kind: 'interval', id, workflowId, everyMs: trigger.everyMs as number }
     case 'github-pr':
