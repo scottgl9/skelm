@@ -1,7 +1,5 @@
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { readDiscovery } from '@skelm/gateway'
 import { EXIT } from './exit-codes.js'
+import { ensureGatewayReady, fetchHttp, httpError } from './internal/gateway-client.js'
 import type { MainIO, MainResult } from './main.js'
 
 export interface DebugArgs {
@@ -12,19 +10,13 @@ export interface DebugArgs {
 }
 
 export async function debugCommand(args: DebugArgs, io: MainIO): Promise<MainResult> {
-  const stateDir = process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm')
-  const discovery = await readDiscovery(join(stateDir, 'gateway.json'))
-  if (discovery === null) {
-    io.stderr.write('error: gateway is not running — start it with `skelm gateway start`\n')
-    return { exitCode: EXIT.CLI_ERROR }
-  }
-
-  const headers: Record<string, string> = { 'content-type': 'application/json' }
-  if (discovery.token !== undefined) headers.authorization = `Bearer ${discovery.token}`
+  const client = await ensureGatewayReady(io)
+  if (client === null) return { exitCode: EXIT.CLI_ERROR }
+  const { discovery, headers } = client
 
   switch (args.subcommand) {
     case 'breakpoints': {
-      const res = await fetchHttp(`${discovery.url}/debug/breakpoints`, { headers })
+      const res = await fetchHttp(`${discovery.url}/debug/breakpoints`, { headers }, io)
       if (res === null) return { exitCode: EXIT.CLI_ERROR }
       if (!res.ok) return httpError(res, io)
       const body = (await res.json()) as { breakpoints: string[] }
@@ -42,11 +34,15 @@ export async function debugCommand(args: DebugArgs, io: MainIO): Promise<MainRes
         io.stderr.write('error: skelm debug add requires a step id\n')
         return { exitCode: EXIT.CLI_ERROR }
       }
-      const res = await fetchHttp(`${discovery.url}/debug/breakpoints`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ stepId: args.arg }),
-      })
+      const res = await fetchHttp(
+        `${discovery.url}/debug/breakpoints`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ stepId: args.arg }),
+        },
+        io,
+      )
       if (res === null) return { exitCode: EXIT.CLI_ERROR }
       if (!res.ok) return httpError(res, io)
       io.stdout.write(`added ${args.arg}\n`)
@@ -60,6 +56,7 @@ export async function debugCommand(args: DebugArgs, io: MainIO): Promise<MainRes
       const res = await fetchHttp(
         `${discovery.url}/debug/breakpoints/${encodeURIComponent(args.arg)}`,
         { method: 'DELETE', headers },
+        io,
       )
       if (res === null) return { exitCode: EXIT.CLI_ERROR }
       if (!res.ok) return httpError(res, io)
@@ -67,7 +64,7 @@ export async function debugCommand(args: DebugArgs, io: MainIO): Promise<MainRes
       return { exitCode: EXIT.OK }
     }
     case 'runs': {
-      const res = await fetchHttp(`${discovery.url}/debug/runs`, { headers })
+      const res = await fetchHttp(`${discovery.url}/debug/runs`, { headers }, io)
       if (res === null) return { exitCode: EXIT.CLI_ERROR }
       if (!res.ok) return httpError(res, io)
       const body = (await res.json()) as {
@@ -92,6 +89,7 @@ export async function debugCommand(args: DebugArgs, io: MainIO): Promise<MainRes
       const res = await fetchHttp(
         `${discovery.url}/debug/runs/${encodeURIComponent(args.arg)}/release`,
         { method: 'POST', headers },
+        io,
       )
       if (res === null) return { exitCode: EXIT.CLI_ERROR }
       if (!res.ok) return httpError(res, io)
@@ -99,18 +97,4 @@ export async function debugCommand(args: DebugArgs, io: MainIO): Promise<MainRes
       return { exitCode: EXIT.OK }
     }
   }
-}
-
-async function fetchHttp(url: string, init?: RequestInit): Promise<Response | null> {
-  try {
-    return await fetch(url, init)
-  } catch (err) {
-    process.stderr.write(`error: gateway HTTP request failed: ${(err as Error).message}\n`)
-    return null
-  }
-}
-
-async function httpError(res: Response, io: MainIO): Promise<MainResult> {
-  io.stderr.write(`error: gateway returned ${res.status}: ${await res.text()}\n`)
-  return { exitCode: EXIT.CLI_ERROR }
 }
