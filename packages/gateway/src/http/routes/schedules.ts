@@ -123,6 +123,27 @@ function scheduleTriggerToSpec(
       }
       return spec
     }
+    case 'event-source': {
+      const source = trigger.source
+      if (source !== 'websocket' && source !== 'sse' && source !== 'rss' && source !== 'custom') {
+        return 'invalid'
+      }
+      const options =
+        typeof trigger.options === 'object' && trigger.options !== null
+          ? (trigger.options as Record<string, unknown>)
+          : {}
+      const spec: TriggerSpec = {
+        kind: 'event-source',
+        id,
+        workflowId,
+        source,
+        options: options as Extract<TriggerSpec, { kind: 'event-source' }>['options'],
+      }
+      if (typeof trigger.filter === 'object' && trigger.filter !== null) {
+        spec.filter = trigger.filter as Record<string, unknown>
+      }
+      return spec
+    }
     case 'file-watch': {
       const path = trigger.path
       if (typeof path !== 'string' || path === '') return 'invalid'
@@ -196,6 +217,10 @@ function registrationToSchedule(reg: TriggerRegistration): {
       if (spec.method !== undefined) trigger.method = spec.method
       if (spec.provider !== undefined) trigger.provider = spec.provider
       // Don't expose the secret on read.
+      break
+    case 'event-source':
+      trigger = { kind: 'event-source', source: spec.source, options: spec.options }
+      if (spec.filter !== undefined) trigger.filter = spec.filter
       break
     case 'file-watch':
       trigger = { kind: 'file-watch', path: spec.path }
