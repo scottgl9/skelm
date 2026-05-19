@@ -103,7 +103,16 @@ function scheduleTriggerToSpec(
       const everyMs = trigger.everyMs
       const every = trigger.every
       if (typeof everyMs !== 'number' && typeof every !== 'string') return 'invalid'
-      const resolvedEveryMs = typeof everyMs === 'number' ? everyMs : parseDuration(every as string)
+      let resolvedEveryMs: number
+      if (typeof everyMs === 'number') {
+        resolvedEveryMs = everyMs
+      } else {
+        try {
+          resolvedEveryMs = parseDuration(every as string)
+        } catch {
+          return 'invalid'
+        }
+      }
       return {
         kind: 'interval',
         id,
@@ -196,12 +205,18 @@ function registrationToSchedule(reg: TriggerRegistration): {
   let trigger: Record<string, unknown>
   switch (spec.kind) {
     case 'cron':
-      trigger = { kind: 'cron', expression: spec.cron }
-      if (spec.tz !== undefined) (trigger as Record<string, unknown>).tz = spec.tz
+      trigger = {
+        kind: 'cron',
+        expression: spec.cron,
+        ...(spec.tz !== undefined && { tz: spec.tz }),
+      }
       break
     case 'interval':
-      trigger = { kind: 'interval', everyMs: spec.everyMs }
-      if (spec.every !== undefined) (trigger as Record<string, unknown>).every = spec.every
+      trigger = {
+        kind: 'interval',
+        everyMs: spec.everyMs,
+        ...(spec.every !== undefined && { every: spec.every }),
+      }
       break
     case 'manual':
       trigger = { kind: 'manual' }

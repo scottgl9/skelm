@@ -47,20 +47,30 @@ export class EventSourceManager {
     this.started = true
     switch (this.spec.source) {
       case 'websocket':
+        if (this.spec.options.url === undefined) {
+          throw new Error(`event-source source: 'websocket' requires options.url`)
+        }
         this.startWebSocket()
         break
       case 'sse':
+        if (this.spec.options.url === undefined) {
+          throw new Error(`event-source source: 'sse' requires options.url`)
+        }
         this.startSse()
         break
       case 'rss':
+        if (this.spec.options.feedUrl === undefined) {
+          throw new Error(`event-source source: 'rss' requires options.feedUrl`)
+        }
         this.startRss()
         break
       case 'custom': {
         const start = this.spec.options.start
-        if (start !== undefined) {
-          const result = start((payload) => this.fire(payload), this.abortController.signal)
-          if (result instanceof Promise) void result.catch(() => {})
+        if (start === undefined) {
+          throw new Error(`event-source source: 'custom' requires options.start`)
         }
+        const result = start((payload) => this.fire(payload), this.abortController.signal)
+        if (result instanceof Promise) void result.catch(() => {})
         break
       }
     }
