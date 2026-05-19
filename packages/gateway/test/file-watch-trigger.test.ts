@@ -77,6 +77,30 @@ describe('file-watch trigger', () => {
     await coordinator.stop()
   })
 
+  it('reports the watched file path, not "/dir/file/file", on single-file watch', async () => {
+    const seen: Array<{ path: string; event: string; watchedPath: string }> = []
+    const coordinator = new TriggerCoordinator({
+      onFire: async (ctx) => {
+        seen.push(ctx.payload as { path: string; event: string; watchedPath: string })
+      },
+    })
+    const target = join(tempDir, 'single.txt')
+    await writeFile(target, 'orig')
+    coordinator.register({
+      kind: 'file-watch',
+      id: 'watch-single-file',
+      workflowId: 'wf',
+      path: target,
+    })
+
+    await writeFile(target, 'changed')
+    const payload = await waitFor(() => seen[0])
+
+    expect(payload.path).toBe(target)
+    expect(payload.watchedPath).toBe(target)
+    await coordinator.stop()
+  })
+
   it('stops firing after unregister', async () => {
     const seen: Array<{ path: string; event: string }> = []
     const coordinator = new TriggerCoordinator({
