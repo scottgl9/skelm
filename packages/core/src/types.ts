@@ -501,6 +501,20 @@ export type PipelineTrigger =
       method?: string
       secret?: string
       /**
+       * Optional provider hint. When set, the gateway delegates protocol
+       * specifics to the matching `@skelm/integrations` integration:
+       *
+       * - `'slack'`: `secret` is the signing secret. The gateway verifies
+       *   `X-Slack-Signature` over the raw body using
+       *   `verifySlackSignature`, rejects timestamps older than 5 minutes,
+       *   and short-circuits the `url_verification` challenge.
+       * - `'ms-graph'`: GET requests carrying `?validationToken=…` are
+       *   answered in plain text without firing the pipeline.
+       *   `clientState` verification on POST notifications is the
+       *   pipeline's responsibility via `verifyMsGraphClientState`.
+       */
+      provider?: 'slack' | 'ms-graph'
+      /**
        * Optional pre-dispatch deduplication. The gateway reads the named
        * request header on each delivery and skips dispatch when the same
        * value has been seen within `ttlMs` (default 24 hours, i.e. matches
