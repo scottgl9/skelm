@@ -149,7 +149,7 @@ export class TriggerCoordinator {
         break
       }
       case 'cron': {
-        const parsed = parseCron(spec.cron)
+        const parsed = parseCron(spec.cron, spec.tz)
         if (parsed === null) {
           reg.lastError = `unsupported cron expression: ${spec.cron}`
           break

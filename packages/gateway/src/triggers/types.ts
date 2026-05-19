@@ -1,7 +1,7 @@
 /** Minimal trigger surface the gateway coordinator drives. */
 
 export type TriggerSpec =
-  | { kind: 'cron'; id: string; workflowId: string; cron: string }
+  | { kind: 'cron'; id: string; workflowId: string; cron: string; tz?: string }
   | { kind: 'interval'; id: string; workflowId: string; everyMs: number }
   | { kind: 'manual'; id: string; workflowId: string }
   | { kind: 'immediate'; id: string; workflowId: string }

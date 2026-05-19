@@ -509,7 +509,7 @@ export type PipelineTrigger =
        */
       dedupe?: { header: string; ttlMs?: number }
     }
-  | { kind: 'cron'; id?: string; cron: string }
+  | { kind: 'cron'; id?: string; cron: string; tz?: string }
   | { kind: 'interval'; id?: string; everyMs: number }
   | {
       /**
