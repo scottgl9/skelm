@@ -23,6 +23,14 @@ export type TriggerSpec =
       dedupe?: { header: string; ttlMs?: number }
     }
   | {
+      kind: 'file-watch'
+      id: string
+      workflowId: string
+      path: string
+      events?: readonly ('create' | 'update' | 'delete')[]
+      debounceMs?: number
+    }
+  | {
       kind: 'poll'
       id: string
       workflowId: string

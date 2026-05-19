@@ -567,6 +567,17 @@ export function pipelineTriggerToSpec(
           dedupe: trigger.dedupe as { header: string; ttlMs?: number },
         }),
       }
+    case 'file-watch':
+      return {
+        kind: 'file-watch',
+        id,
+        workflowId,
+        path: trigger.path as string,
+        ...(trigger.events !== undefined && {
+          events: trigger.events as ('create' | 'update' | 'delete')[],
+        }),
+        ...(trigger.debounceMs !== undefined && { debounceMs: trigger.debounceMs as number }),
+      }
     case 'cron': {
       const tz = typeof trigger.tz === 'string' ? trigger.tz : undefined
       return {

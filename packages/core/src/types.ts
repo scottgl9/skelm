@@ -513,6 +513,21 @@ export type PipelineTrigger =
   | { kind: 'interval'; id?: string; everyMs?: number; every?: string }
   | {
       /**
+       * Watch a filesystem path and fire the pipeline on file events. The
+       * gateway runs `fs.watch` with `recursive: true`; rename events are
+       * mapped to `create`/`delete` based on whether the path exists after.
+       */
+      kind: 'file-watch'
+      id?: string
+      /** Path to watch (file or directory). */
+      path: string
+      /** Events to fire on. Default: all three. */
+      events?: readonly ('create' | 'update' | 'delete')[]
+      /** Coalesce rapid events into one fire (default 100 ms). */
+      debounceMs?: number
+    }
+  | {
+      /**
        * GitHub PR-aware trigger. The gateway wires this to a `webhook` trigger
        * with dedupe on `X-GitHub-Delivery` (item 4) and delivers a normalized
        * `{ pr, kind, raw, authorIsBot }` payload to the pipeline. Use
