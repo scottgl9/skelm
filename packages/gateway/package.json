@@ -31,11 +31,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "cd ../.. && vitest run packages/gateway/test/**/*.test.ts",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "prepublishOnly": "tsx ../../scripts/guards/dist-invariants.ts"
   },
   "dependencies": {
     "@skelm/core": "workspace:*",
+    "@skelm/integrations": "workspace:*",
     "@skelm/metrics": "workspace:*",
     "fflate": "^0.8.2",
     "h3": "^1.15.0"

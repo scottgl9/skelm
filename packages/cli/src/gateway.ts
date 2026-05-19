@@ -558,6 +558,7 @@ export function pipelineTriggerToSpec(
         path: trigger.path as string,
         ...(trigger.method !== undefined && { method: trigger.method as string }),
         ...(trigger.secret !== undefined && { secret: trigger.secret as string }),
+        ...(trigger.provider !== undefined && { provider: trigger.provider as 'slack' | 'ms-graph' }),
         // Without forwarding `dedupe`, every pipeline-declared webhook ran
         // without idempotency; same delivery id dispatched twice. The
         // coordinator + HTTP route both honor the field once the spec
@@ -565,6 +566,17 @@ export function pipelineTriggerToSpec(
         ...(trigger.dedupe !== undefined && {
           dedupe: trigger.dedupe as { header: string; ttlMs?: number },
         }),
+      }
+    case 'file-watch':
+      return {
+        kind: 'file-watch',
+        id,
+        workflowId,
+        path: trigger.path as string,
+        ...(trigger.events !== undefined && {
+          events: trigger.events as ('create' | 'update' | 'delete')[],
+        }),
+        ...(trigger.debounceMs !== undefined && { debounceMs: trigger.debounceMs as number }),
       }
     case 'cron':
       return { kind: 'cron', id, workflowId, cron: trigger.cron as string }

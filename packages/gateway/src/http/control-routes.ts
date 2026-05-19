@@ -1,4 +1,14 @@
-import { type App, type H3Event, createError, createRouter, eventHandler, readBody } from 'h3'
+import {
+  type App,
+  type H3Event,
+  createError,
+  createRouter,
+  eventHandler,
+  readBody,
+  readRawBody,
+  setResponseHeader,
+} from 'h3'
+import { verifySlackSignature } from '@skelm/integrations'
 import type { Gateway } from '../lifecycle/gateway.js'
 import { DEFAULT_WEBHOOK_DEDUPE_TTL_MS } from '../triggers/dedupe-store.js'
 import { registerApprovalRoutes } from './routes/approvals.js'
@@ -56,10 +66,31 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       if (triggerId === undefined) return
       const reg = gateway.managers.triggers.get(triggerId)
       if (reg === undefined || reg.spec.kind !== 'webhook') return
+      const query = new URL(url, 'http://127.0.0.1').searchParams
+      const slackRawBody =
+        reg.spec.provider === 'slack' ? ((await readRawBody(event, 'utf8')) ?? '') : undefined
       if (reg.spec.secret !== undefined) {
-        const provided = event.headers.get('x-webhook-secret')
-        if (provided !== reg.spec.secret) {
-          throw createError({ statusCode: 401, message: 'webhook secret mismatch' })
+        if (reg.spec.provider === 'slack') {
+          const signature = event.headers.get('x-slack-signature')
+          const timestamp = event.headers.get('x-slack-request-timestamp')
+          const replayCutoff = Math.floor(Date.now() / 1000) - 5 * 60
+          if (
+            signature === null ||
+            timestamp === null ||
+            !/^\d+$/.test(timestamp) ||
+            Number(timestamp) < replayCutoff ||
+            !verifySlackSignature(slackRawBody ?? '', signature, timestamp, reg.spec.secret)
+          ) {
+            throw createError({
+              statusCode: 401,
+              message: 'Slack signature verification failed',
+            })
+          }
+        } else {
+          const provided = event.headers.get('x-webhook-secret')
+          if (provided !== reg.spec.secret) {
+            throw createError({ statusCode: 401, message: 'webhook secret mismatch' })
+          }
         }
       }
       if (reg.spec.dedupe !== undefined) {
@@ -90,11 +121,36 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       // delivery payload (plus a small set of headers) as input. h3 swallows
       // body-read failures and returns undefined; we tolerate that and pass
       // payload: undefined like the legacy behaviour.
+      const rawBody = slackRawBody === '' ? undefined : slackRawBody
       let body: unknown
       try {
-        body = await readBody(event)
+        body =
+          rawBody !== undefined
+            ? rawBody === ''
+              ? undefined
+              : (JSON.parse(rawBody) as unknown)
+            : await readBody(event)
       } catch {
         body = undefined
+      }
+      if (
+        reg.spec.provider === 'ms-graph' &&
+        method.toUpperCase() === 'GET' &&
+        query.has('validationToken')
+      ) {
+        setResponseHeader(event, 'content-type', 'text/plain')
+        return query.get('validationToken') ?? ''
+      }
+      if (
+        reg.spec.provider === 'slack' &&
+        body !== undefined &&
+        typeof body === 'object' &&
+        body !== null &&
+        'type' in body &&
+        'challenge' in body &&
+        (body as { type?: unknown }).type === 'url_verification'
+      ) {
+        return { challenge: (body as { challenge: string }).challenge }
       }
       const headers: Record<string, string> = {}
       for (const [k, v] of event.headers.entries()) headers[k.toLowerCase()] = v

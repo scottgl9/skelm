@@ -1,5 +1,6 @@
 import { type ParsedCron, nextFireTime, parseCron } from './cron-parser.js'
 import { type DedupeStore, InMemoryDedupeStore } from './dedupe-store.js'
+import { FileWatchTrigger } from './file-watcher.js'
 import type { QueueDriver } from './queue-driver.js'
 import type {
   FireContext,
@@ -42,6 +43,7 @@ export class TriggerCoordinator {
   private cronTimers: Map<string, NodeJS.Timeout> = new Map()
   private atTimers: Map<string, NodeJS.Timeout> = new Map()
   private pollTimers: Map<string, NodeJS.Timeout> = new Map()
+  private fileWatchers: Map<string, FileWatchTrigger> = new Map()
   private webhookRoutes: Map<string, string> = new Map() // path:method → triggerId
   private pollSources: Map<string, PollSourceFn> = new Map()
   private pollDedupeKeyFns: Map<string, PollDedupeKeyFn> = new Map()
@@ -184,14 +186,34 @@ export class TriggerCoordinator {
         break
       }
       case 'webhook': {
-        const method = (spec.method ?? 'POST').toUpperCase()
-        const key = `${method} ${spec.path}`
-        const existing = this.webhookRoutes.get(key)
-        if (existing !== undefined && existing !== spec.id) {
-          reg.lastError = `webhook ${key} already bound to trigger ${existing}`
+        const methods =
+          spec.provider === 'ms-graph'
+            ? new Set(['GET', 'POST', (spec.method ?? 'POST').toUpperCase()])
+            : new Set([(spec.method ?? 'POST').toUpperCase()])
+        for (const method of methods) {
+          const key = `${method} ${spec.path}`
+          const existing = this.webhookRoutes.get(key)
+          if (existing !== undefined && existing !== spec.id) {
+            reg.lastError = `webhook ${key} already bound to trigger ${existing}`
+            break
+          }
+        }
+        if (reg.lastError !== undefined) {
           break
         }
-        this.webhookRoutes.set(key, spec.id)
+        for (const method of methods) this.webhookRoutes.set(`${method} ${spec.path}`, spec.id)
+        break
+      }
+      case 'file-watch': {
+        try {
+          const watcher = new FileWatchTrigger(spec)
+          watcher.start((payload) => {
+            void this.fire(spec.id, undefined, payload)
+          })
+          this.fileWatchers.set(spec.id, watcher)
+        } catch (err) {
+          reg.lastError = `file-watch start failed: ${(err as Error).message}`
+        }
         break
       }
       case 'poll': {
@@ -268,6 +290,7 @@ export class TriggerCoordinator {
     const t2 = this.cronTimers.get(id)
     const t3 = this.atTimers.get(id)
     const t4 = this.pollTimers.get(id)
+    const watcher = this.fileWatchers.get(id)
     if (t1 !== undefined) {
       clearInterval(t1)
       this.intervalTimers.delete(id)
@@ -283,6 +306,10 @@ export class TriggerCoordinator {
     if (t4 !== undefined) {
       clearInterval(t4)
       this.pollTimers.delete(id)
+    }
+    if (watcher !== undefined) {
+      watcher.stop()
+      this.fileWatchers.delete(id)
     }
     // Remove webhook route if any.
     for (const [key, triggerId] of this.webhookRoutes.entries()) {
@@ -359,6 +386,7 @@ export class TriggerCoordinator {
     for (const t of this.cronTimers.values()) clearTimeout(t)
     for (const t of this.atTimers.values()) clearTimeout(t)
     for (const t of this.pollTimers.values()) clearInterval(t)
+    for (const watcher of this.fileWatchers.values()) watcher.stop()
     for (const driver of this.queueDrivers.values()) {
       const r = driver.stop()
       if (r instanceof Promise) await r.catch(() => {})
@@ -367,6 +395,7 @@ export class TriggerCoordinator {
     this.cronTimers.clear()
     this.atTimers.clear()
     this.pollTimers.clear()
+    this.fileWatchers.clear()
     this.webhookRoutes.clear()
     this.queueDriverBindings.clear()
   }
