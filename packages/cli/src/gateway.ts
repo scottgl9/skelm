@@ -567,9 +567,26 @@ export function pipelineTriggerToSpec(
         }),
       }
     case 'cron':
-      return { kind: 'cron', id, workflowId, cron: trigger.cron as string }
+      return {
+        kind: 'cron',
+        id,
+        workflowId,
+        cron: trigger.cron as string,
+        ...(trigger.tz !== undefined && { tz: trigger.tz as string }),
+      }
     case 'interval':
       return { kind: 'interval', id, workflowId, everyMs: trigger.everyMs as number }
+    case 'event-source':
+      return {
+        kind: 'event-source',
+        id,
+        workflowId,
+        source: trigger.source as 'websocket' | 'sse' | 'rss' | 'custom',
+        options: (trigger.options as object) ?? {},
+        ...(trigger.filter !== undefined && {
+          filter: trigger.filter as Record<string, unknown>,
+        }),
+      }
     case 'github-pr':
       // The github-pr primitive (commit e08f167) is sugar over a webhook
       // trigger with GitHub-Delivery dedupe pre-configured. Translate here

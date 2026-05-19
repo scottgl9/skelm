@@ -85,4 +85,30 @@ describe('nextFireTime', () => {
     const from = new Date('2026-01-01T00:00:00.000Z')
     expect(nextFireTime(p as never, from)).toBeNull()
   })
+
+  it('projects cron matching into the requested timezone', () => {
+    const winter = parseCron('0 9 * * *', 'America/New_York')
+    const summer = parseCron('0 9 * * *', 'America/New_York')
+    expect(winter).not.toBeNull()
+    expect(summer).not.toBeNull()
+
+    const winterNext = nextFireTime(winter as never, new Date('2026-01-15T13:30:00.000Z'))
+    const summerNext = nextFireTime(summer as never, new Date('2026-07-15T12:30:00.000Z'))
+
+    expect(winterNext?.toISOString()).toBe('2026-01-15T14:00:00.000Z')
+    expect(summerNext?.toISOString()).toBe('2026-07-15T13:00:00.000Z')
+  })
+
+  it('returns null for an invalid timezone name', () => {
+    expect(parseCron('0 9 * * *', 'Not/A_Real_Timezone')).toBeNull()
+  })
+
+  it('omitting tz preserves the prior local-time behavior', () => {
+    const p = parseCron('0 9 * * *')
+    const from = new Date('2026-05-05T20:00:00.000Z')
+    const next = nextFireTime(p as never, from)
+    expect(next).not.toBeNull()
+    expect(next?.getHours()).toBe(9)
+    expect(next?.getMinutes()).toBe(0)
+  })
 })

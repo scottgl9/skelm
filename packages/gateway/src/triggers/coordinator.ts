@@ -1,5 +1,6 @@
 import { type ParsedCron, nextFireTime, parseCron } from './cron-parser.js'
 import { type DedupeStore, InMemoryDedupeStore } from './dedupe-store.js'
+import { EventSourceManager } from './event-source-manager.js'
 import type { QueueDriver } from './queue-driver.js'
 import type {
   FireContext,
@@ -48,6 +49,7 @@ export class TriggerCoordinator {
   private pollLastKey: Map<string, string> = new Map()
   private queueDrivers: Map<string, QueueDriver> = new Map()
   private queueDriverBindings: Map<string, string> = new Map() // triggerId → driverId
+  private eventSourceManagers: Map<string, EventSourceManager> = new Map()
   private queues: Map<string, FireContext[]> = new Map()
   private stopping = false
   /**
@@ -149,12 +151,20 @@ export class TriggerCoordinator {
         break
       }
       case 'cron': {
-        const parsed = parseCron(spec.cron)
+        const parsed = parseCron(spec.cron, spec.tz ?? undefined)
         if (parsed === null) {
           reg.lastError = `unsupported cron expression: ${spec.cron}`
           break
         }
         this.scheduleNextCron(spec.id, parsed)
+        break
+      }
+      case 'event-source': {
+        const manager = new EventSourceManager(spec, (payload) => {
+          void this.fire(spec.id, undefined, payload)
+        })
+        manager.start()
+        this.eventSourceManagers.set(spec.id, manager)
         break
       }
       case 'immediate':
@@ -284,6 +294,11 @@ export class TriggerCoordinator {
       clearInterval(t4)
       this.pollTimers.delete(id)
     }
+    const eventSourceManager = this.eventSourceManagers.get(id)
+    if (eventSourceManager !== undefined) {
+      eventSourceManager.stop()
+      this.eventSourceManagers.delete(id)
+    }
     // Remove webhook route if any.
     for (const [key, triggerId] of this.webhookRoutes.entries()) {
       if (triggerId === id) this.webhookRoutes.delete(key)
@@ -359,6 +374,7 @@ export class TriggerCoordinator {
     for (const t of this.cronTimers.values()) clearTimeout(t)
     for (const t of this.atTimers.values()) clearTimeout(t)
     for (const t of this.pollTimers.values()) clearInterval(t)
+    for (const manager of this.eventSourceManagers.values()) manager.stop()
     for (const driver of this.queueDrivers.values()) {
       const r = driver.stop()
       if (r instanceof Promise) await r.catch(() => {})
@@ -367,6 +383,7 @@ export class TriggerCoordinator {
     this.cronTimers.clear()
     this.atTimers.clear()
     this.pollTimers.clear()
+    this.eventSourceManagers.clear()
     this.webhookRoutes.clear()
     this.queueDriverBindings.clear()
   }

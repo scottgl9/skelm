@@ -148,6 +148,7 @@ function registrationToSchedule(reg: TriggerRegistration): {
   switch (spec.kind) {
     case 'cron':
       trigger = { kind: 'cron', expression: spec.cron }
+      if (spec.tz !== undefined) trigger.tz = spec.tz
       break
     case 'interval':
       trigger = { kind: 'interval', everyMs: spec.everyMs }
@@ -160,6 +161,10 @@ function registrationToSchedule(reg: TriggerRegistration): {
       break
     case 'at':
       trigger = { kind: 'at', when: spec.when }
+      break
+    case 'event-source':
+      trigger = { kind: 'event-source', source: spec.source, options: spec.options }
+      if (spec.filter !== undefined) trigger.filter = spec.filter
       break
     case 'webhook':
       trigger = { kind: 'webhook', path: spec.path }

@@ -509,8 +509,41 @@ export type PipelineTrigger =
        */
       dedupe?: { header: string; ttlMs?: number }
     }
-  | { kind: 'cron'; id?: string; cron: string }
+  | { kind: 'cron'; id?: string; cron: string; tz?: string }
   | { kind: 'interval'; id?: string; everyMs: number }
+  | {
+      kind: 'event-source'
+      id?: string
+      /**
+       * Source type.
+       * - websocket: Connect to a WebSocket endpoint; fires on each message.
+       * - sse: Connect to an SSE (Server-Sent Events) stream; fires on each event.
+       * - rss: Poll an RSS/Atom feed; fires once per new item (deduped by guid/link).
+       * - custom: Caller provides a start/stop function; fires when the caller calls fire().
+       */
+      source: 'websocket' | 'sse' | 'rss' | 'custom'
+      /** Source-specific options */
+      options: {
+        /** websocket / sse: URL to connect to */
+        url?: string
+        /** rss: Feed URL to poll */
+        feedUrl?: string
+        /** rss: Poll interval in ms (default: 300_000 = 5 min) */
+        pollIntervalMs?: number
+        /** websocket: Auto-reconnect on disconnect (default: true) */
+        reconnect?: boolean
+        /** websocket / sse: Reconnect delay in ms (default: 5000) */
+        reconnectDelayMs?: number
+        /** websocket: Max reconnect attempts (default: Infinity) */
+        maxReconnectAttempts?: number
+        /** rss: Max items to process on first poll (default: 0 = skip existing) */
+        initialItems?: number
+        /** custom: start/stop hook — only valid when source='custom' */
+        start?: (fire: (payload: unknown) => void, signal: AbortSignal) => void | Promise<void>
+      }
+      /** Optional filter: only fire when payload matches. Simple key=value check. */
+      filter?: Record<string, unknown>
+    }
   | {
       /**
        * GitHub PR-aware trigger. The gateway wires this to a `webhook` trigger

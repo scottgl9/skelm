@@ -1,11 +1,28 @@
 /** Minimal trigger surface the gateway coordinator drives. */
 
 export type TriggerSpec =
-  | { kind: 'cron'; id: string; workflowId: string; cron: string }
+  | { kind: 'cron'; id: string; workflowId: string; cron: string; tz?: string }
   | { kind: 'interval'; id: string; workflowId: string; everyMs: number }
   | { kind: 'manual'; id: string; workflowId: string }
   | { kind: 'immediate'; id: string; workflowId: string }
   | { kind: 'at'; id: string; workflowId: string; when: string }
+  | {
+      kind: 'event-source'
+      id: string
+      workflowId: string
+      source: 'websocket' | 'sse' | 'rss' | 'custom'
+      options: {
+        url?: string
+        feedUrl?: string
+        pollIntervalMs?: number
+        reconnect?: boolean
+        reconnectDelayMs?: number
+        maxReconnectAttempts?: number
+        initialItems?: number
+        start?: (fire: (payload: unknown) => void, signal: AbortSignal) => void | Promise<void>
+      }
+      filter?: Record<string, unknown>
+    }
   | {
       kind: 'webhook'
       id: string

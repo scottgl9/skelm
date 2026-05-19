@@ -32,9 +32,10 @@ export interface ParsedCron {
   dayOfMonth: ReadonlySet<number>
   month: ReadonlySet<number>
   dayOfWeek: ReadonlySet<number>
+  tz?: string
 }
 
-const FIELDS: Array<{ name: keyof ParsedCron; min: number; max: number }> = [
+const FIELDS: Array<{ name: Exclude<keyof ParsedCron, 'tz'>; min: number; max: number }> = [
   { name: 'minute', min: 0, max: 59 },
   { name: 'hour', min: 0, max: 23 },
   { name: 'dayOfMonth', min: 1, max: 31 },
@@ -42,10 +43,67 @@ const FIELDS: Array<{ name: keyof ParsedCron; min: number; max: number }> = [
   { name: 'dayOfWeek', min: 0, max: 6 },
 ]
 
-export function parseCron(expr: string): ParsedCron | null {
+const WEEKDAY_TO_INDEX: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+}
+
+function createTzFormatter(tz: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    weekday: 'short',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hour12: false,
+  })
+}
+
+function getFieldsInTz(
+  date: Date,
+  tz: string,
+): {
+  minute: number
+  hour: number
+  dayOfMonth: number
+  month: number
+  dayOfWeek: number
+} {
+  const parts = Object.fromEntries(
+    createTzFormatter(tz)
+      .formatToParts(date)
+      .map((p) => [p.type, p.value]),
+  )
+  const weekday = parts.weekday
+  const dayOfWeek = weekday !== undefined ? WEEKDAY_TO_INDEX[weekday] : undefined
+  if (dayOfWeek === undefined) throw new RangeError(`unable to resolve weekday for timezone: ${tz}`)
+  return {
+    minute: Number(parts.minute),
+    hour: Number(parts.hour) % 24,
+    dayOfMonth: Number(parts.day),
+    month: Number(parts.month),
+    dayOfWeek,
+  }
+}
+
+export function parseCron(expr: string, tz?: string): ParsedCron | null {
   const parts = expr.trim().split(/\s+/)
   if (parts.length !== 5) return null
-  const out: Partial<Record<keyof ParsedCron, ReadonlySet<number>>> = {}
+  if (tz !== undefined) {
+    try {
+      createTzFormatter(tz)
+    } catch {
+      return null
+    }
+  }
+  const out: Partial<Record<Exclude<keyof ParsedCron, 'tz'>, ReadonlySet<number>>> = {}
   for (let i = 0; i < FIELDS.length; i++) {
     const field = FIELDS[i]
     const piece = parts[i]
@@ -54,7 +112,7 @@ export function parseCron(expr: string): ParsedCron | null {
     if (set === null) return null
     out[field.name] = set
   }
-  return out as ParsedCron
+  return { ...(out as Omit<ParsedCron, 'tz'>), ...(tz !== undefined && { tz }) }
 }
 
 function parseField(part: string, min: number, max: number): ReadonlySet<number> | null {
@@ -107,12 +165,22 @@ export function nextFireTime(parsed: ParsedCron, from: Date): Date | null {
   const cap = from.getTime() + horizonMs
 
   while (t.getTime() <= cap) {
+    const fields =
+      parsed.tz !== undefined
+        ? getFieldsInTz(t, parsed.tz)
+        : {
+            minute: t.getMinutes(),
+            hour: t.getHours(),
+            month: t.getMonth() + 1,
+            dayOfMonth: t.getDate(),
+            dayOfWeek: t.getDay(),
+          }
     if (
-      parsed.minute.has(t.getMinutes()) &&
-      parsed.hour.has(t.getHours()) &&
-      parsed.month.has(t.getMonth() + 1) &&
-      parsed.dayOfMonth.has(t.getDate()) &&
-      parsed.dayOfWeek.has(t.getDay())
+      parsed.minute.has(fields.minute) &&
+      parsed.hour.has(fields.hour) &&
+      parsed.month.has(fields.month) &&
+      parsed.dayOfMonth.has(fields.dayOfMonth) &&
+      parsed.dayOfWeek.has(fields.dayOfWeek)
     ) {
       return t
     }

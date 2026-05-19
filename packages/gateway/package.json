@@ -38,9 +38,11 @@
     "@skelm/core": "workspace:*",
     "@skelm/metrics": "workspace:*",
     "fflate": "^0.8.2",
-    "h3": "^1.15.0"
+    "h3": "^1.15.0",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "@types/node": "^22.9.0",
     "typescript": "^5.6.3",
     "vitest": "^2.1.5"
