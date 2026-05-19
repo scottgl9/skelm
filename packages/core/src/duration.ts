@@ -8,6 +8,8 @@ const DURATION_MULTIPLIERS: Record<string, number> = {
   d: 86_400_000,
 }
 
+const MAX_DURATION_MS = 30 * 86_400_000
+
 /**
  * Parse a duration string like `"15m"`, `"500ms"`, `"2h"`, `"1d"` into
  * milliseconds. Throws on unparseable input — callers pass user-authored
@@ -25,5 +27,9 @@ export function parseDuration(value: string): number {
   if (multiplier === undefined) {
     throw new Error(`invalid duration "${value}": expected <number><unit> using ms, s, m, h, or d`)
   }
-  return amount * multiplier
+  const ms = amount * multiplier
+  if (!Number.isSafeInteger(ms) || ms <= 0 || ms > MAX_DURATION_MS) {
+    throw new Error(`duration "${value}" out of supported range (0, 30d]`)
+  }
+  return ms
 }
