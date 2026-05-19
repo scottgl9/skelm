@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { EXIT } from './exit-codes.js'
+import { writeJsonOutput } from './internal/output.js'
 import type { MainIO, MainResult } from './main.js'
 
 /**
@@ -101,7 +102,7 @@ async function showPolicy(
 ): Promise<MainResult> {
   const policy = await readPolicy(path)
   if (args.json) {
-    io.stdout.write(`${JSON.stringify(policy, null, 2)}\n`)
+    writeJsonOutput(io, policy)
     return { exitCode: EXIT.OK }
   }
   io.stdout.write(`policy file: ${path}\n`)
@@ -125,7 +126,7 @@ async function validatePolicy(
 ): Promise<MainResult> {
   const issues = await collectIssues(path)
   if (args.json) {
-    io.stdout.write(`${JSON.stringify({ ok: issues.length === 0, issues }, null, 2)}\n`)
+    writeJsonOutput(io, { ok: issues.length === 0, issues })
   } else if (issues.length === 0) {
     io.stdout.write(`ok: ${path} validates\n`)
   } else {

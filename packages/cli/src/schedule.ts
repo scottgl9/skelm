@@ -1,6 +1,7 @@
 import { resolve as pathResolve } from 'node:path'
 import { EXIT } from './exit-codes.js'
 import { ensureGatewayReady, fetchHttp, httpError } from './internal/gateway-client.js'
+import { writeJsonOutput } from './internal/output.js'
 import type { MainIO, MainResult } from './main.js'
 
 export interface ScheduleAddArgs {
@@ -84,7 +85,7 @@ async function scheduleList(
   if (!res.ok) return httpError(res, io)
   const schedules = (await res.json()) as ScheduleEntry[]
   if (args.json) {
-    io.stdout.write(`${JSON.stringify(schedules, null, 2)}\n`)
+    writeJsonOutput(io, schedules)
     return { exitCode: EXIT.OK }
   }
   if (schedules.length === 0) {
@@ -173,7 +174,7 @@ async function scheduleAdd(
   if (!res.ok) return httpError(res, io)
   const schedule = (await res.json()) as ScheduleEntry
   if (args.json) {
-    io.stdout.write(`${JSON.stringify(schedule, null, 2)}\n`)
+    writeJsonOutput(io, schedule)
   } else {
     const triggerDesc = describeTrigger(schedule.trigger)
     io.stdout.write(`registered ${schedule.id} — ${schedule.workflowId} — ${triggerDesc}\n`)
@@ -206,7 +207,7 @@ async function scheduleStop(
   }
   if (!res.ok) return httpError(res, io)
   if (args.json) {
-    io.stdout.write(`${JSON.stringify({ ok: true, id: args.id }, null, 2)}\n`)
+    writeJsonOutput(io, { ok: true, id: args.id })
   } else {
     io.stdout.write(`stopped ${args.id}\n`)
   }
@@ -239,7 +240,7 @@ async function scheduleFire(
   }
   if (!res.ok) return httpError(res, io)
   if (args.json) {
-    io.stdout.write(`${JSON.stringify({ ok: true, id: args.id }, null, 2)}\n`)
+    writeJsonOutput(io, { ok: true, id: args.id })
   } else {
     io.stdout.write(`fired ${args.id}\n`)
   }

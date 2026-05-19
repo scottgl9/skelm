@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { ChainAuditWriter, FileSecretResolver } from '@skelm/gateway'
 import { EXIT } from './exit-codes.js'
+import { writeJsonOutput } from './internal/output.js'
 import type { MainIO, MainResult } from './main.js'
 
 export interface AuditQueryArgs {
@@ -59,7 +60,7 @@ export async function auditCommand(args: AuditQueryArgs, io: MainIO): Promise<Ma
   const limited = args.limit !== undefined ? filtered.slice(-args.limit) : filtered
 
   if (args.json) {
-    io.stdout.write(`${JSON.stringify(limited, null, 2)}\n`)
+    writeJsonOutput(io, limited)
     return { exitCode: EXIT.OK }
   }
 
@@ -85,7 +86,7 @@ export async function secretsCommand(args: SecretsArgs, io: MainIO): Promise<Mai
     case 'list': {
       const names = await resolver.list()
       if (args.json) {
-        io.stdout.write(`${JSON.stringify(names, null, 2)}\n`)
+        writeJsonOutput(io, names)
       } else if (names.length === 0) {
         io.stdout.write('no secrets configured\n')
       } else {

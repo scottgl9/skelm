@@ -15,6 +15,7 @@ import {
 import { tsImport } from 'tsx/esm/api'
 import { buildBackendRegistry } from './backends.js'
 import { EXIT } from './exit-codes.js'
+import { writeJsonOutput } from './internal/output.js'
 import { loadSkelmConfig } from './load-config.js'
 import type { MainIO, MainResult } from './main.js'
 
@@ -252,7 +253,7 @@ async function statusGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
   }
 
   if (args.json) {
-    io.stdout.write(`${JSON.stringify(status, null, 2)}\n`)
+    writeJsonOutput(io, status)
   } else if (isRunning) {
     const reachableStr =
       reachable === true

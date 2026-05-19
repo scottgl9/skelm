@@ -1,4 +1,5 @@
 import { EXIT, type ExitCode } from './exit-codes.js'
+import { writeJsonOutput } from './internal/output.js'
 import { loadSkelmConfig } from './load-config.js'
 import { createWorkspaceManager } from './store.js'
 import { renderTable } from './table.js'
@@ -33,7 +34,7 @@ export async function workspaceCommand(
   if (args.subcommand === 'list') {
     const workspaces = await manager.listPersistentWorkspaces()
     if (args.json) {
-      io.stdout.write(`${JSON.stringify(workspaces, null, 2)}\n`)
+      writeJsonOutput(io, workspaces)
       return { exitCode: EXIT.OK }
     }
     if (workspaces.length === 0) {

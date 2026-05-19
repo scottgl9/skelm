@@ -1,5 +1,6 @@
 import { type DescribedStep, type PipelineDescription, describePipeline } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
+import { writeJsonOutput } from './internal/output.js'
 import { resolveWorkflowReference } from './workflows.js'
 
 export interface DescribeCommandArgs {
@@ -38,7 +39,7 @@ export async function describeCommand(
 
   const format = args.json ? 'json' : (args.format ?? 'human')
   if (format === 'json') {
-    io.stdout.write(`${JSON.stringify(described, null, 2)}\n`)
+    writeJsonOutput(io, described)
     return { exitCode: EXIT.OK }
   }
   if (format === 'mermaid') {

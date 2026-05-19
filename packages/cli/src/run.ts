@@ -87,38 +87,11 @@ export async function runCommand(
   }
 
   const eventMode: 'human' | 'json' | 'none' = args.events ?? 'human'
-  const bus = new EventBus()
-  if (eventMode === 'json') {
-    bus.subscribe((event) => {
-      io.stderr.write(`${JSON.stringify(event)}\n`)
-    })
-  } else if (eventMode === 'human') {
-    bus.subscribe((event) => {
-      switch (event.type) {
-        case 'run.started':
-          io.stderr.write(`> running ${workflow.id}\n`)
-          break
-        case 'step.start':
-          io.stderr.write(`  - ${event.stepId} (${event.kind})\n`)
-          break
-        case 'step.error':
-          io.stderr.write(`  ! ${event.stepId}: ${event.error.message}\n`)
-          break
-        default:
-          break
-      }
-    })
-  }
+  const bus = createRunEventBus(eventMode, workflow.id, io)
 
   const workflowDir = dirname(resolve(process.cwd(), workflowPath))
   const { config, projectRoot } = await loadSkelmConfig({ fromDir: workflowDir })
-  const secretResolver: SecretResolver =
-    config.secrets?.driver === 'file'
-      ? new FileSecretResolver(
-          config.secrets.file ??
-            join(process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm'), 'secrets.json'),
-        )
-      : new EnvSecretResolver()
+  const secretResolver = buildSecretResolver(config)
   const resolvedWorkflow = applyConfiguredBackends(
     applyAgentDefinitions(workflow, workflowDir),
     config,
@@ -196,19 +169,66 @@ export async function runCommand(
   if (eventMode === 'human') {
     io.stderr.write(`> failed (runId=${run.runId}): ${run.error?.message ?? 'unknown'}\n`)
   }
-  if (run.error?.name === SchemaValidationError.name) {
-    return { exitCode: EXIT.SCHEMA_VALIDATION, run }
+  return { exitCode: mapRunErrorToExit(run.error?.name), run }
+}
+
+function createRunEventBus(
+  eventMode: 'human' | 'json' | 'none',
+  workflowId: string,
+  io: RunCommandIO,
+): EventBus {
+  const bus = new EventBus()
+  if (eventMode === 'json') {
+    bus.subscribe((event) => {
+      io.stderr.write(`${JSON.stringify(event)}\n`)
+    })
+    return bus
   }
-  if (run.error?.name === WaitTimeoutError.name) {
-    return { exitCode: EXIT.WAIT_TIMEOUT, run }
+  if (eventMode === 'human') {
+    bus.subscribe((event) => {
+      switch (event.type) {
+        case 'run.started':
+          io.stderr.write(`> running ${workflowId}\n`)
+          break
+        case 'step.start':
+          io.stderr.write(`  - ${event.stepId} (${event.kind})\n`)
+          break
+        case 'step.error':
+          io.stderr.write(`  ! ${event.stepId}: ${event.error.message}\n`)
+          break
+        default:
+          break
+      }
+    })
   }
-  if (run.error?.name === PermissionDeniedError.name) {
-    return { exitCode: EXIT.PERMISSION_DENIED, run }
+  return bus
+}
+
+function buildSecretResolver(
+  config: Awaited<ReturnType<typeof loadSkelmConfig>>['config'],
+): SecretResolver {
+  if (config.secrets?.driver === 'file') {
+    return new FileSecretResolver(
+      config.secrets.file ??
+        join(process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm'), 'secrets.json'),
+    )
   }
-  if (run.error?.name === StepTimeoutError.name) {
-    return { exitCode: EXIT.STEP_TIMEOUT, run }
+  return new EnvSecretResolver()
+}
+
+function mapRunErrorToExit(errorName: string | undefined): ExitCode {
+  switch (errorName) {
+    case SchemaValidationError.name:
+      return EXIT.SCHEMA_VALIDATION
+    case WaitTimeoutError.name:
+      return EXIT.WAIT_TIMEOUT
+    case PermissionDeniedError.name:
+      return EXIT.PERMISSION_DENIED
+    case StepTimeoutError.name:
+      return EXIT.STEP_TIMEOUT
+    default:
+      return EXIT.RUN_FAILED
   }
-  return { exitCode: EXIT.RUN_FAILED, run }
 }
 
 async function resolveInput(args: RunCommandArgs, stdin: NodeJS.ReadableStream): Promise<unknown> {

@@ -1,5 +1,6 @@
 import { EXIT } from './exit-codes.js'
 import { ensureGatewayReady, fetchHttp, httpError } from './internal/gateway-client.js'
+import { writeJsonOutput } from './internal/output.js'
 import type { MainIO, MainResult } from './main.js'
 
 export interface SessionsArgs {
@@ -25,7 +26,7 @@ export async function sessionsCommand(args: SessionsArgs, io: MainIO): Promise<M
       lastSeenAt: string
     }>
     if (args.json) {
-      io.stdout.write(`${JSON.stringify(sessions, null, 2)}\n`)
+      writeJsonOutput(io, sessions)
     } else if (sessions.length === 0) {
       io.stdout.write('no sessions\n')
     } else {
@@ -53,7 +54,7 @@ export async function sessionsCommand(args: SessionsArgs, io: MainIO): Promise<M
   if (!res.ok) return httpError(res, io)
   const out = (await res.json()) as { removed: string[] }
   if (args.json) {
-    io.stdout.write(`${JSON.stringify(out, null, 2)}\n`)
+    writeJsonOutput(io, out)
   } else {
     io.stdout.write(`pruned ${out.removed.length} session(s)\n`)
     for (const id of out.removed) io.stdout.write(`  ${id}\n`)
