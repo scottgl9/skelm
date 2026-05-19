@@ -7,15 +7,17 @@ Triggers fire workflows automatically — on a schedule, when a webhook arrives,
 | Kind | When it fires |
 |------|---------------|
 | `manual` | Only via `coordinator.fire(id)` or `POST /triggers/:id/fire`. |
-| `interval` | Every `everyMs` milliseconds. |
-| `cron` | On a cron schedule. |
+| `interval` | Every `everyMs` milliseconds — or every `every` (e.g. `"15m"`, `"2h"`). |
+| `cron` | On a cron schedule. Optional `tz` projects matches into a named IANA timezone. |
 | `at` | Once at a specific timestamp. |
 | `immediate` | Once on registration (next tick). |
-| `webhook` | When an HTTP request hits `path` (default `POST`). The gateway's webhook router resolves the path to the trigger id. |
+| `webhook` | When an HTTP request hits `path` (default `POST`). Optional `provider: 'slack' \| 'ms-graph'` swaps in provider-specific signature verification and challenge handling. |
+| `file-watch` | When a filesystem path changes (create / update / delete), debounced. |
+| `event-source` | When an external event source (WebSocket, SSE, RSS, or a custom callback) produces a message. |
 | `poll` | Every `everyMs` ticks: a registered source function returns a value; the coordinator fires only when the dedupe key changes. |
 | `queue` | When a registered queue driver delivers a message. The coordinator runs the driver's loop; the driver invokes `onMessage(payload?)` per event. |
 
-`webhook`, `poll`, and `queue` all support carrying a per-fire **payload** through to the workflow.
+`webhook`, `poll`, `queue`, `file-watch`, and `event-source` all support carrying a per-fire **payload** through to the workflow.
 
 ## Overlap policy
 
@@ -180,6 +182,126 @@ The normalized `GitHubPrPayload`:
 ```
 
 This combination — typed events, payload normalization, bot/repo filtering, and 24 h dedupe on `X-GitHub-Delivery` — absorbs the webhook + cron + dedupe + bot-filter boilerplate every PR-aware agent would otherwise rewrite.
+
+## Cron timezone
+
+By default `parseCron` evaluates fields in the gateway's local time. To pin a schedule to a specific zone — useful for "9 AM in `America/New_York`" regardless of DST or where the gateway runs — pass an IANA timezone:
+
+```ts
+triggers: [{ kind: 'cron', cron: '0 9 * * 1-5', tz: 'America/New_York' }]
+```
+
+The trigger fires at 09:00 New York time year-round; the gateway resolves matches via `Intl.DateTimeFormat`. Invalid timezone names are rejected at registration with `lastError`.
+
+## Interval duration strings
+
+The interval kind accepts a human-readable `every` in addition to the raw `everyMs`. Suffixes: `ms`, `s`, `m`, `h`, `d`.
+
+```ts
+triggers: [{ kind: 'interval', every: '15m' }]            // every 15 minutes
+triggers: [{ kind: 'interval', every: '1h' }]             // every hour
+triggers: [{ kind: 'interval', everyMs: 250, every: '1h' }]  // everyMs wins
+```
+
+Normalization happens at pipeline construction (`parseDuration` from `@skelm/core`). Unparseable strings throw immediately so a typo doesn't ship as a never-firing schedule.
+
+## File-watch trigger
+
+```ts
+triggers: [{
+  kind: 'file-watch',
+  path: './data/incoming',
+  events: ['create', 'update'],   // default: all three
+  debounceMs: 100,                // default
+}]
+```
+
+The gateway runs `fs.watch(path, { recursive: true })`. Rapid changes to the same path inside `debounceMs` are coalesced into a single fire. Rename events are mapped to `create` or `delete` based on whether the path exists when the event flushes.
+
+The payload delivered to the pipeline:
+
+```ts
+{ path: string, event: 'create' | 'update' | 'delete', watchedPath: string, firedAt: string }
+```
+
+## Event-source triggers
+
+Subscribe to an external stream and fire the pipeline per message. Generic protocols only — provider-specific sockets (Slack socket mode, Discord gateway) belong inside their `@skelm/integrations` integration.
+
+```ts
+// WebSocket
+triggers: [{
+  kind: 'event-source',
+  source: 'websocket',
+  options: { url: 'wss://example.com/stream', reconnect: true },
+}]
+
+// Server-Sent Events
+triggers: [{
+  kind: 'event-source',
+  source: 'sse',
+  options: { url: 'https://example.com/events' },
+}]
+
+// RSS / Atom poll
+triggers: [{
+  kind: 'event-source',
+  source: 'rss',
+  options: { feedUrl: 'https://example.com/feed.xml', pollIntervalMs: 300_000 },
+}]
+
+// Custom — caller controls the lifecycle
+triggers: [{
+  kind: 'event-source',
+  source: 'custom',
+  options: {
+    start: (fire, signal) => {
+      const handle = subscribe((msg) => fire(msg))
+      signal.addEventListener('abort', () => handle.close())
+    },
+  },
+}]
+```
+
+Reconnect uses exponential backoff (`reconnectDelayMs` base, capped at 60s). RSS dedupes by `guid`/`id`/`link` so the same item never fires twice. An optional `filter: Record<string, unknown>` does shallow equality matching against the payload — useful for `{ source: 'websocket' }` streams that mix event types.
+
+## Webhook providers (Slack / MS Graph)
+
+Webhooks signed by a specific vendor need that vendor's signature scheme — declare `provider` and the gateway routes through `@skelm/integrations`:
+
+```ts
+import { pipeline } from 'skelm'
+
+export default pipeline({
+  id: 'slack-events',
+  triggers: [{
+    kind: 'webhook',
+    path: '/hooks/slack',
+    provider: 'slack',
+    secret: process.env.SLACK_SIGNING_SECRET,    // signing secret, not bot token
+  }],
+  steps: [/* … */],
+})
+```
+
+What the gateway does for `provider: 'slack'`:
+
+- Reads the raw body before any JSON parse.
+- Verifies `X-Slack-Signature` over `v0:<timestamp>:<rawBody>` with HMAC-SHA256, constant-time compared.
+- Rejects requests whose `X-Slack-Request-Timestamp` is older than 5 minutes (replay window).
+- Short-circuits the one-shot `url_verification` handshake — the gateway echoes the `challenge` without firing the pipeline.
+
+For `provider: 'ms-graph'`:
+
+```ts
+triggers: [{
+  kind: 'webhook',
+  path: '/hooks/graph',
+  provider: 'ms-graph',
+}]
+```
+
+The coordinator registers GET + POST for the path. A GET carrying `?validationToken=…` is answered in plain text within the same request (no pipeline fire). POST deliveries carry the standard Graph envelope `{ value: [{ clientState, changeType, resource, ... }] }`. Use `verifyMsGraphClientState()` from `@skelm/integrations` in your first step to reject spoofed callers; `MsGraphIntegration` does this automatically when wired in as the source.
 
 ## Audit
 
