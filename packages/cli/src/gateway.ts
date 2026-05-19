@@ -152,7 +152,20 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
   // F043: SKELM_STATE_DIR env override must thread through to the Gateway
   // constructor; without an explicit option the constructor falls back to
   // `homedir() + '/.skelm'`, ignoring the operator's isolation choice.
-  const gateway = new Gateway({
+  //
+  // `syncDeclared` is wired as the Gateway's onReload hook so that a
+  // POST /gateway/reload re-walks pipelines[*].triggers and registers any
+  // newly-declared trigger (issue #164) — and sweeps declared trigger
+  // registrations whose backing workflow file is gone (issue #162). The
+  // closure captures `gateway` by reference so it's safe to declare here
+  // before the construction completes.
+  // biome-ignore lint/style/useConst: assigned immediately below
+  let gateway: Gateway
+  const syncDeclared = async (): Promise<void> => {
+    if (gateway === undefined) return
+    await syncDeclaredTriggers(gateway, io)
+  }
+  gateway = new Gateway({
     installSignalHandlers: true,
     enableHttp: true,
     stateDir: defaultStateDir(),
@@ -160,6 +173,7 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     ...(httpHost !== undefined && { httpHost }),
     config,
     loadWorkflow,
+    onReload: syncDeclared,
   })
   try {
     await gateway.start()
@@ -191,46 +205,11 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
   }
 
   // Eagerly import each registered workflow once at startup so its
-  // declared `triggers` can be wired through the coordinator. Failures on
-  // a single workflow are logged and don't block boot.
-  let declaredCount = 0
-  for (const entry of gateway.registries.workflows.list()) {
-    try {
-      const mod = (await tsImport(pathToFileURL(entry.path).href, import.meta.url)) as {
-        default?: { triggers?: readonly Record<string, unknown>[] }
-      }
-      const triggers = mod.default?.triggers ?? []
-      for (const [i, t] of triggers.entries()) {
-        const spec = pipelineTriggerToSpec(entry.id, t, i)
-        if (spec === undefined) {
-          io.stderr.write(
-            `gateway: workflow ${entry.id} declares an unknown trigger kind, skipping\n`,
-          )
-          continue
-        }
-        // Pipeline-declared triggers may include an `input` field that the
-        // gateway uses as the default pipeline input on cron/interval/manual
-        // fires. Pass it through to the coordinator so `triggers: [{ kind:
-        // 'cron', cron: '…', input: { foo: 'bar' } }]` works.
-        const reg = gateway.managers.triggers.register(
-          spec,
-          undefined,
-          t.input !== undefined ? { input: t.input } : {},
-        )
-        if (reg.lastError !== undefined) {
-          io.stderr.write(
-            `gateway: failed to register trigger ${spec.id} for ${entry.id}: ${reg.lastError}\n`,
-          )
-        } else {
-          declaredCount++
-        }
-      }
-    } catch (err) {
-      io.stderr.write(
-        `gateway: failed to load workflow ${entry.id} for trigger discovery: ${(err as Error).message}\n`,
-      )
-    }
-  }
+  // declared `triggers` are wired through the coordinator. The same helper
+  // is invoked as Gateway.onReload so `POST /gateway/reload` picks up
+  // newly-declared triggers (issue #164) and sweeps orphan registrations
+  // for workflow files that were deleted (issue #162).
+  const declaredCount = await syncDeclaredTriggers(gateway, io)
 
   const discovery = gateway.getDiscovery()
   io.stdout.write(
@@ -526,6 +505,90 @@ async function installSystemd(io: MainIO): Promise<MainResult> {
 }
 
 /**
+ * Walk the workflow registry, import each module, and reconcile its
+ * declared `triggers:` array with the coordinator's current registrations:
+ *
+ * - **add** triggers whose registration id is not yet present
+ *   (fixes the boot path AND POST /gateway/reload after adding a new
+ *   workflow file or a new entry to an existing `triggers:` array — see
+ *   issue #164)
+ * - **remove** declared triggers whose backing workflow file disappeared
+ *   from the registry (sweeps the orphan trigger surfaced by issue #162)
+ *
+ * Returns the count of currently-armed declared triggers. Failures on a
+ * single workflow are logged to stderr and don't stop the sync.
+ */
+export async function syncDeclaredTriggers(gateway: Gateway, io: MainIO): Promise<number> {
+  const liveWorkflowIds = new Set<string>()
+  const armedIds = new Set<string>()
+  for (const entry of gateway.registries.workflows.list()) {
+    liveWorkflowIds.add(entry.id)
+    try {
+      const mod = (await tsImport(pathToFileURL(entry.path).href, import.meta.url)) as {
+        default?: { triggers?: readonly Record<string, unknown>[] }
+      }
+      const triggers = mod.default?.triggers ?? []
+      for (const [i, t] of triggers.entries()) {
+        const spec = pipelineTriggerToSpec(entry.id, t, i)
+        if (spec === undefined) {
+          io.stderr.write(
+            `gateway: workflow ${entry.id} declares an unknown trigger kind, skipping\n`,
+          )
+          continue
+        }
+        // Idempotent: skip if already in the coordinator. The reload path
+        // hits this for every existing trigger — re-registering would either
+        // leak handles (file-watch, ws) or double-fire on cron timers.
+        if (gateway.managers.triggers.get(spec.id) !== undefined) {
+          armedIds.add(spec.id)
+          continue
+        }
+        const reg = gateway.managers.triggers.register(
+          spec,
+          undefined,
+          t.input !== undefined ? { input: t.input } : {},
+        )
+        if (reg.lastError !== undefined) {
+          io.stderr.write(
+            `gateway: failed to register trigger ${spec.id} for ${entry.id}: ${reg.lastError}\n`,
+          )
+        } else {
+          armedIds.add(spec.id)
+        }
+      }
+    } catch (err) {
+      io.stderr.write(
+        `gateway: failed to load workflow ${entry.id} for trigger discovery: ${(err as Error).message}\n`,
+      )
+    }
+  }
+  // Orphan sweep: any registration whose workflowId no longer resolves was
+  // installed by a declared trigger on a workflow file that has since been
+  // deleted. Without this, file-watch / event-source / cron triggers leak
+  // across the gateway's lifetime (issue #162).
+  for (const reg of gateway.managers.triggers.list()) {
+    if (liveWorkflowIds.has(reg.spec.workflowId)) continue
+    // Only sweep registrations that came from a declared trigger — preserve
+    // schedules created via POST /schedules even if their backing workflow
+    // is missing (those are user-managed and a 404 on fire is the right
+    // operator signal, not silent removal).
+    if (!isDeclaredTriggerId(reg.spec.id)) continue
+    gateway.managers.triggers.unregister(reg.spec.id)
+  }
+  return armedIds.size
+}
+
+/**
+ * Declared triggers use the `<workflowId>#<kind>[-i]` id convention; HTTP
+ * `POST /schedules` IDs are operator-supplied free-form strings. The `#`
+ * separator is the load-bearing marker — see `pipelineTriggerToSpec`'s
+ * `defaultId` for the producer side.
+ */
+function isDeclaredTriggerId(id: string): boolean {
+  return id.includes('#')
+}
+
+/**
  * Translate a pipeline-declared trigger into a full TriggerSpec. The
  * pipeline file omits `workflowId` (filled here from the registry id) and
  * may omit `id` (defaulted to `<workflowId>#<kind>[-i]`). Returns undefined
@@ -562,6 +625,11 @@ export function pipelineTriggerToSpec(
         ...((trigger.provider === 'slack' || trigger.provider === 'ms-graph') && {
           provider: trigger.provider,
         }),
+        // ms-graph clientState: Graph doesn't sign payloads — this string is
+        // the *only* per-subscription secret. Without forwarding it the
+        // gateway accepts any POST to the webhook URL (issue #161).
+        ...(typeof trigger.clientState === 'string' &&
+          trigger.clientState !== '' && { clientState: trigger.clientState }),
         // Without forwarding `dedupe`, every pipeline-declared webhook ran
         // without idempotency; same delivery id dispatched twice. The
         // coordinator + HTTP route both honor the field once the spec

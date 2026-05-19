@@ -509,11 +509,20 @@ export type PipelineTrigger =
        *   `verifySlackSignature`, rejects timestamps older than 5 minutes,
        *   and short-circuits the `url_verification` challenge.
        * - `'ms-graph'`: GET requests carrying `?validationToken=…` are
-       *   answered in plain text without firing the pipeline.
-       *   `clientState` verification on POST notifications is the
-       *   pipeline's responsibility via `verifyMsGraphClientState`.
+       *   answered in plain text without firing the pipeline. POST
+       *   notifications are rejected with 401 unless every entry under
+       *   `value[].clientState` equals the `clientState` declared here.
+       *   Graph does not sign payloads, so `clientState` is the only
+       *   per-subscription secret — supplying it is mandatory for
+       *   production deployments.
        */
       provider?: 'slack' | 'ms-graph'
+      /**
+       * For `provider: 'ms-graph'`: the shared `clientState` value the Graph
+       * subscription was created with. The gateway rejects POSTs whose
+       * embedded `clientState` doesn't match (see `verifyMsGraphClientState`).
+       */
+      clientState?: string
       /**
        * Optional pre-dispatch deduplication. The gateway reads the named
        * request header on each delivery and skips dispatch when the same

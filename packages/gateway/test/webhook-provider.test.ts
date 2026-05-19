@@ -181,4 +181,73 @@ describe('webhook providers', () => {
       await gw.stop()
     }
   })
+
+  it('rejects ms-graph POSTs whose clientState does not match', async () => {
+    const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      httpProxyPort: proxyPort,
+      config: {},
+    })
+    await gw.start()
+    try {
+      const fired: string[] = []
+      gw.managers.triggers.setOnFire(async (ctx) => {
+        fired.push(ctx.triggerId)
+      })
+      gw.managers.triggers.register({
+        kind: 'webhook',
+        id: 'graph-cs',
+        workflowId: 'wf',
+        path: '/hooks/graph-cs',
+        provider: 'ms-graph',
+        clientState: 'expected-state',
+      })
+
+      // Matching clientState: accepted, run fired.
+      const ok = await fetch(`http://127.0.0.1:${port}/hooks/graph-cs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ value: [{ clientState: 'expected-state', resource: 'x' }] }),
+      })
+      expect(ok.status).toBe(200)
+
+      // Mismatched clientState: 401, no fire.
+      const bad = await fetch(`http://127.0.0.1:${port}/hooks/graph-cs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ value: [{ clientState: 'WRONG', resource: 'x' }] }),
+      })
+      expect(bad.status).toBe(401)
+
+      // Mixed batch (one valid, one not): rejected as a whole, no partial fire.
+      const mixed = await fetch(`http://127.0.0.1:${port}/hooks/graph-cs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          value: [
+            { clientState: 'expected-state', resource: 'a' },
+            { clientState: 'WRONG', resource: 'b' },
+          ],
+        }),
+      })
+      expect(mixed.status).toBe(401)
+
+      // Body without `value` array: rejected.
+      const empty = await fetch(`http://127.0.0.1:${port}/hooks/graph-cs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      expect(empty.status).toBe(401)
+
+      expect(fired).toEqual(['graph-cs'])
+    } finally {
+      await gw.stop()
+    }
+  })
 })

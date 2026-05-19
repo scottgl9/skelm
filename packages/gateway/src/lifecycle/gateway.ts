@@ -522,6 +522,13 @@ export class Gateway {
         r.mcpServers.refresh(),
       ])
     }
+    if (this.options.onReload !== undefined) {
+      try {
+        await this.options.onReload()
+      } catch (err) {
+        console.error('gateway onReload hook failed:', (err as Error).message)
+      }
+    }
   }
 
   async stop(_options: { timeoutMs?: number } = {}): Promise<void> {
