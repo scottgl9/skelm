@@ -105,6 +105,7 @@ value:loadSkillBodies
 value:loadTsModule
 value:loop
 value:parallel
+value:parseDuration
 value:parseSkill
 value:pickExport
 value:pipeline
