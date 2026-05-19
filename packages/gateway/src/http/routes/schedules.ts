@@ -1,3 +1,4 @@
+import { parseDuration } from '@skelm/core'
 import { type Router, createError, eventHandler, readBody } from 'h3'
 import type { Gateway } from '../../lifecycle/gateway.js'
 import type { TriggerRegistration, TriggerSpec } from '../../triggers/types.js'
@@ -100,8 +101,16 @@ function scheduleTriggerToSpec(
     }
     case 'interval': {
       const everyMs = trigger.everyMs
-      if (typeof everyMs !== 'number') return 'invalid'
-      return { kind: 'interval', id, workflowId, everyMs }
+      const every = trigger.every
+      if (typeof everyMs !== 'number' && typeof every !== 'string') return 'invalid'
+      const resolvedEveryMs = typeof everyMs === 'number' ? everyMs : parseDuration(every as string)
+      return {
+        kind: 'interval',
+        id,
+        workflowId,
+        everyMs: resolvedEveryMs,
+        ...(typeof every === 'string' && { every }),
+      }
     }
     case 'webhook': {
       const path = trigger.path
@@ -154,6 +163,7 @@ function registrationToSchedule(reg: TriggerRegistration): {
       break
     case 'interval':
       trigger = { kind: 'interval', everyMs: spec.everyMs }
+      if (spec.every !== undefined) (trigger as Record<string, unknown>).every = spec.every
       break
     case 'manual':
       trigger = { kind: 'manual' }

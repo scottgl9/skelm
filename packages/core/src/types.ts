@@ -510,7 +510,7 @@ export type PipelineTrigger =
       dedupe?: { header: string; ttlMs?: number }
     }
   | { kind: 'cron'; id?: string; cron: string; tz?: string }
-  | { kind: 'interval'; id?: string; everyMs: number }
+  | { kind: 'interval'; id?: string; everyMs?: number; every?: string }
   | {
       /**
        * GitHub PR-aware trigger. The gateway wires this to a `webhook` trigger
