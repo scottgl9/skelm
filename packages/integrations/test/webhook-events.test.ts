@@ -162,10 +162,9 @@ describe('SlackIntegration.sendNotification', () => {
 
 describe('verifySlackSignature', () => {
   it('is exported as part of the public surface', () => {
-    // The current implementation is a stub. The test pins the export
-    // signature so a future HMAC-based replacement still satisfies the
-    // (sig, ts, body, signingSecret) contract.
     expect(typeof verifySlackSignature).toBe('function')
-    expect(verifySlackSignature('secret', '1', 'body', 'v0=deadbeef')).toBe(true)
+    // Contract: (rawBody, signature, timestamp, secret) -> boolean. A
+    // signature that obviously won't match must come back false, never throw.
+    expect(verifySlackSignature('body', 'v0=deadbeef', '1', 'secret')).toBe(false)
   })
 })

@@ -2,12 +2,14 @@ value:GitHubApiError
 value:GitHubIntegration
 value:IntegrationBase
 value:IntegrationRegistry
+value:MsGraphIntegration
 value:SlackIntegration
 value:TelegramIntegration
 value:createIntegrationPlugin
 value:defineIntegration
 value:deleteWebhook
 value:getAuthenticatedUser
+value:getMsGraphValidationToken
 value:githubFetch
 value:normalizeGitHubPrEvent
 value:postIssueComment
@@ -16,6 +18,7 @@ value:registerGitHubPrTrigger
 value:registerWebhook
 value:telegramUpdateToInput
 value:verifyGitHubSignature
+value:verifyMsGraphClientState
 value:verifySlackSignature
 type:CreateTelegramTriggerSourceOptions
 type:DefineIntegrationOptions
@@ -37,6 +40,7 @@ type:IntegrationClass
 type:IntegrationConfig
 type:JiraConfig
 type:JiraIssueTrigger
+type:MsGraphIntegrationType
 type:PostIssueCommentParams
 type:PostPullRequestReviewParams
 type:PullRequestReviewComment

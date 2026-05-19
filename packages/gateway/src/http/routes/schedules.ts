@@ -118,6 +118,9 @@ function scheduleTriggerToSpec(
       const spec: TriggerSpec = { kind: 'webhook', id, workflowId, path }
       if (typeof trigger.method === 'string') spec.method = trigger.method
       if (typeof trigger.secret === 'string') spec.secret = trigger.secret
+      if (trigger.provider === 'slack' || trigger.provider === 'ms-graph') {
+        spec.provider = trigger.provider
+      }
       return spec
     }
     case 'file-watch': {
@@ -191,6 +194,7 @@ function registrationToSchedule(reg: TriggerRegistration): {
     case 'webhook':
       trigger = { kind: 'webhook', path: spec.path }
       if (spec.method !== undefined) trigger.method = spec.method
+      if (spec.provider !== undefined) trigger.provider = spec.provider
       // Don't expose the secret on read.
       break
     case 'file-watch':

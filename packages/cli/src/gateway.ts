@@ -559,6 +559,9 @@ export function pipelineTriggerToSpec(
         path: trigger.path as string,
         ...(trigger.method !== undefined && { method: trigger.method as string }),
         ...(trigger.secret !== undefined && { secret: trigger.secret as string }),
+        ...((trigger.provider === 'slack' || trigger.provider === 'ms-graph') && {
+          provider: trigger.provider,
+        }),
         // Without forwarding `dedupe`, every pipeline-declared webhook ran
         // without idempotency; same delivery id dispatched twice. The
         // coordinator + HTTP route both honor the field once the spec
