@@ -120,6 +120,20 @@ function scheduleTriggerToSpec(
       if (typeof trigger.secret === 'string') spec.secret = trigger.secret
       return spec
     }
+    case 'file-watch': {
+      const path = trigger.path
+      if (typeof path !== 'string' || path === '') return 'invalid'
+      const spec: TriggerSpec = { kind: 'file-watch', id, workflowId, path }
+      if (Array.isArray(trigger.events)) {
+        const events = trigger.events.filter(
+          (event): event is 'create' | 'update' | 'delete' =>
+            event === 'create' || event === 'update' || event === 'delete',
+        )
+        if (events.length > 0) spec.events = events
+      }
+      if (typeof trigger.debounceMs === 'number') spec.debounceMs = trigger.debounceMs
+      return spec
+    }
     case 'poll': {
       const everyMs = trigger.everyMs
       const sourceFnId = trigger.sourceFnId
@@ -178,6 +192,11 @@ function registrationToSchedule(reg: TriggerRegistration): {
       trigger = { kind: 'webhook', path: spec.path }
       if (spec.method !== undefined) trigger.method = spec.method
       // Don't expose the secret on read.
+      break
+    case 'file-watch':
+      trigger = { kind: 'file-watch', path: spec.path }
+      if (spec.events !== undefined) trigger.events = [...spec.events]
+      if (spec.debounceMs !== undefined) trigger.debounceMs = spec.debounceMs
       break
     case 'poll':
       trigger = { kind: 'poll', everyMs: spec.everyMs, sourceFnId: spec.sourceFnId }
