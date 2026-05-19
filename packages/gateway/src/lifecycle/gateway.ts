@@ -87,6 +87,10 @@ export class Gateway {
   private readonly breakpointsInternal: import('../debug/breakpoint-registry.js').BreakpointRegistry
   private workflowRegistrationInternal: WorkflowRegistrationService | null = null
   private workflowArchiveInternal: WorkflowArchiveService | null = null
+  /** In-flight reload promise; null when no reload is running. */
+  private reloadInFlight: Promise<void> | null = null
+  /** Coalesced follow-up reload promise — at most one outstanding. */
+  private reloadPendingAfter: Promise<void> | null = null
 
   constructor(private readonly options: GatewayOptions = {}) {
     this.stateDir = options.stateDir ?? join(homedir(), '.skelm')
@@ -502,8 +506,37 @@ export class Gateway {
    * Hot-reload registries (and, in later phases, config + plugins) without
    * dropping in-flight runs. The default reload re-scans FS-backed
    * registries and re-applies the (unchanged) config-backed ones.
+   *
+   * Serialized: only one reload runs at a time. Concurrent callers (the
+   * SIGHUP handler, the FsWatcher's per-file change events, and an
+   * explicit `POST /gateway/reload`) all share the same in-flight
+   * promise. Without this, a burst of file edits could queue dozens of
+   * concurrent `tsImport` + `onReload` cycles and lock the event loop
+   * (the onReload hook does work proportional to the workflow count, so
+   * the pile-up is worse than the registry-refresh-only cost before
+   * `onReload` was introduced).
    */
   async reload(nextConfig?: SkelmConfig): Promise<void> {
+    if (this.reloadInFlight !== null) {
+      // If a reload is already running, await it and also schedule one
+      // more pass — there could be changes that arrived after the
+      // in-flight reload started its registry refresh. The second pass
+      // is itself coalesced by this same check, so two concurrent
+      // callers + the in-flight pass settle into at most one follow-up.
+      await this.reloadInFlight
+      if (this.reloadPendingAfter !== null) return this.reloadPendingAfter
+      this.reloadPendingAfter = this.runReload(nextConfig).finally(() => {
+        this.reloadPendingAfter = null
+      })
+      return this.reloadPendingAfter
+    }
+    this.reloadInFlight = this.runReload(nextConfig).finally(() => {
+      this.reloadInFlight = null
+    })
+    return this.reloadInFlight
+  }
+
+  private async runReload(nextConfig?: SkelmConfig): Promise<void> {
     if (this.state !== 'running' && this.state !== 'paused') {
       throw new Error(`cannot reload gateway in state ${this.state}`)
     }

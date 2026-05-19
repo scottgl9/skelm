@@ -133,7 +133,7 @@ export class TriggerCoordinator {
   register(
     spec: TriggerSpec,
     overlap?: OverlapPolicy,
-    options: { input?: unknown } = {},
+    options: { input?: unknown; declared?: boolean } = {},
   ): TriggerRegistration {
     const reg: TriggerRegistration = {
       spec,
@@ -141,6 +141,7 @@ export class TriggerCoordinator {
       ...(options.input !== undefined && { input: options.input }),
       fired: 0,
       inflight: false,
+      ...(options.declared === true && { declared: true }),
     }
     this.registrations.set(spec.id, reg)
     switch (spec.kind) {

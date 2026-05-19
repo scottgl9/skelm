@@ -95,6 +95,14 @@ export interface TriggerRegistration {
   lastFiredAt?: string
   /** Last error from the run callback, if any. */
   lastError?: string
+  /**
+   * True when this registration came from a pipeline's declared
+   * `triggers:` array (vs `POST /schedules`). Used by the reload sweep to
+   * distinguish operator-managed schedules from declared ones, since
+   * inferring provenance from the id format would silently delete an
+   * operator schedule whose id happens to share a `#` separator.
+   */
+  declared?: boolean
 }
 
 export interface FireContext {
