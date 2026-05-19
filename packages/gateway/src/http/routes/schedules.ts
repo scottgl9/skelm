@@ -94,7 +94,9 @@ function scheduleTriggerToSpec(
     case 'cron': {
       const expr = trigger.expression
       if (typeof expr !== 'string') return 'invalid'
-      return { kind: 'cron', id, workflowId, cron: expr }
+      const spec: TriggerSpec = { kind: 'cron', id, workflowId, cron: expr }
+      if (typeof trigger.tz === 'string') spec.tz = trigger.tz
+      return spec
     }
     case 'interval': {
       const everyMs = trigger.everyMs
@@ -148,6 +150,7 @@ function registrationToSchedule(reg: TriggerRegistration): {
   switch (spec.kind) {
     case 'cron':
       trigger = { kind: 'cron', expression: spec.cron }
+      if (spec.tz !== undefined) (trigger as Record<string, unknown>).tz = spec.tz
       break
     case 'interval':
       trigger = { kind: 'interval', everyMs: spec.everyMs }
