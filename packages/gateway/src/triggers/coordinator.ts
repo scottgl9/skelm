@@ -186,14 +186,20 @@ export class TriggerCoordinator {
         break
       }
       case 'webhook': {
-        const method = (spec.method ?? 'POST').toUpperCase()
-        const key = `${method} ${spec.path}`
-        const existing = this.webhookRoutes.get(key)
-        if (existing !== undefined && existing !== spec.id) {
-          reg.lastError = `webhook ${key} already bound to trigger ${existing}`
-          break
+        const methods =
+          spec.provider === 'ms-graph'
+            ? new Set(['GET', 'POST', (spec.method ?? 'POST').toUpperCase()])
+            : new Set([(spec.method ?? 'POST').toUpperCase()])
+        for (const method of methods) {
+          const key = `${method} ${spec.path}`
+          const existing = this.webhookRoutes.get(key)
+          if (existing !== undefined && existing !== spec.id) {
+            reg.lastError = `webhook ${key} already bound to trigger ${existing}`
+            break
+          }
         }
-        this.webhookRoutes.set(key, spec.id)
+        if (reg.lastError !== undefined) break
+        for (const method of methods) this.webhookRoutes.set(`${method} ${spec.path}`, spec.id)
         break
       }
       case 'poll': {

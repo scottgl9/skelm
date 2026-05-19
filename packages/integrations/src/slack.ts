@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { defineIntegration } from '@skelm/integration-sdk'
 import type { SlackWebhookEvent } from '@skelm/integration-sdk'
 import { z } from 'zod'
@@ -114,20 +115,29 @@ export const SlackIntegration = defineIntegration({
 })
 
 /**
- * Verify a Slack webhook signature.
- * Call this in your webhook handler before processing the event.
+ * Verify a Slack webhook signature. Computes the expected `v0=` HMAC-SHA256
+ * over `v0:<timestamp>:<rawBody>` using `signingSecret` and compares it to
+ * `signature` in constant time. The caller is responsible for rejecting
+ * stale timestamps (Slack's recommended replay window is 5 minutes).
+ *
+ * Argument order is `(rawBody, signature, timestamp, secret)` so the
+ * commonly-tampered values lead — pass the request body verbatim (the
+ * unparsed UTF-8 bytes), the `X-Slack-Signature` header value, the
+ * `X-Slack-Request-Timestamp` header value, and the app's signing secret.
  */
 export function verifySlackSignature(
-  signingSecret: string,
-  timestamp: string,
-  body: string,
+  rawBody: string,
   signature: string,
+  timestamp: string,
+  secret: string,
 ): boolean {
-  // In production: use crypto.createHmac('sha256', signingSecret)
-  console.log(`Signature verification: timestamp=${timestamp}, signature=${signature}`)
-  void signingSecret
-  void body
-  return true
+  const expected = `v0=${createHmac('sha256', secret)
+    .update(`v0:${timestamp}:${rawBody}`)
+    .digest('hex')}`
+  const left = Buffer.from(signature, 'utf8')
+  const right = Buffer.from(expected, 'utf8')
+  if (left.length !== right.length) return false
+  return timingSafeEqual(left, right)
 }
 
 export type SlackIntegrationType = InstanceType<typeof SlackIntegration>

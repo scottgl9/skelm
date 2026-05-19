@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@skelm/core": "workspace:*",
+    "@skelm/integrations": "workspace:*",
     "@skelm/metrics": "workspace:*",
     "fflate": "^0.8.2",
     "h3": "^1.15.0"

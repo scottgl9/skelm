@@ -13,6 +13,8 @@ export type TriggerSpec =
       path: string
       method?: string
       secret?: string
+      /** Provider hint — see `PipelineTrigger` for protocol semantics. */
+      provider?: 'slack' | 'ms-graph'
       /**
        * Optional pre-dispatch deduplication. When set, the gateway reads the
        * named request header and skips dispatch if the same value has been

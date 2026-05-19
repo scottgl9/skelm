@@ -62,6 +62,12 @@ export {
   type GitHubPrTriggerSpec,
   type GitHubPrTriggerCoordinator,
 } from './github-pr-trigger.js'
+export {
+  MsGraphIntegration,
+  getMsGraphValidationToken,
+  verifyMsGraphClientState,
+  type MsGraphIntegrationType,
+} from './ms-graph.js'
 export { SlackIntegration, verifySlackSignature } from './slack.js'
 export {
   TelegramIntegration,

@@ -167,6 +167,9 @@ importers:
       '@skelm/core':
         specifier: workspace:*
         version: link:../core
+      '@skelm/integrations':
+        specifier: workspace:*
+        version: link:../integrations
       '@skelm/metrics':
         specifier: workspace:*
         version: link:../metrics
