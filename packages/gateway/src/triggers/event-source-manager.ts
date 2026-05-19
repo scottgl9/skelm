@@ -40,6 +40,7 @@ export class EventSourceManager {
   constructor(
     private spec: EventSourceSpec,
     private onFire: (payload: unknown) => void,
+    private onError?: (err: Error) => void,
   ) {}
 
   start(): void {
@@ -70,7 +71,14 @@ export class EventSourceManager {
           throw new Error(`event-source source: 'custom' requires options.start`)
         }
         const result = start((payload) => this.fire(payload), this.abortController.signal)
-        if (result instanceof Promise) void result.catch(() => {})
+        // Async throws used to be silently swallowed; surface them so the
+        // coordinator can populate reg.lastError (issue #163).
+        if (result instanceof Promise) {
+          void result.catch((err) => {
+            const e = err instanceof Error ? err : new Error(String(err))
+            this.onError?.(e)
+          })
+        }
         break
       }
     }
