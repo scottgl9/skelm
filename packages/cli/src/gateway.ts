@@ -159,7 +159,6 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
   // registrations whose backing workflow file is gone (issue #162). The
   // closure captures `gateway` by reference so it's safe to declare here
   // before the construction completes.
-  // biome-ignore lint/style/useConst: assigned immediately below
   let gateway: Gateway
   const syncDeclared = async (): Promise<void> => {
     if (gateway === undefined) return
@@ -506,21 +505,35 @@ async function installSystemd(io: MainIO): Promise<MainResult> {
 
 /**
  * Walk the workflow registry, import each module, and reconcile its
- * declared `triggers:` array with the coordinator's current registrations:
+ * declared `triggers:` array with the coordinator's current registrations.
+ * On the boot path this is the first registration; on reload it is a
+ * three-way reconcile:
  *
  * - **add** triggers whose registration id is not yet present
- *   (fixes the boot path AND POST /gateway/reload after adding a new
- *   workflow file or a new entry to an existing `triggers:` array — see
- *   issue #164)
- * - **remove** declared triggers whose backing workflow file disappeared
- *   from the registry (sweeps the orphan trigger surfaced by issue #162)
+ * - **replace** triggers whose spec changed since the last sync (so
+ *   editing `cron`, `tz`, `path`, `every`, `clientState`, etc. on a
+ *   live workflow actually takes effect — partial fix for issue #164)
+ * - **remove** declared registrations whose backing workflow file
+ *   disappeared from the registry OR whose pipeline still exists but no
+ *   longer declares that trigger id (full fix for issue #162 and the
+ *   "shrunk triggers: array" half of #164)
+ *
+ * `POST /schedules` registrations are preserved unconditionally — they
+ * are identified by the absence of `reg.declared`, not by id-string
+ * heuristics, so an operator schedule named `nightly#backup` is safe.
  *
  * Returns the count of currently-armed declared triggers. Failures on a
  * single workflow are logged to stderr and don't stop the sync.
  */
 export async function syncDeclaredTriggers(gateway: Gateway, io: MainIO): Promise<number> {
   const liveWorkflowIds = new Set<string>()
+  // Capture the set of declared-trigger ids we end up registering this
+  // pass, keyed by spec id. After the loop, any existing declared reg not
+  // in this set is removed — that's how we detect "trigger removed from a
+  // still-live workflow" and "trigger array shrunk".
+  const expectedDeclaredIds = new Set<string>()
   const armedIds = new Set<string>()
+
   for (const entry of gateway.registries.workflows.list()) {
     liveWorkflowIds.add(entry.id)
     try {
@@ -531,23 +544,32 @@ export async function syncDeclaredTriggers(gateway: Gateway, io: MainIO): Promis
       for (const [i, t] of triggers.entries()) {
         const spec = pipelineTriggerToSpec(entry.id, t, i)
         if (spec === undefined) {
-          io.stderr.write(
-            `gateway: workflow ${entry.id} declares an unknown trigger kind, skipping\n`,
-          )
+          // ms-graph without clientState is a refused configuration, not an
+          // unknown kind — name it specifically so the pipeline author can
+          // fix it instead of hunting for a typo (issue #161 default-deny).
+          const reason =
+            t.kind === 'webhook' && t.provider === 'ms-graph'
+              ? `ms-graph webhook requires a non-empty 'clientState' (Graph does not sign payloads)`
+              : 'unknown trigger kind'
+          io.stderr.write(`gateway: workflow ${entry.id} trigger ${i} skipped: ${reason}\n`)
           continue
         }
-        // Idempotent: skip if already in the coordinator. The reload path
-        // hits this for every existing trigger — re-registering would either
-        // leak handles (file-watch, ws) or double-fire on cron timers.
-        if (gateway.managers.triggers.get(spec.id) !== undefined) {
-          armedIds.add(spec.id)
-          continue
+        expectedDeclaredIds.add(spec.id)
+        const existing = gateway.managers.triggers.get(spec.id)
+        if (existing !== undefined) {
+          // Spec drift: the operator edited the workflow file (changed
+          // cron expression, file path, clientState, etc.). The old reg
+          // is still holding stale resources — replace it.
+          if (specsEqual(existing.spec, spec)) {
+            armedIds.add(spec.id)
+            continue
+          }
+          gateway.managers.triggers.unregister(spec.id)
         }
-        const reg = gateway.managers.triggers.register(
-          spec,
-          undefined,
-          t.input !== undefined ? { input: t.input } : {},
-        )
+        const reg = gateway.managers.triggers.register(spec, undefined, {
+          ...(t.input !== undefined && { input: t.input }),
+          declared: true,
+        })
         if (reg.lastError !== undefined) {
           io.stderr.write(
             `gateway: failed to register trigger ${spec.id} for ${entry.id}: ${reg.lastError}\n`,
@@ -562,30 +584,41 @@ export async function syncDeclaredTriggers(gateway: Gateway, io: MainIO): Promis
       )
     }
   }
-  // Orphan sweep: any registration whose workflowId no longer resolves was
-  // installed by a declared trigger on a workflow file that has since been
-  // deleted. Without this, file-watch / event-source / cron triggers leak
-  // across the gateway's lifetime (issue #162).
+
+  // Sweep:
+  //   - workflow file deleted ⇒ workflowId no longer in liveWorkflowIds
+  //   - trigger removed from a still-live workflow ⇒ workflowId is live
+  //     but spec id is not in expectedDeclaredIds
+  // Only declared registrations are eligible; operator-managed schedules
+  // (declared !== true) are preserved unconditionally so a manual schedule
+  // named like `nightly#backup` is not silently destroyed (issue #162
+  // followup; replaces the previous `id.includes('#')` heuristic).
   for (const reg of gateway.managers.triggers.list()) {
-    if (liveWorkflowIds.has(reg.spec.workflowId)) continue
-    // Only sweep registrations that came from a declared trigger — preserve
-    // schedules created via POST /schedules even if their backing workflow
-    // is missing (those are user-managed and a 404 on fire is the right
-    // operator signal, not silent removal).
-    if (!isDeclaredTriggerId(reg.spec.id)) continue
+    if (reg.declared !== true) continue
+    if (liveWorkflowIds.has(reg.spec.workflowId) && expectedDeclaredIds.has(reg.spec.id)) continue
     gateway.managers.triggers.unregister(reg.spec.id)
   }
   return armedIds.size
 }
 
 /**
- * Declared triggers use the `<workflowId>#<kind>[-i]` id convention; HTTP
- * `POST /schedules` IDs are operator-supplied free-form strings. The `#`
- * separator is the load-bearing marker — see `pipelineTriggerToSpec`'s
- * `defaultId` for the producer side.
+ * Structural equality on two TriggerSpecs. The `id` and `workflowId`
+ * fields are by construction equal when this is called (callers compare
+ * an existing reg's spec against a freshly-built spec for the same
+ * triggers[i] position) — drift in any other field means the operator
+ * edited the workflow and the old reg should be torn down.
+ *
+ * Limitation: `JSON.stringify` drops functions, so edits to the body of
+ * an `event-source: 'custom'` `start` callback are NOT detected as drift
+ * on reload. Operators changing a custom start function should restart
+ * the gateway (or remove + re-add the workflow file) to pick it up.
  */
-function isDeclaredTriggerId(id: string): boolean {
-  return id.includes('#')
+function specsEqual(
+  a: import('@skelm/gateway').TriggerSpec,
+  b: import('@skelm/gateway').TriggerSpec,
+): boolean {
+  if (a.kind !== b.kind) return false
+  return JSON.stringify(a) === JSON.stringify(b)
 }
 
 /**
@@ -614,7 +647,17 @@ export function pipelineTriggerToSpec(
           config: trigger.config as Record<string, unknown>,
         }),
       }
-    case 'webhook':
+    case 'webhook': {
+      const isGraph = trigger.provider === 'ms-graph'
+      const clientState =
+        typeof trigger.clientState === 'string' && trigger.clientState !== ''
+          ? trigger.clientState
+          : undefined
+      // Default-deny: refuse to translate an ms-graph webhook without a
+      // clientState — Graph does not sign payloads (issue #161). Returning
+      // undefined surfaces an "unknown trigger kind" warning in the boot
+      // log, which is loud enough that the pipeline author will notice.
+      if (isGraph && clientState === undefined) return undefined
       return {
         kind: 'webhook',
         id,
@@ -625,11 +668,7 @@ export function pipelineTriggerToSpec(
         ...((trigger.provider === 'slack' || trigger.provider === 'ms-graph') && {
           provider: trigger.provider,
         }),
-        // ms-graph clientState: Graph doesn't sign payloads — this string is
-        // the *only* per-subscription secret. Without forwarding it the
-        // gateway accepts any POST to the webhook URL (issue #161).
-        ...(typeof trigger.clientState === 'string' &&
-          trigger.clientState !== '' && { clientState: trigger.clientState }),
+        ...(clientState !== undefined && { clientState }),
         // Without forwarding `dedupe`, every pipeline-declared webhook ran
         // without idempotency; same delivery id dispatched twice. The
         // coordinator + HTTP route both honor the field once the spec
@@ -638,6 +677,7 @@ export function pipelineTriggerToSpec(
           dedupe: trigger.dedupe as { header: string; ttlMs?: number },
         }),
       }
+    }
     case 'event-source':
       return {
         kind: 'event-source',
