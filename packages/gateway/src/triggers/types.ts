@@ -13,6 +13,7 @@ export type TriggerSpec =
       path: string
       method?: string
       secret?: string
+      provider?: 'slack' | 'ms-graph'
       /**
        * Optional pre-dispatch deduplication. When set, the gateway reads the
        * named request header and skips dispatch if the same value has been
@@ -21,6 +22,14 @@ export type TriggerSpec =
        * webhook source treats the delivery as accepted.
        */
       dedupe?: { header: string; ttlMs?: number }
+    }
+  | {
+      kind: 'file-watch'
+      id: string
+      workflowId: string
+      path: string
+      events?: readonly ('create' | 'update' | 'delete')[]
+      debounceMs?: number
     }
   | {
       kind: 'poll'

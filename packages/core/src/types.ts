@@ -500,6 +500,7 @@ export type PipelineTrigger =
       path: string
       method?: string
       secret?: string
+      provider?: 'slack' | 'ms-graph'
       /**
        * Optional pre-dispatch deduplication. The gateway reads the named
        * request header on each delivery and skips dispatch when the same
@@ -508,6 +509,16 @@ export type PipelineTrigger =
        * audit event is emitted on a hit; the HTTP response is still 200.
        */
       dedupe?: { header: string; ttlMs?: number }
+    }
+  | {
+      kind: 'file-watch'
+      id?: string
+      /** Path or glob to watch. Single path for now; string only. */
+      path: string
+      /** File events to fire on. Default: ['create', 'update', 'delete'] */
+      events?: readonly ('create' | 'update' | 'delete')[]
+      /** Debounce ms — coalesce rapid FS events into one fire. Default: 100 */
+      debounceMs?: number
     }
   | { kind: 'cron'; id?: string; cron: string }
   | { kind: 'interval'; id?: string; everyMs: number }

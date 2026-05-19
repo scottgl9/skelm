@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { defineIntegration } from '@skelm/integration-sdk'
 import type { SlackWebhookEvent } from '@skelm/integration-sdk'
 import { z } from 'zod'
@@ -118,16 +119,18 @@ export const SlackIntegration = defineIntegration({
  * Call this in your webhook handler before processing the event.
  */
 export function verifySlackSignature(
-  signingSecret: string,
-  timestamp: string,
-  body: string,
+  rawBody: string,
   signature: string,
+  timestamp: string,
+  secret: string,
 ): boolean {
-  // In production: use crypto.createHmac('sha256', signingSecret)
-  console.log(`Signature verification: timestamp=${timestamp}, signature=${signature}`)
-  void signingSecret
-  void body
-  return true
+  const expected = `v0=${createHmac('sha256', secret)
+    .update(`v0:${timestamp}:${rawBody}`)
+    .digest('hex')}`
+  const left = Buffer.from(signature, 'utf8')
+  const right = Buffer.from(expected, 'utf8')
+  if (left.length !== right.length) return false
+  return timingSafeEqual(left, right)
 }
 
 export type SlackIntegrationType = InstanceType<typeof SlackIntegration>

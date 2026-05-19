@@ -107,6 +107,32 @@ function scheduleTriggerToSpec(
       const spec: TriggerSpec = { kind: 'webhook', id, workflowId, path }
       if (typeof trigger.method === 'string') spec.method = trigger.method
       if (typeof trigger.secret === 'string') spec.secret = trigger.secret
+      if (trigger.provider === 'slack' || trigger.provider === 'ms-graph') {
+        spec.provider = trigger.provider
+      }
+      if (typeof trigger.dedupe === 'object' && trigger.dedupe !== null) {
+        const dedupe = trigger.dedupe as { header?: unknown; ttlMs?: unknown }
+        if (typeof dedupe.header === 'string' && dedupe.header !== '') {
+          spec.dedupe = {
+            header: dedupe.header,
+            ...(typeof dedupe.ttlMs === 'number' ? { ttlMs: dedupe.ttlMs } : {}),
+          }
+        }
+      }
+      return spec
+    }
+    case 'file-watch': {
+      const path = trigger.path
+      if (typeof path !== 'string' || path === '') return 'invalid'
+      const spec: TriggerSpec = { kind: 'file-watch', id, workflowId, path }
+      if (Array.isArray(trigger.events)) {
+        const events = trigger.events.filter(
+          (event): event is 'create' | 'update' | 'delete' =>
+            event === 'create' || event === 'update' || event === 'delete',
+        )
+        if (events.length > 0) spec.events = events
+      }
+      if (typeof trigger.debounceMs === 'number') spec.debounceMs = trigger.debounceMs
       return spec
     }
     case 'poll': {
@@ -164,7 +190,14 @@ function registrationToSchedule(reg: TriggerRegistration): {
     case 'webhook':
       trigger = { kind: 'webhook', path: spec.path }
       if (spec.method !== undefined) trigger.method = spec.method
+      if (spec.provider !== undefined) trigger.provider = spec.provider
+      if (spec.dedupe !== undefined) trigger.dedupe = spec.dedupe
       // Don't expose the secret on read.
+      break
+    case 'file-watch':
+      trigger = { kind: 'file-watch', path: spec.path }
+      if (spec.events !== undefined) trigger.events = [...spec.events]
+      if (spec.debounceMs !== undefined) trigger.debounceMs = spec.debounceMs
       break
     case 'poll':
       trigger = { kind: 'poll', everyMs: spec.everyMs, sourceFnId: spec.sourceFnId }
