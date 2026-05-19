@@ -10,8 +10,20 @@ export interface ScheduleAddArgs {
   id?: string
   /** Cron expression e.g. "* /5 * * * *" (every 5 min) */
   cron?: string
+  /**
+   * IANA timezone for cron evaluation, e.g. `America/Chicago`. Only valid
+   * paired with `--cron`. The gateway evaluates `cron` in this zone, honoring
+   * DST. Without this flag the cron evaluates in the gateway host's TZ
+   * (commonly UTC for systemd services).
+   */
+  tz?: string
   /** Interval in ms */
   everyMs?: number
+  /**
+   * Interval as a duration string: `30s`, `15m`, `2h`, `1d`, `500ms`. The
+   * gateway resolves to `everyMs` server-side; unparseable values 400.
+   */
+  every?: string
   /** Webhook path e.g. /my-hook */
   webhook?: string
   /** At a specific ISO timestamp */
@@ -108,16 +120,25 @@ async function scheduleAdd(
   let trigger: Record<string, unknown>
   if (args.cron !== undefined) {
     trigger = { kind: 'cron', expression: args.cron }
+    if (args.tz !== undefined) {
+      trigger.tz = args.tz
+    }
   } else if (args.everyMs !== undefined) {
     trigger = { kind: 'interval', everyMs: args.everyMs }
+  } else if (args.every !== undefined) {
+    trigger = { kind: 'interval', every: args.every }
   } else if (args.webhook !== undefined) {
     trigger = { kind: 'webhook', path: args.webhook }
   } else if (args.at !== undefined) {
     trigger = { kind: 'at', when: args.at }
   } else {
     io.stderr.write(
-      'error: skelm schedule add requires one of --cron, --every-ms, --webhook, or --at\n',
+      'error: skelm schedule add requires one of --cron, --every, --every-ms, --webhook, or --at\n',
     )
+    return { exitCode: EXIT.CLI_ERROR }
+  }
+  if (args.tz !== undefined && args.cron === undefined) {
+    io.stderr.write('error: --tz requires --cron\n')
     return { exitCode: EXIT.CLI_ERROR }
   }
 
