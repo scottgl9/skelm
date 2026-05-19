@@ -2,7 +2,7 @@
 
 export type TriggerSpec =
   | { kind: 'cron'; id: string; workflowId: string; cron: string; tz?: string }
-  | { kind: 'interval'; id: string; workflowId: string; everyMs: number }
+  | { kind: 'interval'; id: string; workflowId: string; everyMs: number; every?: string }
   | { kind: 'manual'; id: string; workflowId: string }
   | { kind: 'immediate'; id: string; workflowId: string }
   | { kind: 'at'; id: string; workflowId: string; when: string }

@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { parseDuration } from '@skelm/core'
 // @subprocess-ok: re-spawning the CLI itself for `gateway start --detach`.
 import {
   Gateway,
@@ -576,8 +577,24 @@ export function pipelineTriggerToSpec(
         ...(tz !== undefined && { tz }),
       }
     }
-    case 'interval':
-      return { kind: 'interval', id, workflowId, everyMs: trigger.everyMs as number }
+    case 'interval': {
+      const everyMsRaw = trigger.everyMs
+      const everyRaw = trigger.every
+      const everyMs =
+        typeof everyMsRaw === 'number'
+          ? everyMsRaw
+          : typeof everyRaw === 'string'
+            ? parseDuration(everyRaw)
+            : undefined
+      if (everyMs === undefined) return undefined
+      return {
+        kind: 'interval',
+        id,
+        workflowId,
+        everyMs,
+        ...(typeof everyRaw === 'string' && { every: everyRaw }),
+      }
+    }
     case 'github-pr':
       // The github-pr primitive (commit e08f167) is sugar over a webhook
       // trigger with GitHub-Delivery dedupe pre-configured. Translate here
