@@ -13,6 +13,23 @@ describe('parseDuration', () => {
   it('throws on invalid duration strings', () => {
     expect(() => parseDuration('soon')).toThrow(/invalid duration/i)
   })
+
+  it('rejects durations past the 30d cap (and prevents Number overflow)', () => {
+    // 999999999999999d resolves to 8.6e22 ms — past Number.MAX_SAFE_INTEGER.
+    // A trigger built with the raw value would never fire; the parser must
+    // refuse rather than silently register an unusable interval.
+    expect(() => parseDuration('999999999999999d')).toThrow(/out of supported range/i)
+    expect(() => parseDuration('31d')).toThrow(/out of supported range/i)
+  })
+
+  it('rejects zero-length durations', () => {
+    expect(() => parseDuration('0s')).toThrow(/out of supported range/i)
+    expect(() => parseDuration('0ms')).toThrow(/out of supported range/i)
+  })
+
+  it('accepts the boundary 30d exactly', () => {
+    expect(parseDuration('30d')).toBe(30 * 86_400_000)
+  })
 })
 
 describe('interval trigger duration normalization', () => {
