@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="docs/public/logo.svg" alt="skelm logo" width="120" height="120" />
+  <img src="docs/public/banner.svg" alt="skelm banner" />
 </p>
-
-<h1 align="center">skelm</h1>
 
 <p align="center">
   <strong>Build secure, agentic workflows in TypeScript. Run them anywhere Node runs.</strong>
