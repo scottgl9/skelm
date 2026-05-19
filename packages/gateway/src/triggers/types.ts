@@ -2,7 +2,7 @@
 
 export type TriggerSpec =
   | { kind: 'cron'; id: string; workflowId: string; cron: string; tz?: string }
-  | { kind: 'interval'; id: string; workflowId: string; everyMs: number }
+  | { kind: 'interval'; id: string; workflowId: string; everyMs: number; every?: string }
   | { kind: 'manual'; id: string; workflowId: string }
   | { kind: 'immediate'; id: string; workflowId: string }
   | { kind: 'at'; id: string; workflowId: string; when: string }
@@ -10,7 +10,7 @@ export type TriggerSpec =
       kind: 'event-source'
       id: string
       workflowId: string
-      source: 'websocket' | 'sse' | 'rss' | 'custom'
+      source: 'websocket' | 'sse' | 'rss' | 'custom' | 'discord' | 'slack'
       options: {
         url?: string
         feedUrl?: string
@@ -20,6 +20,10 @@ export type TriggerSpec =
         maxReconnectAttempts?: number
         initialItems?: number
         start?: (fire: (payload: unknown) => void, signal: AbortSignal) => void | Promise<void>
+        token?: string
+        intents?: number
+        events?: readonly string[]
+        appToken?: string
       }
       filter?: Record<string, unknown>
     }

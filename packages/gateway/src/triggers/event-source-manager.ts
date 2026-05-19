@@ -7,6 +7,8 @@ import type { TriggerSpec } from './types.js'
 const DEFAULT_RECONNECT_DELAY_MS = 5_000
 const DEFAULT_RSS_POLL_MS = 300_000
 const MAX_RECONNECT_DELAY_MS = 60_000
+const DISCORD_GATEWAY_URL = 'wss://gateway.discord.gg/?v=10&encoding=json'
+const SLACK_CONNECTIONS_OPEN_URL = 'https://slack.com/api/apps.connections.open'
 
 type EventSourceSpec = Extract<TriggerSpec, { kind: 'event-source' }>
 
@@ -18,6 +20,26 @@ interface ParsedFeedItem {
   description?: string
 }
 
+interface DiscordGatewayMessage {
+  op?: number
+  t?: string | null
+  s?: number | null
+  d?: unknown
+}
+
+interface SlackSocketModeMessage {
+  type?: string
+  envelope_id?: string
+  payload?: {
+    type?: string
+    event?: {
+      type?: string
+    }
+  }
+  reason?: string
+  debug_info?: unknown
+}
+
 export class EventSourceManager {
   private abortController = new AbortController()
   private reconnectTimer: NodeJS.Timeout | null = null
@@ -25,10 +47,12 @@ export class EventSourceManager {
   private sseRequest: ReturnType<typeof httpGet> | null = null
   private sseResponse: import('node:http').IncomingMessage | null = null
   private rssTimer: NodeJS.Timeout | null = null
+  private heartbeatTimer: NodeJS.Timeout | null = null
   private seenGuids = new Set<string>()
   private lastEventId: string | undefined
   private started = false
   private firstRssPoll = true
+  private discordSequence: number | null = null
 
   constructor(
     private spec: EventSourceSpec,
@@ -48,6 +72,12 @@ export class EventSourceManager {
       case 'rss':
         this.startRss()
         break
+      case 'discord':
+        this.startDiscord()
+        break
+      case 'slack':
+        this.startSlack()
+        break
       case 'custom': {
         const start = this.spec.options.start
         if (start !== undefined) {
@@ -63,6 +93,17 @@ export class EventSourceManager {
     if (!this.started) return
     this.started = false
     this.abortController.abort()
+    this.clearTimers()
+    this.ws?.close()
+    this.ws = null
+    this.sseRequest?.destroy()
+    this.sseRequest = null
+    this.sseResponse?.destroy()
+    this.sseResponse = null
+    this.discordSequence = null
+  }
+
+  private clearTimers(): void {
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
@@ -71,17 +112,29 @@ export class EventSourceManager {
       clearInterval(this.rssTimer)
       this.rssTimer = null
     }
-    this.ws?.close()
-    this.ws = null
-    this.sseRequest?.destroy()
-    this.sseRequest = null
-    this.sseResponse?.destroy()
-    this.sseResponse = null
+    if (this.heartbeatTimer !== null) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
   }
 
   private fire(payload: unknown): void {
     if (!matchesFilter(payload, this.spec.filter)) return
     this.onFire(payload)
+  }
+
+  private scheduleReconnect(attempt: number, restart: (nextAttempt: number) => void): void {
+    if (this.abortController.signal.aborted) return
+    if (this.spec.options.reconnect === false) return
+    const maxAttempts = this.spec.options.maxReconnectAttempts ?? Number.POSITIVE_INFINITY
+    if (attempt >= maxAttempts) return
+    const baseDelay = this.spec.options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS
+    const delay = Math.min(baseDelay * 2 ** attempt, MAX_RECONNECT_DELAY_MS)
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      restart(attempt + 1)
+    }, delay)
+    this.reconnectTimer.unref?.()
   }
 
   private startWebSocket(attempt = 0): void {
@@ -91,18 +144,9 @@ export class EventSourceManager {
     this.ws = ws
     let reconnectScheduled = false
     const scheduleReconnect = () => {
-      if (reconnectScheduled || this.abortController.signal.aborted) return
+      if (reconnectScheduled) return
       reconnectScheduled = true
-      if (this.spec.options.reconnect === false) return
-      const maxAttempts = this.spec.options.maxReconnectAttempts ?? Number.POSITIVE_INFINITY
-      if (attempt >= maxAttempts) return
-      const baseDelay = this.spec.options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS
-      const delay = Math.min(baseDelay * 2 ** attempt, MAX_RECONNECT_DELAY_MS)
-      this.reconnectTimer = setTimeout(() => {
-        this.reconnectTimer = null
-        this.startWebSocket(attempt + 1)
-      }, delay)
-      this.reconnectTimer.unref?.()
+      this.scheduleReconnect(attempt, (nextAttempt) => this.startWebSocket(nextAttempt))
     }
 
     ws.on('open', () => {
@@ -136,18 +180,9 @@ export class EventSourceManager {
     if (this.lastEventId !== undefined) headers['Last-Event-ID'] = this.lastEventId
 
     const scheduleReconnect = () => {
-      if (reconnectScheduled || this.abortController.signal.aborted) return
+      if (reconnectScheduled) return
       reconnectScheduled = true
-      if (this.spec.options.reconnect === false) return
-      const maxAttempts = this.spec.options.maxReconnectAttempts ?? Number.POSITIVE_INFINITY
-      if (attempt >= maxAttempts) return
-      const baseDelay = this.spec.options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS
-      const delay = Math.min(baseDelay * 2 ** attempt, MAX_RECONNECT_DELAY_MS)
-      this.reconnectTimer = setTimeout(() => {
-        this.reconnectTimer = null
-        this.startSse(attempt + 1)
-      }, delay)
-      this.reconnectTimer.unref?.()
+      this.scheduleReconnect(attempt, (nextAttempt) => this.startSse(nextAttempt))
     }
 
     const req = get(url, { headers }, (res) => {
@@ -262,6 +297,140 @@ export class EventSourceManager {
       receivedAt: new Date().toISOString(),
     })
   }
+
+  private startDiscord(attempt = 0): void {
+    const { token, intents } = this.spec.options
+    if (typeof token !== 'string' || token.length === 0) return
+    if (typeof intents !== 'number') return
+
+    const ws = new WebSocket(DISCORD_GATEWAY_URL)
+    this.ws = ws
+    let reconnectScheduled = false
+    const scheduleReconnect = () => {
+      if (reconnectScheduled) return
+      reconnectScheduled = true
+      this.stopHeartbeat()
+      this.scheduleReconnect(attempt, (nextAttempt) => this.startDiscord(nextAttempt))
+    }
+
+    ws.on('open', () => {
+      reconnectScheduled = false
+      this.discordSequence = null
+    })
+    ws.on('message', (data: WebSocket.RawData) => {
+      const payload = parseMaybeJson(stringifySocketData(data))
+      if (!isDiscordGatewayMessage(payload)) return
+      if (typeof payload.s === 'number') this.discordSequence = payload.s
+      switch (payload.op) {
+        case 10: {
+          const heartbeatInterval = readHeartbeatInterval(payload.d)
+          if (heartbeatInterval !== null) this.startDiscordHeartbeat(ws, heartbeatInterval)
+          ws.send(
+            JSON.stringify({
+              op: 2,
+              d: {
+                token,
+                intents,
+                properties: {
+                  os: process.platform,
+                  browser: 'skelm',
+                  device: 'skelm',
+                },
+              },
+            }),
+          )
+          break
+        }
+        case 0:
+          if (payload.t === null || payload.t === undefined) return
+          if (!matchesEventName(payload.t, this.spec.options.events)) return
+          this.fire({ t: payload.t, d: payload.d })
+          break
+        case 7:
+        case 9:
+          scheduleReconnect()
+          ws.close()
+          break
+        default:
+          break
+      }
+    })
+    ws.on('error', () => {
+      scheduleReconnect()
+    })
+    ws.on('close', () => {
+      if (this.ws === ws) this.ws = null
+      this.stopHeartbeat()
+      scheduleReconnect()
+    })
+  }
+
+  private startDiscordHeartbeat(ws: WebSocket, intervalMs: number): void {
+    this.stopHeartbeat()
+    this.heartbeatTimer = setInterval(() => {
+      if (ws.readyState !== WebSocket.OPEN) return
+      ws.send(JSON.stringify({ op: 1, d: this.discordSequence }))
+    }, intervalMs)
+    this.heartbeatTimer.unref?.()
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer !== null) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+  }
+
+  private startSlack(attempt = 0): void {
+    const { appToken } = this.spec.options
+    if (typeof appToken !== 'string' || appToken.length === 0) return
+    let reconnectScheduled = false
+    const scheduleReconnect = () => {
+      if (reconnectScheduled) return
+      reconnectScheduled = true
+      this.scheduleReconnect(attempt, (nextAttempt) => this.startSlack(nextAttempt))
+    }
+
+    void openSlackSocketUrl(appToken)
+      .then((url) => {
+        if (url === null || this.abortController.signal.aborted) {
+          scheduleReconnect()
+          return
+        }
+        const ws = new WebSocket(url)
+        this.ws = ws
+        ws.on('open', () => {
+          reconnectScheduled = false
+        })
+        ws.on('message', (data: WebSocket.RawData) => {
+          const payload = parseMaybeJson(stringifySocketData(data))
+          if (!isSlackSocketModeMessage(payload)) return
+          if (typeof payload.envelope_id === 'string') {
+            ws.send(JSON.stringify({ envelope_id: payload.envelope_id }))
+          }
+          if (payload.type === 'disconnect') {
+            scheduleReconnect()
+            ws.close()
+            return
+          }
+          if (payload.type === 'hello') return
+          const eventName = slackEventName(payload)
+          if (eventName === undefined) return
+          if (!matchesEventName(eventName, this.spec.options.events)) return
+          this.fire(payload)
+        })
+        ws.on('error', () => {
+          scheduleReconnect()
+        })
+        ws.on('close', () => {
+          if (this.ws === ws) this.ws = null
+          scheduleReconnect()
+        })
+      })
+      .catch(() => {
+        scheduleReconnect()
+      })
+  }
 }
 
 function matchesFilter(payload: unknown, filter: Record<string, unknown> | undefined): boolean {
@@ -285,6 +454,66 @@ function parseMaybeJson(text: string): unknown {
   } catch {
     return text
   }
+}
+
+function matchesEventName(name: string, allowed: readonly string[] | undefined): boolean {
+  if (allowed === undefined || allowed.length === 0) return true
+  return allowed.includes(name)
+}
+
+function isDiscordGatewayMessage(value: unknown): value is DiscordGatewayMessage {
+  return typeof value === 'object' && value !== null
+}
+
+function readHeartbeatInterval(value: unknown): number | null {
+  if (typeof value !== 'object' || value === null) return null
+  const heartbeatInterval = (value as { heartbeat_interval?: unknown }).heartbeat_interval
+  return typeof heartbeatInterval === 'number' ? heartbeatInterval : null
+}
+
+function isSlackSocketModeMessage(value: unknown): value is SlackSocketModeMessage {
+  return typeof value === 'object' && value !== null
+}
+
+function slackEventName(payload: SlackSocketModeMessage): string | undefined {
+  if (payload.type === 'events_api') return payload.payload?.event?.type
+  return payload.type
+}
+
+async function openSlackSocketUrl(appToken: string): Promise<string | null> {
+  return await new Promise((resolve) => {
+    const req = httpsGet(
+      SLACK_CONNECTIONS_OPEN_URL,
+      {
+        headers: {
+          Authorization: `Bearer ${appToken}`,
+        },
+      },
+      (res) => {
+        if ((res.statusCode ?? 200) >= 400) {
+          res.resume()
+          resolve(null)
+          return
+        }
+        let body = ''
+        res.setEncoding('utf8')
+        res.on('data', (chunk) => {
+          body += chunk
+        })
+        res.on('end', () => {
+          const parsed = parseMaybeJson(body)
+          if (typeof parsed !== 'object' || parsed === null) {
+            resolve(null)
+            return
+          }
+          const url = (parsed as { url?: unknown }).url
+          resolve(typeof url === 'string' ? url : null)
+        })
+        res.on('error', () => resolve(null))
+      },
+    )
+    req.on('error', () => resolve(null))
+  })
 }
 
 async function fetchText(url: string | undefined): Promise<string | null> {

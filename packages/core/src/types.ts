@@ -510,7 +510,7 @@ export type PipelineTrigger =
       dedupe?: { header: string; ttlMs?: number }
     }
   | { kind: 'cron'; id?: string; cron: string; tz?: string }
-  | { kind: 'interval'; id?: string; everyMs: number }
+  | { kind: 'interval'; id?: string; everyMs?: number; every?: string }
   | {
       kind: 'event-source'
       id?: string
@@ -520,8 +520,10 @@ export type PipelineTrigger =
        * - sse: Connect to an SSE (Server-Sent Events) stream; fires on each event.
        * - rss: Poll an RSS/Atom feed; fires once per new item (deduped by guid/link).
        * - custom: Caller provides a start/stop function; fires when the caller calls fire().
+       * - discord: Connect to the Discord gateway over raw WebSocket.
+       * - slack: Connect to Slack Socket Mode over raw WebSocket.
        */
-      source: 'websocket' | 'sse' | 'rss' | 'custom'
+      source: 'websocket' | 'sse' | 'rss' | 'custom' | 'discord' | 'slack'
       /** Source-specific options */
       options: {
         /** websocket / sse: URL to connect to */
@@ -540,6 +542,14 @@ export type PipelineTrigger =
         initialItems?: number
         /** custom: start/stop hook — only valid when source='custom' */
         start?: (fire: (payload: unknown) => void, signal: AbortSignal) => void | Promise<void>
+        /** discord: Bot token */
+        token?: string
+        /** discord: Gateway intents bitmask */
+        intents?: number
+        /** discord / slack: Event types to forward. Default: all. */
+        events?: readonly string[]
+        /** slack: App-level xapp- token for Socket Mode */
+        appToken?: string
       }
       /** Optional filter: only fire when payload matches. Simple key=value check. */
       filter?: Record<string, unknown>

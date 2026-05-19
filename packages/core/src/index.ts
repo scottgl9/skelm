@@ -166,6 +166,7 @@ export {
 } from './errors.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
+export { parseDuration } from './duration.js'
 export { describePipeline, describeStep } from './introspect.js'
 export type { DescribedStep, PipelineDescription } from './introspect.js'
 export { createRoutingBackend } from './routing-backend.js'

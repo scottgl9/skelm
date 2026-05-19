@@ -1,4 +1,5 @@
 import type { McpServerConfig } from './backend.js'
+import { parseDuration } from './duration.js'
 import type { AgentPermissions } from './permissions.js'
 import type { SkelmSchema } from './schema.js'
 import type {
@@ -24,6 +25,29 @@ import type {
   WhenPredicate,
   WorkspaceConfig,
 } from './types.js'
+
+function normalizePipelineTrigger(
+  pipelineId: string,
+  trigger: import('./types.js').PipelineTrigger,
+): import('./types.js').PipelineTrigger {
+  if (trigger.kind !== 'interval') return trigger
+
+  const everyMs =
+    typeof trigger.everyMs === 'number'
+      ? trigger.everyMs
+      : typeof trigger.every === 'string'
+        ? parseDuration(trigger.every)
+        : undefined
+  if (everyMs === undefined) {
+    throw new Error(
+      `pipeline(${pipelineId}): interval trigger "${trigger.id ?? '(unnamed)'}" must set either everyMs or every`,
+    )
+  }
+  return Object.freeze({
+    ...trigger,
+    everyMs,
+  })
+}
 
 /**
  * Author a pipeline. The result is a plain immutable value carrying its
@@ -63,7 +87,11 @@ export function pipeline<TInput, TOutput>(def: {
     ...(def.input !== undefined && { inputSchema: def.input }),
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.finalize !== undefined && { finalize: def.finalize }),
-    ...(def.triggers !== undefined && { triggers: Object.freeze([...def.triggers]) }),
+    ...(def.triggers !== undefined && {
+      triggers: Object.freeze(
+        def.triggers.map((trigger) => normalizePipelineTrigger(def.id, trigger)),
+      ),
+    }),
     ...(def.baseDir !== undefined && { baseDir: def.baseDir }),
   }
   return Object.freeze(out)
