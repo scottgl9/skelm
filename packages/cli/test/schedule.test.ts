@@ -171,6 +171,106 @@ describe('skelm schedule — CLI smoke', () => {
     }
   })
 
+  it('add --cron --tz wires timezone through to the registered trigger', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      url: `http://127.0.0.1:${port}`,
+      config: {},
+    })
+    await gw.start()
+    try {
+      const result = await invoke([
+        'schedule',
+        'add',
+        'tz-wf',
+        '--id',
+        'tz-sched',
+        '--cron',
+        '0 9 * * 1',
+        '--tz',
+        'America/Chicago',
+        '--json',
+      ])
+      expect(result.exitCode).toBe(EXIT.OK)
+      const s = JSON.parse(result.stdout) as {
+        trigger: { kind: string; expression: string; tz?: string }
+      }
+      expect(s.trigger.kind).toBe('cron')
+      expect(s.trigger.expression).toBe('0 9 * * 1')
+      // Regression for issue #157: --tz used to be silently dropped.
+      expect(s.trigger.tz).toBe('America/Chicago')
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('add --every <duration> registers an interval trigger', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      url: `http://127.0.0.1:${port}`,
+      config: {},
+    })
+    await gw.start()
+    try {
+      const result = await invoke([
+        'schedule',
+        'add',
+        'every-wf',
+        '--id',
+        'every-sched',
+        '--every',
+        '30s',
+        '--json',
+      ])
+      expect(result.exitCode).toBe(EXIT.OK)
+      const s = JSON.parse(result.stdout) as {
+        trigger: { kind: string; everyMs: number; every?: string }
+      }
+      expect(s.trigger.kind).toBe('interval')
+      expect(s.trigger.everyMs).toBe(30_000)
+      // Regression for issue #158: --every was not accepted at all.
+      expect(s.trigger.every).toBe('30s')
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('add --tz without --cron rejects', async () => {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      url: `http://127.0.0.1:${port}`,
+      config: {},
+    })
+    await gw.start()
+    try {
+      const { stderr, exitCode } = await invoke([
+        'schedule',
+        'add',
+        'wf',
+        '--every',
+        '30s',
+        '--tz',
+        'America/Chicago',
+      ])
+      expect(exitCode).toBe(EXIT.CLI_ERROR)
+      expect(stderr).toContain('--tz requires --cron')
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('add without trigger flag exits CLI_ERROR', async () => {
     const port = await pickFreePort()
     const gw = new Gateway({

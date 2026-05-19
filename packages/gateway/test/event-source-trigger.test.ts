@@ -162,6 +162,88 @@ describe('event-source triggers', () => {
     expect(payloads).toEqual([{ hello: 'custom' }])
   })
 
+  it('captures sync throw from custom start() into reg.lastError', async () => {
+    const coordinator = new TriggerCoordinator({ onFire: async () => {} })
+    cleanup.push(() => coordinator.stop())
+
+    coordinator.register({
+      kind: 'event-source',
+      id: 'custom-sync-throw',
+      workflowId: 'wf',
+      source: 'custom',
+      options: {
+        start: () => {
+          throw new Error('sync-boom')
+        },
+      },
+    })
+
+    const reg = coordinator.get('custom-sync-throw')
+    expect(reg).toBeDefined()
+    expect(reg?.lastError).toMatch(/sync-boom/)
+  })
+
+  it('captures async throw from custom start() into reg.lastError', async () => {
+    const coordinator = new TriggerCoordinator({ onFire: async () => {} })
+    cleanup.push(() => coordinator.stop())
+
+    coordinator.register({
+      kind: 'event-source',
+      id: 'custom-async-throw',
+      workflowId: 'wf',
+      source: 'custom',
+      options: {
+        start: async () => {
+          // Microtask resolution then reject — exercises the .catch on the
+          // returned promise path (issue #163).
+          await new Promise((r) => setImmediate(r))
+          throw new Error('async-boom')
+        },
+      },
+    })
+
+    // The throw lands on a future microtask; wait for it.
+    await waitFor(() => coordinator.get('custom-async-throw')?.lastError !== undefined)
+    const reg = coordinator.get('custom-async-throw')
+    expect(reg).toBeDefined()
+    expect(reg?.lastError).toMatch(/async-boom/)
+  })
+
+  it('isolates a sibling throw: a healthy trigger keeps firing', async () => {
+    const payloads: unknown[] = []
+    const coordinator = new TriggerCoordinator({
+      onFire: async (ctx) => void payloads.push(ctx.payload),
+    })
+    cleanup.push(() => coordinator.stop())
+
+    coordinator.register({
+      kind: 'event-source',
+      id: 'broken-sibling',
+      workflowId: 'wf',
+      source: 'custom',
+      options: {
+        start: () => {
+          throw new Error('boom')
+        },
+      },
+    })
+    coordinator.register({
+      kind: 'event-source',
+      id: 'healthy-sibling',
+      workflowId: 'wf',
+      source: 'custom',
+      options: {
+        start: (fire) => {
+          fire({ ok: true })
+        },
+      },
+    })
+
+    await waitFor(() => payloads.length === 1)
+    expect(payloads).toEqual([{ ok: true }])
+    expect(coordinator.get('broken-sibling')?.lastError).toMatch(/boom/)
+  })
+
   it('stops delivering after coordinator.stop()', async () => {
     const port = await pickFreePort()
     const wss = new WebSocketServer({ port, host: '127.0.0.1' })
