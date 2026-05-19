@@ -1,4 +1,4 @@
-import { constants as fsConstants, watch } from 'node:fs'
+import { constants as fsConstants, statSync, watch } from 'node:fs'
 import { access } from 'node:fs/promises'
 import { basename, isAbsolute, join, resolve } from 'node:path'
 
@@ -25,11 +25,13 @@ export class FileWatchTrigger {
   private timers = new Map<string, NodeJS.Timeout>()
   private pendingEvents = new Map<string, FileWatchEvent>()
   private readonly watchedPath: string
+  private readonly watchedIsFile: boolean
   private readonly allowedEvents: ReadonlySet<FileWatchEvent>
   private readonly debounceMs: number
 
   constructor(private readonly spec: FileWatchTriggerSpec) {
     this.watchedPath = resolve(spec.path)
+    this.watchedIsFile = isFileSafe(this.watchedPath)
     this.allowedEvents = new Set(spec.events ?? DEFAULT_EVENTS)
     this.debounceMs = spec.debounceMs ?? DEFAULT_DEBOUNCE_MS
   }
@@ -55,6 +57,9 @@ export class FileWatchTrigger {
   }
 
   private resolveChangedPath(filename: string | Buffer | null): string {
+    // Single-file watches: fs.watch reports filename === basename(file), which
+    // join()d to a file path produces "/dir/file/file" — return the file path.
+    if (this.watchedIsFile) return this.watchedPath
     if (filename === null) return this.watchedPath
     const relative = filename.toString()
     if (relative === '') return this.watchedPath
@@ -133,4 +138,12 @@ function mergeEvents(
   if (incoming === 'delete' || existing === 'delete') return 'delete'
   if (incoming === 'create' || existing === 'create') return 'create'
   return incoming
+}
+
+function isFileSafe(path: string): boolean {
+  try {
+    return statSync(path).isFile()
+  } catch {
+    return false
+  }
 }
