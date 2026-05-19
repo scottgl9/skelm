@@ -88,7 +88,9 @@ Schedule flags:
   skelm schedule list [--json]                  List registered schedules
   skelm schedule add <workflow-id> [--id <id>] [--json]
     --cron <expr>           Cron expression (e.g. '*/5 * * * *')
-    --every-ms <ms>         Interval in milliseconds
+    --tz <zone>             IANA tz for --cron (e.g. America/Chicago)
+    --every <dur>           Interval duration: 30s, 15m, 2h, 1d, 500ms
+    --every-ms <ms>         Interval in milliseconds (raw)
     --webhook <path>        Webhook path (e.g. /my-hook)
     --at <iso8601>          Fire once at a specific time
     --input <json>          Input JSON passed to the workflow run
