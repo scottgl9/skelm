@@ -1,7 +1,6 @@
-import { homedir } from 'node:os'
-import { join, resolve as pathResolve } from 'node:path'
-import { readDiscovery } from '@skelm/gateway'
+import { resolve as pathResolve } from 'node:path'
 import { EXIT } from './exit-codes.js'
+import { ensureGatewayReady, fetchHttp, httpError } from './internal/gateway-client.js'
 import type { MainIO, MainResult } from './main.js'
 
 export interface ScheduleAddArgs {
@@ -54,15 +53,9 @@ export interface ScheduleFireArgs {
 export type ScheduleArgs = ScheduleAddArgs | ScheduleListArgs | ScheduleStopArgs | ScheduleFireArgs
 
 export async function scheduleCommand(args: ScheduleArgs, io: MainIO): Promise<MainResult> {
-  const stateDir = process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm')
-  const discovery = await readDiscovery(join(stateDir, 'gateway.json'))
-  if (discovery === null) {
-    io.stderr.write('error: gateway is not running — start it with `skelm gateway start`\n')
-    return { exitCode: EXIT.CLI_ERROR }
-  }
-
-  const headers: Record<string, string> = { 'content-type': 'application/json' }
-  if (discovery.token !== undefined) headers.authorization = `Bearer ${discovery.token}`
+  const client = await ensureGatewayReady(io)
+  if (client === null) return { exitCode: EXIT.CLI_ERROR }
+  const { discovery, headers } = client
 
   switch (args.subcommand) {
     case 'list':
@@ -86,7 +79,7 @@ async function scheduleList(
   headers: Record<string, string>,
   io: MainIO,
 ): Promise<MainResult> {
-  const res = await fetchHttp(`${baseUrl}/schedules`, { headers })
+  const res = await fetchHttp(`${baseUrl}/schedules`, { headers }, io)
   if (res === null) return { exitCode: EXIT.CLI_ERROR }
   if (!res.ok) return httpError(res, io)
   const schedules = (await res.json()) as ScheduleEntry[]
@@ -167,11 +160,15 @@ async function scheduleAdd(
     }
   }
 
-  const res = await fetchHttp(`${baseUrl}/schedules`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  })
+  const res = await fetchHttp(
+    `${baseUrl}/schedules`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    },
+    io,
+  )
   if (res === null) return { exitCode: EXIT.CLI_ERROR }
   if (!res.ok) return httpError(res, io)
   const schedule = (await res.json()) as ScheduleEntry
@@ -194,10 +191,14 @@ async function scheduleStop(
   headers: Record<string, string>,
   io: MainIO,
 ): Promise<MainResult> {
-  const res = await fetchHttp(`${baseUrl}/schedules/${encodeURIComponent(args.id)}`, {
-    method: 'DELETE',
-    headers,
-  })
+  const res = await fetchHttp(
+    `${baseUrl}/schedules/${encodeURIComponent(args.id)}`,
+    {
+      method: 'DELETE',
+      headers,
+    },
+    io,
+  )
   if (res === null) return { exitCode: EXIT.CLI_ERROR }
   if (res.status === 404) {
     io.stderr.write(`error: schedule not found: ${args.id}\n`)
@@ -222,11 +223,15 @@ async function scheduleFire(
   headers: Record<string, string>,
   io: MainIO,
 ): Promise<MainResult> {
-  const res = await fetchHttp(`${baseUrl}/triggers/${encodeURIComponent(args.id)}/fire`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({}),
-  })
+  const res = await fetchHttp(
+    `${baseUrl}/triggers/${encodeURIComponent(args.id)}/fire`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({}),
+    },
+    io,
+  )
   if (res === null) return { exitCode: EXIT.CLI_ERROR }
   if (res.status === 404) {
     io.stderr.write(`error: schedule not found: ${args.id}\n`)
@@ -312,7 +317,7 @@ async function resolveWorkflowId(
   headers: Record<string, string>,
   io: MainIO,
 ): Promise<string | null> {
-  const res = await fetchHttp(`${baseUrl}/pipelines`, { headers })
+  const res = await fetchHttp(`${baseUrl}/pipelines`, { headers }, io)
   if (res === null) {
     // fetchHttp already wrote a stderr line on the underlying network error,
     // but it identified the request as "gateway HTTP request failed" without
@@ -360,18 +365,4 @@ async function resolveWorkflowId(
   io.stderr.write(`error: workflow not registered: ${userInput}\n`)
   io.stderr.write('hint: run `skelm list` to see registered workflows\n')
   return null
-}
-
-async function fetchHttp(url: string, init?: RequestInit): Promise<Response | null> {
-  try {
-    return await fetch(url, init)
-  } catch (err) {
-    process.stderr.write(`error: gateway HTTP request failed: ${(err as Error).message}\n`)
-    return null
-  }
-}
-
-async function httpError(res: Response, io: MainIO): Promise<MainResult> {
-  io.stderr.write(`error: gateway returned ${res.status}: ${await res.text()}\n`)
-  return { exitCode: EXIT.CLI_ERROR }
 }
