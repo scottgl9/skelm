@@ -1,4 +1,5 @@
 import { EXIT, type ExitCode } from './exit-codes.js'
+import { writeJsonOutput } from './internal/output.js'
 import { loadSkelmConfig } from './load-config.js'
 import { closeRunStore, createRunStore } from './store.js'
 import { renderTable } from './table.js'
@@ -53,7 +54,7 @@ export async function historyCommand(
     )
 
     if (args.json) {
-      io.stdout.write(`${JSON.stringify(runs, null, 2)}\n`)
+      writeJsonOutput(io, runs)
       return { exitCode: EXIT.OK }
     }
 

@@ -1,5 +1,6 @@
 import { EXIT } from './exit-codes.js'
 import { ensureGatewayReady, fetchHttp, httpError } from './internal/gateway-client.js'
+import { writeJsonOutput } from './internal/output.js'
 import type { MainIO, MainResult } from './main.js'
 
 export interface DebugArgs {
@@ -21,7 +22,7 @@ export async function debugCommand(args: DebugArgs, io: MainIO): Promise<MainRes
       if (!res.ok) return httpError(res, io)
       const body = (await res.json()) as { breakpoints: string[] }
       if (args.json) {
-        io.stdout.write(`${JSON.stringify(body.breakpoints, null, 2)}\n`)
+        writeJsonOutput(io, body.breakpoints)
       } else if (body.breakpoints.length === 0) {
         io.stdout.write('no breakpoints set\n')
       } else {
@@ -71,7 +72,7 @@ export async function debugCommand(args: DebugArgs, io: MainIO): Promise<MainRes
         paused: Array<{ runId: string; stepId: string; kind: string; at: number }>
       }
       if (args.json) {
-        io.stdout.write(`${JSON.stringify(body.paused, null, 2)}\n`)
+        writeJsonOutput(io, body.paused)
       } else if (body.paused.length === 0) {
         io.stdout.write('no paused runs\n')
       } else {

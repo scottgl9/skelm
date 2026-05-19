@@ -7,6 +7,7 @@ import {
   gatewayStateDir,
   httpError,
 } from './internal/gateway-client.js'
+import { writeJsonOutput } from './internal/output.js'
 import type { MainIO, MainResult } from './main.js'
 
 export interface ApprovalsArgs {
@@ -64,7 +65,7 @@ async function listApprovals(
     // missing / empty
   }
   if (args.json) {
-    io.stdout.write(`${JSON.stringify(queue, null, 2)}\n`)
+    writeJsonOutput(io, queue)
   } else if (queue.length === 0) {
     io.stdout.write('no pending approvals\n')
   } else {
