@@ -34,6 +34,10 @@ export function createVercelAiBackend(options: VercelAiBackendOptions): SkelmBac
     skills: true,
     modelSelection: false,
     toolPermissions: 'native',
+    // Vercel AI SDK forwards image parts to the underlying provider; visibility
+    // depends on the model. Declared true here — pair with an image-capable
+    // model (e.g. openai('gpt-4o-mini'), anthropic('claude-3-5-sonnet-latest')).
+    vision: true,
   }
 
   const { acquire, release } = createConcurrencySemaphore(options.maxConcurrent ?? 4)

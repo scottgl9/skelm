@@ -1,8 +1,8 @@
 import { combineSignals } from '@skelm/core'
 import type { AgentRequest, AgentResponse, BackendContext } from '@skelm/core'
-import { Output, generateText, stepCountIs, streamText } from 'ai'
+import { type ModelMessage, Output, generateText, stepCountIs, streamText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
-import { mapUsage } from './infer.js'
+import { mapMessages, mapUsage } from './infer.js'
 import { applyPolicyToTools, assertEgressEnforceable } from './permissions.js'
 import { buildSystemContent, loadSkillBodies } from './skill-injection.js'
 import type { VercelAiBackendOptions } from './types.js'
@@ -29,6 +29,13 @@ export async function vercelAiRun(
 
   const maxTurns = request.maxTurns ?? 8
 
+  // Map text vs multimodal prompt to the AI SDK shape: prompt: string, or
+  // messages: ModelMessage[] when image parts are present.
+  const promptOrMessages: { prompt: string } | { messages: ModelMessage[] } =
+    typeof request.prompt === 'string'
+      ? { prompt: request.prompt }
+      : { messages: mapMessages([{ role: 'user', content: request.prompt }]) }
+
   try {
     // When the step declares an `output` schema, route through the AI SDK's
     // `Output.object({ schema })` adapter so the underlying provider uses
@@ -46,7 +53,7 @@ export async function vercelAiRun(
       const stream = streamText({
         model: options.model,
         ...(system !== undefined ? { system } : {}),
-        prompt: request.prompt,
+        ...promptOrMessages,
         ...(Object.keys(tools).length > 0 ? { tools } : {}),
         stopWhen: stepCountIs(maxTurns),
         ...(request.outputSchema !== undefined && {
@@ -89,7 +96,7 @@ export async function vercelAiRun(
     const result = await generateText({
       model: options.model,
       ...(system !== undefined ? { system } : {}),
-      prompt: request.prompt,
+      ...promptOrMessages,
       ...(Object.keys(tools).length > 0 ? { tools } : {}),
       stopWhen: stepCountIs(maxTurns),
       ...(request.outputSchema !== undefined && {

@@ -20,6 +20,7 @@
 import {
   assertEgressEnforceable as assertEgressEnforceableCore,
   createConcurrencySemaphore,
+  extractPromptText,
   loadSkillBodies,
 } from '@skelm/core'
 import type {
@@ -155,7 +156,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
         })
 
         const result = await client.prompt(
-          request.prompt,
+          extractPromptText(request.prompt),
           context.signal,
           options.timeout ?? 300_000,
           context.onPartial,

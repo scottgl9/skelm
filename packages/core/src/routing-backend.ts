@@ -81,6 +81,7 @@ export function createRoutingBackend(opts: RoutingBackendOptions): SkelmBackend 
     skills: primaryCaps.skills,
     modelSelection: primaryCaps.modelSelection,
     toolPermissions: primaryCaps.toolPermissions,
+    ...(primaryCaps.vision !== undefined && { vision: primaryCaps.vision }),
   }
 
   const wrapper: SkelmBackend = {

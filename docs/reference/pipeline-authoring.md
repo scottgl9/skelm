@@ -88,7 +88,10 @@ When `timeoutMs` is set, the runtime chains an `AbortController` to `ctx.signal`
 ```ts
 llm({
   id: string
-  prompt: string | ((ctx: Context) => string)
+  prompt:
+    | string
+    | readonly ContentPart[]                          // multimodal: text + image parts
+    | ((ctx: Context) => string | readonly ContentPart[])
   system?: string | ((ctx: Context) => string)
   backend?: string                // overrides config default
   model?: string
@@ -98,6 +101,54 @@ llm({
   retry?: RetryPolicy
 })
 ```
+
+Multimodal prompts use `ContentPart` blocks. Build them with the
+`textPart` / `imagePart` / `imagePartFromFile` helpers:
+
+```ts
+import { imagePartFromFile, textPart, llm } from 'skelm'
+
+llm({
+  id: 'describe',
+  backend: 'anthropic',
+  prompt: async (ctx) => [
+    textPart('Describe what is on screen.'),
+    await imagePartFromFile(ctx.steps['capture'].path),
+  ],
+})
+```
+
+Backends declare `capabilities.vision` truthfully. Submitting an image part
+to a backend that does not declare vision fails at step start with
+`BackendCapabilityError` — route image prompts to a vision-capable backend
+(the first-party `anthropic` and `openai` backends both support vision).
+
+### Binary artifacts via `ctx.artifacts`
+
+Steps can persist binary outputs (screenshots, evidence files, etc.) keyed
+by `{runId, stepId, name}`:
+
+```ts
+code({
+  id: 'capture',
+  run: async (ctx) => {
+    const png = await captureScreen()                  // your driver
+    const desc = await ctx.artifacts!.put({
+      name: 'screen.png',
+      mimeType: 'image/png',
+      data: png,                                       // Uint8Array | string
+    })
+    return { artifactId: desc.artifactId }
+  },
+})
+```
+
+Each put publishes a `tool.result` event (`tool: 'artifacts.put'`) carrying
+descriptor metadata only — the bytes never appear in the event log. A
+default per-run quota of 256 MiB (`DEFAULT_ARTIFACT_QUOTA_BYTES`) is
+enforced; exceeding it throws `ArtifactQuotaExceededError` and writes
+nothing. Retrieve with `ctx.artifacts!.get({ runId, artifactId })`; list
+all artifacts for the current run with `ctx.artifacts!.list()`.
 
 ### `agent(def)` — full agentic loop
 

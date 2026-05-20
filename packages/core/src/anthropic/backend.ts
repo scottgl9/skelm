@@ -64,7 +64,7 @@ export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): Skel
     },
     async run(req: AgentRequest, ctx: BackendContext): Promise<AgentResponse> {
       const request: AnthropicMessageRequest = {
-        messages: [{ role: 'user', content: req.prompt }],
+        messages: [{ role: 'user', content: toAnthropicContent(req.prompt) }],
         model: opts.model ?? 'claude-3-5-haiku-latest',
         maxTokens: 1024,
         outputSchema: req.outputSchema !== undefined,
@@ -209,7 +209,7 @@ function toAnthropicMessages(
 }
 
 function toAnthropicContent(
-  content: InferRequest['messages'][number]['content'],
+  content: InferRequest['messages'][number]['content'] | AgentRequest['prompt'],
 ): string | AnthropicContentBlock[] {
   if (!isMultimodal(content)) return content
   const blocks: AnthropicContentBlock[] = []
