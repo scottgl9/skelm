@@ -42,7 +42,7 @@ export default defineConfig({
   },
 
   themeConfig: {
-    logo: '/logo.svg',
+    logo: '/logo-icon.svg',
     siteTitle: 'skelm',
 
     nav: [
