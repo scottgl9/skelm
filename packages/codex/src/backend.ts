@@ -248,7 +248,14 @@ function buildCodexMultimodalInput(
         textBuf = ''
       }
       const file = join(tmp, `img${imgIdx++}${mimeToExt(part.mimeType)}`)
-      writeFileSync(file, Buffer.from(part.data, 'base64'))
+      try {
+        writeFileSync(file, Buffer.from(part.data, 'base64'))
+      } catch (err) {
+        throw new Error(
+          `codex backend: failed to materialize image to ${file}: ${(err as Error).message}`,
+          { cause: err },
+        )
+      }
       parts.push({ type: 'local_image', path: file })
     }
   }
