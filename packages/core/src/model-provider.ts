@@ -263,8 +263,18 @@ export async function executeLlmStep(
     messages.push({ role: 'system', content: systemPrompt })
   }
 
-  // Add current prompt
-  const prompt = typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt
+  // Add current prompt — the ModelRegistry path predates multimodal prompts
+  // and only accepts string content; collapse any image-bearing prompt to its
+  // text components. Vision callers should target a vision-capable backend
+  // via the BackendRegistry/llm() path.
+  const promptValue = typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt
+  const prompt =
+    typeof promptValue === 'string'
+      ? promptValue
+      : promptValue
+          .filter((p) => p.type === 'text')
+          .map((p) => (p as { text: string }).text)
+          .join('')
   messages.push({ role: 'user', content: prompt })
 
   const options: Partial<ModelProviderConfig> = {}

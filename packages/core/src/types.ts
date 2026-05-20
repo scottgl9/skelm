@@ -308,7 +308,10 @@ export interface LlmStep<TOutput = unknown> {
   readonly backend?: string | readonly string[]
   readonly model?: string
   readonly system?: string | ((ctx: Context) => string)
-  readonly prompt: string | ((ctx: Context) => string)
+  readonly prompt:
+    | string
+    | readonly import('./backend.js').ContentPart[]
+    | ((ctx: Context) => string | readonly import('./backend.js').ContentPart[])
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   readonly temperature?: number
   readonly maxTokens?: number
