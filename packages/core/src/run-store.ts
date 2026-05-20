@@ -358,6 +358,7 @@ export interface SqliteRunStoreOptions {
 export class SqliteRunStore implements RunStore {
   private readonly db: Database.Database
   private readonly artifactQuotaBytes: number
+  private artifactCounter = 0
 
   constructor(opts: SqliteRunStoreOptions = {}) {
     const path = opts.path ?? ':memory:'
@@ -673,7 +674,10 @@ export class SqliteRunStore implements RunStore {
     if (used + bytes.byteLength > this.artifactQuotaBytes) {
       throw new ArtifactQuotaExceededError(opts.runId, this.artifactQuotaBytes, bytes.byteLength)
     }
-    const artifactId = `art_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+    // Monotonic in-process counter avoids same-millisecond collisions; the
+    // timestamp prefix keeps ids roughly sortable across process restarts.
+    this.artifactCounter += 1
+    const artifactId = `art_${Date.now().toString(36)}_${this.artifactCounter.toString(36)}`
     const createdAt = Date.now()
     this.db
       .prepare(

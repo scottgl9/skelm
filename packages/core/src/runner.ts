@@ -426,7 +426,7 @@ export async function runPipeline<TInput, TOutput>(
   // ArtifactStore is part of the RunStore surface; fall back to the default
   // in-memory store so ctx.artifacts is always available even when the caller
   // didn't wire a durable store.
-  const artifactStore: ArtifactStore = (options.store ?? defaultStateStore) as ArtifactStore
+  const artifactStore: ArtifactStore = options.store ?? defaultStateStore
   const makeArtifactsHandle = (stepId: StepId): ArtifactStoreHandle => ({
     put: async (opts) => {
       const startedAt = Date.now()
