@@ -51,6 +51,28 @@ export interface PiSdkClientOptions {
    * Default: false — project context files are useful and safe.
    */
   noContextFiles?: boolean
+  /**
+   * Provider configuration applied to pi's `ModelRegistry` at session start.
+   * When set, the named provider is (re-)registered with the supplied
+   * `baseUrl`/`apiKey`/`model`, overriding whatever `~/.pi/agent/models.json`
+   * declares for the lifetime of this session. Allows pi-sdk to be pointed
+   * at a local OpenAI-compatible endpoint via `OPENAI_BASE_URL` /
+   * `OPENAI_API_KEY` / `OPENAI_MODEL` without touching the user's pi
+   * config (finding-119).
+   *
+   * Either all four fields are honored together, or none of them — the
+   * backend resolves env-var defaults and only forwards a populated object.
+   */
+  providerOverride?: {
+    provider: string
+    model: string
+    baseUrl?: string
+    apiKey?: string
+    /** Metadata declared on the registered model entry; see PiSdkBackendOptions. */
+    contextWindow?: number
+    /** Metadata declared on the registered model entry; see PiSdkBackendOptions. */
+    maxTokens?: number
+  }
 }
 
 export interface PiSdkResponse {
@@ -117,11 +139,41 @@ export class PiSdkClient {
       },
     })
 
+    // Apply provider/model override before the session is created so the
+    // registered model overrides whatever ~/.pi/agent/models.json declares.
+    // The override is registered with `openai-completions` as the API since
+    // every local OpenAI-compatible server (sglang, vLLM, llama.cpp, ollama)
+    // implements that surface but rarely the newer Responses API.
+    const override = this.opts.providerOverride
+    // Pi-coding-agent doesn't re-export Model<Api> at its package root, so
+    // we let TypeScript infer the type from `services.modelRegistry.find()`.
+    let pickedModel: ReturnType<typeof services.modelRegistry.find> | undefined
+    if (override !== undefined) {
+      services.modelRegistry.registerProvider(override.provider, {
+        ...(override.baseUrl !== undefined && { baseUrl: override.baseUrl }),
+        ...(override.apiKey !== undefined && { apiKey: override.apiKey }),
+        models: [
+          {
+            id: override.model,
+            name: override.model,
+            api: 'openai-completions',
+            reasoning: false,
+            input: ['text', 'image'],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: override.contextWindow ?? 131_072,
+            maxTokens: override.maxTokens ?? 4096,
+          },
+        ],
+      })
+      pickedModel = services.modelRegistry.find(override.provider, override.model)
+    }
+
     const { session } = await createAgentSessionFromServices({
       services,
       sessionManager: SessionManager.inMemory(),
       ...(this.opts.tools !== undefined && { tools: this.opts.tools }),
       ...(this.opts.noTools !== undefined && { noTools: this.opts.noTools }),
+      ...(pickedModel !== undefined && { model: pickedModel }),
     })
 
     try {
