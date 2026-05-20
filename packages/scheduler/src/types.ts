@@ -8,7 +8,7 @@
 import type { RunId } from '@skelm/core'
 
 /** Trigger types */
-export type TriggerType = 'cron' | 'interval' | 'webhook' | 'poll' | 'queue'
+export type TriggerType = 'cron' | 'interval' | 'webhook'
 
 /** Trigger deduplication strategies */
 export type DedupePolicy = 'skip' | 'overwrite' | 'queue'
@@ -52,26 +52,7 @@ export interface WebhookTrigger extends TriggerBase {
   transformPayload?: (payload: unknown) => unknown
 }
 
-/** Poll trigger - check external source periodically */
-export interface PollTrigger extends TriggerBase {
-  type: 'poll'
-  url: string
-  intervalMs: number
-  headers?: Record<string, string>
-  detectNew?: (previous: unknown, current: unknown) => boolean
-  extractInput?: (data: unknown) => unknown | null
-}
-
-/** Queue trigger - message queue based */
-export interface QueueTrigger extends TriggerBase {
-  type: 'queue'
-  queueName: string
-  batchSize?: number
-  visibilityTimeoutMs?: number
-  extractInput?: (message: unknown) => unknown | null
-}
-
-export type Trigger = CronTrigger | IntervalTrigger | WebhookTrigger | PollTrigger | QueueTrigger
+export type Trigger = CronTrigger | IntervalTrigger | WebhookTrigger
 
 /** Trigger registration */
 export interface TriggerRegistration {
