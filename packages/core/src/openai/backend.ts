@@ -6,6 +6,7 @@ import type {
   SkelmBackend,
   Usage,
 } from '../backend.js'
+import { isMultimodal } from '../content.js'
 
 export interface OpenAIBackendOptions {
   id?: string
@@ -25,6 +26,7 @@ export function createOpenAIBackend(opts: OpenAIBackendOptions = {}): SkelmBacke
     skills: false,
     modelSelection: true,
     toolPermissions: 'unsupported',
+    vision: true,
   }
 
   const backend: SkelmBackend = {
@@ -100,13 +102,19 @@ function baseUrl(url?: string): string {
   return value.endsWith('/') ? value : `${value}/`
 }
 
-function buildMessages(req: InferRequest): Array<{ role: string; content: string }> {
-  const messages: Array<{ role: string; content: string }> = []
+type OpenAIContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
+function buildMessages(
+  req: InferRequest,
+): Array<{ role: string; content: string | OpenAIContentPart[] }> {
+  const messages: Array<{ role: string; content: string | OpenAIContentPart[] }> = []
   if (req.system !== undefined) {
     messages.push({ role: 'system', content: req.system })
   }
   for (const message of req.messages) {
-    messages.push({ role: message.role, content: message.content })
+    messages.push({ role: message.role, content: toOpenAIContent(message.content) })
   }
   if (req.outputSchema !== undefined) {
     messages.push({
@@ -115,6 +123,24 @@ function buildMessages(req: InferRequest): Array<{ role: string; content: string
     })
   }
   return messages
+}
+
+function toOpenAIContent(
+  content: InferRequest['messages'][number]['content'],
+): string | OpenAIContentPart[] {
+  if (!isMultimodal(content)) return content
+  const parts: OpenAIContentPart[] = []
+  for (const part of content) {
+    if (part.type === 'text') {
+      parts.push({ type: 'text', text: part.text })
+    } else {
+      parts.push({
+        type: 'image_url',
+        image_url: { url: `data:${part.mimeType};base64,${part.data}` },
+      })
+    }
+  }
+  return parts
 }
 
 function extractMessageContent(body: OpenAIChatCompletionResponse): string {

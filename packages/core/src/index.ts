@@ -55,6 +55,7 @@ export type {
   BackendCapabilities,
   BackendContext,
   BackendId,
+  ContentPart,
   McpServerConfig,
   InferRequest,
   InferResponse,
@@ -63,6 +64,14 @@ export type {
   ToolPermissionEnforcement,
   Usage,
 } from './backend.js'
+export {
+  extractText as extractPromptText,
+  imagePart,
+  imagePartFromFile,
+  isMultimodal,
+  messageHasImage,
+  textPart,
+} from './content.js'
 export {
   ProviderPluginBase,
   ProviderError,

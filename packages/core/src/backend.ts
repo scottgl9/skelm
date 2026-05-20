@@ -46,12 +46,39 @@ export interface BackendCapabilities {
   modelSelection: boolean
   /** How the backend honors permissions. */
   toolPermissions: ToolPermissionEnforcement
+  /**
+   * Accepts image content parts in PromptMessage / InferRequest. Backends
+   * that omit or set this to false will be rejected at the llm-step handler
+   * when image parts are submitted. Default-deny: prefer omitting over
+   * declaring `true` if image handling is not wired through.
+   */
+  vision?: boolean
 }
+
+/**
+ * A multimodal-aware piece of message content. Text is the common case;
+ * images carry base64-encoded bytes (no `data:` prefix) and an explicit
+ * mime type so backends can map to provider-specific shapes.
+ */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image'
+      mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
+      /** Base64 bytes only — no `data:<mime>;base64,` prefix. */
+      data: string
+    }
 
 /** Single message in a chat-style prompt. */
 export interface PromptMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
-  content: string
+  /**
+   * Plain text or a sequence of typed content parts. Most callers use the
+   * string form. Image parts are only honored by backends that report
+   * `capabilities.vision === true`; submitting an image part to a non-vision
+   * backend fails at the llm-step handler with a BackendCapabilityError.
+   */
+  content: string | readonly ContentPart[]
   /** Optional tool_call_id for tool-result messages. */
   toolCallId?: string
 }

@@ -94,16 +94,21 @@ value:describePipeline
 value:describeStep
 value:executeAgentStep
 value:executeLlmStep
+value:extractPromptText
 value:forEach
 value:formatSkillBlock
 value:globalCapabilityRegistry
 value:idempotent
+value:imagePart
+value:imagePartFromFile
 value:invoke
+value:isMultimodal
 value:llm
 value:loadAgentDefinition
 value:loadSkillBodies
 value:loadTsModule
 value:loop
+value:messageHasImage
 value:parallel
 value:parseDuration
 value:parseSkill
@@ -116,6 +121,7 @@ value:selectProvider
 value:selectProviderForTask
 value:serializeError
 value:terminalEventTypeFor
+value:textPart
 value:timeoutSignal
 value:wait
 type:AcpBackendOptions
@@ -151,6 +157,7 @@ type:ClientCapabilities
 type:CodeStep
 type:ConcurrencySemaphore
 type:ContentBlock
+type:ContentPart
 type:Context
 type:CronTriggerConfig
 type:CustomTriggerConfig
