@@ -30,7 +30,13 @@ import { extractJsonFromText, tryParseJson } from './json-utils.js'
 import { createMcpHost } from './mcp/host.js'
 import type { AgentPermissions, NetworkPolicy, PermissionDimension } from './permissions.js'
 import { TrustEnforcer, createPolicyFetch, resolvePermissions } from './permissions.js'
-import { MemoryRunStore, type RunStore, type StateStore } from './run-store.js'
+import {
+  type ArtifactStore,
+  type ArtifactStoreHandle,
+  MemoryRunStore,
+  type RunStore,
+  type StateStore,
+} from './run-store.js'
 import {
   adoptLastStepOutput,
   applyWorkspacePermissions,
@@ -417,6 +423,39 @@ export async function runPipeline<TInput, TOutput>(
   const store = options.store
   const stateStore = options.stateStore ?? options.store ?? defaultStateStore
   const threadHost = createThreadHost(stateStore)
+  // ArtifactStore is part of the RunStore surface; fall back to the default
+  // in-memory store so ctx.artifacts is always available even when the caller
+  // didn't wire a durable store.
+  const artifactStore: ArtifactStore = (options.store ?? defaultStateStore) as ArtifactStore
+  const makeArtifactsHandle = (stepId: StepId): ArtifactStoreHandle => ({
+    put: async (opts) => {
+      const startedAt = Date.now()
+      const descriptor = await artifactStore.putArtifact({
+        runId,
+        stepId,
+        name: opts.name,
+        mimeType: opts.mimeType,
+        data: opts.data,
+      })
+      events.publish({
+        type: 'tool.result',
+        runId,
+        stepId,
+        tool: 'artifacts.put',
+        result: {
+          artifactId: descriptor.artifactId,
+          name: descriptor.name,
+          mimeType: descriptor.mimeType,
+          size: descriptor.size,
+        },
+        durationMs: Date.now() - startedAt,
+        at: Date.now(),
+      })
+      return descriptor
+    },
+    get: (ref) => artifactStore.getArtifact(ref),
+    list: (opts) => artifactStore.listArtifacts(runId, opts),
+  })
   const storeWrites: Promise<void>[] = []
   const workspaceManager = options.workspaceManager ?? new WorkspaceManager()
   const deferredWorkspaceFinalizers: Array<(status: RunStatus) => Promise<void>> = []
@@ -682,6 +721,7 @@ export async function runPipeline<TInput, TOutput>(
         }),
         threads: threadHost,
         workspace: currentWorkspace as WorkspaceHandle | undefined,
+        artifacts: makeArtifactsHandle(step.id),
         get<T = unknown>(stepId: StepId): T | undefined {
           return stepOutputs[stepId] as T | undefined
         },

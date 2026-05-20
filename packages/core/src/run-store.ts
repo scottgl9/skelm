@@ -72,6 +72,20 @@ export class ArtifactQuotaExceededError extends Error {
   }
 }
 
+/**
+ * Per-step facade exposed on `ctx.artifacts`. The runner binds `runId` and
+ * `stepId` automatically — callers only specify the payload metadata.
+ */
+export interface ArtifactStoreHandle {
+  put(opts: {
+    name: string
+    mimeType: string
+    data: Uint8Array | string
+  }): Promise<ArtifactDescriptor>
+  get(ref: ArtifactRef): Promise<{ descriptor: ArtifactDescriptor; data: Uint8Array } | null>
+  list(opts?: { stepId?: string }): AsyncIterable<ArtifactDescriptor>
+}
+
 /** Persistence of binary artifacts (e.g. screenshots, evidence) by run + step. */
 export interface ArtifactStore {
   putArtifact(opts: {
