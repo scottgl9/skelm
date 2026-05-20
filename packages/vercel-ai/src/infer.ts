@@ -67,20 +67,49 @@ export async function vercelAiInfer(
     // No schema: free-form text.
     if (context.onPartial !== undefined) {
       // Streaming path: use streamText to emit partial chunks as they arrive.
-      const stream = streamText({ ...baseCall })
+      // Provide an onError sink to capture upstream errors without letting
+      // the AI SDK dump a full stack trace to stderr. We re-raise the
+      // captured error after the iterator completes so the step is marked
+      // failed with a clean message.
+      let streamError: unknown
+      const stream = streamText({
+        ...baseCall,
+        onError: ({ error }) => {
+          streamError = error
+        },
+      })
       let fullText = ''
       for await (const chunk of stream.textStream) {
         fullText += chunk
         context.onPartial(chunk)
       }
-      const finalResult = await stream
+      if (streamError !== undefined) {
+        throw streamError instanceof Error ? streamError : new Error(String(streamError))
+      }
+      // Await the resolved Promises explicitly so upstream errors propagate
+      // as a rejection rather than being swallowed into an empty result. The
+      // AI SDK surfaces transport errors via the .finishReason / .usage
+      // promises, which reject when the stream terminated due to an error.
+      const finishReason = await stream.finishReason
+      const finalUsage = await stream.usage
+      if (finishReason === 'error') {
+        // Defensive: in case the SDK reports 'error' without rejecting, raise
+        // so callers see a thrown error instead of an empty text result.
+        throw new Error(`vercel-ai stream terminated with finishReason='error'`)
+      }
       const response: InferResponse = { text: fullText }
-      const usage = mapUsage(finalResult.usage)
+      const usage = mapUsage(finalUsage)
       if (usage !== undefined) response.usage = usage
       return response
     }
     // Non-streaming path: use generateText.
     const textResult = await generateText(baseCall)
+    if ((textResult as { finishReason?: string }).finishReason === 'error') {
+      // AI SDK occasionally reports terminal errors via finishReason='error'
+      // without rejecting the promise; treat that as a thrown failure so the
+      // step is marked failed rather than completed with empty text.
+      throw new Error(`vercel-ai generateText terminated with finishReason='error'`)
+    }
     const response: InferResponse = { text: textResult.text }
     const usage = mapUsage(textResult.usage)
     if (usage !== undefined) response.usage = usage

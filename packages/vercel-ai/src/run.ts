@@ -50,6 +50,12 @@ export async function vercelAiRun(
 
     if (context.onPartial !== undefined) {
       // Streaming path: use streamText to emit partial chunks as they arrive.
+      // onError captures upstream errors instead of letting the AI SDK dump
+      // a stack trace to stderr. We re-raise the captured error after the
+      // textStream completes so the step is marked failed with a clean
+      // message ("OpenAI-compatible request failed (400): image input is
+      // not supported" etc.) and the gateway/CLI report a usable cause.
+      let streamError: unknown
       const stream = streamText({
         model: options.model,
         ...(system !== undefined ? { system } : {}),
@@ -69,12 +75,18 @@ export async function vercelAiRun(
             { providerOptions: options.providerOptions as any }
           : {}),
         abortSignal: signal,
+        onError: ({ error }) => {
+          streamError = error
+        },
       })
 
       let fullText = ''
       for await (const chunk of stream.textStream) {
         fullText += chunk
         context.onPartial(chunk)
+      }
+      if (streamError !== undefined) {
+        throw streamError instanceof Error ? streamError : new Error(String(streamError))
       }
       const finalResult = await stream
 
@@ -114,6 +126,12 @@ export async function vercelAiRun(
       abortSignal: signal,
     })
 
+    if ((result as { finishReason?: string }).finishReason === 'error') {
+      // AI SDK occasionally reports terminal errors via finishReason='error'
+      // without rejecting; treat that as a thrown failure so the step is
+      // marked failed rather than completed with empty text.
+      throw new Error(`vercel-ai run terminated with finishReason='error'`)
+    }
     const response: AgentResponse = {}
     if (typeof result.finishReason === 'string') response.stopReason = result.finishReason
     const usage = mapUsage(result.usage)

@@ -159,11 +159,18 @@ export function llm<TOutput>(def: {
   id: StepId
   backend?: string | readonly string[]
   model?: string
-  system?: string | ((ctx: Context) => string)
+  system?:
+    | string
+    | ((ctx: Context) => string | Promise<string>)
   prompt:
     | string
     | readonly import('./backend.js').ContentPart[]
-    | ((ctx: Context) => string | readonly import('./backend.js').ContentPart[])
+    | ((
+        ctx: Context,
+      ) =>
+        | string
+        | readonly import('./backend.js').ContentPart[]
+        | Promise<string | readonly import('./backend.js').ContentPart[]>)
   output?: SkelmSchema<TOutput>
   temperature?: number
   maxTokens?: number
@@ -209,8 +216,15 @@ export function agent<TOutput>(def: {
   prompt:
     | string
     | readonly import('./backend.js').ContentPart[]
-    | ((ctx: Context) => string | readonly import('./backend.js').ContentPart[])
-  system?: string | ((ctx: Context) => string)
+    | ((
+        ctx: Context,
+      ) =>
+        | string
+        | readonly import('./backend.js').ContentPart[]
+        | Promise<string | readonly import('./backend.js').ContentPart[]>)
+  system?:
+    | string
+    | ((ctx: Context) => string | Promise<string>)
   systemPromptMode?: 'extend' | 'replace'
   systemPromptIncludeAgentDef?: boolean
   mcp?: readonly McpServerConfig[] | ((ctx: Context) => readonly McpServerConfig[])
