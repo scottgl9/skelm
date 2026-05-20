@@ -1,6 +1,6 @@
 # @skelm/scheduler
 
-> Long-running trigger management for [skelm](https://github.com/scottgl9/skelm) pipelines — cron, interval, webhook, poll, and queue triggers with deduplication and overlap policies.
+> Long-running trigger management for [skelm](https://github.com/scottgl9/skelm) pipelines — cron, interval, and webhook triggers with deduplication and overlap policies.
 
 [![npm](https://img.shields.io/npm/v/@skelm/scheduler)](https://www.npmjs.com/package/@skelm/scheduler)
 
@@ -38,13 +38,11 @@ await scheduler.start()
 
 ## Trigger types
 
-| Builder                  | When it fires                                                              |
-| ------------------------ | -------------------------------------------------------------------------- |
-| `createCronTrigger`      | On a cron schedule (`'0 9 * * 1-5'`)                                       |
-| `createIntervalTrigger`  | Every N milliseconds                                                       |
-| `createWebhookTrigger`   | When the gateway receives a request at the trigger's path                  |
-| `createPollTrigger`      | When a polling function returns new items                                  |
-| `createQueueTrigger`     | When a message arrives on a connected queue (in-memory or external broker) |
+| Builder                  | When it fires                                             |
+| ------------------------ | --------------------------------------------------------- |
+| `createCronTrigger`      | On a cron schedule (`'0 9 * * 1-5'`)                      |
+| `createIntervalTrigger`  | Every N milliseconds                                      |
+| `createWebhookTrigger`   | When the gateway receives a request at the trigger's path |
 
 ## Policies
 
@@ -57,13 +55,12 @@ await scheduler.start()
 ```ts
 export { Scheduler } from './scheduler.js'
 export {
-  createCronTrigger, createIntervalTrigger,
-  createWebhookTrigger, createPollTrigger, createQueueTrigger,
+  createCronTrigger, createIntervalTrigger, createWebhookTrigger,
 } from './builders.js'
 export type {
   SchedulerConfig, Trigger, TriggerRegistration, TriggerContext, TriggerType,
   DedupePolicy, OverlapPolicy, TriggerBase,
-  CronTrigger, IntervalTrigger, WebhookTrigger, PollTrigger, QueueTrigger,
+  CronTrigger, IntervalTrigger, WebhookTrigger,
   TriggerOptions,
 } from './types.js'
 ```

@@ -1,15 +1,11 @@
 value:Scheduler
 value:createCronTrigger
 value:createIntervalTrigger
-value:createPollTrigger
-value:createQueueTrigger
 value:createWebhookTrigger
 type:CronTrigger
 type:DedupePolicy
 type:IntervalTrigger
 type:OverlapPolicy
-type:PollTrigger
-type:QueueTrigger
 type:SchedulerConfig
 type:Trigger
 type:TriggerBase
