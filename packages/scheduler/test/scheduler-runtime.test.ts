@@ -54,6 +54,58 @@ describe('Scheduler — runtime', () => {
     expect(resolved).toBeGreaterThanOrEqual(before)
   })
 
+  it('overlap=fail-fast skips firings while a previous run is in flight', async () => {
+    let called = 0
+    const runStore = {
+      putRun: async () => {
+        called += 1
+        await new Promise((r) => setTimeout(r, 60))
+      },
+    }
+    const pipelineLoader = async () => ({ id: 'p' })
+    const scheduler = new Scheduler({}, { runStore, pipelineLoader })
+    await scheduler.register({
+      id: 'ff',
+      type: 'interval',
+      pipelineId: 'p',
+      intervalMs: 10,
+      enabled: true,
+      overlap: 'fail-fast',
+    })
+    await new Promise((r) => setTimeout(r, 50))
+    // Without fail-fast, ~5 firings would land in 50ms. With it, only 1.
+    expect(called).toBe(1)
+    await scheduler.stop()
+  })
+
+  it('overlap=wait chains firings serially', async () => {
+    const starts: number[] = []
+    const runStore = {
+      putRun: async () => {
+        starts.push(Date.now())
+        await new Promise((r) => setTimeout(r, 40))
+      },
+    }
+    const pipelineLoader = async () => ({ id: 'p' })
+    const scheduler = new Scheduler({}, { runStore, pipelineLoader })
+    await scheduler.register({
+      id: 'w',
+      type: 'interval',
+      pipelineId: 'p',
+      intervalMs: 10,
+      enabled: true,
+      overlap: 'wait',
+    })
+    await new Promise((r) => setTimeout(r, 100))
+    await scheduler.stop()
+    expect(starts.length).toBeGreaterThanOrEqual(2)
+    for (let i = 1; i < starts.length; i++) {
+      const start = starts[i] as number
+      const prev = starts[i - 1] as number
+      expect(start - prev).toBeGreaterThanOrEqual(35)
+    }
+  })
+
   it('pause stops firings and resume re-enables them', async () => {
     const deps = makeDeps()
     const scheduler = new Scheduler({}, deps)

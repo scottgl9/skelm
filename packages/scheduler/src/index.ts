@@ -10,8 +10,6 @@ export {
   createCronTrigger,
   createIntervalTrigger,
   createWebhookTrigger,
-  createPollTrigger,
-  createQueueTrigger,
 } from './builders.js'
 
 export type {
@@ -26,8 +24,6 @@ export type {
   CronTrigger,
   IntervalTrigger,
   WebhookTrigger,
-  PollTrigger,
-  QueueTrigger,
 } from './types.js'
 
 export type { TriggerOptions } from './builders.js'

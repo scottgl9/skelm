@@ -3,9 +3,6 @@ import type {
   DedupePolicy,
   IntervalTrigger,
   OverlapPolicy,
-  PollTrigger,
-  QueueTrigger,
-  Trigger,
   WebhookTrigger,
 } from './types.js'
 
@@ -126,96 +123,6 @@ export function createWebhookTrigger(
   }
   if (options.transformPayload !== undefined) {
     result.transformPayload = options.transformPayload
-  }
-  if (options.inputTemplate !== undefined) {
-    result.inputTemplate = options.inputTemplate
-  }
-  if (options.metadata !== undefined) {
-    result.metadata = options.metadata
-  }
-
-  return result
-}
-
-/** Create a poll trigger */
-export function createPollTrigger(
-  id: string,
-  pipelineId: string,
-  url: string,
-  intervalMs: number,
-  options: TriggerOptions & {
-    headers?: Record<string, string>
-    detectNew?: (previous: unknown, current: unknown) => boolean
-    extractInput?: (data: unknown) => unknown | null
-  } = {},
-): PollTrigger {
-  const result: PollTrigger = {
-    id,
-    type: 'poll',
-    url,
-    intervalMs,
-    pipelineId,
-    enabled: options.enabled ?? true,
-    dedupe: options.dedupe ?? 'skip',
-    overlap: options.overlap ?? 'wait',
-  }
-
-  if (options.description !== undefined) {
-    result.description = options.description
-  }
-  if (options.maxConcurrent !== undefined) {
-    result.maxConcurrent = options.maxConcurrent
-  }
-  if (options.headers !== undefined) {
-    result.headers = options.headers
-  }
-  if (options.detectNew !== undefined) {
-    result.detectNew = options.detectNew
-  }
-  if (options.extractInput !== undefined) {
-    result.extractInput = options.extractInput
-  }
-  if (options.inputTemplate !== undefined) {
-    result.inputTemplate = options.inputTemplate
-  }
-  if (options.metadata !== undefined) {
-    result.metadata = options.metadata
-  }
-
-  return result
-}
-
-/** Create a queue trigger */
-export function createQueueTrigger(
-  id: string,
-  pipelineId: string,
-  queueName: string,
-  options: TriggerOptions & {
-    batchSize?: number
-    visibilityTimeoutMs?: number
-    extractInput?: (message: unknown) => unknown | null
-  } = {},
-): QueueTrigger {
-  const result: QueueTrigger = {
-    id,
-    type: 'queue',
-    queueName,
-    pipelineId,
-    enabled: options.enabled ?? true,
-    dedupe: options.dedupe ?? 'skip',
-    overlap: options.overlap ?? 'run-concurrent',
-    maxConcurrent: options.maxConcurrent ?? 5,
-    batchSize: options.batchSize ?? 1,
-  }
-
-  if (options.description !== undefined) {
-    result.description = options.description
-  }
-  if (options.visibilityTimeoutMs !== undefined) {
-    result.visibilityTimeoutMs = options.visibilityTimeoutMs
-  }
-  if (options.extractInput !== undefined) {
-    result.extractInput = options.extractInput
   }
   if (options.inputTemplate !== undefined) {
     result.inputTemplate = options.inputTemplate
