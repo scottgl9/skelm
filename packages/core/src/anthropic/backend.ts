@@ -8,6 +8,7 @@ import type {
   SkelmBackend,
   Usage,
 } from '../backend.js'
+import { isMultimodal } from '../content.js'
 import { formatSkillBlock } from '../skills.js'
 import { buildSystemPromptFromRequest } from '../system-prompt.js'
 
@@ -29,6 +30,7 @@ export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): Skel
     skills: true,
     modelSelection: true,
     toolPermissions: 'unsupported',
+    vision: true,
   }
 
   const backend: SkelmBackend = {
@@ -123,9 +125,16 @@ export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): Skel
   return backend
 }
 
+type AnthropicContentBlock =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image'
+      source: { type: 'base64'; media_type: string; data: string }
+    }
+
 interface AnthropicMessageRequest {
   system?: string
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  messages: Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }>
   model: string
   maxTokens: number
   outputSchema: boolean
@@ -190,16 +199,31 @@ function baseUrl(url?: string): string {
 
 function toAnthropicMessages(
   messages: InferRequest['messages'],
-): Array<{ role: 'user' | 'assistant'; content: string }> {
-  const out: Array<{ role: 'user' | 'assistant'; content: string }> = []
+): Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }> {
+  const out: Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }> = []
   for (const message of messages) {
-    if (message.role === 'assistant') {
-      out.push({ role: 'assistant', content: message.content })
-    } else {
-      out.push({ role: 'user', content: message.content })
-    }
+    const role: 'user' | 'assistant' = message.role === 'assistant' ? 'assistant' : 'user'
+    out.push({ role, content: toAnthropicContent(message.content) })
   }
   return out
+}
+
+function toAnthropicContent(
+  content: InferRequest['messages'][number]['content'],
+): string | AnthropicContentBlock[] {
+  if (!isMultimodal(content)) return content
+  const blocks: AnthropicContentBlock[] = []
+  for (const part of content) {
+    if (part.type === 'text') {
+      blocks.push({ type: 'text', text: part.text })
+    } else {
+      blocks.push({
+        type: 'image',
+        source: { type: 'base64', media_type: part.mimeType, data: part.data },
+      })
+    }
+  }
+  return blocks
 }
 
 function extractText(body: AnthropicMessageResponse): string {
