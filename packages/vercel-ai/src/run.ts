@@ -55,6 +55,12 @@ export async function vercelAiRun(
       // textStream completes so the step is marked failed with a clean
       // message ("OpenAI-compatible request failed (400): image input is
       // not supported" etc.) and the gateway/CLI report a usable cause.
+      //
+      // Race-free: the AI SDK invokes onError synchronously from inside its
+      // stream processing (not via a separate microtask) and the textStream
+      // iterator stops yielding once an error fires, so the post-loop check
+      // is guaranteed to see `streamError` populated when termination was
+      // due to error. See infer.ts for the same reasoning.
       let streamError: unknown
       const stream = streamText({
         model: options.model,

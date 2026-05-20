@@ -17,6 +17,7 @@ import type {
   ResolvedPolicy,
 } from '@skelm/core'
 import { TrustEnforcer, extractPromptText } from '@skelm/core'
+import type { OpencodeBackendOptions } from './types.js'
 
 /**
  * Map a skelm `AgentRequest.prompt` (string or `ContentPart[]`) onto
@@ -48,7 +49,6 @@ function buildOpencodePromptParts(
   }
   return parts.length > 0 ? parts : [{ type: 'text', text: extractPromptText(prompt) }]
 }
-import type { OpencodeBackendOptions } from './types.js'
 
 type SdkClient = ReturnType<typeof createOpencodeClient>
 

@@ -49,6 +49,18 @@ function extractPromptImages(
     .map((p) => ({ mimeType: p.mimeType, data: p.data }))
 }
 
+/**
+ * Collect image parts from all `role: 'user'` messages in an `InferRequest`.
+ *
+ * Intentionally first-turn-only: pi's `session.prompt(text, { images })` is
+ * turn-scoped — it sends the supplied images alongside `text` as one user
+ * message and starts the agent loop. Multi-turn conversations that resubmit
+ * prior-turn imagery would either re-attach the same bytes (wasteful) or
+ * silently drop history images here; the simpler behavior is to bundle every
+ * image into the single outgoing turn and let pi's session history persist
+ * what the model already saw. Assistant/tool messages don't carry images on
+ * the skelm side, so filtering on `role: 'user'` is sufficient.
+ */
 function gatherImagesFromMessages(
   messages: InferRequest['messages'],
 ): ReadonlyArray<{ mimeType: string; data: string }> {
