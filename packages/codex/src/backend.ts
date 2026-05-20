@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   buildSystemPromptFromRequest,
   extractPromptText,
@@ -9,6 +12,7 @@ import type {
   AgentResponse,
   BackendCapabilities,
   BackendContext,
+  ContentPart,
   McpServerConfig,
   ResolvedPolicy,
   SkelmBackend,
@@ -53,6 +57,12 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
     // Skelm checks at the boundary (refusing unsafe combinations before any
     // Codex call); Codex enforces at runtime.
     toolPermissions: 'native',
+    // Image content is forwarded as `{type:'local_image', path}` per the
+    // codex-sdk schema; bytes are materialized to a temp file for the turn
+    // and cleaned up afterwards. Whether the configured codex model can
+    // actually process images is up to the model — non-vision models will
+    // surface a provider error that propagates as a step failure.
+    vision: options.vision ?? true,
   }
 
   const backend: SkelmBackend = {
@@ -106,12 +116,22 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
       // Compose the system prompt via @skelm/core's shared builder so
       // systemPromptMode / systemPromptIncludeAgentDef take effect here.
       const systemPrompt = await composeSystemPrompt(request, context, options.model)
-      // Codex CLI accepts text only; image parts (if any) are dropped after
-      // the BackendCapabilityError guard at the agent-step handler. This path
-      // therefore only ever sees text content.
-      const promptText = extractPromptText(request.prompt)
-      const userPrompt =
-        systemPrompt === undefined ? promptText : `${systemPrompt}\n\n---\n\n${promptText}`
+      // Codex SDK accepts string OR Array<{type:'text'}|{type:'local_image',path}>.
+      // For image-bearing prompts we materialize each image to a temp file
+      // (Codex requires filesystem paths, not data URLs) and clean up after
+      // the turn. Pure-text prompts keep the prior compact "<system>\n\n---\n\n<text>" shape.
+      const imageRoots: string[] = []
+      const userPrompt:
+        | string
+        | Array<{ type: 'text'; text: string } | { type: 'local_image'; path: string }> =
+        typeof request.prompt === 'string' || extractImageParts(request.prompt).length === 0
+          ? (() => {
+              const promptText = extractPromptText(request.prompt)
+              return systemPrompt === undefined
+                ? promptText
+                : `${systemPrompt}\n\n---\n\n${promptText}`
+            })()
+          : buildCodexMultimodalInput(request.prompt, systemPrompt, imageRoots)
 
       // Build the thread (resume vs fresh) honoring per-step sandbox/approval.
       const threadOpts = buildThreadOptions(options, {
@@ -150,6 +170,7 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
         })
       } finally {
         turnSignal.cancel()
+        cleanupTempImageRoots(imageRoots)
       }
 
       const response: AgentResponse = {
@@ -172,6 +193,71 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
   }
 
   return backend
+}
+
+function extractImageParts(
+  prompt: AgentRequest['prompt'],
+): ReadonlyArray<Extract<ContentPart, { type: 'image' }>> {
+  if (typeof prompt === 'string') return []
+  return (prompt as readonly ContentPart[]).filter(
+    (p): p is Extract<ContentPart, { type: 'image' }> => p.type === 'image',
+  )
+}
+
+function mimeToExt(mime: string): string {
+  switch (mime) {
+    case 'image/png':
+      return '.png'
+    case 'image/jpeg':
+      return '.jpg'
+    case 'image/webp':
+      return '.webp'
+    case 'image/gif':
+      return '.gif'
+    default:
+      return '.bin'
+  }
+}
+
+function buildCodexMultimodalInput(
+  prompt: readonly ContentPart[] | string,
+  systemPrompt: string | undefined,
+  imageRoots: string[],
+): Array<{ type: 'text'; text: string } | { type: 'local_image'; path: string }> {
+  const tmp = mkdtempSync(join(tmpdir(), 'skelm-codex-img-'))
+  imageRoots.push(tmp)
+  const parts: Array<{ type: 'text'; text: string } | { type: 'local_image'; path: string }> = []
+  let imgIdx = 0
+  let textBuf = systemPrompt !== undefined ? `${systemPrompt}\n\n---\n\n` : ''
+  if (typeof prompt === 'string') {
+    parts.push({ type: 'text', text: `${textBuf}${prompt}` })
+    return parts
+  }
+  for (const part of prompt) {
+    if (part.type === 'text') {
+      textBuf += part.text
+    } else if (part.type === 'image') {
+      if (textBuf.length > 0) {
+        parts.push({ type: 'text', text: textBuf })
+        textBuf = ''
+      }
+      const file = join(tmp, `img${imgIdx++}${mimeToExt(part.mimeType)}`)
+      writeFileSync(file, Buffer.from(part.data, 'base64'))
+      parts.push({ type: 'local_image', path: file })
+    }
+  }
+  if (textBuf.length > 0) parts.push({ type: 'text', text: textBuf })
+  return parts
+}
+
+function cleanupTempImageRoots(roots: readonly string[]): void {
+  for (const root of roots) {
+    try {
+      rmSync(root, { recursive: true, force: true })
+    } catch {
+      // Best-effort cleanup; OS will eventually reap /tmp anyway.
+    }
+  }
 }
 
 function filterAllowedMcp(

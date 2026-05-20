@@ -35,6 +35,13 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
     skills: true,
     modelSelection: options.model !== undefined,
     toolPermissions: 'native',
+    // Image content is threaded into opencode as a `FilePartInput` alongside
+    // the text part (see buildOpencodePromptParts in client.ts); whether the
+    // *upstream* model actually processes images depends on the configured
+    // opencode model (Sonnet, GPT-4o, etc. — see opencode docs). Set
+    // `vision: false` via the second capability block above if a deployment
+    // pins a known text-only model.
+    vision: options.vision ?? true,
   }
 
   // Single client instance per backend — server started on first call and

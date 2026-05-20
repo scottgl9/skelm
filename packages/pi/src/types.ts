@@ -39,6 +39,15 @@ export interface PiSdkBackendOptions {
    * Default: false — project context files are useful and safe.
    */
   noContextFiles?: boolean
+  /**
+   * Advertise `capabilities.vision`. Defaults to `true`: image parts in the
+   * prompt are forwarded to pi via `session.prompt(text, { images })`. Whether
+   * the configured pi model actually accepts images depends on its
+   * `~/.pi/agent/models.json` entry (the model's `input` field). Set
+   * `vision: false` to flip on the framework's vision gate for deployments
+   * pinned to a text-only pi model.
+   */
+  vision?: boolean
 }
 
 export interface PiBackendOptions {

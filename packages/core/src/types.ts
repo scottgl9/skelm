@@ -315,9 +315,7 @@ export interface LlmStep<TOutput = unknown> {
   readonly id: StepId
   readonly backend?: string | readonly string[]
   readonly model?: string
-  readonly system?:
-    | string
-    | ((ctx: Context) => string | Promise<string>)
+  readonly system?: string | ((ctx: Context) => string | Promise<string>)
   readonly prompt:
     | string
     | readonly import('./backend.js').ContentPart[]
@@ -351,9 +349,7 @@ export interface AgentStep<TOutput = unknown> {
         | string
         | readonly import('./backend.js').ContentPart[]
         | Promise<string | readonly import('./backend.js').ContentPart[]>)
-  readonly system?:
-    | string
-    | ((ctx: Context) => string | Promise<string>)
+  readonly system?: string | ((ctx: Context) => string | Promise<string>)
   /**
    * How `system` (and any AGENTS.md/SOUL.md) should compose with the backend's
    * built-in default system prompt.
