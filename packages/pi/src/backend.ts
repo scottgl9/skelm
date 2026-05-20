@@ -60,6 +60,10 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
     mcp: false, // pi manages its own tools; no external MCP wiring
     skills: true,
     modelSelection: options.model !== undefined,
+    // RPC mode forwards prompts as text to a subprocess; image bytes
+    // cannot cross that boundary, so vision is explicitly off. Callers
+    // wanting multimodal must use the pi-sdk backend.
+    vision: false,
     // RPC mode runs pi in a subprocess; skelm cannot intercept tool_call events
     // mid-run, so it cannot enforce allowedTools, allowedExecutables,
     // fsRead/fsWrite, allowedMcpServers, or allowedSkills. The new gateway
