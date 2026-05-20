@@ -14,7 +14,14 @@
 //    time, not at M4 implementation time.
 
 import type { RunEvent } from './events.js'
-import type { AuditEntry, RunFilter, RunStore, RunSummary } from './run-store.js'
+import type {
+  ArtifactDescriptor,
+  ArtifactRef,
+  AuditEntry,
+  RunFilter,
+  RunStore,
+  RunSummary,
+} from './run-store.js'
 import type { Run, RunId, StateEntry, StateReadOptions, StateSetOptions } from './types.js'
 
 export interface PostgresRunStoreOptions {
@@ -112,5 +119,26 @@ export class PostgresRunStore implements RunStore {
   }
   async putAudit(_entry: AuditEntry): Promise<void> {
     throw new NotImplementedError('putAudit')
+  }
+  async putArtifact(_opts: {
+    runId: RunId
+    stepId?: string
+    name: string
+    mimeType: string
+    data: Uint8Array | string
+  }): Promise<ArtifactDescriptor> {
+    throw new NotImplementedError('putArtifact')
+  }
+  async getArtifact(
+    _ref: ArtifactRef,
+  ): Promise<{ descriptor: ArtifactDescriptor; data: Uint8Array } | null> {
+    throw new NotImplementedError('getArtifact')
+  }
+  // biome-ignore lint/correctness/useYield: skeleton method body unreachable
+  async *listArtifacts(
+    _runId: RunId,
+    _opts?: { stepId?: string },
+  ): AsyncIterable<ArtifactDescriptor> {
+    throw new NotImplementedError('listArtifacts')
   }
 }
