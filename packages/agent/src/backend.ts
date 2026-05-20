@@ -311,9 +311,19 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
         messages.push({ role: 'system', content: req.system })
       }
       for (const msg of req.messages) {
+        // @skelm/agent does not yet thread image parts; collapse multimodal
+        // content to its text components. Vision callers should route to a
+        // backend with capabilities.vision === true.
+        const content =
+          typeof msg.content === 'string'
+            ? msg.content
+            : msg.content
+                .filter((part) => part.type === 'text')
+                .map((part) => (part as { text: string }).text)
+                .join('')
         messages.push({
           role: msg.role as OpenAIMessage['role'],
-          content: msg.content,
+          content,
         })
       }
 

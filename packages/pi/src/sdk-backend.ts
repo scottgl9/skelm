@@ -263,13 +263,23 @@ function buildSystemContent(
  * histories we serialize the conversation into a labeled transcript.
  */
 function buildInferPrompt(req: InferRequest): string {
+  // Pi does not support image content; collapse any multimodal messages to
+  // their text parts. Callers needing vision should route to a vision-capable
+  // backend (anthropic / openai).
+  const asText = (content: (typeof req.messages)[number]['content']): string =>
+    typeof content === 'string'
+      ? content
+      : content
+          .filter((p) => p.type === 'text')
+          .map((p) => (p as { text: string }).text)
+          .join('')
   if (req.messages.length === 1 && req.messages[0]?.role === 'user') {
-    return req.messages[0].content
+    return asText(req.messages[0].content)
   }
   return req.messages
     .map(
       (m) =>
-        `${m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : m.role}: ${m.content}`,
+        `${m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : m.role}: ${asText(m.content)}`,
     )
     .join('\n\n')
 }

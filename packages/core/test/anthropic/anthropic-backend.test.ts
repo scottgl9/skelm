@@ -73,6 +73,54 @@ describe('Anthropic backend', () => {
     }
   })
 
+  it('forwards image content parts as Anthropic image blocks', async () => {
+    const requests: unknown[] = []
+    const server = await startServer(async (req) => {
+      requests.push(req)
+      return {
+        content: [{ type: 'text', text: 'I see a screenshot' }],
+        stop_reason: 'end_turn',
+      }
+    })
+    try {
+      const backend = createAnthropicBackend({ apiKey: 'test-key', baseUrl: server.baseUrl })
+      expect(backend.capabilities.vision).toBe(true)
+      await backend.infer?.(
+        {
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: 'what is in this image?' },
+                { type: 'image', mimeType: 'image/png', data: 'AAAA' },
+              ],
+            },
+          ],
+        },
+        { signal: AbortSignal.timeout(5_000) },
+      )
+
+      expect(requests).toEqual([
+        expect.objectContaining({
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: 'what is in this image?' },
+                {
+                  type: 'image',
+                  source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
+                },
+              ],
+            },
+          ],
+        }),
+      ])
+    } finally {
+      await server.close()
+    }
+  })
+
   it('parses structured responses when outputSchema is requested', async () => {
     const server = await startServer(async () => ({
       content: [{ type: 'text', text: '{"greeting":"hello"}' }],

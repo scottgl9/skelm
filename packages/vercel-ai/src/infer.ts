@@ -1,5 +1,12 @@
-import { combineSignals } from '@skelm/core'
-import type { BackendContext, InferRequest, InferResponse, PromptMessage, Usage } from '@skelm/core'
+import { combineSignals, isMultimodal } from '@skelm/core'
+import type {
+  BackendContext,
+  ContentPart,
+  InferRequest,
+  InferResponse,
+  PromptMessage,
+  Usage,
+} from '@skelm/core'
 import { type ModelMessage, generateObject, generateText, streamText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
 import { assertEgressEnforceable } from './permissions.js'
@@ -93,17 +100,41 @@ function mapMessages(messages: readonly PromptMessage[]): ModelMessage[] {
   return messages.map((m) => {
     switch (m.role) {
       case 'system':
-        return { role: 'system', content: m.content }
+        return { role: 'system', content: collapseText(m.content) }
       case 'user':
-        return { role: 'user', content: m.content }
+        return isMultimodal(m.content)
+          ? { role: 'user', content: toVercelUserParts(m.content) }
+          : { role: 'user', content: m.content }
       case 'assistant':
-        return { role: 'assistant', content: m.content }
+        return { role: 'assistant', content: collapseText(m.content) }
       case 'tool':
         // Skelm tool messages collapse to user-text for v1 — tool-result rounds
         // are handled inside generateText's own loop in run().
-        return { role: 'user', content: m.content }
+        return { role: 'user', content: collapseText(m.content) }
     }
   })
+}
+
+function collapseText(content: PromptMessage['content']): string {
+  if (typeof content === 'string') return content
+  return content
+    .filter((part): part is Extract<ContentPart, { type: 'text' }> => part.type === 'text')
+    .map((part) => part.text)
+    .join('')
+}
+
+function toVercelUserParts(
+  parts: readonly ContentPart[],
+): Array<{ type: 'text'; text: string } | { type: 'image'; image: string; mediaType: string }> {
+  return parts.map((part) =>
+    part.type === 'text'
+      ? { type: 'text', text: part.text }
+      : {
+          type: 'image',
+          image: `data:${part.mimeType};base64,${part.data}`,
+          mediaType: part.mimeType,
+        },
+  )
 }
 
 export function mapUsage(v: unknown): Usage | undefined {
