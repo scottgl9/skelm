@@ -20,6 +20,7 @@ import type {
   AgentResponse,
   BackendCapabilities,
   BackendContext,
+  ContentPart,
   InferRequest,
   InferResponse,
   SkelmBackend,
@@ -28,7 +29,11 @@ import type {
 import type { ResolvedPolicy } from '@skelm/core/permissions'
 import { TrustEnforcer } from '@skelm/core/permissions'
 
-import { type OpenAIMessage, chatCompletion } from './http-client.js'
+import {
+  type OpenAIContentPart,
+  type OpenAIMessage,
+  chatCompletion,
+} from './http-client.js'
 import { buildSystemPromptFromRequest, toUsage } from './prompt.js'
 import { BUILTIN_TOOLS, type ToolExecutionContext, type ToolResult, toOpenAITool } from './tools.js'
 
@@ -45,6 +50,17 @@ export interface SkelmAgentOptions {
   model?: string
   /** Timeout in milliseconds for LLM HTTP requests (default 300 000 = 5 min). */
   timeoutMs?: number
+  /**
+   * Advertise `capabilities.vision`. Defaults to `true`: the backend forwards
+   * image content to the upstream OpenAI-compatible endpoint and lets it
+   * decide whether the configured model can process it. Models that can't
+   * will surface their own 4xx/5xx, which `@skelm/agent` propagates as a
+   * thrown error — there is no silent strip. Set to `false` if you want the
+   * framework's vision gate to reject image prompts at step start instead
+   * (useful when you know the configured model is text-only and want a
+   * deterministic error before any HTTP egress).
+   */
+  vision?: boolean
 }
 
 function createDefaultPolicy(cwd: string, agentDefRoot: string): ResolvedPolicy {
@@ -67,14 +83,43 @@ function isObjectSchema(s: unknown): s is Record<string, unknown> {
   return typeof s === 'object' && s !== null && !Array.isArray(s)
 }
 
-const capabilities: BackendCapabilities = {
-  prompt: true,
-  streaming: false,
-  sessionLifecycle: false,
-  mcp: true,
-  skills: true,
-  modelSelection: true,
-  toolPermissions: 'native',
+/**
+ * Map a skelm `PromptMessage.content` (string or `ContentPart[]`) to the
+ * OpenAI chat-completions content shape. String content stays as a string;
+ * multimodal arrays become `[{type:'text'}, {type:'image_url'}, ...]`. Image
+ * parts are encoded as base64 data URLs since that's the universally
+ * supported form across OpenAI cloud, llama.cpp, sglang, vLLM, and ollama.
+ */
+function toOpenAIChatContent(
+  content: string | readonly ContentPart[] | undefined,
+): string | readonly OpenAIContentPart[] {
+  if (content === undefined) return ''
+  if (typeof content === 'string') return content
+  const parts: OpenAIContentPart[] = []
+  for (const part of content) {
+    if (part.type === 'text') {
+      parts.push({ type: 'text', text: part.text })
+    } else if (part.type === 'image') {
+      parts.push({
+        type: 'image_url',
+        image_url: { url: `data:${part.mimeType};base64,${part.data}` },
+      })
+    }
+  }
+  return parts
+}
+
+function baseCapabilities(vision: boolean): BackendCapabilities {
+  return {
+    prompt: true,
+    streaming: false,
+    sessionLifecycle: false,
+    mcp: true,
+    vision,
+    skills: true,
+    modelSelection: true,
+    toolPermissions: 'native',
+  }
 }
 
 async function runAgentLoop(
@@ -196,16 +241,9 @@ async function runAgentLoop(
       ...(mcpServerSummaries && { mcpServers: mcpServerSummaries }),
     })
 
-    const userPromptText =
-      typeof req.prompt === 'string'
-        ? req.prompt
-        : req.prompt
-            .filter((p) => p.type === 'text')
-            .map((p) => (p as { text: string }).text)
-            .join('')
     const messages: OpenAIMessage[] = [
       { role: 'system', content: systemContent },
-      { role: 'user', content: userPromptText },
+      { role: 'user', content: toOpenAIChatContent(req.prompt) },
     ]
 
     const maxTurns = req.maxTurns ?? 30
@@ -306,6 +344,12 @@ async function runAgentLoop(
 export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
   const resolvedId = opts.id ?? 'agent'
 
+  // Vision capability is a user-declared opt-in/out: default is `true`
+  // (forward image content to the upstream and let it succeed or fail
+  // loudly). Set `vision: false` to flip on the framework's vision gate so
+  // image prompts are rejected at step start with no HTTP egress.
+  const capabilities = baseCapabilities(opts.vision ?? true)
+
   const backend: SkelmBackend = {
     id: resolvedId,
     capabilities,
@@ -318,19 +362,9 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
         messages.push({ role: 'system', content: req.system })
       }
       for (const msg of req.messages) {
-        // @skelm/agent does not yet thread image parts; collapse multimodal
-        // content to its text components. Vision callers should route to a
-        // backend with capabilities.vision === true.
-        const content =
-          typeof msg.content === 'string'
-            ? msg.content
-            : msg.content
-                .filter((part) => part.type === 'text')
-                .map((part) => (part as { text: string }).text)
-                .join('')
         messages.push({
           role: msg.role as OpenAIMessage['role'],
-          content,
+          content: toOpenAIChatContent(msg.content),
         })
       }
 

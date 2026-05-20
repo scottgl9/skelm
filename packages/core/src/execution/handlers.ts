@@ -60,7 +60,7 @@ import {
   makeSkillLoader,
   resolveDeclaredSecrets,
 } from './helpers.js'
-import { createSecretsAccessor, resolveValueOrFn } from './internal.js'
+import { createSecretsAccessor, resolveValueOrFn, resolveValueOrFnAsync } from './internal.js'
 import type { ExecutionRuntime } from './runtime.js'
 
 const defaultStateStore = new MemoryRunStore()
@@ -270,8 +270,9 @@ async function runLlmStep(
   const secretsAccessor = createSecretsAccessor(resolvedSecrets)
   const stepCtx =
     secretsAccessor !== undefined ? freezeContext({ ...ctx, secrets: secretsAccessor }) : ctx
-  const promptValue = resolveValueOrFn(step.prompt, stepCtx)
-  const systemText = step.system === undefined ? undefined : resolveValueOrFn(step.system, stepCtx)
+  const promptValue = await resolveValueOrFnAsync(step.prompt, stepCtx)
+  const systemText =
+    step.system === undefined ? undefined : await resolveValueOrFnAsync(step.system, stepCtx)
   const isMultimodalPrompt = Array.isArray(promptValue)
   if (isMultimodalPrompt && backend.capabilities.vision !== true) {
     throw new BackendCapabilityError(
@@ -374,7 +375,7 @@ async function runAgentStep(
       secretsAccessor !== undefined
         ? freezeContext({ ...workspaceCtx, secrets: secretsAccessor })
         : workspaceCtx
-    const resolvedPromptValue = resolveValueOrFn(step.prompt, stepCtx)
+    const resolvedPromptValue = await resolveValueOrFnAsync(step.prompt, stepCtx)
     const isMultimodalAgentPrompt = Array.isArray(resolvedPromptValue)
     if (isMultimodalAgentPrompt && backend.capabilities.vision !== true) {
       throw new BackendCapabilityError(
@@ -384,7 +385,7 @@ async function runAgentStep(
       )
     }
     const resolvedSystemText =
-      step.system === undefined ? undefined : resolveValueOrFn(step.system, stepCtx)
+      step.system === undefined ? undefined : await resolveValueOrFnAsync(step.system, stepCtx)
     const mcpServers = step.mcp === undefined ? undefined : resolveValueOrFn(step.mcp, stepCtx)
     if (policy !== undefined && mcpServers !== undefined) {
       const enforcer = new TrustEnforcer(policy)

@@ -40,9 +40,19 @@ export interface OpenAIChatResponse {
   }
 }
 
+/**
+ * OpenAI chat-completions content parts. The user role accepts an array of
+ * parts (text and image_url) for multimodal prompts; other roles use a plain
+ * string. This mirrors OpenAI's documented content schema:
+ * https://platform.openai.com/docs/api-reference/chat/create
+ */
+export type OpenAIContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+
 export interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
-  content?: string
+  content?: string | readonly OpenAIContentPart[]
   name?: string
   tool_calls?: Array<{
     id: string

@@ -287,8 +287,10 @@ export async function executeAgentStep(
   }
 
   // Resolve prompt — this legacy AgentRegistry path predates multimodal
-  // prompts; collapse any ContentPart[] to its text components.
-  const promptValue = typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt
+  // prompts; collapse any ContentPart[] to its text components. Function form
+  // may now be async (e.g. for prompts that load image bytes from disk), so
+  // await before flattening.
+  const promptValue = await (typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt)
   const resolvedPrompt =
     typeof promptValue === 'string'
       ? promptValue

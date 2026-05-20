@@ -24,3 +24,18 @@ export function createSecretsAccessor(
 export function resolveValueOrFn<T>(value: T | ((ctx: Context) => T), ctx: Context): T {
   return typeof value === 'function' ? (value as (ctx: Context) => T)(ctx) : value
 }
+
+/**
+ * Resolve a value that may be a literal `T`, a sync function `(ctx) => T`,
+ * or an async function `(ctx) => Promise<T>`. Use this in hot paths that may
+ * receive Promise-returning resolvers (e.g. prompts that read image bytes
+ * from disk via `imagePartFromFile`). Always returns a Promise.
+ */
+export async function resolveValueOrFnAsync<T>(
+  value: T | ((ctx: Context) => T | Promise<T>),
+  ctx: Context,
+): Promise<T> {
+  return typeof value === 'function'
+    ? await (value as (ctx: Context) => T | Promise<T>)(ctx)
+    : value
+}
