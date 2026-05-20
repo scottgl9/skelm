@@ -18,7 +18,9 @@ decide**, with the screenshot stored as a run artifact for later evidence.
   from `'skelm'`.
 - `llm({ prompt: [...] })` — accepts a `ContentPart[]` for image-bearing
   prompts. Throws `BackendCapabilityError` if routed to a non-vision
-  backend.
+  backend. Note: `imagePartFromFile` returns a `Promise<ContentPart>`, so a
+  static array containing it must be built inside an `async` prompt
+  function (or `Promise.all`) — see the sketch below.
 - `ctx.artifacts.put({ name, mimeType, data })` — persists bytes keyed by
   `{runId, stepId, name}`, emits a `tool.result` event for audit, enforces a
   default 256 MiB per-run quota.
@@ -88,6 +90,19 @@ structured verification records, retry / timeout / per-iteration loops)
 are either already in skelm (`forEach`, `retry`, `timeoutMs`) or
 buildable on top of these two foundations as user code or a separate
 package.
+
+## Backend / model caveats
+
+- **Anthropic, OpenAI, and ACP** map image parts to native image blocks.
+- **`vercel-ai`** declares `vision: true` because the SDK itself accepts
+  image parts — but actual vision support depends on the model bound to
+  the backend. Pairing the Vercel backend with a text-only model (e.g. a
+  text-only Mistral via `createMistral(...)`) will surface as a
+  provider-level error at infer time, not as `BackendCapabilityError` at
+  step start. Pick a vision-capable model when using image prompts.
+- **`@skelm/agent`, `opencode`, `pi`, `codex`** collapse multimodal
+  prompts to text via `extractPromptText`; image parts are dropped
+  because those transports do not accept images.
 
 ## What is intentionally NOT in this PR
 
