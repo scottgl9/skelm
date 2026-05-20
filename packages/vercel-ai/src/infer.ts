@@ -71,6 +71,15 @@ export async function vercelAiInfer(
       // the AI SDK dump a full stack trace to stderr. We re-raise the
       // captured error after the iterator completes so the step is marked
       // failed with a clean message.
+      //
+      // The post-iterator check `if (streamError !== undefined)` is race-free:
+      // the AI SDK calls `onError` synchronously from inside its stream
+      // processing (not on a separate microtask), and the `textStream`
+      // iterator does not yield further chunks after the error fires. By the
+      // time `for await` exits we have either (a) seen the full text with no
+      // error, or (b) a populated `streamError` and a possibly partial
+      // `fullText` — either way the subsequent throw runs in the same tick
+      // as the iterator's completion.
       let streamError: unknown
       const stream = streamText({
         ...baseCall,
