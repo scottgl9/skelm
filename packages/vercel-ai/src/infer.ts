@@ -11,6 +11,7 @@ import { type ModelMessage, generateObject, generateText, streamText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
 import { assertEgressEnforceable } from './permissions.js'
 import type { VercelAiBackendOptions } from './types.js'
+import { assertModelSupportsImages } from './vision-gate.js'
 
 export async function vercelAiInfer(
   options: VercelAiBackendOptions,
@@ -21,6 +22,15 @@ export async function vercelAiInfer(
   // HTTP_PROXY env vars from the gateway egress proxy. Fail-closed instead
   // of pretending to enforce networkEgress.
   assertEgressEnforceable(context.permissions)
+  // Per-model vision check (F123 / #177): when the backend declares a
+  // visionModels allowlist, fail loudly *before* dispatch instead of letting
+  // the upstream silently strip images and hallucinate.
+  assertModelSupportsImages({
+    backendId: 'vercel-ai',
+    model: options.model,
+    visionModels: options.visionModels,
+    messages: request.messages,
+  })
   const messages = mapMessages(request.messages)
   const timeout = options.timeout ?? 300_000
   const timeoutCtl = new AbortController()

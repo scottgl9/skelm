@@ -219,3 +219,89 @@ describe('createVercelAiBackend — run()', () => {
     expect(instrIdx).toBeLessThan(sysIdx)
   })
 })
+
+describe('createVercelAiBackend — visionModels allowlist (F123)', () => {
+  const PNG =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+  const imageMsg = {
+    role: 'user' as const,
+    content: [
+      { type: 'text' as const, text: 'describe' },
+      { type: 'image' as const, mimeType: 'image/png', data: PNG },
+    ],
+  }
+
+  it('throws BackendCapabilityError on infer() when model not in visionModels', async () => {
+    const model = mockModel('would-have-hallucinated')
+    const backend = createVercelAiBackend({
+      model,
+      visionModels: ['qwen2.5-vl', 'gpt-4o'],
+    })
+    await expect(backend.infer?.({ messages: [imageMsg] }, makeCtx())).rejects.toThrow(
+      /visionModels allowlist/,
+    )
+  })
+
+  it('throws BackendCapabilityError on run() when model not in visionModels', async () => {
+    const model = mockModel('hallucinated')
+    const backend = createVercelAiBackend({
+      model,
+      visionModels: ['qwen2.5-vl'],
+    })
+    await expect(backend.run?.({ prompt: imageMsg.content }, makeCtx())).rejects.toThrow(
+      /does not support image content/,
+    )
+  })
+
+  it('passes when model id is in visionModels (allowlist hit)', async () => {
+    // MockLanguageModelV3 default modelId is 'mock-model-id'; allow that.
+    const model = mockModel('saw the image')
+    const backend = createVercelAiBackend({
+      model,
+      visionModels: ['mock-model-id'],
+    })
+    const result = await backend.run?.({ prompt: imageMsg.content }, makeCtx())
+    expect(result?.text).toBe('saw the image')
+  })
+
+  it('passes when the provider:modelId form is in visionModels', async () => {
+    // MockLanguageModelV3 exposes `provider: 'mock-provider'` and
+    // `modelId: 'mock-model-id'`; allowlist with the qualified form must
+    // match (disambiguates models that exist under multiple providers).
+    const model = mockModel('saw the image via provider:id')
+    const backend = createVercelAiBackend({
+      model,
+      visionModels: ['mock-provider:mock-model-id'],
+    })
+    const result = await backend.run?.({ prompt: imageMsg.content }, makeCtx())
+    expect(result?.text).toBe('saw the image via provider:id')
+  })
+
+  it('error message uses provider:modelId form when provider is available', async () => {
+    const model = mockModel('hallucinated')
+    const backend = createVercelAiBackend({
+      model,
+      visionModels: ['only-vision-model'],
+    })
+    await expect(backend.run?.({ prompt: imageMsg.content }, makeCtx())).rejects.toThrow(
+      /mock-provider:mock-model-id/,
+    )
+  })
+
+  it('is a no-op when visionModels is unset (preserves prior behavior)', async () => {
+    const model = mockModel('legacy path')
+    const backend = createVercelAiBackend({ model })
+    const result = await backend.run?.({ prompt: imageMsg.content }, makeCtx())
+    expect(result?.text).toBe('legacy path')
+  })
+
+  it('does not reject text-only prompts even when allowlist is set', async () => {
+    const model = mockModel('plain text')
+    const backend = createVercelAiBackend({
+      model,
+      visionModels: ['only-this-one'],
+    })
+    const result = await backend.run?.({ prompt: 'hi' }, makeCtx())
+    expect(result?.text).toBe('plain text')
+  })
+})

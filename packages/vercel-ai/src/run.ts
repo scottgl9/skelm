@@ -6,6 +6,7 @@ import { mapMessages, mapUsage } from './infer.js'
 import { applyPolicyToTools, assertEgressEnforceable } from './permissions.js'
 import { buildSystemContent, loadSkillBodies } from './skill-injection.js'
 import type { VercelAiBackendOptions } from './types.js'
+import { assertModelSupportsImages } from './vision-gate.js'
 
 export async function vercelAiRun(
   options: VercelAiBackendOptions,
@@ -17,6 +18,15 @@ export async function vercelAiRun(
   // HTTP_PROXY env vars from the gateway egress proxy. Fail-closed instead
   // of pretending to enforce networkEgress.
   assertEgressEnforceable(policy)
+  // Per-model vision check (F123 / #177): when the backend declares a
+  // visionModels allowlist, fail loudly *before* dispatch instead of letting
+  // the upstream silently strip images and hallucinate.
+  assertModelSupportsImages({
+    backendId: 'vercel-ai',
+    model: options.model,
+    visionModels: options.visionModels,
+    prompt: request.prompt,
+  })
   const tools = applyPolicyToTools(options.tools, policy)
 
   const skillBodies = await loadSkillBodies(request, context)
