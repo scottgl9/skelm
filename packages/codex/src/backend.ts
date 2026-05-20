@@ -228,6 +228,12 @@ function buildCodexMultimodalInput(
   imageRoots.push(tmp)
   const parts: Array<{ type: 'text'; text: string } | { type: 'local_image'; path: string }> = []
   let imgIdx = 0
+  // Seed the text buffer with the system prompt block so it always lands as
+  // the FIRST text part — even when the prompt is `[image, text, ...]` and we
+  // would otherwise flush a `local_image` before seeing any user text.
+  // Mirrors the pure-text fallback `"<system>\n\n---\n\n<text>"` higher up,
+  // so callers see consistent ordering regardless of which path the request
+  // takes.
   let textBuf = systemPrompt !== undefined ? `${systemPrompt}\n\n---\n\n` : ''
   if (typeof prompt === 'string') {
     parts.push({ type: 'text', text: `${textBuf}${prompt}` })
