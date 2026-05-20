@@ -193,6 +193,14 @@ export interface Context<TInput = unknown> {
    * iteration context derived from a non-code step).
    */
   readonly exec?: ExecFn
+  /**
+   * Persist binary artifacts (screenshots, evidence, etc.) on the run store.
+   * Each put automatically attaches the current `runId` and `stepId`. Calls
+   * publish a `tool.result` event for audit. Available when the runner was
+   * given an `artifacts`-capable store (the default `MemoryRunStore` /
+   * `SqliteRunStore`).
+   */
+  readonly artifacts?: import('./run-store.js').ArtifactStoreHandle
 }
 
 /** Execution request accepted by `ctx.exec`. */
