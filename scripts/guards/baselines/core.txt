@@ -4,6 +4,7 @@ value:AgentDefinitionError
 value:AgentProviderBase
 value:AgentRegistry
 value:ApprovalDeniedError
+value:ArtifactQuotaExceededError
 value:AutoApproveGate
 value:AutoDenyGate
 value:BackendCapabilityError
@@ -13,6 +14,7 @@ value:BackendRegistry
 value:BackendUnavailableError
 value:CronTrigger
 value:CustomTrigger
+value:DEFAULT_ARTIFACT_QUOTA_BYTES
 value:DEFAULT_CONFIG
 value:DiscordTrigger
 value:EnvSecretResolver
@@ -144,6 +146,9 @@ type:ApprovalDecision
 type:ApprovalGate
 type:ApprovalPolicy
 type:ApprovalRequest
+type:ArtifactDescriptor
+type:ArtifactRef
+type:ArtifactStore
 type:AuditEntry
 type:AuditEvent
 type:AuditWriter

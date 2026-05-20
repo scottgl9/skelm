@@ -211,8 +211,16 @@ export type {
   AgentToolCall,
   AgentToolResult,
 } from './agent-provider.js'
-export { MemoryRunStore, SqliteRunStore } from './run-store.js'
+export {
+  ArtifactQuotaExceededError,
+  DEFAULT_ARTIFACT_QUOTA_BYTES,
+  MemoryRunStore,
+  SqliteRunStore,
+} from './run-store.js'
 export type {
+  ArtifactDescriptor,
+  ArtifactRef,
+  ArtifactStore,
   AuditEntry,
   ExecutionStore,
   RunFilter,
