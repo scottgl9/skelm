@@ -49,6 +49,16 @@ function lastConstructorArgs() {
   return (PiSdkClient as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0]
 }
 
+// Restore an env var to its captured prior state without leaving the literal
+// string "undefined" behind (which `process.env.X = undefined` would do).
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    Reflect.deleteProperty(process.env, name)
+  } else {
+    process.env[name] = value
+  }
+}
+
 describe('createPiSdkBackend', () => {
   beforeEach(() => vi.clearAllMocks())
 
@@ -210,6 +220,85 @@ describe('createPiSdkBackend', () => {
   it('forwards noExtensions: false when explicitly opted in', async () => {
     await createPiSdkBackend({ noExtensions: false }).run?.({ prompt: 'go' }, makeCtx())
     expect(lastConstructorArgs()?.noExtensions).toBe(false)
+  })
+
+  it('forwards providerOverride built from explicit options (F119)', async () => {
+    await createPiSdkBackend({
+      provider: 'openai',
+      model: 'qwen36',
+      baseUrl: 'http://localhost:8000/v1',
+      apiKey: 'unused',
+    }).run?.({ prompt: 'go' }, makeCtx())
+    expect(lastConstructorArgs()?.providerOverride).toEqual({
+      provider: 'openai',
+      model: 'qwen36',
+      baseUrl: 'http://localhost:8000/v1',
+      apiKey: 'unused',
+      contextWindow: 131_072,
+      maxTokens: 4096,
+    })
+  })
+
+  it('passes explicit contextWindow / maxTokens through to providerOverride', async () => {
+    await createPiSdkBackend({
+      provider: 'openai',
+      model: 'qwen-4k',
+      contextWindow: 4096,
+      maxTokens: 1024,
+    }).run?.({ prompt: 'go' }, makeCtx())
+    expect(lastConstructorArgs()?.providerOverride).toEqual({
+      provider: 'openai',
+      model: 'qwen-4k',
+      contextWindow: 4096,
+      maxTokens: 1024,
+    })
+  })
+
+  it('forwards providerOverride built from OPENAI_* env vars (F119)', async () => {
+    const prev = {
+      base: process.env.OPENAI_BASE_URL,
+      key: process.env.OPENAI_API_KEY,
+      model: process.env.OPENAI_MODEL,
+    }
+    process.env.OPENAI_BASE_URL = 'http://192.168.1.113:8000/v1'
+    process.env.OPENAI_API_KEY = 'env-key'
+    process.env.OPENAI_MODEL = 'qwen35'
+    try {
+      await createPiSdkBackend().run?.({ prompt: 'go' }, makeCtx())
+      expect(lastConstructorArgs()?.providerOverride).toEqual({
+        provider: 'openai',
+        model: 'qwen35',
+        baseUrl: 'http://192.168.1.113:8000/v1',
+        apiKey: 'env-key',
+        contextWindow: 131_072,
+        maxTokens: 4096,
+      })
+    } finally {
+      restoreEnv('OPENAI_BASE_URL', prev.base)
+      restoreEnv('OPENAI_API_KEY', prev.key)
+      restoreEnv('OPENAI_MODEL', prev.model)
+    }
+  })
+
+  it('omits providerOverride when no env vars / options are set (preserves pi defaults)', async () => {
+    const prev = {
+      base: process.env.OPENAI_BASE_URL,
+      key: process.env.OPENAI_API_KEY,
+      model: process.env.OPENAI_MODEL,
+    }
+    // Reflect.deleteProperty avoids biome's lint/performance/noDelete on
+    // the `delete` operator; semantics are identical for env-var removal.
+    Reflect.deleteProperty(process.env, 'OPENAI_BASE_URL')
+    Reflect.deleteProperty(process.env, 'OPENAI_API_KEY')
+    Reflect.deleteProperty(process.env, 'OPENAI_MODEL')
+    try {
+      await createPiSdkBackend().run?.({ prompt: 'go' }, makeCtx())
+      expect(lastConstructorArgs()?.providerOverride).toBeUndefined()
+    } finally {
+      restoreEnv('OPENAI_BASE_URL', prev.base)
+      restoreEnv('OPENAI_API_KEY', prev.key)
+      restoreEnv('OPENAI_MODEL', prev.model)
+    }
   })
 
   // --- networkEgress fail-closed (pi-sdk is in-process; HTTP_PROXY is not honored) ---
