@@ -335,7 +335,10 @@ export interface AgentStep<TOutput = unknown> {
   readonly id: StepId
   readonly backend?: string | readonly string[]
   readonly agentDef?: string
-  readonly prompt: string | ((ctx: Context) => string)
+  readonly prompt:
+    | string
+    | readonly import('./backend.js').ContentPart[]
+    | ((ctx: Context) => string | readonly import('./backend.js').ContentPart[])
   readonly system?: string | ((ctx: Context) => string)
   /**
    * How `system` (and any AGENTS.md/SOUL.md) should compose with the backend's

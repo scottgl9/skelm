@@ -10,7 +10,7 @@
 import { type ChildProcess, spawn } from 'node:child_process' // @subprocess-ok: spawns opencode serve for HTTP backend
 import { createOpencodeClient } from '@opencode-ai/sdk'
 import type { AgentRequest, AgentResponse, McpServerConfig, ResolvedPolicy } from '@skelm/core'
-import { TrustEnforcer } from '@skelm/core'
+import { TrustEnforcer, extractPromptText } from '@skelm/core'
 import type { OpencodeBackendOptions } from './types.js'
 
 type SdkClient = ReturnType<typeof createOpencodeClient>
@@ -209,7 +209,7 @@ export class OpencodeClientWrapper {
       const promptResult = await this.client.session.promptAsync({
         path: { id: sessionId },
         body: {
-          parts: [{ type: 'text', text: request.prompt }],
+          parts: [{ type: 'text', text: extractPromptText(request.prompt) }],
           ...(request.system !== undefined && { system: request.system }),
           ...(resolvedPolicy !== undefined && {
             tools: buildOpencodeToolsFromPolicy(resolvedPolicy),

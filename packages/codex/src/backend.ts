@@ -1,4 +1,9 @@
-import { buildSystemPromptFromRequest, loadSkillBodies, resolvePermissions } from '@skelm/core'
+import {
+  buildSystemPromptFromRequest,
+  extractPromptText,
+  loadSkillBodies,
+  resolvePermissions,
+} from '@skelm/core'
 import type {
   AgentRequest,
   AgentResponse,
@@ -101,8 +106,12 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
       // Compose the system prompt via @skelm/core's shared builder so
       // systemPromptMode / systemPromptIncludeAgentDef take effect here.
       const systemPrompt = await composeSystemPrompt(request, context, options.model)
+      // Codex CLI accepts text only; image parts (if any) are dropped after
+      // the BackendCapabilityError guard at the agent-step handler. This path
+      // therefore only ever sees text content.
+      const promptText = extractPromptText(request.prompt)
       const userPrompt =
-        systemPrompt === undefined ? request.prompt : `${systemPrompt}\n\n---\n\n${request.prompt}`
+        systemPrompt === undefined ? promptText : `${systemPrompt}\n\n---\n\n${promptText}`
 
       // Build the thread (resume vs fresh) honoring per-step sandbox/approval.
       const threadOpts = buildThreadOptions(options, {

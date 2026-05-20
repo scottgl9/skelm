@@ -33,4 +33,15 @@ describe('agent() builder', () => {
     const step = agent({ id: 'x', prompt: '...', systemPromptMode: 'extend' })
     expect(step.systemPromptMode).toBe('extend')
   })
+
+  it('accepts a multimodal ContentPart[] prompt', () => {
+    const step = agent({
+      id: 'see',
+      prompt: [
+        { type: 'text', text: 'describe' },
+        { type: 'image', mimeType: 'image/png', data: 'AAAA' },
+      ],
+    })
+    expect(Array.isArray(step.prompt)).toBe(true)
+  })
 })
