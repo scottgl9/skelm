@@ -160,7 +160,10 @@ export function llm<TOutput>(def: {
   backend?: string | readonly string[]
   model?: string
   system?: string | ((ctx: Context) => string)
-  prompt: string | ((ctx: Context) => string)
+  prompt:
+    | string
+    | readonly import('./backend.js').ContentPart[]
+    | ((ctx: Context) => string | readonly import('./backend.js').ContentPart[])
   output?: SkelmSchema<TOutput>
   temperature?: number
   maxTokens?: number

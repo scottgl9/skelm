@@ -119,6 +119,70 @@ describe('llm() step', () => {
     expect(run.output).toEqual({ text: 'hello, world', usage: undefined })
   })
 
+  it('forwards image content parts to vision-capable backends', async () => {
+    const reg = new BackendRegistry()
+    const seen: unknown[] = []
+    reg.register(
+      fixtureBackend({
+        id: 'vision-ok',
+        capabilities: { vision: true },
+        respond: (req) => {
+          seen.push(req.messages[0]?.content)
+          return { text: 'described' }
+        },
+      }),
+    )
+
+    const wf = pipeline({
+      id: 'llm-image',
+      steps: [
+        llm({
+          id: 'describe',
+          backend: 'vision-ok',
+          prompt: [
+            { type: 'text', text: 'what is this?' },
+            { type: 'image', mimeType: 'image/png', data: 'AAAA' },
+          ],
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, undefined, { backends: reg })
+
+    expect(run.status).toBe('completed')
+    expect(seen).toHaveLength(1)
+    expect(Array.isArray(seen[0])).toBe(true)
+  })
+
+  it('rejects image prompts against non-vision backends with BackendCapabilityError', async () => {
+    const reg = new BackendRegistry()
+    reg.register(
+      fixtureBackend({
+        // capabilities.vision defaults to undefined / false
+        id: 'no-vision',
+        respond: () => ({ text: 'nope' }),
+      }),
+    )
+
+    const wf = pipeline({
+      id: 'llm-image-denied',
+      steps: [
+        llm({
+          id: 'describe',
+          backend: 'no-vision',
+          prompt: [
+            { type: 'text', text: 'what is this?' },
+            { type: 'image', mimeType: 'image/png', data: 'AAAA' },
+          ],
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, undefined, { backends: reg })
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('BackendCapabilityError')
+    expect(run.error?.message).toMatch(/does not support image content/)
+  })
+
   it('fails the run when the structured response does not match the output schema', async () => {
     const reg = new BackendRegistry()
     reg.register(

@@ -3,6 +3,7 @@ import {
   BackendCapabilityError,
   BackendNotFoundError,
   type BackendRegistry,
+  type ContentPart,
   type SkelmBackend,
 } from '../backend.js'
 import { type ApprovalGate, EnvSecretResolver } from '../enforcement/index.js'
@@ -269,10 +270,18 @@ async function runLlmStep(
   const secretsAccessor = createSecretsAccessor(resolvedSecrets)
   const stepCtx =
     secretsAccessor !== undefined ? freezeContext({ ...ctx, secrets: secretsAccessor }) : ctx
-  const promptText = resolveValueOrFn(step.prompt, stepCtx)
+  const promptValue = resolveValueOrFn(step.prompt, stepCtx)
   const systemText = step.system === undefined ? undefined : resolveValueOrFn(step.system, stepCtx)
+  const isMultimodalPrompt = Array.isArray(promptValue)
+  if (isMultimodalPrompt && backend.capabilities.vision !== true) {
+    throw new BackendCapabilityError(
+      `step "${step.id}": backend "${backend.id}" does not support image content (capabilities.vision is not true). Route image prompts to a vision-capable backend (e.g. anthropic, openai).`,
+      backend.id,
+      'vision' as keyof import('../backend.js').BackendCapabilities,
+    )
+  }
   const req = {
-    messages: [{ role: 'user' as const, content: promptText }],
+    messages: [{ role: 'user' as const, content: promptValue as string | readonly ContentPart[] }],
     ...(systemText !== undefined && { system: systemText }),
     ...(step.model !== undefined && { model: step.model }),
     ...(step.temperature !== undefined && { temperature: step.temperature }),
