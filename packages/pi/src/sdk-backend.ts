@@ -98,7 +98,61 @@ export class PiSdkBackendTimeoutError extends PiSdkBackendError {}
  * policy so pi itself enforces which tools the agent may use. This provides
  * native enforcement rather than the advisory enforcement of the RPC backend.
  */
+/**
+ * Resolve provider/model/baseUrl/apiKey from explicit options, falling back to
+ * OPENAI_* env vars when present. Returns `undefined` when there's nothing to
+ * override — preserving the prior behavior of deferring to
+ * `~/.pi/agent/models.json`. Per finding-119.
+ *
+ * Called once at `createPiSdkBackend()` time — env vars are snapshotted at
+ * backend construction. Mutating `OPENAI_BASE_URL` (or its siblings) after
+ * the backend exists has no effect on subsequent calls; construct a fresh
+ * backend if you need to switch endpoints at runtime. This matches how every
+ * other skelm backend reads env vars at construction.
+ */
+function resolveProviderOverride(options: PiSdkBackendOptions): ProviderOverride | undefined {
+  const provider = options.provider ?? process.env.OPENAI_PROVIDER
+  const model = options.model ?? process.env.OPENAI_MODEL
+  const baseUrl = options.baseUrl ?? process.env.OPENAI_BASE_URL
+  const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY
+  // Only override when the caller has actually said something — either an
+  // explicit option or a non-empty env var. A bare `provider`/`model` without
+  // any endpoint hint defaults to provider='openai' for parity with the rest
+  // of skelm's OpenAI-compatible backends.
+  if (
+    provider === undefined &&
+    model === undefined &&
+    baseUrl === undefined &&
+    apiKey === undefined
+  ) {
+    return undefined
+  }
+  if (model === undefined) {
+    // No model id at all → cannot register a model entry; let pi pick its
+    // built-in default. Pi's default is OpenAI cloud `gpt-5.4`.
+    return undefined
+  }
+  return {
+    provider: provider ?? 'openai',
+    model,
+    ...(baseUrl !== undefined && { baseUrl }),
+    ...(apiKey !== undefined && { apiKey }),
+    contextWindow: options.contextWindow ?? 131_072,
+    maxTokens: options.maxTokens ?? 4096,
+  }
+}
+
+interface ProviderOverride {
+  provider: string
+  model: string
+  baseUrl?: string
+  apiKey?: string
+  contextWindow: number
+  maxTokens: number
+}
+
 export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBackend {
+  const providerOverride = resolveProviderOverride(options)
   const capabilities: BackendCapabilities = {
     prompt: true,
     streaming: true,
@@ -141,6 +195,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
           ...(options.noExtensions !== undefined && { noExtensions: options.noExtensions }),
           ...(options.noSkills !== undefined && { noSkills: options.noSkills }),
           ...(options.noContextFiles !== undefined && { noContextFiles: options.noContextFiles }),
+          ...(providerOverride !== undefined && { providerOverride }),
           ...(request.system !== undefined && {
             system: request.system,
             replaceSystemPrompt: false,
@@ -198,6 +253,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
           ...(options.noExtensions !== undefined && { noExtensions: options.noExtensions }),
           ...(options.noSkills !== undefined && { noSkills: options.noSkills }),
           ...(options.noContextFiles !== undefined && { noContextFiles: options.noContextFiles }),
+          ...(providerOverride !== undefined && { providerOverride }),
           // System prompt: inject content and indicate whether to replace pi's base
           ...(systemContent !== undefined && {
             system: systemContent,
