@@ -82,6 +82,8 @@ export class Scheduler {
     this.stopCronTrigger(triggerId)
     this.stopIntervalTrigger(triggerId)
 
+    this.lastRun.delete(triggerId)
+    this.runningCount.delete(triggerId)
     this.triggers.delete(triggerId)
   }
 
