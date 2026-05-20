@@ -7,7 +7,12 @@
 // Pi does NOT speak ACP; this backend uses the native pi RPC protocol
 // documented in @mariozechner/pi-coding-agent/docs/rpc.md.
 
-import { PermissionDeniedError, createConcurrencySemaphore, loadSkillBodies } from '@skelm/core'
+import {
+  PermissionDeniedError,
+  createConcurrencySemaphore,
+  extractPromptText,
+  loadSkillBodies,
+} from '@skelm/core'
 import type {
   AgentPermissions,
   AgentRequest,
@@ -208,6 +213,6 @@ function buildPrompt(req: AgentRequest, skillBodies: string[] = []): string {
   if (req.system) systemParts.push(req.system)
   for (const body of skillBodies) systemParts.push(body)
   if (systemParts.length > 0) parts.push(`[System: ${systemParts.join('\n\n---\n\n')}]`)
-  parts.push(req.prompt)
+  parts.push(extractPromptText(req.prompt))
   return parts.join('\n\n')
 }

@@ -196,9 +196,16 @@ async function runAgentLoop(
       ...(mcpServerSummaries && { mcpServers: mcpServerSummaries }),
     })
 
+    const userPromptText =
+      typeof req.prompt === 'string'
+        ? req.prompt
+        : req.prompt
+            .filter((p) => p.type === 'text')
+            .map((p) => (p as { text: string }).text)
+            .join('')
     const messages: OpenAIMessage[] = [
       { role: 'system', content: systemContent },
-      { role: 'user', content: req.prompt },
+      { role: 'user', content: userPromptText },
     ]
 
     const maxTurns = req.maxTurns ?? 30

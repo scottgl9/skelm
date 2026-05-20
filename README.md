@@ -24,6 +24,7 @@ skelm is a TypeScript framework for authoring and running **workflows** — type
 - **TypeScript-native** — Real `.ts` modules, no DSL or JSON config
 - **Default-deny security** — Every permission must be explicitly declared
 - **Multi-backend agents** — First-party agent, Pi, Opencode (native or ACP), Codex, Vercel AI, ACP (Copilot, Claude Code, Gemini), Anthropic, OpenAI
+- **Multimodal prompts** — `llm()` and `agent()` accept image content parts; vision routed through vision-capable backends, denied at step start for the rest. Pair with `ctx.artifacts` to persist screenshots and other binary evidence on the run record
 - **MCP-native** — Model Context Protocol servers lifecycle-managed by the gateway
 - **Skill support** — Reusable `SKILL.md` capability bundles injected into agent system prompts; permission-gated via `allowedSkills`; auto-discovered from `skills/**/SKILL.md` by the gateway registry
 - **Scheduler-built-in** — Cron, intervals, webhooks, polling, queues, or long-running gateway service
@@ -108,6 +109,7 @@ See [Backend documentation](./docs/backends/README.md) for setup guides, and [Co
 - **HTTP webhooks** — Typed workflows triggered by external events
 - **Research agents** — Poll sources, store findings, resume after restart
 - **Compliance bots** — Watch S3 buckets, run checks, escalate to agents
+- **UI automation** — Vision LLM + screenshot artifacts; see the [foundations recipe](./docs/recipes/ui-automation-foundations.md)
 
 📁 See [`examples/`](./examples/) for runnable starting points.
 

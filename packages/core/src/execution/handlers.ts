@@ -374,7 +374,15 @@ async function runAgentStep(
       secretsAccessor !== undefined
         ? freezeContext({ ...workspaceCtx, secrets: secretsAccessor })
         : workspaceCtx
-    const resolvedPromptText = resolveValueOrFn(step.prompt, stepCtx)
+    const resolvedPromptValue = resolveValueOrFn(step.prompt, stepCtx)
+    const isMultimodalAgentPrompt = Array.isArray(resolvedPromptValue)
+    if (isMultimodalAgentPrompt && backend.capabilities.vision !== true) {
+      throw new BackendCapabilityError(
+        `step "${step.id}": backend "${backend.id}" does not support image content (capabilities.vision is not true). Route image prompts to a vision-capable backend.`,
+        backend.id,
+        'vision' as keyof import('../backend.js').BackendCapabilities,
+      )
+    }
     const resolvedSystemText =
       step.system === undefined ? undefined : resolveValueOrFn(step.system, stepCtx)
     const mcpServers = step.mcp === undefined ? undefined : resolveValueOrFn(step.mcp, stepCtx)
@@ -458,7 +466,7 @@ async function runAgentStep(
       }
     }
     const req: AgentRequest = {
-      prompt: resolvedPromptText,
+      prompt: resolvedPromptValue as string | readonly ContentPart[],
       ...(resolvedSystemText !== undefined && { system: resolvedSystemText }),
       ...(step.maxTurns !== undefined && { maxTurns: step.maxTurns }),
       ...(preparedWorkspace !== undefined && { cwd: preparedWorkspace.handle.path }),

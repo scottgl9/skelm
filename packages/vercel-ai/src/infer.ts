@@ -96,7 +96,7 @@ export async function vercelAiInfer(
   }
 }
 
-function mapMessages(messages: readonly PromptMessage[]): ModelMessage[] {
+export function mapMessages(messages: readonly PromptMessage[]): ModelMessage[] {
   return messages.map((m) => {
     switch (m.role) {
       case 'system':

@@ -126,8 +126,13 @@ export interface InferResponse {
 
 /** Request shape for `run()` — multi-turn agent loop. */
 export interface AgentRequest {
-  /** User prompt / task description. */
-  prompt: string
+  /**
+   * User prompt / task description. Backends that declare
+   * `capabilities.vision === true` accept multimodal `ContentPart[]`; other
+   * backends will reject image-bearing prompts at step start with
+   * `BackendCapabilityError`.
+   */
+  prompt: string | readonly ContentPart[]
   /** Optional system prompt. */
   system?: string
   /**

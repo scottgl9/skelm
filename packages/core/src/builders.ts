@@ -206,7 +206,10 @@ export function agent<TOutput>(def: {
   id: StepId
   backend?: string | readonly string[]
   agentDef?: string
-  prompt: string | ((ctx: Context) => string)
+  prompt:
+    | string
+    | readonly import('./backend.js').ContentPart[]
+    | ((ctx: Context) => string | readonly import('./backend.js').ContentPart[])
   system?: string | ((ctx: Context) => string)
   systemPromptMode?: 'extend' | 'replace'
   systemPromptIncludeAgentDef?: boolean

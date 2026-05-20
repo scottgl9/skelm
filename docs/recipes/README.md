@@ -12,6 +12,10 @@ Complete, runnable workflows for the patterns customers ship most often. Each re
 
 - **[HTTP enrichment](./http-enrichment.md)** — sync workflow called from existing infrastructure (queue worker, webhook). Deterministic normalization plus LLM classification, then posts to Slack. The simplest production-shaped pattern.
 
+## UI / vision
+
+- **[UI automation foundations](./ui-automation-foundations.md)** — multimodal prompts (screenshots in LLM calls) plus a binary artifact store on the run record. The two primitives a UI-test pipeline cannot build on its own.
+
 ## Observability
 
 - **[OpenTelemetry traces](./otel-exporter.md)** — wire `@skelm/otel` to any OTLP-compatible collector (Tempo, Jaeger, Honeycomb, Datadog). The adapter records spans; you bring the exporter.

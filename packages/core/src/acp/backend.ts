@@ -19,7 +19,7 @@ import type {
 } from '../backend.js'
 import type { ResolvedPolicy } from '../permissions.js'
 import { AcpClient } from './client.js'
-import type { McpServerSpec } from './protocol.js'
+import type { ContentBlock, McpServerSpec } from './protocol.js'
 
 export interface AcpBackendOptions {
   /** Backend id. Defaults to 'acp' when only one ACP backend is registered. */
@@ -62,6 +62,10 @@ export function createAcpBackend(opts: AcpBackendOptions): SkelmBackend {
     skills: false,
     modelSelection: opts.model !== undefined,
     toolPermissions: 'native',
+    // ACP defines image ContentBlock at the protocol layer; we pass image
+    // parts through as extra prompt blocks. Sub-agents that cannot actually
+    // process them will ignore or error themselves.
+    vision: true,
   }
 
   // Concurrency semaphore — limits simultaneous agent processes
@@ -117,7 +121,7 @@ export function createAcpBackend(opts: AcpBackendOptions): SkelmBackend {
         if (opts.model !== undefined) {
           await client.prompt({ text: `/model ${opts.model}` })
         }
-        const result = await client.prompt({ text: buildPrompt(req) })
+        const result = await client.prompt(buildPrompt(req))
         return {
           text: result.text,
           stopReason: result.stopReason,
@@ -150,9 +154,25 @@ function isNontrivialPolicy(p: ResolvedPolicy): boolean {
   return false
 }
 
-function buildPrompt(req: AgentRequest): string {
-  if (req.system === undefined) return req.prompt
-  return `${req.system}\n\n---\n\n${req.prompt}`
+function buildPrompt(req: AgentRequest): { text: string; extraBlocks?: ContentBlock[] } {
+  // Collapse multimodal prompts into a leading text block plus image blocks
+  // for the ACP protocol. Text-only callers stay on the fast path.
+  if (typeof req.prompt === 'string') {
+    const text = req.system === undefined ? req.prompt : `${req.system}\n\n---\n\n${req.prompt}`
+    return { text }
+  }
+  const textParts: string[] = []
+  const imageBlocks: ContentBlock[] = []
+  for (const part of req.prompt) {
+    if (part.type === 'text') {
+      textParts.push(part.text)
+    } else {
+      imageBlocks.push({ type: 'image', mimeType: part.mimeType, data: part.data })
+    }
+  }
+  const promptText = textParts.join('\n')
+  const text = req.system === undefined ? promptText : `${req.system}\n\n---\n\n${promptText}`
+  return imageBlocks.length > 0 ? { text, extraBlocks: imageBlocks } : { text }
 }
 
 function toAcpMcpServerSpec(server: McpServerConfig): McpServerSpec {
