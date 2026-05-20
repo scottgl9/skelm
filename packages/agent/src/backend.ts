@@ -29,11 +29,7 @@ import type {
 import type { ResolvedPolicy } from '@skelm/core/permissions'
 import { TrustEnforcer } from '@skelm/core/permissions'
 
-import {
-  type OpenAIContentPart,
-  type OpenAIMessage,
-  chatCompletion,
-} from './http-client.js'
+import { type OpenAIContentPart, type OpenAIMessage, chatCompletion } from './http-client.js'
 import { buildSystemPromptFromRequest, toUsage } from './prompt.js'
 import { BUILTIN_TOOLS, type ToolExecutionContext, type ToolResult, toOpenAITool } from './tools.js'
 

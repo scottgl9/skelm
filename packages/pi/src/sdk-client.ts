@@ -86,6 +86,7 @@ export class PiSdkClient {
     signal?: AbortSignal,
     timeoutMs?: number,
     onPartial?: (delta: string) => void,
+    images?: ReadonlyArray<{ mimeType: string; data: string }>,
   ): Promise<PiSdkResponse> {
     // Dynamic import keeps @mariozechner/pi-coding-agent optional at runtime
     const pi = await import('@mariozechner/pi-coding-agent').catch(() => {
@@ -124,7 +125,7 @@ export class PiSdkClient {
     })
 
     try {
-      return await this._run(session, text, signal, timeoutMs ?? 300_000, onPartial)
+      return await this._run(session, text, signal, timeoutMs ?? 300_000, onPartial, images)
     } finally {
       session.dispose()
     }
@@ -136,6 +137,7 @@ export class PiSdkClient {
     signal: AbortSignal | undefined,
     timeoutMs: number,
     onPartial?: (delta: string) => void,
+    images?: ReadonlyArray<{ mimeType: string; data: string }>,
   ): Promise<PiSdkResponse> {
     return new Promise<PiSdkResponse>((resolve, reject) => {
       let settled = false
@@ -258,7 +260,17 @@ export class PiSdkClient {
         }
       })
 
-      session.prompt(text).catch((err: unknown) => {
+      const promptOpts =
+        images !== undefined && images.length > 0
+          ? {
+              images: images.map((img) => ({
+                type: 'image' as const,
+                data: img.data,
+                mimeType: img.mimeType,
+              })),
+            }
+          : undefined
+      session.prompt(text, promptOpts).catch((err: unknown) => {
         unsub()
         settle(() => reject(err))
       })

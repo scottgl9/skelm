@@ -54,6 +54,14 @@ export interface CodexBackendOptions {
    * cancellation; this is a defensive ceiling. Default: 300_000 (5 min).
    */
   timeoutMs?: number
+  /**
+   * Advertise `capabilities.vision`. Defaults to `true`: image content is
+   * materialized to a temp file and forwarded as `{type:'local_image', path}`
+   * per the codex-sdk Input schema. Set `false` for codex configurations
+   * pinned to a known text-only model — the framework gate then rejects
+   * image prompts at step start with no codex turn ever started.
+   */
+  vision?: boolean
 }
 
 /**

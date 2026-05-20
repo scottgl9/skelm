@@ -40,6 +40,14 @@ export interface OpencodeBackendOptions {
 
   /** Log level */
   logLevel?: 'debug' | 'info' | 'warn' | 'error' | 'off'
+  /**
+   * Advertise `capabilities.vision`. Defaults to `true`: image content is
+   * forwarded to opencode as a `FilePartInput` and the upstream model
+   * decides whether it can process it. Set `false` when targeting an
+   * opencode model known to be text-only — the framework gate then rejects
+   * image prompts at step start with no opencode session ever spawned.
+   */
+  vision?: boolean
   /** Egress proxy URL for outbound HTTP requests (e.g., 'http://127.0.0.1:14739'). */
   egressProxyUrl?: string
   /** Egress token for proxy authentication (injected into subprocesses). */

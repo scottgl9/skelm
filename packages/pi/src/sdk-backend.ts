@@ -28,11 +28,38 @@ import type {
   AgentResponse,
   BackendCapabilities,
   BackendContext,
+  ContentPart,
   InferRequest,
   InferResponse,
   ResolvedPolicy,
   SkelmBackend,
 } from '@skelm/core'
+
+/**
+ * Extract image parts from a prompt for forwarding to pi's `session.prompt`
+ * via its `images` option. Pi's ImageContent (`{type:'image', data, mimeType}`)
+ * matches skelm's image ContentPart shape one-for-one.
+ */
+function extractPromptImages(
+  prompt: AgentRequest['prompt'] | InferRequest['messages'][number]['content'],
+): ReadonlyArray<{ mimeType: string; data: string }> {
+  if (typeof prompt === 'string' || prompt === undefined) return []
+  return (prompt as readonly ContentPart[])
+    .filter((p): p is Extract<ContentPart, { type: 'image' }> => p.type === 'image')
+    .map((p) => ({ mimeType: p.mimeType, data: p.data }))
+}
+
+function gatherImagesFromMessages(
+  messages: InferRequest['messages'],
+): ReadonlyArray<{ mimeType: string; data: string }> {
+  const out: Array<{ mimeType: string; data: string }> = []
+  for (const m of messages) {
+    if (m.role === 'user') {
+      for (const img of extractPromptImages(m.content)) out.push(img)
+    }
+  }
+  return out
+}
 import { PiSdkClient, PiSdkUpstreamError } from './sdk-client.js'
 import type { PiSdkBackendOptions } from './types.js'
 
@@ -68,6 +95,15 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
     skills: true,
     modelSelection: false,
     toolPermissions: 'native',
+    // Pi natively supports multimodal user-message content via its
+    // `session.prompt(text, { images })` knob; image parts are forwarded as
+    // pi-ai's ImageContent (same shape as skelm's). Whether the configured
+    // pi model can actually process images depends on `~/.pi/agent/models.json`
+    // (the `input` field on the Model entry); non-vision models surface their
+    // own error which the backend propagates. Set `vision: false` to flip on
+    // the framework's vision gate for deployments pinned to a text-only pi
+    // model.
+    vision: options.vision ?? true,
   }
 
   const { acquire, release } = createConcurrencySemaphore(options.maxConcurrent ?? 4)
@@ -99,11 +135,13 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
           }),
         })
 
+        const inferImages = gatherImagesFromMessages(request.messages)
         const result = await client.prompt(
           promptText,
           context.signal,
           options.timeout ?? 300_000,
           context.onPartial,
+          inferImages.length > 0 ? inferImages : undefined,
         )
 
         const response: InferResponse = {
@@ -155,11 +193,13 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
           }),
         })
 
+        const agentImages = extractPromptImages(request.prompt)
         const result = await client.prompt(
           extractPromptText(request.prompt),
           context.signal,
           options.timeout ?? 300_000,
           context.onPartial,
+          agentImages.length > 0 ? agentImages : undefined,
         )
 
         return {

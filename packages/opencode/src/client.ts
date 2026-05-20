@@ -9,8 +9,45 @@
 
 import { type ChildProcess, spawn } from 'node:child_process' // @subprocess-ok: spawns opencode serve for HTTP backend
 import { createOpencodeClient } from '@opencode-ai/sdk'
-import type { AgentRequest, AgentResponse, McpServerConfig, ResolvedPolicy } from '@skelm/core'
+import type {
+  AgentRequest,
+  AgentResponse,
+  ContentPart,
+  McpServerConfig,
+  ResolvedPolicy,
+} from '@skelm/core'
 import { TrustEnforcer, extractPromptText } from '@skelm/core'
+
+/**
+ * Map a skelm `AgentRequest.prompt` (string or `ContentPart[]`) onto
+ * opencode's prompt-parts shape. Text parts become `{type:'text'}`; image
+ * parts are forwarded as `{type:'file'}` with a base64 data URL, matching
+ * the opencode SDK's documented `FilePartInput` schema. opencode's own
+ * vision-capable models (Sonnet, GPT-4o, etc.) consume these attachments
+ * directly; non-vision models surface their own provider error which
+ * propagates as a thrown step failure.
+ */
+function buildOpencodePromptParts(
+  prompt: AgentRequest['prompt'],
+): Array<{ type: 'text'; text: string } | { type: 'file'; mime: string; url: string }> {
+  if (typeof prompt === 'string') {
+    return [{ type: 'text', text: prompt }]
+  }
+  const parts: Array<{ type: 'text'; text: string } | { type: 'file'; mime: string; url: string }> =
+    []
+  for (const part of prompt as readonly ContentPart[]) {
+    if (part.type === 'text') {
+      parts.push({ type: 'text', text: part.text })
+    } else if (part.type === 'image') {
+      parts.push({
+        type: 'file',
+        mime: part.mimeType,
+        url: `data:${part.mimeType};base64,${part.data}`,
+      })
+    }
+  }
+  return parts.length > 0 ? parts : [{ type: 'text', text: extractPromptText(prompt) }]
+}
 import type { OpencodeBackendOptions } from './types.js'
 
 type SdkClient = ReturnType<typeof createOpencodeClient>
@@ -209,7 +246,7 @@ export class OpencodeClientWrapper {
       const promptResult = await this.client.session.promptAsync({
         path: { id: sessionId },
         body: {
-          parts: [{ type: 'text', text: extractPromptText(request.prompt) }],
+          parts: buildOpencodePromptParts(request.prompt),
           ...(request.system !== undefined && { system: request.system }),
           ...(resolvedPolicy !== undefined && {
             tools: buildOpencodeToolsFromPolicy(resolvedPolicy),
