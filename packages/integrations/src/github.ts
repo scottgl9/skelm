@@ -254,11 +254,11 @@ export const GitHubIntegration = defineIntegration({
 
   credentialsSchema: githubCredentialsSchema,
 
-  async validateCredentials(creds) {
-    const { token } = creds
-    if (!token.startsWith('ghp_') && !token.startsWith('gho_') && !token.startsWith('github_')) {
-      console.warn('GitHub token does not match expected patterns (ghp_/gho_/github_)')
-    }
+  async validateCredentials(_creds) {
+    // Token-prefix sniffing produced false positives (fine-grained tokens,
+    // GitHub Apps, enterprise issuers all use shapes that do not match
+    // ghp_/gho_/github_). Validation now defers to performHealthCheck,
+    // which makes a real API call.
   },
 
   async performHealthCheck(creds) {
