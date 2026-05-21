@@ -110,11 +110,27 @@ export class PiSdkBackendTimeoutError extends PiSdkBackendError {}
  * backend if you need to switch endpoints at runtime. This matches how every
  * other skelm backend reads env vars at construction.
  */
+/**
+ * Placeholder forwarded to the underlying provider when the operator has
+ * pointed pi at a local OpenAI-compatible endpoint but supplied no real
+ * key (or the sentinel `'unused'`). `@earendil-works/pi-coding-agent`
+ * v0.75+ rejects `apiKey: undefined | '' | 'unused'` at provider-define
+ * time with `"apiKey" or "oauth" is required` — see finding-129. Local
+ * servers (llamacpp, sglang, vLLM, ollama) ignore the auth header, so
+ * we forward a non-empty placeholder when the caller's intent is "no
+ * authentication needed."
+ */
+const NO_AUTH_PLACEHOLDER = 'sk-no-key-required'
+
+function isMissingApiKey(apiKey: string | undefined): boolean {
+  return apiKey === undefined || apiKey === '' || apiKey === 'unused'
+}
+
 function resolveProviderOverride(options: PiSdkBackendOptions): ProviderOverride | undefined {
   const provider = options.provider ?? process.env.OPENAI_PROVIDER
   const model = options.model ?? process.env.OPENAI_MODEL
   const baseUrl = options.baseUrl ?? process.env.OPENAI_BASE_URL
-  const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY
+  const rawApiKey = options.apiKey ?? process.env.OPENAI_API_KEY
   // Only override when the caller has actually said something — either an
   // explicit option or a non-empty env var. A bare `provider`/`model` without
   // any endpoint hint defaults to provider='openai' for parity with the rest
@@ -123,7 +139,7 @@ function resolveProviderOverride(options: PiSdkBackendOptions): ProviderOverride
     provider === undefined &&
     model === undefined &&
     baseUrl === undefined &&
-    apiKey === undefined
+    rawApiKey === undefined
   ) {
     return undefined
   }
@@ -132,11 +148,15 @@ function resolveProviderOverride(options: PiSdkBackendOptions): ProviderOverride
     // built-in default. Pi's default is OpenAI cloud `gpt-5.4`.
     return undefined
   }
+  // Promote missing/sentinel apiKey to a placeholder when we're routing to
+  // a non-default endpoint — finding-129. Without this the provider library
+  // throws before we ever reach the wire.
+  const apiKey: string = isMissingApiKey(rawApiKey) ? NO_AUTH_PLACEHOLDER : (rawApiKey as string)
   return {
     provider: provider ?? 'openai',
     model,
     ...(baseUrl !== undefined && { baseUrl }),
-    ...(apiKey !== undefined && { apiKey }),
+    apiKey,
     contextWindow: options.contextWindow ?? 131_072,
     maxTokens: options.maxTokens ?? 4096,
   }
@@ -146,9 +166,30 @@ interface ProviderOverride {
   provider: string
   model: string
   baseUrl?: string
-  apiKey?: string
+  /** Always populated — promoted to `NO_AUTH_PLACEHOLDER` (finding-129) when the operator's intent was "no auth needed." */
+  apiKey: string
   contextWindow: number
   maxTokens: number
+}
+
+function assertProviderConfigured(
+  providerOverride: ProviderOverride | undefined,
+  action: 'inference' | 'agent execution',
+): asserts providerOverride is ProviderOverride {
+  if (providerOverride === undefined) {
+    // Finding-131: refuse to dispatch when no provider/model/baseUrl/apiKey
+    // is configured. Without this, pi-coding-agent falls back to its
+    // built-in default (OpenAI cloud) and any request silently traverses
+    // an undeclared upstream — a security concern (prompts /
+    // tool-arguments / file content sent off-host without consent). The
+    // word "AuthenticationError" appears in the message so external
+    // harnesses that pattern-match on auth failure shapes still recognise
+    // it. To intentionally rely on ~/.pi/agent/models.json, pass an
+    // explicit `provider` + `model` to `createPiSdkBackend`.
+    throw new PiSdkBackendAuthenticationError(
+      `pi-sdk ${action} refused: no provider/model/baseUrl/apiKey configured. Set OPENAI_BASE_URL / OPENAI_API_KEY / OPENAI_MODEL, or pass {baseUrl, apiKey, model} to createPiSdkBackend(). (AuthenticationError)`,
+    )
+  }
 }
 
 export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBackend {
@@ -183,6 +224,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
       // Fail-closed before acquiring the concurrency slot — see comment on
       // assertEgressEnforceable.
       assertEgressEnforceable(context.permissions)
+      assertProviderConfigured(providerOverride, 'inference')
       await acquire()
       try {
         const cwd = options.cwd
@@ -237,6 +279,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
       // Fail-closed before acquiring the concurrency slot — see comment on
       // assertEgressEnforceable.
       assertEgressEnforceable(policy)
+      assertProviderConfigured(providerOverride, 'agent execution')
       await acquire()
 
       try {

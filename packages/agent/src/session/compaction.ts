@@ -102,7 +102,11 @@ export interface FindCutPointOptions {
  * `'system'`, that leading system message is treated as fixed prefix — it
  * never participates in the summarized range, and the keepRecent budget is
  * computed against the remaining tail. `compact()` honors the same rule
- * and emits `[messages[0], summary, ...suffix]`.
+ * and emits a single merged `system` message at the head — the preserved
+ * head's content is concatenated into the summary message so the output
+ * always carries at most one `system` role at index 0. (Two consecutive
+ * `system` messages are rejected by strict OpenAI-compatible templates
+ * such as qwen35/qwen36 via llamacpp — see finding-128.)
  *
  * Examples (with keepRecent=2):
  *  - [user, assistant, user, assistant] → 2 (keep last two)
@@ -164,16 +168,27 @@ export async function compact(
     return { messages: [...messages], collapsedCount: 0, estimatedTokenSavings: 0 }
   }
 
-  const beforeTokens = estimateMessagesTokens(prefix)
+  const beforeTokens = estimateMessagesTokens([...preservedHead, ...prefix])
   const summary = await opts.summarize(prefix)
-  const summaryMsg: SessionMessage = {
-    role: 'system',
-    content: `Earlier conversation summary:\n${summary}`,
-  }
+  // Merge the preserved system message (if any) into the summary message so
+  // the output never carries two consecutive `system` roles. Strict OpenAI
+  // templates (qwen35/qwen36 via llamacpp) reject back-to-back system turns
+  // — see finding-128.
+  const preservedContent = preservedHead[0]?.content
+  const summaryMsg: SessionMessage =
+    preservedContent !== undefined
+      ? {
+          role: 'system',
+          content: `${preservedContent}\n\nEarlier conversation summary:\n${summary}`,
+        }
+      : {
+          role: 'system',
+          content: `Earlier conversation summary:\n${summary}`,
+        }
   const afterTokens = estimateMessagesTokens([summaryMsg])
 
   return {
-    messages: [...preservedHead, summaryMsg, ...suffix],
+    messages: [summaryMsg, ...suffix],
     collapsedCount: prefix.length,
     estimatedTokenSavings: beforeTokens - afterTokens,
   }
