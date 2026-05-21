@@ -24,6 +24,7 @@ import {
 import { applyAgentDefinitions } from './agent-defs.js'
 import { applyConfiguredBackends, buildBackendRegistry } from './backends.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
+import { safeForTty } from './internal/safe-text.js'
 import { loadSkelmConfig } from './load-config.js'
 import { CliError, loadWorkflowFromFile } from './load-workflow.js'
 import { closeRunStore, createRunStore, createWorkspaceManager } from './store.js'
@@ -167,7 +168,9 @@ export async function runCommand(
   }
 
   if (eventMode === 'human') {
-    io.stderr.write(`> failed (runId=${run.runId}): ${run.error?.message ?? 'unknown'}\n`)
+    io.stderr.write(
+      `> failed (runId=${run.runId}): ${safeForTty(run.error?.message ?? 'unknown')}\n`,
+    )
   }
   return { exitCode: mapRunErrorToExit(run.error?.name), run }
 }
@@ -191,10 +194,10 @@ function createRunEventBus(
           io.stderr.write(`> running ${workflowId}\n`)
           break
         case 'step.start':
-          io.stderr.write(`  - ${event.stepId} (${event.kind})\n`)
+          io.stderr.write(`  - ${safeForTty(event.stepId)} (${event.kind})\n`)
           break
         case 'step.error':
-          io.stderr.write(`  ! ${event.stepId}: ${event.error.message}\n`)
+          io.stderr.write(`  ! ${safeForTty(event.stepId)}: ${safeForTty(event.error.message)}\n`)
           break
         default:
           break
