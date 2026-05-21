@@ -427,7 +427,7 @@ export class TriggerCoordinator {
           if (q.length >= cap) {
             reg.dropped += 1
             this.opts.onQueueDrop?.(id, q.length)
-            return
+            return 'skipped'
           }
           q.push(ctx)
           this.queues.set(id, q)

@@ -118,59 +118,46 @@ describe('Property: Event Ordering', () => {
     }
   })
 
-  it.skip('emits waiting/resumed events in correct order', async () => {
-    // Skipping this test - Runner API async handling is complex
-    // The wait/resumed event ordering is validated in integration tests
-    const runner = new Runner()
+  it('emits waiting/resumed events in correct order', async () => {
+    // Runner takes the bus at construction time — RunOptions.events is
+    // intentionally omitted from start() so all runs on one Runner share
+    // a single bus (see runner.ts:309).
     const bus = new EventBus()
+    const runner = new Runner({ events: bus })
     const events = collectEvents(bus, 'wait-event-order')
     const wf = pipeline({
       id: 'event-order-wait',
       steps: [
-        wait({ id: 'gate', output: z.object({ approved: z.boolean() }), timeoutMs: 10000 }),
+        wait({ id: 'gate', output: z.object({ approved: z.boolean() }), timeoutMs: 10_000 }),
         code({ id: 'after', run: () => ({ done: true }) }),
       ],
     })
 
     const runId = 'wait-event-order'
-    const handle = runner.start(wf, undefined, { runId, events: bus })
+    const handle = runner.start(wf, undefined, { runId })
 
-    // Wait for waiting event (with timeout)
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(
-        () => reject(new Error('Timeout waiting for run.waiting event')),
-        2000,
-      )
-      const unsub = bus.subscribe((e) => {
-        if (e.runId === runId && e.type === 'run.waiting') {
-          clearTimeout(timeout)
-          unsub()
-          resolve()
-        }
-      })
-    })
+    // Poll the already-collected events array instead of subscribing
+    // a fresh listener after start — the listener could be registered
+    // after the waiting event has already fired.
+    const deadline = Date.now() + 2_000
+    while (!events.some((e) => e.type === 'run.waiting')) {
+      if (Date.now() > deadline) throw new Error('Timeout waiting for run.waiting event')
+      await new Promise((r) => setTimeout(r, 10))
+    }
 
-    // Resume
     await runner.resume(handle.runId, { approved: true })
     const run = await handle.wait()
+    expect(run.status).toBe('completed')
 
-    const types = events.map((e) => e.type)
-
-    const waitingIdx = types.indexOf('run.waiting')
-    const resumedIdx = types.indexOf('run.resumed')
-    const afterStepIdx = types.findIndex(
-      (t) => t.startsWith('step.complete') && t.includes('after'),
+    const waitingIdx = events.findIndex((e) => e.type === 'run.waiting')
+    const resumedIdx = events.findIndex((e) => e.type === 'run.resumed')
+    const afterStepIdx = events.findIndex(
+      (e) => e.type === 'step.complete' && 'stepId' in e && e.stepId === 'after',
     )
 
     expect(waitingIdx).toBeGreaterThanOrEqual(0)
-    expect(resumedIdx).toBeGreaterThanOrEqual(0)
-    expect(afterStepIdx).toBeGreaterThanOrEqual(0)
-    if (waitingIdx >= 0 && resumedIdx >= 0) {
-      expect(waitingIdx).toBeLessThan(resumedIdx)
-    }
-    if (resumedIdx >= 0 && afterStepIdx >= 0) {
-      expect(resumedIdx).toBeLessThan(afterStepIdx)
-    }
+    expect(resumedIdx).toBeGreaterThan(waitingIdx)
+    expect(afterStepIdx).toBeGreaterThan(resumedIdx)
   })
 
   it('preserves event order across nested pipelines', async () => {
