@@ -105,6 +105,54 @@ describe('ChainAuditWriter: adversarial integrity', () => {
     expect(breach?.seq).toBe(2)
   })
 
+  it('serializes concurrent writes so the resulting chain verifies', async () => {
+    const path = join(dir, 'concurrent.jsonl')
+    const w = new ChainAuditWriter(path)
+    const N = 50
+    await Promise.all(
+      Array.from({ length: N }, (_, i) =>
+        w.write({ actor: 'gateway', action: `act-${i}`, details: { i } }),
+      ),
+    )
+    const breach = await new ChainAuditWriter(path).verify()
+    expect(breach).toBeNull()
+    const all = await w.readAll()
+    expect(all).toHaveLength(N)
+    expect(all.map((e) => e.seq)).toEqual(Array.from({ length: N }, (_, i) => i + 1))
+  })
+
+  it('leaves in-memory state intact when appendFile fails, so retry yields a valid chain', async () => {
+    const path = join(dir, 'retry.jsonl')
+    const w = new ChainAuditWriter(path)
+    await w.write({ actor: 'gateway', action: 'first' })
+    // Force the next append to fail by making the file unwritable.
+    const fhOpen = fs.open
+    let failed = false
+    ;(fs as unknown as { open: typeof fs.open }).open = async (
+      ...args: Parameters<typeof fs.open>
+    ) => {
+      if (!failed) {
+        failed = true
+        throw Object.assign(new Error('synthetic ENOSPC'), { code: 'ENOSPC' })
+      }
+      return fhOpen(...args)
+    }
+    try {
+      await expect(w.write({ actor: 'gateway', action: 'will-fail' })).rejects.toThrow(
+        /synthetic ENOSPC/,
+      )
+    } finally {
+      ;(fs as unknown as { open: typeof fs.open }).open = fhOpen
+    }
+    // Retry must succeed and produce a chain that verifies.
+    await w.write({ actor: 'gateway', action: 'retry' })
+    const breach = await new ChainAuditWriter(path).verify()
+    expect(breach).toBeNull()
+    const all = await w.readAll()
+    expect(all.map((e) => e.action)).toEqual(['first', 'retry'])
+    expect(all.map((e) => e.seq)).toEqual([1, 2])
+  })
+
   it('detects mid-chain forgery even when an attacker recomputes the entryHash for that one entry', async () => {
     // Without access to a writer's secret, an attacker can recompute the
     // entryHash for the entry they tampered, but the *next* entry still has
