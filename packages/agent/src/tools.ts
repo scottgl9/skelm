@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process'
 import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, resolve } from 'node:path'
 
+import { PermissionDeniedError } from '@skelm/core'
 import type { PermissionDimension } from '@skelm/core/permissions'
 import type { TrustEnforcer } from '@skelm/core/permissions'
 import type { Skill } from '@skelm/core/skills'
@@ -63,7 +64,7 @@ function normalizePath(input: string, ctx: ToolExecutionContext): string {
     const root = raw.endsWith('/') ? raw.slice(0, -1) : raw
     if (resolved === root || resolved.startsWith(`${root}/`)) return resolved
   }
-  throw new Error(
+  throw new PermissionDeniedError(
     `Path escape: ${resolved} is outside workspace (${ctx.cwd}), agentDefRoot (${ctx.agentDefRoot}), and any granted fsRead/fsWrite root`,
   )
 }

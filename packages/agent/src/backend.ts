@@ -14,7 +14,14 @@
  *   dispatching tool calls; no external sandbox required.
  */
 
-import { LLMTruncatedError, type McpHost, createMcpHost } from '@skelm/core'
+import {
+  AgentMaxTurnsError,
+  BackendConfigError,
+  BackendUpstreamError,
+  LLMTruncatedError,
+  type McpHost,
+  createMcpHost,
+} from '@skelm/core'
 import type {
   AgentRequest,
   AgentResponse,
@@ -107,22 +114,26 @@ function resolveCallModel(
         if (hit !== undefined) return { kind: 'registry', resolved: hit }
       }
       if (fallback === undefined) {
-        throw new Error(
+        throw new BackendConfigError(
           `model '${requestedModelId}' not found in registry and no defaultModel configured`,
         )
       }
     }
     if (fallback === undefined) {
-      throw new Error('SkelmAgentOptions.registry set without defaultModel')
+      throw new BackendConfigError('SkelmAgentOptions.registry set without defaultModel')
     }
     const hit = reg.find(fallback.provider, fallback.id)
     if (hit === undefined) {
-      throw new Error(`defaultModel ${fallback.provider}/${fallback.id} not found in registry`)
+      throw new BackendConfigError(
+        `defaultModel ${fallback.provider}/${fallback.id} not found in registry`,
+      )
     }
     return { kind: 'registry', resolved: hit }
   }
   if (opts.baseUrl === undefined) {
-    throw new Error('SkelmAgentOptions requires either `baseUrl` or `registry` + `defaultModel`')
+    throw new BackendConfigError(
+      'SkelmAgentOptions requires either `baseUrl` or `registry` + `defaultModel`',
+    )
   }
   return {
     kind: 'single',
@@ -336,7 +347,7 @@ async function runAgentLoop(
 
       const choice = response.choices?.[0]
       if (!choice?.message) {
-        throw new Error('LLM returned empty response')
+        throw new BackendUpstreamError('LLM returned empty response')
       }
 
       const toolCalls = choice.message.tool_calls
@@ -402,7 +413,7 @@ async function runAgentLoop(
       }
     }
 
-    throw new Error(`Agent exceeded max turns (${maxTurns})`)
+    throw new AgentMaxTurnsError(maxTurns)
   } finally {
     if (ownMcpHost !== undefined) await ownMcpHost.dispose()
   }
@@ -493,7 +504,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
           )
         }
         if (!choice) {
-          throw new Error('LLM returned empty response')
+          throw new BackendUpstreamError('LLM returned empty response')
         }
       }
 
