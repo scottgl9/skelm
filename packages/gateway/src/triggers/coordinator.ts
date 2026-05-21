@@ -18,7 +18,20 @@ export interface TriggerCoordinatorOptions {
   defaultOverlap?: OverlapPolicy
   /** Optional dedupe store backing webhook idempotency. Defaults to InMemoryDedupeStore. */
   webhookDedupe?: DedupeStore
+  /**
+   * Default cap on queued fires per trigger when `overlap: 'queue'`. Defaults
+   * to 1000. Prevents a chatty source plus a slow pipeline from OOMing the
+   * gateway. Override per-trigger via `register()` options.
+   */
+  defaultMaxQueueDepth?: number
+  /**
+   * Invoked when a fire is dropped because a trigger's queue is full. Default
+   * is a no-op; the gateway wires this to a metric / audit writer.
+   */
+  onQueueDrop?: (triggerId: string, queueDepth: number) => void
 }
+
+const DEFAULT_MAX_QUEUE_DEPTH = 1000
 
 /**
  * Source function for poll triggers. Returns the latest payload (any value)
@@ -140,7 +153,7 @@ export class TriggerCoordinator {
   register(
     spec: TriggerSpec,
     overlap?: OverlapPolicy,
-    options: { input?: unknown; declared?: boolean } = {},
+    options: { input?: unknown; declared?: boolean; maxQueueDepth?: number } = {},
   ): TriggerRegistration {
     const reg: TriggerRegistration = {
       spec,
@@ -148,7 +161,9 @@ export class TriggerCoordinator {
       ...(options.input !== undefined && { input: options.input }),
       fired: 0,
       inflight: false,
+      dropped: 0,
       ...(options.declared === true && { declared: true }),
+      ...(options.maxQueueDepth !== undefined && { maxQueueDepth: options.maxQueueDepth }),
     }
     this.registrations.set(spec.id, reg)
     switch (spec.kind) {
@@ -395,6 +410,12 @@ export class TriggerCoordinator {
           return 'skipped'
         case 'queue': {
           const q = this.queues.get(id) ?? []
+          const cap = reg.maxQueueDepth ?? this.opts.defaultMaxQueueDepth ?? DEFAULT_MAX_QUEUE_DEPTH
+          if (q.length >= cap) {
+            reg.dropped += 1
+            this.opts.onQueueDrop?.(id, q.length)
+            return
+          }
           q.push(ctx)
           this.queues.set(id, q)
           return 'queued'

@@ -90,6 +90,69 @@ describe('TriggerCoordinator', () => {
     await c.stop()
   })
 
+  it("'queue' overlap drops fires past maxQueueDepth and counts them", async () => {
+    let resolveBlock: (() => void) | null = null
+    const block = new Promise<void>((r) => {
+      resolveBlock = r
+    })
+    const drops: Array<{ id: string; depth: number }> = []
+    let fires = 0
+    const c = new TriggerCoordinator({
+      defaultOverlap: 'queue',
+      defaultMaxQueueDepth: 3,
+      onQueueDrop: (id, depth) => drops.push({ id, depth }),
+      onFire: async () => {
+        fires++
+        if (fires === 1) await block
+      },
+    })
+    c.register({ kind: 'manual', id: 't', workflowId: 'wf' })
+    const first = c.fire('t')
+    await new Promise((r) => setTimeout(r, 5))
+    // Queue up to the cap, then attempt 2 more that must be dropped.
+    await c.fire('t')
+    await c.fire('t')
+    await c.fire('t')
+    await c.fire('t')
+    await c.fire('t')
+    const reg = c.get('t')
+    expect(reg?.dropped).toBe(2)
+    expect(drops).toHaveLength(2)
+    expect(drops[0]?.id).toBe('t')
+    resolveBlock?.()
+    await first
+    // Drain the queued runs.
+    await new Promise((r) => setTimeout(r, 20))
+    // 1 inflight + 3 queued accepted = 4; 2 dropped.
+    expect(fires).toBe(4)
+    await c.stop()
+  })
+
+  it("'queue' overlap respects a per-trigger maxQueueDepth override", async () => {
+    let resolveBlock: (() => void) | null = null
+    const block = new Promise<void>((r) => {
+      resolveBlock = r
+    })
+    const c = new TriggerCoordinator({
+      defaultOverlap: 'queue',
+      defaultMaxQueueDepth: 1000,
+      onFire: async () => {
+        await block
+      },
+    })
+    c.register({ kind: 'manual', id: 't', workflowId: 'wf' }, undefined, { maxQueueDepth: 1 })
+    const first = c.fire('t')
+    await new Promise((r) => setTimeout(r, 5))
+    await c.fire('t') // accepted (queue depth 1)
+    await c.fire('t') // dropped (over per-trigger cap)
+    await c.fire('t') // dropped
+    expect(c.get('t')?.dropped).toBe(2)
+    resolveBlock?.()
+    await first
+    await new Promise((r) => setTimeout(r, 10))
+    await c.stop()
+  })
+
   it('records onFire errors as lastError without throwing', async () => {
     const c = new TriggerCoordinator({
       onFire: async () => {
