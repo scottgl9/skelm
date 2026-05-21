@@ -298,7 +298,7 @@ function classifyPiSdkError(err: unknown, action: 'inference' | 'agent execution
   if (err instanceof Error) {
     if (err.message.includes('ENOENT') || err.message.includes('not installed')) {
       return new PiSdkBackendAuthenticationError(
-        'pi SDK not available. Install it: npm install @mariozechner/pi-coding-agent',
+        'pi SDK not available. Install it: npm install @earendil-works/pi-coding-agent',
         err,
       )
     }

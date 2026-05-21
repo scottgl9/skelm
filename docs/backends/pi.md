@@ -1,6 +1,6 @@
 # `@skelm/pi` backend
 
-Drives the [pi coding-agent](https://www.npmjs.com/package/@mariozechner/pi-coding-agent) under skelm's permission model.
+Drives the [pi coding-agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) under skelm's permission model.
 
 Two flavours are available:
 
@@ -16,13 +16,13 @@ The SDK backend also supports `llm()` steps — `prompt: true` in its capability
 ## Install
 
 ```bash
-npm install @skelm/pi @mariozechner/pi-coding-agent
+npm install @skelm/pi @earendil-works/pi-coding-agent
 ```
 
 The pi SDK is a peer dependency. The RPC backend instead requires the `pi` CLI on `$PATH`:
 
 ```bash
-npm install -g @mariozechner/pi-coding-agent
+npm install -g @earendil-works/pi-coding-agent
 ```
 
 ## Wiring into `skelm.config.ts`

@@ -1,6 +1,6 @@
 # @skelm/pi
 
-> Pi coding-agent backend for [skelm](https://github.com/scottgl9/skelm) — integrates [`@mariozechner/pi-coding-agent`](https://www.npmjs.com/package/@mariozechner/pi-coding-agent) with full permission enforcement.
+> Pi coding-agent backend for [skelm](https://github.com/scottgl9/skelm) — integrates [`@earendil-works/pi-coding-agent`](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) with full permission enforcement.
 
 [![npm](https://img.shields.io/npm/v/@skelm/pi)](https://www.npmjs.com/package/@skelm/pi)
 
@@ -10,10 +10,10 @@ Two backends are available:
 
 | | `createPiBackend` (RPC) | `createPiSdkBackend` (SDK) |
 |---|---|---|
-| **How it works** | Spawns `pi --mode rpc` per call | Uses `@mariozechner/pi-coding-agent` SDK directly |
+| **How it works** | Spawns `pi --mode rpc` per call | Uses `@earendil-works/pi-coding-agent` SDK directly |
 | **Tool enforcement** | Advisory (skelm intercepts after the fact) | Native (pi hard-enforces the allowlist) |
 | **System prompt** | Not controllable | Pi's default; `req.system` appended; optional full replace |
-| **Peer dependency** | `pi` CLI on `$PATH` | `@mariozechner/pi-coding-agent` installed |
+| **Peer dependency** | `pi` CLI on `$PATH` | `@earendil-works/pi-coding-agent` installed |
 
 Use the **SDK backend** for new work — it gives you hard tool enforcement and real system prompt control. The RPC backend exists for environments where the SDK peer dependency can't be installed.
 
@@ -26,13 +26,13 @@ npm install @skelm/pi
 **RPC backend** additionally requires the `pi` CLI on `$PATH`:
 
 ```bash
-npm install -g @mariozechner/pi-coding-agent   # installs the `pi` binary
+npm install -g @earendil-works/pi-coding-agent   # installs the `pi` binary
 ```
 
 **SDK backend** additionally requires the SDK as a peer dependency:
 
 ```bash
-npm install @mariozechner/pi-coding-agent
+npm install @earendil-works/pi-coding-agent
 ```
 
 ## SDK backend (recommended)

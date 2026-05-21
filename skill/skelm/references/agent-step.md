@@ -66,7 +66,7 @@ Two pi backends ship in `@skelm/pi`. Prefer the **SDK** backend — it gives you
 | Tool enforcement | Advisory | **Native** — pi hard-enforces the allowlist |
 | `llm()` support  | No                      | Yes                          |
 | System prompt    | Not controllable        | Pi's default; `req.system` appended; optional full replace |
-| Peer dep         | `pi` CLI on `$PATH`     | `@mariozechner/pi-coding-agent` npm package |
+| Peer dep         | `pi` CLI on `$PATH`     | `@earendil-works/pi-coding-agent` npm package |
 
 Wiring:
 

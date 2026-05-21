@@ -18,7 +18,7 @@ const mockSession = {
   dispose: vi.fn(),
 }
 
-vi.mock('@mariozechner/pi-coding-agent', () => ({
+vi.mock('@earendil-works/pi-coding-agent', () => ({
   createAgentSessionServices: vi.fn(async (opts: unknown) => {
     lastServicesOptions = opts
     return {

@@ -4,10 +4,10 @@ Picks up where the [Quickstart](./README.md) leaves off. You should already have
 
 ## 1. Install a backend
 
-Agents in skelm run on the [pi coding-agent SDK](https://www.npmjs.com/package/@mariozechner/pi-coding-agent). Install it and the `@skelm/pi` adapter:
+Agents in skelm run on the [pi coding-agent SDK](https://www.npmjs.com/package/@earendil-works/pi-coding-agent). Install it and the `@skelm/pi` adapter:
 
 ```sh
-npm install @mariozechner/pi-coding-agent @skelm/pi
+npm install @earendil-works/pi-coding-agent @skelm/pi
 ```
 
 Pi reads its provider/model from `~/.pi/auth.json` and `~/.pi/models.json` — see [pi's docs](https://github.com/mariozechner/pi) to point it at your model.

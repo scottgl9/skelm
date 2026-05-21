@@ -5,7 +5,7 @@
 // concurrency semaphore to avoid spawning unlimited processes.
 //
 // Pi does NOT speak ACP; this backend uses the native pi RPC protocol
-// documented in @mariozechner/pi-coding-agent/docs/rpc.md.
+// documented in @earendil-works/pi-coding-agent/docs/rpc.md.
 
 import {
   PermissionDeniedError,
@@ -143,7 +143,7 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
         if (err instanceof Error) {
           if (err.message.includes('ENOENT') || err.message.includes('EACCES')) {
             throw new PiBackendAuthenticationError(
-              'pi binary not found or not executable. Install it: npm install -g @mariozechner/pi-coding-agent',
+              'pi binary not found or not executable. Install it: npm install -g @earendil-works/pi-coding-agent',
               err,
             )
           }

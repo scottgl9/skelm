@@ -97,7 +97,7 @@ When `output` is supplied, the runtime requests structured output from the backe
 
 > **Default-deny:** every `AgentPermissions` field defaults to deny when omitted. An agent with no `permissions` block cannot call tools, read files, execute binaries, attach MCP servers, or make network requests.
 
-The recommended agent backend is `'pi'` (the [pi coding-agent SDK](https://www.npmjs.com/package/@mariozechner/pi-coding-agent), via `@skelm/pi` → `createPiSdkBackend`). The CLI's `pi` config key wires up the **RPC** backend; for the SDK backend, register an instance.
+The recommended agent backend is `'pi'` (the [pi coding-agent SDK](https://www.npmjs.com/package/@earendil-works/pi-coding-agent), via `@skelm/pi` → `createPiSdkBackend`). The CLI's `pi` config key wires up the **RPC** backend; for the SDK backend, register an instance.
 
 ```ts
 // skelm.config.ts

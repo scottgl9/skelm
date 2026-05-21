@@ -35,7 +35,7 @@ export class PiProvider extends ProviderPluginBase {
       id: 'pi',
       name: 'Pi Coding Agent',
       version: '1.0.0',
-      description: 'Pi coding agent provider (@mariozechner/pi-coding-agent)',
+      description: 'Pi coding agent provider (@earendil-works/pi-coding-agent)',
       logLevel: options?.logLevel ?? 'info',
     })
   }
@@ -82,7 +82,7 @@ export class PiProvider extends ProviderPluginBase {
       execSync(`${this._cmd} --version`, { stdio: 'ignore' })
     } catch {
       throw new Error(
-        `Pi binary not found: '${this._cmd}'. Install: npm install -g @mariozechner/pi-coding-agent`,
+        `Pi binary not found: '${this._cmd}'. Install: npm install -g @earendil-works/pi-coding-agent`,
       )
     }
   }
