@@ -181,6 +181,61 @@ describe('PiSdkClient — systemPromptOverride function', () => {
     await new PiSdkClient({ system: 'Replacement.', replaceSystemPrompt: true }).prompt('go')
     expect(getOverride()?.(undefined)).toBe('Replacement.')
   })
+
+  // Issue #193 — when image content is threaded but no user system override
+  // is set, append a vision-enable hint so pi's coding-agent prompt doesn't
+  // bias the model into refusing to look at the image.
+  const IMG = [{ mimeType: 'image/png', data: 'ZmFrZQ==' }]
+
+  it('appends a vision hint to pi base prompt when images are present and no user system is set (#193)', async () => {
+    emitAgentEnd('ok')
+    await new PiSdkClient().prompt('describe it', undefined, undefined, undefined, IMG)
+    const override = getOverride()
+    expect(override).toBeDefined()
+    const out = override?.('You are an expert coding assistant.') ?? ''
+    expect(out).toContain('You are an expert coding assistant.')
+    expect(out).toMatch(/vision capability/i)
+  })
+
+  it('returns only the vision hint when images present but base is undefined and no user system', async () => {
+    emitAgentEnd('ok')
+    await new PiSdkClient().prompt('describe it', undefined, undefined, undefined, IMG)
+    const out = getOverride()?.(undefined) ?? ''
+    expect(out).toMatch(/vision capability/i)
+    expect(out).not.toMatch(/^You are/)
+  })
+
+  it('composes base + user system + vision hint in order (images, replace:false)', async () => {
+    emitAgentEnd('ok')
+    await new PiSdkClient({ system: 'Be terse.' }).prompt(
+      'describe it',
+      undefined,
+      undefined,
+      undefined,
+      IMG,
+    )
+    const out = getOverride()?.('You are pi.') ?? ''
+    expect(out).toBe(
+      'You are pi.\n\nBe terse.\n\nThe user has attached one or more images to their message. You have vision capability — look at the image(s) and address what you see when answering.',
+    )
+  })
+
+  it('does not double-inject vision hint when caller fully replaces the system prompt', async () => {
+    emitAgentEnd('ok')
+    await new PiSdkClient({
+      system: 'You are an image describer.',
+      replaceSystemPrompt: true,
+    }).prompt('describe it', undefined, undefined, undefined, IMG)
+    const out = getOverride()?.('You are pi.') ?? ''
+    expect(out).toBe('You are an image describer.')
+    expect(out).not.toMatch(/vision capability/i)
+  })
+
+  it('does NOT install an override when there are no images and no user system', async () => {
+    emitAgentEnd('ok')
+    await new PiSdkClient().prompt('describe it')
+    expect(getOverride()).toBeUndefined()
+  })
 })
 
 describe('PiSdkClient — assistant message extraction', () => {
