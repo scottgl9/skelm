@@ -72,6 +72,35 @@ export interface GatewayOptions {
    * the path from config.storage.runs.path if set).
    */
   runStore?: RunStore
+  /**
+   * Additional directories outside the project root that are permitted as
+   * `source.path` targets for POST /v1/workflows/register. Defaults to `[]`,
+   * which means registration is limited to paths inside `projectRoot`.
+   * Each entry is resolved to an absolute realpath before comparison.
+   */
+  allowedRegistrationDirs?: string[]
+  /** Batch endpoint tunables. */
+  batch?: {
+    /** Maximum items per /v1/batch/runs request. Defaults to 50. */
+    maxItemsPerRequest?: number
+  }
+  /** Workflow registration tunables. */
+  workflows?: {
+    /** Maximum uploaded .zip size in bytes. Defaults to 5 MiB. */
+    maxArchiveBytes?: number
+  }
+  /**
+   * Called after `gateway.reload()` finishes refreshing the registries.
+   * Intended for the CLI to re-walk `pipelines[*].triggers` and register
+   * any newly-declared triggers (and sweep orphans whose backing file is
+   * gone). Without this, a `POST /gateway/reload` discovers the new
+   * workflow but leaves its declared triggers unarmed.
+   *
+   * The gateway calls this once per reload, after registries are
+   * refreshed and before reload() resolves. Errors are caught and
+   * forwarded to console.error so a broken sync doesn't poison reload.
+   */
+  onReload?: () => Promise<void> | void
 }
 
 export interface GatewayEnforcement {

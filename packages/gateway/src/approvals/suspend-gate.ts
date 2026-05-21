@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs'
 import { dirname } from 'node:path'
-import type { ApprovalDecision, ApprovalGate, ApprovalRequest } from '@skelm/core'
+import type { ApprovalDecision, ApprovalGate, ApprovalRequest, AuditWriter } from '@skelm/core'
 
 export interface PendingApproval {
   id: string
@@ -18,6 +18,12 @@ export interface SuspendApprovalGateOptions {
    * promise resolvers); resuming requires the running gateway.
    */
   persistPath?: string
+  /**
+   * Gateway audit writer. When supplied, each approval lifecycle transition
+   * (requested, resolved, expired, cancelled) is recorded so decisions
+   * survive gateway restart and are tamper-evident under the chain writer.
+   */
+  auditWriter?: AuditWriter
 }
 
 /**
@@ -70,12 +76,35 @@ export class SuspendApprovalGate implements ApprovalGate {
       if (this.opts.timeoutMs !== undefined) {
         entry.timer = setTimeout(() => {
           this.pending.delete(id)
+          void this.persist()
+          void this.audit({
+            runId: req.runId,
+            actor: 'gateway',
+            action: 'approval.expired',
+            details: {
+              approvalId: id,
+              stepId: req.stepId,
+              requestedAction: req.action,
+              timeoutMs: this.opts.timeoutMs,
+            },
+          })
           reject(new Error(`approval ${id} timed out after ${this.opts.timeoutMs}ms`))
         }, this.opts.timeoutMs)
         entry.timer.unref?.()
       }
       this.pending.set(id, entry)
       void this.persist()
+      void this.audit({
+        runId: req.runId,
+        actor: 'gateway',
+        action: 'approval.requested',
+        details: {
+          approvalId: id,
+          stepId: req.stepId,
+          requestedAction: req.action,
+          context: req.context,
+        },
+      })
     })
   }
 
@@ -101,6 +130,18 @@ export class SuspendApprovalGate implements ApprovalGate {
     if (entry.timer !== undefined) clearTimeout(entry.timer)
     this.pending.delete(id)
     void this.persist()
+    void this.audit({
+      runId: entry.request.runId,
+      actor: decision.approver ?? 'unknown',
+      action: 'approval.resolved',
+      details: {
+        approvalId: id,
+        stepId: entry.request.stepId,
+        requestedAction: entry.request.action,
+        approved: decision.approved,
+        ...(decision.reason !== undefined && { reason: decision.reason }),
+      },
+    })
     entry.resolve(decision)
     return true
   }
@@ -109,10 +150,36 @@ export class SuspendApprovalGate implements ApprovalGate {
   drain(reason = 'gateway stopping'): void {
     for (const [id, entry] of this.pending) {
       if (entry.timer !== undefined) clearTimeout(entry.timer)
+      void this.audit({
+        runId: entry.request.runId,
+        actor: 'gateway',
+        action: 'approval.cancelled',
+        details: {
+          approvalId: id,
+          stepId: entry.request.stepId,
+          requestedAction: entry.request.action,
+          reason,
+        },
+      })
       entry.reject(new Error(`approval ${id} cancelled: ${reason}`))
     }
     this.pending.clear()
     void this.persist()
+  }
+
+  private async audit(event: {
+    runId: string
+    actor: string
+    action: string
+    details: Readonly<Record<string, unknown>>
+  }): Promise<void> {
+    if (this.opts.auditWriter === undefined) return
+    try {
+      await this.opts.auditWriter.write(event)
+    } catch {
+      // Audit failures must not affect approval flow; ChainAuditWriter is
+      // best-effort from the gate's perspective.
+    }
   }
 
   private async persist(): Promise<void> {

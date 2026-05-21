@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
+import { BackendRegistry, type SkelmBackend } from '../src/backend.js'
 import {
+  agent,
   branch,
   code,
   forEach,
@@ -448,6 +450,408 @@ describe('wait()', () => {
 
   it('rejects wait() with an invalid timeout', () => {
     expect(() => wait({ id: 'bad', timeoutMs: 0 })).toThrow(/timeoutMs must be >= 1/)
+  })
+
+  it('rejects wait() nested directly inside parallel() at build time', () => {
+    expect(() =>
+      parallel({
+        id: 'gather',
+        steps: [code({ id: 'a', run: () => ({}) }), wait({ id: 'pause' })],
+      }),
+    ).toThrow(/wait\(pause\) is not allowed inside parallel/)
+  })
+
+  it('rejects wait() nested transitively (via pipelineStep) inside parallel()', () => {
+    const inner = pipeline({
+      id: 'inner-with-wait',
+      steps: [wait({ id: 'gate' })],
+    })
+    expect(() =>
+      parallel({
+        id: 'race',
+        steps: [
+          code({ id: 'fast', run: () => ({}) }),
+          pipelineStep({ id: 'slow', pipeline: inner }),
+        ],
+      }),
+    ).toThrow(/wait\(gate\) is not allowed inside parallel/)
+  })
+
+  it('rejects wait() nested transitively (via branch) inside parallel()', () => {
+    expect(() =>
+      parallel({
+        id: 'gather',
+        steps: [
+          code({ id: 'a', run: () => ({}) }),
+          branch({
+            id: 'route',
+            on: () => 'x',
+            cases: { x: wait({ id: 'pause' }) },
+          }),
+        ],
+      }),
+    ).toThrow(/wait\(pause\) is not allowed inside parallel/)
+  })
+})
+
+describe('forEach() egress token isolation (ISSUE-001)', () => {
+  // The egress token bug: when forEach factory returns the same step id for
+  // every iteration and concurrency > 1, the (runId, stepId) key passed to
+  // registerEgressToken collides. The first iteration to complete calls
+  // unregister and silently disables the token for sibling iterations still
+  // in flight. We assert that the stepIds threaded through register/
+  // unregister are distinct per iteration.
+
+  async function captureEgressStepIds(opts: {
+    factoryId: string
+    items: readonly number[]
+    concurrency?: number
+  }): Promise<{ registered: string[]; unregistered: string[]; output: unknown }> {
+    const registered: string[] = []
+    const unregistered: string[] = []
+
+    const backend: SkelmBackend = {
+      id: 'mock',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'native',
+      },
+      async run() {
+        return { text: 'ok' }
+      },
+    }
+    const registry = new BackendRegistry()
+    registry.register(backend)
+
+    const wf = pipeline({
+      id: 'fe-egress',
+      steps: [
+        forEach({
+          id: 'each',
+          items: () => opts.items,
+          ...(opts.concurrency !== undefined && { concurrency: opts.concurrency }),
+          step: () =>
+            agent({
+              id: opts.factoryId,
+              backend: 'mock',
+              prompt: 'noop',
+              permissions: { networkEgress: 'deny' },
+            }),
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined, {
+      backends: registry,
+      registerEgressToken: (runId, stepId) => {
+        registered.push(stepId)
+        return `${runId}:${stepId}`
+      },
+      unregisterEgressToken: (_runId, stepId) => {
+        unregistered.push(stepId)
+      },
+    })
+    expect(run.status).toBe('completed')
+    return { registered, unregistered, output: run.output }
+  }
+
+  it('threads unique stepIds to register/unregister when concurrency > 1 and ids collide', async () => {
+    const { registered, unregistered } = await captureEgressStepIds({
+      factoryId: 'analyze',
+      items: [1, 2, 3, 4],
+      concurrency: 4,
+    })
+    expect(registered).toHaveLength(4)
+    expect(new Set(registered).size).toBe(4)
+    expect(registered.every((id) => /^analyze#\d+$/.test(id))).toBe(true)
+    // Every registered token must be unregistered exactly once.
+    expect([...unregistered].sort()).toEqual([...registered].sort())
+  })
+
+  it('does not rewrite ids when concurrency is 1 (no race possible)', async () => {
+    const { registered, unregistered } = await captureEgressStepIds({
+      factoryId: 'analyze',
+      items: [1, 2],
+    })
+    expect(registered).toEqual(['analyze', 'analyze'])
+    expect(unregistered).toEqual(['analyze', 'analyze'])
+  })
+
+  it('only suffixes ids that actually collide (mixed unique + duplicate factory ids)', async () => {
+    // Factory returns ['a', 'b', 'b', 'c'] — only 'b' collides. The unique
+    // 'a' and 'c' must keep their original ids; both 'b' instances get
+    // suffixed with #i so the egress token keys are unique.
+    const ids = ['a', 'b', 'b', 'c']
+    const registered: string[] = []
+
+    const backend: SkelmBackend = {
+      id: 'mixed-mock',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'native',
+      },
+      async run() {
+        return { text: 'ok' }
+      },
+    }
+    const registry = new BackendRegistry()
+    registry.register(backend)
+
+    const wf = pipeline({
+      id: 'fe-mixed',
+      steps: [
+        forEach({
+          id: 'each',
+          items: () => ids,
+          concurrency: 4,
+          step: (item) =>
+            agent({
+              id: item as string,
+              backend: 'mixed-mock',
+              prompt: 'noop',
+              permissions: { networkEgress: 'deny' },
+            }),
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined, {
+      backends: registry,
+      registerEgressToken: (runId, stepId) => {
+        registered.push(stepId)
+        return `${runId}:${stepId}`
+      },
+      unregisterEgressToken: () => {},
+    })
+    expect(run.status).toBe('completed')
+    expect(registered.sort()).toEqual(['a', 'b#1', 'b#2', 'c'])
+  })
+
+  it('does not rewrite ids when factory returns unique ids per iteration', async () => {
+    // Distinct factory ids; concurrency > 1 — no need to suffix.
+    const registered: string[] = []
+    const backend: SkelmBackend = {
+      id: 'mock2',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'native',
+      },
+      async run() {
+        return { text: 'ok' }
+      },
+    }
+    const registry = new BackendRegistry()
+    registry.register(backend)
+
+    const wf = pipeline({
+      id: 'fe-unique-ids',
+      steps: [
+        forEach({
+          id: 'each',
+          items: () => [1, 2],
+          concurrency: 2,
+          step: (_item, i) =>
+            agent({
+              id: `worker-${i}`,
+              backend: 'mock2',
+              prompt: 'noop',
+              permissions: { networkEgress: 'deny' },
+            }),
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined, {
+      backends: registry,
+      registerEgressToken: (runId, stepId) => {
+        registered.push(stepId)
+        return `${runId}:${stepId}`
+      },
+      unregisterEgressToken: () => {},
+    })
+    expect(run.status).toBe('completed')
+    expect([...registered].sort()).toEqual(['worker-0', 'worker-1'])
+  })
+})
+
+describe('parallel() shared-workspace warning (ISSUE-002)', () => {
+  function makeMockBackend(): { backend: SkelmBackend; registry: BackendRegistry } {
+    const backend: SkelmBackend = {
+      id: 'ws-mock',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'native',
+      },
+      async run() {
+        return { text: 'ok' }
+      },
+    }
+    const registry = new BackendRegistry()
+    registry.register(backend)
+    return { backend, registry }
+  }
+
+  it('emits run.warning for agent children with identical persistent workspace', async () => {
+    const warnings: Array<{ code: string; message: string; stepId?: string }> = []
+    const { registry } = makeMockBackend()
+
+    const wf = pipeline({
+      id: 'p-shared-agent-ws',
+      steps: [
+        parallel({
+          id: 'twins',
+          onError: 'continue',
+          steps: [
+            agent({
+              id: 'left',
+              backend: 'ws-mock',
+              prompt: 'noop',
+              workspace: { mode: 'persistent', name: 'shared' },
+            }),
+            agent({
+              id: 'right',
+              backend: 'ws-mock',
+              prompt: 'noop',
+              workspace: { mode: 'persistent', name: 'shared' },
+            }),
+          ],
+        }),
+      ],
+    })
+
+    const runner = new Runner({ backends: registry })
+    runner.events.subscribe((event) => {
+      if (event.type === 'run.warning') {
+        warnings.push({ code: event.code, message: event.message, stepId: event.stepId })
+      }
+    })
+    await runner.start(wf, undefined).wait()
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]?.code).toBe('parallel.shared-workspace')
+    expect(warnings[0]?.stepId).toBe('twins')
+    expect(warnings[0]?.message).toMatch(/left.*right|right.*left/)
+  })
+
+  it('does not warn when persistent workspaces have distinct names', async () => {
+    const warnings: Array<{ code: string }> = []
+    const { registry } = makeMockBackend()
+
+    const wf = pipeline({
+      id: 'p-distinct-ws',
+      steps: [
+        parallel({
+          id: 'twins',
+          onError: 'continue',
+          steps: [
+            agent({
+              id: 'left',
+              backend: 'ws-mock',
+              prompt: 'noop',
+              workspace: { mode: 'persistent', name: 'left' },
+            }),
+            agent({
+              id: 'right',
+              backend: 'ws-mock',
+              prompt: 'noop',
+              workspace: { mode: 'persistent', name: 'right' },
+            }),
+          ],
+        }),
+      ],
+    })
+
+    const runner = new Runner({ backends: registry })
+    runner.events.subscribe((event) => {
+      if (event.type === 'run.warning') warnings.push({ code: event.code })
+    })
+    await runner.start(wf, undefined).wait()
+    expect(warnings).toEqual([])
+  })
+
+  it('emits parallel.workspace-resolve-failed when a workspace factory throws', async () => {
+    const warnings: Array<{ code: string; message: string }> = []
+    const { registry } = makeMockBackend()
+
+    const wf = pipeline({
+      id: 'p-ws-throw',
+      steps: [
+        parallel({
+          id: 'twins',
+          onError: 'continue',
+          steps: [
+            agent({
+              id: 'left',
+              backend: 'ws-mock',
+              prompt: 'noop',
+              workspace: () => {
+                throw new Error('cannot resolve workspace name')
+              },
+            }),
+            agent({
+              id: 'right',
+              backend: 'ws-mock',
+              prompt: 'noop',
+              workspace: { mode: 'persistent', name: 'right' },
+            }),
+          ],
+        }),
+      ],
+    })
+
+    const runner = new Runner({ backends: registry })
+    runner.events.subscribe((event) => {
+      if (event.type === 'run.warning') {
+        warnings.push({ code: event.code, message: event.message })
+      }
+    })
+    await runner.start(wf, undefined).wait()
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]?.code).toBe('parallel.workspace-resolve-failed')
+    expect(warnings[0]?.message).toMatch(/child "left"/)
+    expect(warnings[0]?.message).toMatch(/cannot resolve workspace name/)
+  })
+
+  it('does not warn for code() children (no workspace declarations)', async () => {
+    const warnings: Array<{ code: string }> = []
+    const wf = pipeline({
+      id: 'p-code-only',
+      steps: [
+        parallel({
+          id: 'gather',
+          steps: [
+            code({ id: 'a', run: () => ({ value: 1 }) }),
+            code({ id: 'b', run: () => ({ value: 2 }) }),
+          ],
+        }),
+      ],
+    })
+    const runner = new Runner()
+    runner.events.subscribe((event) => {
+      if (event.type === 'run.warning') warnings.push({ code: event.code })
+    })
+    const run = await runner.start(wf, undefined).wait()
+    expect(run.status).toBe('completed')
+    expect(warnings).toEqual([])
   })
 })
 

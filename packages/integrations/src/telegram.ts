@@ -1,5 +1,9 @@
-import { IntegrationBase } from './base.js'
-import type { TelegramConfig, TelegramMessageTrigger, TelegramWebhookEvent } from './types.js'
+import { IntegrationBase } from '@skelm/integration-sdk'
+import type {
+  TelegramConfig,
+  TelegramMessageTrigger,
+  TelegramWebhookEvent,
+} from '@skelm/integration-sdk'
 
 /**
  * Flat shape suitable for use as a pipeline input. Mirrors the runtime

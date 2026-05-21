@@ -1,5 +1,6 @@
 import type { Pipeline, Step } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
+import { writeJsonOutput } from './internal/output.js'
 import { CliError, loadWorkflowFromFile } from './load-workflow.js'
 
 /**
@@ -219,7 +220,7 @@ function finish(
   issues: ValidationIssue[],
 ): ValidateCommandResult {
   if (args.json) {
-    io.stdout.write(`${JSON.stringify({ ok: issues.length === 0, issues }, null, 2)}\n`)
+    writeJsonOutput(io, { ok: issues.length === 0, issues })
   } else if (issues.length === 0) {
     io.stdout.write(`ok: ${args.path} validates\n`)
   } else {

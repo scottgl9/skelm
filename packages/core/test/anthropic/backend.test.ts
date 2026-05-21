@@ -75,7 +75,10 @@ describe('createAnthropicBackend — skill injection', () => {
     await backend.run?.({ prompt: 'go', skills: ['denied'] }, ctx)
 
     const body = JSON.parse((fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string)
-    expect(body.system).toBeUndefined()
+    // null skills produce no skill block — but the default system prompt is
+    // still injected (Identity / Env / Safety / Tone / Coding).
+    expect(body.system).not.toContain('## Skill:')
+    expect(body.system).toContain('# Identity')
   })
 
   it('does not call loadSkill when ctx.loadSkill is absent', async () => {
@@ -85,16 +88,41 @@ describe('createAnthropicBackend — skill injection', () => {
     await backend.run?.({ prompt: 'go', skills: ['triage'] }, makeCtx())
 
     const body = JSON.parse((fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string)
-    expect(body.system).toBeUndefined()
+    // Without loadSkill no skill block is rendered, but the default system
+    // prompt is still injected.
+    expect(body.system).not.toContain('## Skill:')
+    expect(body.system).toContain('# Identity')
   })
 
-  it('run without skills uses system prompt directly', async () => {
+  it('run with system extends the default prompt (user content appended last)', async () => {
     const fetchSpy = mockFetch('result')
     const backend = createAnthropicBackend({ apiKey: 'test-key', fetch: fetchSpy })
 
     await backend.run?.({ prompt: 'go', system: 'Be concise.' }, makeCtx())
 
     const body = JSON.parse((fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string)
-    expect(body.system).toBe('Be concise.')
+    expect(body.system).toContain('# Identity')
+    expect(body.system).toContain('Be concise.')
+    expect(body.system.indexOf('Be concise.')).toBeGreaterThan(body.system.indexOf('# Identity'))
+  })
+
+  it('systemPromptMode: replace + includeAgentDef: false emits only user system', async () => {
+    const fetchSpy = mockFetch('result')
+    const backend = createAnthropicBackend({ apiKey: 'test-key', fetch: fetchSpy })
+
+    await backend.run?.(
+      {
+        prompt: 'go',
+        system: 'Only this.',
+        systemPromptMode: 'replace',
+        systemPromptIncludeAgentDef: false,
+      },
+      makeCtx(),
+    )
+
+    const body = JSON.parse((fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string)
+    expect(body.system).toContain('Only this.')
+    expect(body.system).not.toContain('# Identity')
+    expect(body.system).not.toContain('# Safety')
   })
 })

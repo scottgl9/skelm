@@ -155,7 +155,7 @@ import { createPiBackend } from '@skelm/pi'
 const pi = createPiBackend({
   command: 'pi',               // path to binary; default: 'pi' on $PATH
   provider: 'anthropic',       // pi provider name; omit for pi's default
-  model: 'claude-opus-4-5',    // model id; omit for pi's default
+  model: 'claude-opus-4-7',    // model id; omit for pi's default
   cwd: './workspace',
   timeout: 300_000,
   maxConcurrent: 4,

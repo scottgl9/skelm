@@ -1,11 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  createCronTrigger,
-  createIntervalTrigger,
-  createPollTrigger,
-  createQueueTrigger,
-  createWebhookTrigger,
-} from '../src/builders.js'
+import { createCronTrigger, createIntervalTrigger, createWebhookTrigger } from '../src/builders.js'
 import { Scheduler } from '../src/scheduler.js'
 
 describe('Scheduler', () => {
@@ -45,6 +39,25 @@ describe('Scheduler', () => {
     expect(registration.trigger.id).toBe('test-cron')
     expect(registration.status).toBe('active')
     expect(registration.runCount).toBe(0)
+    await scheduler.stop()
+  })
+
+  it('marks a cron trigger errored when the expression is invalid', async () => {
+    const scheduler = new Scheduler(
+      {},
+      {
+        runStore: mockRunStore,
+        pipelineLoader: mockPipelineLoader,
+      },
+    )
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const trigger = createCronTrigger('bad-cron', 'pipeline-1', 'not a cron expression')
+    await scheduler.register(trigger)
+    const reg = scheduler.getTrigger('bad-cron')
+    expect(reg?.status).toBe('error')
+    expect(reg?.lastError).toMatch(/Invalid cron expression/)
+    errorSpy.mockRestore()
+    await scheduler.stop()
   })
 
   it('registers an interval trigger', async () => {
@@ -61,6 +74,7 @@ describe('Scheduler', () => {
 
     expect(registration.trigger.id).toBe('test-interval')
     expect(registration.trigger.intervalMs).toBe(60000)
+    await scheduler.stop()
   })
 
   it('lists all triggers', async () => {
@@ -80,6 +94,7 @@ describe('Scheduler', () => {
 
     const triggers = scheduler.listTriggers()
     expect(triggers).toHaveLength(2)
+    await scheduler.stop()
   })
 
   it('pauses and resumes a trigger', async () => {
@@ -101,6 +116,7 @@ describe('Scheduler', () => {
     await scheduler.resume('test-pause')
     const resumed = scheduler.getTrigger('test-pause')
     expect(resumed?.status).toBe('active')
+    await scheduler.stop()
   })
 
   it('unregisters a trigger', async () => {
@@ -133,7 +149,7 @@ describe('Scheduler', () => {
     await scheduler.register(trigger)
 
     await scheduler.start()
-    expect(scheduler).toBeDefined() // Would check internal state in production
+    expect(scheduler).toBeDefined()
 
     await scheduler.stop()
   })
@@ -177,39 +193,5 @@ describe('Trigger Builders', () => {
     expect(trigger.path).toBe('/webhooks/test')
     expect(trigger.secret).toBe('test-secret')
     expect(trigger.overlap).toBe('run-concurrent')
-  })
-
-  it('creates a poll trigger', () => {
-    const trigger = createPollTrigger(
-      'poll-1',
-      'pipeline-1',
-      'https://api.example.com/data',
-      300000,
-      {
-        description: 'Poll every 5 minutes',
-        headers: { Authorization: 'Bearer token' },
-        overlap: 'wait',
-      },
-    )
-
-    expect(trigger.type).toBe('poll')
-    expect(trigger.url).toBe('https://api.example.com/data')
-    expect(trigger.intervalMs).toBe(300000)
-    expect(trigger.headers?.Authorization).toBe('Bearer token')
-  })
-
-  it('creates a queue trigger', () => {
-    const trigger = createQueueTrigger('queue-1', 'pipeline-1', 'my-queue', {
-      description: 'Process queue messages',
-      batchSize: 5,
-      visibilityTimeoutMs: 30000,
-      overlap: 'run-concurrent',
-      maxConcurrent: 5,
-    })
-
-    expect(trigger.type).toBe('queue')
-    expect(trigger.queueName).toBe('my-queue')
-    expect(trigger.batchSize).toBe(5)
-    expect(trigger.visibilityTimeoutMs).toBe(30000)
   })
 })

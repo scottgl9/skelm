@@ -4,7 +4,7 @@ import { DashboardService } from '../../dashboard/dashboard-service.js'
 import type { AnalyticsMetric, AnalyticsResolution } from '../../dashboard/types.js'
 import type { Gateway } from '../../lifecycle/gateway.js'
 
-const GATEWAY_VERSION = '0.3.8'
+const GATEWAY_VERSION = '0.4.2'
 
 const VALID_METRICS: ReadonlySet<AnalyticsMetric> = new Set([
   'runs-per-hour',

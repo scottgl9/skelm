@@ -61,6 +61,8 @@ export class WorkspaceManager {
         return await this.prepareEphemeral(params.pipelineId, params.runId, params.workspace)
       case 'mounted':
         return await this.prepareMounted(params.pipelineId, params.workspace)
+      case 'git-repo':
+        return await this.prepareGitRepo(params.workspace)
     }
   }
 
@@ -206,6 +208,48 @@ export class WorkspaceManager {
     }
   }
 
+  private async prepareGitRepo(
+    workspace: Extract<WorkspaceConfig, { mode: 'git-repo' }>,
+  ): Promise<PreparedWorkspace> {
+    const url = resolveRepoUrl(workspace.repo)
+    const path = resolvePath(workspace.cacheDir ?? defaultGitRepoCacheDir(workspace.repo))
+    // Inject auth via GIT_CONFIG_* env vars rather than `-c` flags so the
+    // token never appears in argv (and therefore not in `/proc/<pid>/cmdline`
+    // or structured process logs).
+    const env = buildGitAuthEnv(workspace.auth)
+
+    const gitDirExists = await exists(join(path, '.git'))
+    if (!gitDirExists) {
+      await mkdir(dirname(path), { recursive: true })
+      await execFileAsync('git', ['clone', '--filter=blob:none', url, path], { env })
+    }
+    await execFileAsync('git', ['-C', path, 'fetch', 'origin', workspace.ref], { env })
+    // Resolve `ref` to its SHA *before* the optional `baseRef` fetch — the
+    // second `fetch` overwrites `FETCH_HEAD`, so the only reliable way to
+    // check out `ref` afterwards is by SHA.
+    const { stdout: refSha } = await execFileAsync('git', ['-C', path, 'rev-parse', 'FETCH_HEAD'])
+    if (workspace.baseRef !== undefined) {
+      await execFileAsync('git', ['-C', path, 'fetch', 'origin', workspace.baseRef], { env })
+    }
+    await execFileAsync('git', ['-C', path, 'checkout', '--detach', refSha.trim()])
+
+    // Seed: copy files into the workspace before the step runs
+    if (workspace.seed?.copy) {
+      await seedWorkspace(path, workspace.seed.copy)
+    }
+
+    const handle: WorkspaceHandle = Object.freeze({
+      path,
+      mode: 'git-repo',
+    })
+    return {
+      handle,
+      exposeAfterStep: true,
+      async finishStep(): Promise<void> {},
+      async finishRun(): Promise<void> {},
+    }
+  }
+
   private async prepareMounted(
     _pipelineId: string,
     workspace: Extract<WorkspaceConfig, { mode: 'mounted' }>,
@@ -233,6 +277,72 @@ export class WorkspaceManager {
   private persistentPath(pipelineId: string, name: string): string {
     const base = resolvePath(this.options.persistentBase ?? DEFAULT_PERSISTENT_BASE)
     return join(base, pipelineId, name)
+  }
+}
+
+const DEFAULT_GIT_REPO_BASE = join(homedir(), '.skelm', 'repos')
+
+function resolveRepoUrl(spec: string): string {
+  if (/^[\w-]+\/[\w.-]+$/.test(spec)) {
+    return `https://github.com/${spec}.git`
+  }
+  return spec
+}
+
+function defaultGitRepoCacheDir(spec: string): string {
+  const match = spec.match(/^([\w-]+)\/([\w.-]+?)(\.git)?$/)
+  if (match) {
+    return join(DEFAULT_GIT_REPO_BASE, `${match[1]}__${match[2]}`)
+  }
+  const safe = spec.replace(/[^A-Za-z0-9_.-]+/g, '_').replace(/^_+|_+$/g, '')
+  return join(DEFAULT_GIT_REPO_BASE, safe || 'repo')
+}
+
+/**
+ * Build an env block for git invocations that supplies the token via a
+ * one-shot credential helper. Two requirements drive the shape:
+ *
+ *   1. The token must not appear in argv (no `git -c http.extraheader=...`),
+ *      so it stays out of `/proc/<pid>/cmdline` and process listings.
+ *   2. The auth must be accepted by GitHub's git HTTPS endpoint, which
+ *      rejects `Authorization: bearer/Bearer/token <tok>` headers for git
+ *      operations (those formats only work against `api.github.com`).
+ *
+ * The previous implementation used `http.extraheader=AUTHORIZATION: bearer
+ * <token>`, which broke (1) cleanly but failed (2) — GitHub git HTTPS would
+ * return `remote: invalid credentials`. We now register a `credential.helper`
+ * that writes username + password lines to stdout: git accepts the credential
+ * exactly as if it had been entered interactively, with no argv exposure.
+ *
+ * Throws when `auth: { env: ... }` is declared but the variable is unset or
+ * empty — silently falling back to anonymous access made typos invisible.
+ *
+ * Returns `process.env` directly (no clone) when no auth is requested, so
+ * callers don't pay an allocation on every git invocation.
+ */
+function buildGitAuthEnv(
+  auth: Extract<WorkspaceConfig, { mode: 'git-repo' }>['auth'],
+): NodeJS.ProcessEnv {
+  if (auth === undefined) return process.env
+  const token = process.env[auth.env]
+  if (token === undefined || token === '') {
+    throw new Error(
+      `workspace auth env var "${auth.env}" is not set; export it or remove auth: { env: ... } to clone anonymously`,
+    )
+  }
+  // `!f() { ... }; f` is the canonical inline-helper pattern from
+  // git-credential(7) — the leading `!` tells git the value is a shell
+  // command rather than the name of a helper binary. The helper emits
+  // username + password when invoked as `git credential get` and stays
+  // silent for store/erase. The token is read from $SKELM_GIT_AUTH_TOKEN
+  // (set below), so it never appears in argv.
+  return {
+    ...process.env,
+    SKELM_GIT_AUTH_TOKEN: token,
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'credential.helper',
+    GIT_CONFIG_VALUE_0:
+      '!f() { test "$1" = get && printf "username=x-access-token\\npassword=%s\\n" "$SKELM_GIT_AUTH_TOKEN"; }; f',
   }
 }
 

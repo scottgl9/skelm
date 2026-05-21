@@ -1,6 +1,6 @@
 {
   "name": "@skelm/integrations",
-  "version": "0.3.8",
+  "version": "0.4.2",
   "description": "Third-party integrations for skelm pipelines",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
@@ -20,7 +20,7 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "default": "./dist/index.js"
     }
   },
   "files": ["dist", "README.md", "LICENSE"],
@@ -35,7 +35,9 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@skelm/core": "workspace:*"
+    "@skelm/core": "workspace:*",
+    "@skelm/integration-sdk": "workspace:*",
+    "zod": "^4.4.2"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

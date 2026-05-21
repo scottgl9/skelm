@@ -1,4 +1,5 @@
 import type { McpServerConfig } from './backend.js'
+import { parseDuration } from './duration.js'
 import type { AgentPermissions } from './permissions.js'
 import type { SkelmSchema } from './schema.js'
 import type {
@@ -21,8 +22,29 @@ import type {
   Step,
   StepId,
   WaitStep,
+  WhenPredicate,
   WorkspaceConfig,
 } from './types.js'
+
+function normalizePipelineTrigger(
+  pipelineId: string,
+  trigger: import('./types.js').PipelineTrigger,
+): import('./types.js').PipelineTrigger {
+  if (trigger.kind !== 'interval') return trigger
+
+  const everyMs =
+    typeof trigger.everyMs === 'number'
+      ? trigger.everyMs
+      : typeof trigger.every === 'string'
+        ? parseDuration(trigger.every)
+        : undefined
+  if (everyMs === undefined) {
+    throw new Error(
+      `pipeline(${pipelineId}): interval trigger "${trigger.id ?? '(unnamed)'}" must set either everyMs or every`,
+    )
+  }
+  return Object.freeze({ ...trigger, everyMs })
+}
 
 /**
  * Author a pipeline. The result is a plain immutable value carrying its
@@ -39,6 +61,12 @@ export function pipeline<TInput, TOutput>(def: {
   steps: readonly Step[]
   finalize?: (ctx: Context<TInput>) => TOutput | Promise<TOutput>
   triggers?: readonly import('./types.js').PipelineTrigger[]
+  /**
+   * Directory used to resolve relative paths declared on steps (e.g.
+   * `code({ module: './x.ts' })`). Normally set by the CLI workflow loader;
+   * authors only set this when constructing a pipeline programmatically.
+   */
+  baseDir?: string
 }): Pipeline<TInput, TOutput> {
   if (!def.id) {
     throw new Error('pipeline(): id is required')
@@ -56,7 +84,12 @@ export function pipeline<TInput, TOutput>(def: {
     ...(def.input !== undefined && { inputSchema: def.input }),
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.finalize !== undefined && { finalize: def.finalize }),
-    ...(def.triggers !== undefined && { triggers: Object.freeze([...def.triggers]) }),
+    ...(def.triggers !== undefined && {
+      triggers: Object.freeze(
+        def.triggers.map((trigger) => normalizePipelineTrigger(def.id, trigger)),
+      ),
+    }),
+    ...(def.baseDir !== undefined && { baseDir: def.baseDir }),
   }
   return Object.freeze(out)
 }
@@ -68,25 +101,51 @@ export function pipeline<TInput, TOutput>(def: {
  */
 export function code<TOutput>(def: {
   id: StepId
-  run: (ctx: Context) => TOutput | Promise<TOutput>
+  /** Inline run function. Mutually exclusive with `module`. */
+  run?: (ctx: Context) => TOutput | Promise<TOutput>
+  /**
+   * Path to an external `.ts` / `.js` module that exports the step's run
+   * function. Resolved relative to the owning pipeline's `baseDir` (or
+   * `process.cwd()` when absent).
+   */
+  module?: string
+  /** Name of the export to use from `module`. Defaults to `'default'`. */
+  export?: string
   secrets?: readonly string[]
   state?: StateConfig
   retry?: RetryPolicy
+  permissions?: AgentPermissions
+  timeoutMs?: number
+  when?: WhenPredicate
 }): CodeStep<TOutput> {
   if (!def.id) {
     throw new Error('code(): id is required')
   }
-  if (typeof def.run !== 'function') {
-    throw new Error(`code(${def.id}): run must be a function`)
+  const hasRun = typeof def.run === 'function'
+  const hasModule = typeof def.module === 'string' && def.module.length > 0
+  if (hasRun === hasModule) {
+    throw new Error(
+      `code(${def.id}): must supply exactly one of "run" or "module" (got ${
+        hasRun && hasModule ? 'both' : 'neither'
+      })`,
+    )
+  }
+  if (!hasModule && def.export !== undefined) {
+    throw new Error(`code(${def.id}): "export" only applies when "module" is set`)
   }
   assertValidRetryPolicy('code', def.id, def.retry)
   return Object.freeze({
     kind: 'code',
     id: def.id,
-    run: def.run,
+    ...(def.run !== undefined && { run: def.run }),
+    ...(def.module !== undefined && { module: def.module }),
+    ...(def.export !== undefined && { export: def.export }),
     ...(def.secrets !== undefined && { secrets: def.secrets }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.permissions !== undefined && { permissions: def.permissions }),
+    ...(def.timeoutMs !== undefined && { timeoutMs: def.timeoutMs }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -100,14 +159,23 @@ export function llm<TOutput>(def: {
   id: StepId
   backend?: string | readonly string[]
   model?: string
-  system?: string | ((ctx: Context) => string)
-  prompt: string | ((ctx: Context) => string)
+  system?: string | ((ctx: Context) => string | Promise<string>)
+  prompt:
+    | string
+    | readonly import('./backend.js').ContentPart[]
+    | ((
+        ctx: Context,
+      ) =>
+        | string
+        | readonly import('./backend.js').ContentPart[]
+        | Promise<string | readonly import('./backend.js').ContentPart[]>)
   output?: SkelmSchema<TOutput>
   temperature?: number
   maxTokens?: number
   secrets?: readonly string[]
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): LlmStep<TOutput> {
   if (!def.id) {
     throw new Error('llm(): id is required')
@@ -129,6 +197,7 @@ export function llm<TOutput>(def: {
     ...(def.secrets !== undefined && { secrets: def.secrets }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -142,8 +211,18 @@ export function agent<TOutput>(def: {
   id: StepId
   backend?: string | readonly string[]
   agentDef?: string
-  prompt: string | ((ctx: Context) => string)
-  system?: string | ((ctx: Context) => string)
+  prompt:
+    | string
+    | readonly import('./backend.js').ContentPart[]
+    | ((
+        ctx: Context,
+      ) =>
+        | string
+        | readonly import('./backend.js').ContentPart[]
+        | Promise<string | readonly import('./backend.js').ContentPart[]>)
+  system?: string | ((ctx: Context) => string | Promise<string>)
+  systemPromptMode?: 'extend' | 'replace'
+  systemPromptIncludeAgentDef?: boolean
   mcp?: readonly McpServerConfig[] | ((ctx: Context) => readonly McpServerConfig[])
   skills?: readonly string[]
   secrets?: readonly string[]
@@ -154,6 +233,7 @@ export function agent<TOutput>(def: {
   timeoutMs?: number
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): AgentStep<TOutput> {
   if (!def.id) {
     throw new Error('agent(): id is required')
@@ -172,6 +252,10 @@ export function agent<TOutput>(def: {
     ...(def.backend !== undefined && { backend: def.backend }),
     ...(def.agentDef !== undefined && { agentDef: def.agentDef }),
     ...(def.system !== undefined && { system: def.system }),
+    ...(def.systemPromptMode !== undefined && { systemPromptMode: def.systemPromptMode }),
+    ...(def.systemPromptIncludeAgentDef !== undefined && {
+      systemPromptIncludeAgentDef: def.systemPromptIncludeAgentDef,
+    }),
     ...(def.mcp !== undefined && { mcp: def.mcp }),
     ...(def.skills !== undefined && { skills: def.skills }),
     ...(def.secrets !== undefined && { secrets: def.secrets }),
@@ -182,6 +266,7 @@ export function agent<TOutput>(def: {
     ...(def.timeoutMs !== undefined && { timeoutMs: def.timeoutMs }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -193,6 +278,7 @@ export function parallel(def: {
   onError?: ParallelOnError
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): ParallelStep {
   if (!def.id) throw new Error('parallel(): id is required')
   if (!def.steps || def.steps.length === 0) {
@@ -208,6 +294,7 @@ export function parallel(def: {
       throw new Error(`parallel(${def.id}): duplicate child step id "${s.id}"`)
     }
     seen.add(s.id)
+    assertNoWaitInside('parallel', def.id, s)
   }
   return Object.freeze({
     kind: 'parallel',
@@ -217,6 +304,7 @@ export function parallel(def: {
     ...(def.onError !== undefined && { onError: def.onError }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -228,6 +316,7 @@ export function forEach(def: {
   step: (item: unknown, index: number) => Step
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): ForEachStep {
   if (!def.id) throw new Error('forEach(): id is required')
   if (typeof def.items !== 'function') {
@@ -248,6 +337,7 @@ export function forEach(def: {
     ...(def.concurrency !== undefined && { concurrency: def.concurrency }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -259,6 +349,7 @@ export function branch(def: {
   default?: Step
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): BranchStep {
   if (!def.id) throw new Error('branch(): id is required')
   if (typeof def.on !== 'function') {
@@ -276,10 +367,20 @@ export function branch(def: {
     ...(def.default !== undefined && { default: def.default }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
-/** Iterate a step while a predicate holds, bounded by maxIterations. */
+/**
+ * Iterate a step while a predicate holds, bounded by `maxIterations`.
+ *
+ * Note: `timeoutMs` on the inner step (e.g. `agent({ timeoutMs })`) bounds
+ * each iteration individually, not the total loop wall-clock. A loop with
+ * `maxIterations: 20` and a child `timeoutMs: 60_000` may therefore run for
+ * up to 20 minutes before the loop itself terminates. There is no built-in
+ * cumulative budget; if you need one, gate the run with an outer `AbortSignal`
+ * passed via `RunOptions.signal`.
+ */
 export function loop(def: {
   id: StepId
   while: (ctx: Context) => boolean | Promise<boolean>
@@ -287,6 +388,7 @@ export function loop(def: {
   step: Step
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): LoopStep {
   if (!def.id) throw new Error('loop(): id is required')
   if (typeof def.while !== 'function') {
@@ -304,6 +406,7 @@ export function loop(def: {
     step: def.step,
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -315,6 +418,7 @@ export function wait<TOutput>(def: {
   output?: SkelmSchema<TOutput>
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): WaitStep<TOutput> {
   if (!def.id) throw new Error('wait(): id is required')
   if (def.timeoutMs !== undefined && def.timeoutMs < 1) {
@@ -329,6 +433,7 @@ export function wait<TOutput>(def: {
     ...(def.output !== undefined && { outputSchema: def.output }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -339,6 +444,7 @@ export function pipelineStep<TInput, TOutput>(def: {
   input?: TInput | ((ctx: Context) => TInput)
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): PipelineStep<TInput, TOutput> {
   if (!def.id) throw new Error('pipelineStep(): id is required')
   if (!def.pipeline) {
@@ -352,6 +458,7 @@ export function pipelineStep<TInput, TOutput>(def: {
     ...(def.input !== undefined && { input: def.input }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -362,6 +469,7 @@ export function invoke<TOutput>(def: {
   input?: unknown | ((ctx: Context) => unknown)
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): InvokeStep<unknown, TOutput> {
   if (!def.id) throw new Error('invoke(): id is required')
   if (!def.pipelineId) {
@@ -375,6 +483,7 @@ export function invoke<TOutput>(def: {
     ...(def.input !== undefined && { input: def.input }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -390,6 +499,7 @@ export function idempotent<TOutput>(def: {
   ttlMs?: number
   state?: StateConfig
   retry?: RetryPolicy
+  when?: WhenPredicate
 }): IdempotentStep<TOutput> {
   if (!def.step) {
     throw new Error('idempotent(): step is required')
@@ -404,6 +514,7 @@ export function idempotent<TOutput>(def: {
     ...(def.ttlMs !== undefined && { ttlMs: def.ttlMs }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
+    ...(def.when !== undefined && { when: def.when }),
   })
 }
 
@@ -417,6 +528,48 @@ function assertValidRetryPolicy(kind: string, id: StepId, retry: RetryPolicy | u
   }
   if (retry.backoffMultiplier !== undefined && retry.backoffMultiplier < 1) {
     throw new Error(`${kind}(${id}): retry.backoffMultiplier must be >= 1`)
+  }
+}
+
+// Walk a Step subtree and throw if any descendant is a wait() step.
+// wait() inside parallel() has no well-defined semantics today: the runner's
+// per-run waitForInput slot is a single Map<runId, ...>, so two concurrent
+// arms reaching wait() simultaneously would either overwrite each other's
+// slot or drop a resume, leaving an arm suspended indefinitely.
+function assertNoWaitInside(containerKind: string, containerId: StepId, step: Step): void {
+  if (step.kind === 'wait') {
+    throw new Error(
+      `${containerKind}(${containerId}): wait(${step.id}) is not allowed inside ${containerKind}() — concurrent waits share a single resume slot and would hang. Move the wait() outside ${containerKind}() or use sequential steps.`,
+    )
+  }
+  switch (step.kind) {
+    case 'parallel':
+      for (const child of step.steps) assertNoWaitInside(containerKind, containerId, child)
+      return
+    case 'branch': {
+      for (const child of Object.values(step.cases)) {
+        assertNoWaitInside(containerKind, containerId, child)
+      }
+      if (step.default !== undefined) {
+        assertNoWaitInside(containerKind, containerId, step.default)
+      }
+      return
+    }
+    case 'loop':
+    case 'idempotent':
+      assertNoWaitInside(containerKind, containerId, step.step)
+      return
+    case 'pipelineStep':
+      // The nested pipeline is embedded directly, so we can recurse statically.
+      // (invoke() resolves from a registry at runtime and is left to the
+      // runtime to surface; forEach() is factory-built lazily for the same
+      // reason.)
+      for (const child of step.pipeline.steps) {
+        assertNoWaitInside(containerKind, containerId, child)
+      }
+      return
+    default:
+      return
   }
 }
 

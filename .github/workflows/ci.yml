@@ -16,9 +16,17 @@ concurrency:
 
 jobs:
   check:
-    name: build / typecheck / lint / test
+    # Run the exact same gate locally and in CI. Matches `pnpm check` —
+    # build, typecheck, lint, guards (public-export-baseline,
+    # default-deny-permissions, gateway-only-enforcement, docs-orphans),
+    # and tests. No `continue-on-error` anywhere: the first red step
+    # fails the job, which is what makes this a real merge gate.
+    #
+    # Branch protection should require this job to pass before merge.
+    # See scripts/check-pre-push.sh for the same gate as a local hook.
+    name: pnpm check (build / typecheck / lint / guards / test)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -36,7 +44,7 @@ jobs:
           cache: pnpm
 
       - name: Install
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Build
         run: pnpm build
@@ -46,8 +54,9 @@ jobs:
 
       - name: Lint
         run: pnpm lint
-        continue-on-error: true
+
+      - name: Guards (default-deny, public-export-baseline, gateway-only, docs)
+        run: pnpm guards
 
       - name: Test
         run: pnpm test
-        continue-on-error: true

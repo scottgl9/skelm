@@ -31,7 +31,7 @@ do not fully control.
 - [ ] Disk quota or per-pipeline workspace limits are enforced at the OS
       layer; the runtime does not bound disk by itself.
 - [ ] Process supervisor (systemd / launchd) restarts the gateway on
-      crash; see `skelm gateway install --systemd`.
+      crash; see `skelm gateway install`.
 
 ## Audit log
 
@@ -77,7 +77,7 @@ do not fully control.
 
 ## Pre-deploy smoke
 
-- [ ] `skelm gateway start --foreground` cleanly starts and stops.
+- [ ] `skelm gateway start` cleanly starts and stops.
 - [ ] `skelm validate <pipeline>` exits 0 for every shipped pipeline.
 - [ ] Adversarial test: a request with no bearer token gets `401` from
       every endpoint except `/health` and `/metrics`.
@@ -89,4 +89,4 @@ do not fully control.
 - [`.github/SECURITY.md`](https://github.com/scottgl9/skelm/blob/main/.github/SECURITY.md) — vulnerability reporting
 - [`docs/reference/cli.md`](../reference/cli.md)
 - [`docs/reference/http.md`](../reference/http.md)
-- [`docs/reference/openapi.yaml`](../reference/openapi.yaml)
+- [OpenAPI spec](../reference/openapi.md)

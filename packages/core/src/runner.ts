@@ -30,7 +30,13 @@ import { extractJsonFromText, tryParseJson } from './json-utils.js'
 import { createMcpHost } from './mcp/host.js'
 import type { AgentPermissions, NetworkPolicy, PermissionDimension } from './permissions.js'
 import { TrustEnforcer, createPolicyFetch, resolvePermissions } from './permissions.js'
-import { MemoryRunStore, type RunStore, type StateStore } from './run-store.js'
+import {
+  type ArtifactStore,
+  type ArtifactStoreHandle,
+  MemoryRunStore,
+  type RunStore,
+  type StateStore,
+} from './run-store.js'
 import {
   adoptLastStepOutput,
   applyWorkspacePermissions,
@@ -45,6 +51,7 @@ import {
 } from './runner-utils.js'
 import { SchemaValidationError, validate } from './schema.js'
 import { createStateHandle } from './state.js'
+import { createThreadHost } from './threads.js'
 import type {
   Context,
   Pipeline,
@@ -107,6 +114,14 @@ export interface RunOptions {
    * having to re-scan the registry.
    */
   workflowPath?: string
+  /**
+   * Optional id of the trigger (cron / webhook / queue / interval / manual)
+   * that produced this run. Stored on the Run record so consumers can
+   * `listRuns({ triggerId })` to find every run a given schedule fired.
+   * Set by the gateway dispatcher; absent for runs started directly via
+   * `runPipeline()` or HTTP `POST /pipelines/<id>/run`.
+   */
+  triggerId?: string
   /**
    * Optional skill source consulted when an agent step's resolved policy
    * declares allowedSkills. The runner wraps this with canLoadSkill checks
@@ -407,15 +422,80 @@ export async function runPipeline<TInput, TOutput>(
   const events = options.events ?? new EventBus()
   const store = options.store
   const stateStore = options.stateStore ?? options.store ?? defaultStateStore
+  const threadHost = createThreadHost(stateStore)
+  // ArtifactStore is part of the RunStore surface; fall back to the default
+  // in-memory store so ctx.artifacts is always available even when the caller
+  // didn't wire a durable store.
+  const artifactStore: ArtifactStore = options.store ?? defaultStateStore
+  const makeArtifactsHandle = (stepId: StepId): ArtifactStoreHandle => ({
+    put: async (opts) => {
+      const startedAt = Date.now()
+      const descriptor = await artifactStore.putArtifact({
+        runId,
+        stepId,
+        name: opts.name,
+        mimeType: opts.mimeType,
+        data: opts.data,
+      })
+      events.publish({
+        type: 'tool.result',
+        runId,
+        stepId,
+        tool: 'artifacts.put',
+        result: {
+          artifactId: descriptor.artifactId,
+          name: descriptor.name,
+          mimeType: descriptor.mimeType,
+          size: descriptor.size,
+        },
+        durationMs: Date.now() - startedAt,
+        at: Date.now(),
+      })
+      return descriptor
+    },
+    get: (ref) => artifactStore.getArtifact(ref),
+    list: (opts) => artifactStore.listArtifacts(runId, opts),
+  })
   const storeWrites: Promise<void>[] = []
   const workspaceManager = options.workspaceManager ?? new WorkspaceManager()
   const deferredWorkspaceFinalizers: Array<(status: RunStatus) => Promise<void>> = []
   let currentWorkspace: Context['workspace']
+  // Bounded backpressure on store.appendEvent: cap concurrent fs writes and
+  // emit a single run.warning when the queue depth crosses the saturation
+  // threshold so operators can see a slow store before runs silently stall.
+  const APPEND_BACKPRESSURE_CAP = 256
+  let appendInflight = 0
+  let appendSaturated = false
   const unsubscribeStore =
     store === undefined
       ? undefined
       : events.subscribe((event) => {
-          storeWrites.push(store.appendEvent(event))
+          appendInflight += 1
+          if (appendInflight >= APPEND_BACKPRESSURE_CAP && !appendSaturated) {
+            appendSaturated = true
+            events.publish({
+              type: 'run.warning',
+              runId,
+              code: 'store.saturated',
+              message: `appendEvent queue depth reached ${appendInflight} (cap ${APPEND_BACKPRESSURE_CAP})`,
+              at: Date.now(),
+            })
+          }
+          storeWrites.push(
+            store.appendEvent(event).finally(() => {
+              appendInflight -= 1
+              if (appendSaturated && appendInflight === 0) {
+                appendSaturated = false
+                events.publish({
+                  type: 'run.warning',
+                  runId,
+                  code: 'store.recovered',
+                  message: 'appendEvent queue drained',
+                  at: Date.now(),
+                })
+              }
+            }),
+          )
         })
   // Bridge permission denials and MCP tool dispatch into the audit log.
   // Mirrors the same subscriptions installed by the Runner constructor, so
@@ -492,6 +572,30 @@ export async function runPipeline<TInput, TOutput>(
   })
   events.publish({ type: 'run.started', runId, at: startedAt })
 
+  // Persist a `running` Run record up-front so a gateway crash leaves a
+  // recoverable seed in the store. Without this, events stream out but no
+  // Run row exists until finalizeStoredRun() at the end — a mid-run crash
+  // would orphan the events and break listRuns({status: 'running'}).
+  if (store !== undefined) {
+    storeWrites.push(
+      store.putRun(
+        Object.freeze({
+          runId,
+          pipelineId: pipeline.id,
+          ...(options.workflowPath !== undefined && { workflowPath: options.workflowPath }),
+          ...(options.triggerId !== undefined && { triggerId: options.triggerId }),
+          status: 'running',
+          input,
+          steps: Object.freeze([]),
+          output: undefined,
+          error: undefined,
+          startedAt,
+          completedAt: undefined,
+        }) as Run,
+      ),
+    )
+  }
+
   const runMeta: RunMetadata = {
     runId,
     pipelineId: pipeline.id,
@@ -519,6 +623,8 @@ export async function runPipeline<TInput, TOutput>(
         Object.freeze({
           runId,
           pipelineId: pipeline.id,
+          ...(options.workflowPath !== undefined && { workflowPath: options.workflowPath }),
+          ...(options.triggerId !== undefined && { triggerId: options.triggerId }),
           status: runStatus,
           input,
           steps: Object.freeze(stepResults),
@@ -542,6 +648,61 @@ export async function runPipeline<TInput, TOutput>(
       break
     }
 
+    if (step.when !== undefined) {
+      const predicateCtx: Context<TInput> = freezeContext({
+        input: resolvedInput,
+        steps: { ...stepOutputs },
+        run: runMeta,
+        signal: controller.signal,
+        state: createStateHandle(stateStore, { pipelineId: pipeline.id, stepId: step.id }),
+        threads: threadHost,
+        workspace: currentWorkspace as WorkspaceHandle | undefined,
+        get<T = unknown>(stepId: StepId): T | undefined {
+          return stepOutputs[stepId] as T | undefined
+        },
+      } as Context<TInput>)
+      let shouldRun: boolean
+      try {
+        shouldRun = await step.when(predicateCtx)
+      } catch (err) {
+        const completedAt = Date.now()
+        const serialized = serializeError(err)
+        stepResults.push({
+          id: step.id,
+          kind: step.kind,
+          status: 'failed',
+          output: undefined,
+          startedAt: completedAt,
+          completedAt,
+          error: serialized,
+        })
+        events.publish({
+          type: 'step.error',
+          runId,
+          stepId: step.id,
+          kind: step.kind,
+          error: serialized,
+          at: completedAt,
+        })
+        runStatus = err instanceof RunCancelledError ? 'cancelled' : 'failed'
+        runError = serialized
+        break
+      }
+      if (!shouldRun) {
+        const at = Date.now()
+        stepResults.push({
+          id: step.id,
+          kind: step.kind,
+          status: 'skipped',
+          output: undefined,
+          startedAt: at,
+          completedAt: at,
+        })
+        events.publish({ type: 'step.skipped', runId, stepId: step.id, kind: step.kind, at })
+        continue
+      }
+    }
+
     const stepStart = Date.now()
     events.publish({ type: 'step.start', runId, stepId: step.id, kind: step.kind, at: stepStart })
     if (options.beforeStep !== undefined) {
@@ -558,7 +719,9 @@ export async function runPipeline<TInput, TOutput>(
           stepId: step.id,
           ...(step.state !== undefined && { config: step.state }),
         }),
+        threads: threadHost,
         workspace: currentWorkspace as WorkspaceHandle | undefined,
+        artifacts: makeArtifactsHandle(step.id),
         get<T = unknown>(stepId: StepId): T | undefined {
           return stepOutputs[stepId] as T | undefined
         },
@@ -592,6 +755,7 @@ export async function runPipeline<TInput, TOutput>(
             pipelineRegistry: options.pipelineRegistry,
           }),
           currentWorkspace,
+          ...(pipeline.baseDir !== undefined && { pipelineBaseDir: pipeline.baseDir }),
           ...(store !== undefined && { store }),
           setCurrentWorkspace: (workspace) => {
             currentWorkspace = workspace
@@ -654,6 +818,7 @@ export async function runPipeline<TInput, TOutput>(
         run: runMeta,
         signal: controller.signal,
         state: createStateHandle(stateStore, { pipelineId: pipeline.id }),
+        threads: threadHost,
         workspace: currentWorkspace as WorkspaceHandle | undefined,
         get<T = unknown>(stepId: StepId): T | undefined {
           return stepOutputs[stepId] as T | undefined
@@ -702,6 +867,7 @@ export async function runPipeline<TInput, TOutput>(
       runId,
       pipelineId: pipeline.id,
       ...(options.workflowPath !== undefined && { workflowPath: options.workflowPath }),
+      ...(options.triggerId !== undefined && { triggerId: options.triggerId }),
       status: runStatus,
       input: resolvedInput,
       steps: Object.freeze(stepResults),

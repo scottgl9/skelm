@@ -1,8 +1,8 @@
+import type { GitHubConfig, SlackConfig } from '@skelm/integration-sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GitHubIntegration } from '../src/github.js'
 import { IntegrationRegistry } from '../src/registry.js'
 import { SlackIntegration } from '../src/slack.js'
-import type { GitHubConfig, SlackConfig } from '../src/types.js'
 
 describe('IntegrationRegistry', () => {
   let registry: IntegrationRegistry
@@ -166,7 +166,7 @@ describe('GitHubIntegration', () => {
 
     const github = new GitHubIntegration(config)
 
-    await expect(github.init()).rejects.toThrow('missing')
+    await expect(github.init()).rejects.toThrow(/Invalid credentials|missing/i)
   })
 
   it('converts issue event to RunInput', async () => {
@@ -182,6 +182,7 @@ describe('GitHubIntegration', () => {
     }
 
     const github = new GitHubIntegration(config)
+    await github.init()
 
     const event = {
       event: 'issues',
@@ -256,16 +257,7 @@ describe('SlackIntegration', () => {
     }
 
     const slack = new SlackIntegration(config)
-
-    const event: SlackConfig = {
-      id: 'slack',
-      name: 'Slack',
-      enabled: true,
-      credentials: {
-        botToken: 'xoxb-testtoken',
-        signingSecret: 'test-secret',
-      },
-    } as SlackConfig
+    await slack.init()
 
     // Mock event callback
     const messageEvent = {

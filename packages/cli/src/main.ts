@@ -167,6 +167,12 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
             ...(parsed.flags.detach === true && { detach: true }),
             ...(parsed.flags.json === true && { json: true }),
             ...(parsed.flags.systemd === true && { systemd: true }),
+            ...(typeof parsed.flags['http-port'] === 'string' && {
+              httpPort: Number(parsed.flags['http-port']),
+            }),
+            ...(typeof parsed.flags['http-host'] === 'string' && {
+              httpHost: parsed.flags['http-host'],
+            }),
           },
           io,
         )
@@ -360,10 +366,12 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         const everyRaw = parsed.flags['every-ms']
         const schedId = typeof parsed.flags.id === 'string' ? parsed.flags.id : undefined
         const cron = typeof parsed.flags.cron === 'string' ? parsed.flags.cron : undefined
+        const tz = typeof parsed.flags.tz === 'string' ? parsed.flags.tz : undefined
         const everyMs =
           typeof everyRaw === 'string' && /^\d+$/.test(everyRaw)
             ? Number.parseInt(everyRaw, 10)
             : undefined
+        const every = typeof parsed.flags.every === 'string' ? parsed.flags.every : undefined
         const webhook = typeof parsed.flags.webhook === 'string' ? parsed.flags.webhook : undefined
         const at = typeof parsed.flags.at === 'string' ? parsed.flags.at : undefined
         const input = typeof parsed.flags.input === 'string' ? parsed.flags.input : undefined
@@ -379,7 +387,9 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
             workflowId,
             ...(schedId !== undefined && { id: schedId }),
             ...(cron !== undefined && { cron }),
+            ...(tz !== undefined && { tz }),
             ...(everyMs !== undefined && { everyMs }),
+            ...(every !== undefined && { every }),
             ...(webhook !== undefined && { webhook }),
             ...(at !== undefined && { at }),
             ...(input !== undefined && { input }),

@@ -1,6 +1,6 @@
 {
   "name": "@skelm/agent",
-  "version": "0.3.8",
+  "version": "0.4.2",
   "description": "First-party skelm agent backend with native permission enforcement",
   "homepage": "https://skelm.dev/",
   "license": "MIT",
@@ -14,13 +14,15 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
-      }
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": ["dist", "README.md", "LICENSE"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsc --build",
     "test": "vitest run",

@@ -50,6 +50,51 @@ describe('OpenAI backend', () => {
     }
   })
 
+  it('forwards image content parts as data-URL image_url blocks', async () => {
+    const requests: unknown[] = []
+    const server = await startServer(async (req) => {
+      requests.push(req)
+      return { choices: [{ message: { content: 'I see a screenshot' } }] }
+    })
+    try {
+      const backend = createOpenAIBackend({ apiKey: 'test-key', baseUrl: server.baseUrl })
+      expect(backend.capabilities.vision).toBe(true)
+      await backend.infer?.(
+        {
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: 'describe this' },
+                { type: 'image', mimeType: 'image/png', data: 'AAAA' },
+              ],
+            },
+          ],
+        },
+        { signal: AbortSignal.timeout(5_000) },
+      )
+
+      expect(requests).toEqual([
+        expect.objectContaining({
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: 'describe this' },
+                {
+                  type: 'image_url',
+                  image_url: { url: 'data:image/png;base64,AAAA' },
+                },
+              ],
+            },
+          ],
+        }),
+      ])
+    } finally {
+      await server.close()
+    }
+  })
+
   it('parses structured responses when outputSchema is requested', async () => {
     const server = await startServer(async () => ({
       choices: [{ message: { content: '{"greeting":"hello"}' } }],

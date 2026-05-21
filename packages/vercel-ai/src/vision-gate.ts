@@ -1,0 +1,122 @@
+/**
+ * Per-model vision allowlist (finding-123 / GH #177).
+ *
+ * The framework's `capabilities.vision` gate is backend-coarse: vercel-ai
+ * is always vision-capable, even when the caller wires up a `LanguageModel`
+ * instance that points at a text-only model. The upstream provider then
+ * silently strips image content and returns a hallucinated "completely
+ * blank" reply.
+ *
+ * `assertModelSupportsImages` lets a backend instance opt into a per-model
+ * allowlist. When `visionModels` is set and the prompt carries image
+ * content, the model id derived from the `LanguageModel` instance is
+ * checked against the list; a mismatch throws `BackendCapabilityError`
+ * before dispatch.
+ *
+ * When `visionModels` is unset (the default), the function is a no-op so
+ * existing callers are unaffected.
+ */
+
+import { BackendCapabilityError, isMultimodal } from '@skelm/core'
+import type { ContentPart, PromptMessage } from '@skelm/core'
+import type { LanguageModel } from 'ai'
+
+/**
+ * Return the bare model id (e.g. `'gpt-4o'`) from a `LanguageModel` instance.
+ *
+ * - String shorthand → the string itself.
+ * - ai-sdk v4+ `LanguageModelV2` (and older v1 instances that expose
+ *   `modelId: string`) → `.modelId`.
+ * - Unknown shapes → `String(model)` (`[object Object]` in practice), which
+ *   never matches an allowlist entry — fail-closed by default.
+ *
+ * For the qualified `provider:modelId` form used in error messages and
+ * disambiguation, see `extractQualifiedModelId`.
+ */
+export function extractModelId(model: LanguageModel): string {
+  if (typeof model === 'string') return model
+  if (typeof model === 'object' && model !== null && 'modelId' in model) {
+    const id = (model as { modelId?: unknown }).modelId
+    if (typeof id === 'string' && id.length > 0) return id
+  }
+  return String(model)
+}
+
+/**
+ * Extract a fully-qualified `provider:modelId` form for error messages and
+ * allowlist matching. Returns the same value as `extractModelId` when
+ * `provider` is unavailable.
+ */
+export function extractQualifiedModelId(model: LanguageModel): string {
+  if (typeof model === 'string') return model
+  if (typeof model === 'object' && model !== null && 'modelId' in model) {
+    const id = (model as { modelId?: unknown }).modelId
+    const provider = (model as { provider?: unknown }).provider
+    if (typeof id === 'string' && id.length > 0) {
+      if (typeof provider === 'string' && provider.length > 0) {
+        return `${provider}:${id}`
+      }
+      return id
+    }
+  }
+  return String(model)
+}
+
+function promptHasImage(prompt: AgentPromptLike): boolean {
+  if (prompt === undefined) return false
+  // Reuse the canonical multimodal check from core so this stays consistent
+  // with how the rest of skelm decides "this message carries non-text parts."
+  // `isMultimodal` accepts `string | readonly ContentPart[]` directly.
+  if (!isMultimodal(prompt)) return false
+  return prompt.some((p) => p.type === 'image')
+}
+
+function messagesHaveImage(messages: readonly PromptMessage[]): boolean {
+  for (const m of messages) {
+    if (isMultimodal(m.content) && m.content.some((p) => p.type === 'image')) return true
+  }
+  return false
+}
+
+type AgentPromptLike = string | readonly ContentPart[] | undefined
+
+export interface AssertVisionArgs {
+  backendId: string
+  model: LanguageModel
+  visionModels: readonly string[] | undefined
+  /** From AgentRequest.prompt — the agent path. */
+  prompt?: AgentPromptLike
+  /** From InferRequest.messages — the llm() path. */
+  messages?: readonly PromptMessage[]
+}
+
+/**
+ * Throws `BackendCapabilityError` if image content is present and the
+ * resolved model id is not in `visionModels`. No-op when `visionModels`
+ * is unset.
+ */
+export function assertModelSupportsImages(args: AssertVisionArgs): void {
+  if (args.visionModels === undefined) return
+  const hasImage =
+    args.prompt !== undefined
+      ? promptHasImage(args.prompt)
+      : args.messages !== undefined
+        ? messagesHaveImage(args.messages)
+        : false
+  if (!hasImage) return
+  const modelId = extractModelId(args.model)
+  const qualified = extractQualifiedModelId(args.model)
+  // Accept either the bare model id or the `provider:modelId` form so
+  // callers can disambiguate models that exist under multiple providers
+  // (e.g. `gpt-4o` lives under both `openai` and `azure`).
+  if (args.visionModels.includes(modelId) || args.visionModels.includes(qualified)) return
+  // Surface the more informative `provider:modelId` form when available;
+  // it's what the user would write in `visionModels` to silence the error.
+  const displayId = qualified !== modelId ? qualified : modelId
+  throw new BackendCapabilityError(
+    `backend "${args.backendId}" model "${displayId}" does not support image content (not in visionModels allowlist). ` +
+      `Add "${displayId}" to the backend's visionModels option, or route image prompts to a vision-capable model.`,
+    args.backendId,
+    'vision',
+  )
+}

@@ -5,10 +5,13 @@ The skelm gateway is the long-running process that hosts your workflows. It is t
 There is **one** entry point: the `skelm` CLI. The gateway runs as a subcommand:
 
 ```bash
-skelm gateway start --foreground   # run in this process; Ctrl-C to stop
-skelm gateway start --detach       # fork a foreground gateway (Phase 11)
-skelm gateway status               # show running pid / url
+skelm gateway install              # install + start as a systemd user service (recommended)
+skelm gateway start                # start: delegates to systemd if installed, foreground otherwise
+skelm gateway start --foreground   # force foreground mode even when systemd unit is installed
+skelm gateway start --detach       # start detached (background process, no systemd)
+skelm gateway status               # show running pid, url, and reachability
 skelm gateway status --json
+skelm gateway stop                 # stop the gateway (systemd-aware)
 ```
 
 There is no separate `skelm-gateway` executable.
@@ -76,6 +79,33 @@ Every decision emits an audit event:
 
 This handles concurrent steps from different pipelines each getting their own policy enforced correctly.
 
+## Installing as a background service
+
+For production and persistent use, install the gateway as a systemd user service:
+
+```bash
+skelm gateway install
+```
+
+This writes `~/.config/systemd/user/skelm-gateway.service`, runs `systemctl --user daemon-reload`, and starts the service immediately via `systemctl --user enable --now skelm-gateway`. The service is configured to restart on failure and starts automatically on login.
+
+**User lingering** controls whether the service survives after you log out and starts automatically at boot. If lingering is not enabled, `skelm gateway install` will warn you:
+
+```
+warning: user lingering is not enabled. The gateway will stop when you log out
+and will not start automatically at boot. To fix this:
+
+  loginctl enable-linger <username>
+```
+
+To remove the service:
+
+```bash
+skelm gateway uninstall
+```
+
+This stops the running service, disables it, removes the unit file, and reloads systemd.
+
 ## State files
 
 By default the gateway writes its lockfile and discovery file under `~/.skelm`:
@@ -105,7 +135,7 @@ stopped → starting → running ⇄ paused → stopping → stopped
 
 ## Signal handling
 
-When started with signal handlers attached (the default for `skelm gateway start --foreground`):
+When started with signal handlers attached (the default when the gateway runs in the foreground):
 
 | Signal | Action |
 |--------|--------|
@@ -114,7 +144,7 @@ When started with signal handlers attached (the default for `skelm gateway start
 
 ## HTTP control surface
 
-When started with `skelm gateway start --foreground` the gateway also binds an HTTP server (`server.host` / `server.port` from `skelm.config.ts`, default `127.0.0.1:14738`). Auth defaults to loopback-only (`auth.mode: 'none'`); set `auth.mode: 'bearer'` and `SKELM_TOKEN` for remote use.
+When started in foreground mode (`skelm gateway start` without the systemd unit installed, or with `--foreground`) the gateway also binds an HTTP server (`server.host` / `server.port` from `skelm.config.ts`, default `127.0.0.1:14738`). Auth defaults to loopback-only (`auth.mode: 'none'`); set `auth.mode: 'bearer'` and `SKELM_TOKEN` for remote use.
 
 The gateway also starts an embedded **egress proxy** on `server.port + 1` (default `14739`). Every agent subprocess receives `HTTP_PROXY`, `HTTPS_PROXY`, and `SKELM_EGRESS_TOKEN` environment variables automatically, making `networkEgress` enforcement real rather than advisory. Set `server.proxy.enabled: false` to disable it, or `server.proxy.port` to use a custom port.
 

@@ -1,3 +1,4 @@
+import { parseDuration } from '@skelm/core'
 import { type Router, createError, eventHandler, readBody } from 'h3'
 import type { Gateway } from '../../lifecycle/gateway.js'
 import type { TriggerRegistration, TriggerSpec } from '../../triggers/types.js'
@@ -94,12 +95,31 @@ function scheduleTriggerToSpec(
     case 'cron': {
       const expr = trigger.expression
       if (typeof expr !== 'string') return 'invalid'
-      return { kind: 'cron', id, workflowId, cron: expr }
+      const spec: TriggerSpec = { kind: 'cron', id, workflowId, cron: expr }
+      if (typeof trigger.tz === 'string') spec.tz = trigger.tz
+      return spec
     }
     case 'interval': {
       const everyMs = trigger.everyMs
-      if (typeof everyMs !== 'number') return 'invalid'
-      return { kind: 'interval', id, workflowId, everyMs }
+      const every = trigger.every
+      if (typeof everyMs !== 'number' && typeof every !== 'string') return 'invalid'
+      let resolvedEveryMs: number
+      if (typeof everyMs === 'number') {
+        resolvedEveryMs = everyMs
+      } else {
+        try {
+          resolvedEveryMs = parseDuration(every as string)
+        } catch {
+          return 'invalid'
+        }
+      }
+      return {
+        kind: 'interval',
+        id,
+        workflowId,
+        everyMs: resolvedEveryMs,
+        ...(typeof every === 'string' && { every }),
+      }
     }
     case 'webhook': {
       const path = trigger.path
@@ -107,6 +127,53 @@ function scheduleTriggerToSpec(
       const spec: TriggerSpec = { kind: 'webhook', id, workflowId, path }
       if (typeof trigger.method === 'string') spec.method = trigger.method
       if (typeof trigger.secret === 'string') spec.secret = trigger.secret
+      if (trigger.provider === 'slack' || trigger.provider === 'ms-graph') {
+        spec.provider = trigger.provider
+      }
+      if (typeof trigger.clientState === 'string' && trigger.clientState !== '') {
+        spec.clientState = trigger.clientState
+      }
+      // Default-deny: Graph does not sign payloads, so without clientState
+      // the webhook URL would be the only authentication boundary.
+      // Refuse to register an unauthenticated ms-graph trigger (issue #161).
+      if (spec.provider === 'ms-graph' && spec.clientState === undefined) {
+        return 'invalid'
+      }
+      return spec
+    }
+    case 'event-source': {
+      const source = trigger.source
+      if (source !== 'websocket' && source !== 'sse' && source !== 'rss' && source !== 'custom') {
+        return 'invalid'
+      }
+      const options =
+        typeof trigger.options === 'object' && trigger.options !== null
+          ? (trigger.options as Record<string, unknown>)
+          : {}
+      const spec: TriggerSpec = {
+        kind: 'event-source',
+        id,
+        workflowId,
+        source,
+        options: options as Extract<TriggerSpec, { kind: 'event-source' }>['options'],
+      }
+      if (typeof trigger.filter === 'object' && trigger.filter !== null) {
+        spec.filter = trigger.filter as Record<string, unknown>
+      }
+      return spec
+    }
+    case 'file-watch': {
+      const path = trigger.path
+      if (typeof path !== 'string' || path === '') return 'invalid'
+      const spec: TriggerSpec = { kind: 'file-watch', id, workflowId, path }
+      if (Array.isArray(trigger.events)) {
+        const events = trigger.events.filter(
+          (event): event is 'create' | 'update' | 'delete' =>
+            event === 'create' || event === 'update' || event === 'delete',
+        )
+        if (events.length > 0) spec.events = events
+      }
+      if (typeof trigger.debounceMs === 'number') spec.debounceMs = trigger.debounceMs
       return spec
     }
     case 'poll': {
@@ -147,10 +214,18 @@ function registrationToSchedule(reg: TriggerRegistration): {
   let trigger: Record<string, unknown>
   switch (spec.kind) {
     case 'cron':
-      trigger = { kind: 'cron', expression: spec.cron }
+      trigger = {
+        kind: 'cron',
+        expression: spec.cron,
+        ...(spec.tz !== undefined && { tz: spec.tz }),
+      }
       break
     case 'interval':
-      trigger = { kind: 'interval', everyMs: spec.everyMs }
+      trigger = {
+        kind: 'interval',
+        everyMs: spec.everyMs,
+        ...(spec.every !== undefined && { every: spec.every }),
+      }
       break
     case 'manual':
       trigger = { kind: 'manual' }
@@ -164,7 +239,18 @@ function registrationToSchedule(reg: TriggerRegistration): {
     case 'webhook':
       trigger = { kind: 'webhook', path: spec.path }
       if (spec.method !== undefined) trigger.method = spec.method
-      // Don't expose the secret on read.
+      if (spec.provider !== undefined) trigger.provider = spec.provider
+      // Don't expose the secret or the ms-graph clientState on read; they
+      // are credentials, not metadata.
+      break
+    case 'event-source':
+      trigger = { kind: 'event-source', source: spec.source, options: spec.options }
+      if (spec.filter !== undefined) trigger.filter = spec.filter
+      break
+    case 'file-watch':
+      trigger = { kind: 'file-watch', path: spec.path }
+      if (spec.events !== undefined) trigger.events = [...spec.events]
+      if (spec.debounceMs !== undefined) trigger.debounceMs = spec.debounceMs
       break
     case 'poll':
       trigger = { kind: 'poll', everyMs: spec.everyMs, sourceFnId: spec.sourceFnId }

@@ -1,7 +1,7 @@
 # Gateway HTTP reference
 
 The gateway exposes a control plane and runs surface over HTTP. This page is
-the human-readable index; the [OpenAPI spec](./openapi.yaml) is the
+the human-readable index; the [OpenAPI spec](./openapi.md) is the
 machine-readable source of truth.
 
 ## Auth
@@ -127,5 +127,5 @@ A minimal reference dashboard that consumes these endpoints lives in
 
 ## See also
 
-- [`docs/reference/openapi.yaml`](./openapi.yaml) — full request/response schemas
+- [OpenAPI spec](./openapi.md) — full request/response schemas (rendered, with YAML download)
 - [`docs/reference/cli.md`](./cli.md) — the `skelm` CLI uses these endpoints

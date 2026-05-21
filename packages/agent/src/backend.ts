@@ -20,6 +20,7 @@ import type {
   AgentResponse,
   BackendCapabilities,
   BackendContext,
+  ContentPart,
   InferRequest,
   InferResponse,
   SkelmBackend,
@@ -28,8 +29,8 @@ import type {
 import type { ResolvedPolicy } from '@skelm/core/permissions'
 import { TrustEnforcer } from '@skelm/core/permissions'
 
-import { type OpenAIMessage, chatCompletion } from './http-client.js'
-import { buildSystemPrompt, toUsage } from './prompt.js'
+import { type OpenAIContentPart, type OpenAIMessage, chatCompletion } from './http-client.js'
+import { buildSystemPromptFromRequest, toUsage } from './prompt.js'
 import { BUILTIN_TOOLS, type ToolExecutionContext, type ToolResult, toOpenAITool } from './tools.js'
 
 export interface SkelmAgentOptions {
@@ -45,6 +46,29 @@ export interface SkelmAgentOptions {
   model?: string
   /** Timeout in milliseconds for LLM HTTP requests (default 300 000 = 5 min). */
   timeoutMs?: number
+  /**
+   * Advertise `capabilities.vision`. Defaults to `true`: the backend forwards
+   * image content to the upstream OpenAI-compatible endpoint and lets it
+   * decide whether the configured model can process it. Models that can't
+   * will surface their own 4xx/5xx, which `@skelm/agent` propagates as a
+   * thrown error — there is no silent strip. Set to `false` if you want the
+   * framework's vision gate to reject image prompts at step start instead
+   * (useful when you know the configured model is text-only and want a
+   * deterministic error before any HTTP egress).
+   */
+  vision?: boolean
+  /**
+   * Default cap on output tokens per chat completion. Sent as `max_tokens`
+   * on the OpenAI Chat Completions request body. Per-call `req.maxTokens`
+   * (on `llm()` steps) overrides this default; the agent loop (`run()`)
+   * uses it on every turn since `req.maxTokens` isn't plumbed there.
+   *
+   * Omit to let the upstream pick its own default (typically the model's
+   * full output context). For local llama.cpp / sglang servers this is
+   * usually unbounded by default and can produce very long replies; set
+   * an explicit ceiling for predictable latency.
+   */
+  maxTokens?: number
 }
 
 function createDefaultPolicy(cwd: string, agentDefRoot: string): ResolvedPolicy {
@@ -67,14 +91,43 @@ function isObjectSchema(s: unknown): s is Record<string, unknown> {
   return typeof s === 'object' && s !== null && !Array.isArray(s)
 }
 
-const capabilities: BackendCapabilities = {
-  prompt: true,
-  streaming: false,
-  sessionLifecycle: false,
-  mcp: true,
-  skills: true,
-  modelSelection: true,
-  toolPermissions: 'native',
+/**
+ * Map a skelm `PromptMessage.content` (string or `ContentPart[]`) to the
+ * OpenAI chat-completions content shape. String content stays as a string;
+ * multimodal arrays become `[{type:'text'}, {type:'image_url'}, ...]`. Image
+ * parts are encoded as base64 data URLs since that's the universally
+ * supported form across OpenAI cloud, llama.cpp, sglang, vLLM, and ollama.
+ */
+function toOpenAIChatContent(
+  content: string | readonly ContentPart[] | undefined,
+): string | readonly OpenAIContentPart[] {
+  if (content === undefined) return ''
+  if (typeof content === 'string') return content
+  const parts: OpenAIContentPart[] = []
+  for (const part of content) {
+    if (part.type === 'text') {
+      parts.push({ type: 'text', text: part.text })
+    } else if (part.type === 'image') {
+      parts.push({
+        type: 'image_url',
+        image_url: { url: `data:${part.mimeType};base64,${part.data}` },
+      })
+    }
+  }
+  return parts
+}
+
+function baseCapabilities(vision: boolean): BackendCapabilities {
+  return {
+    prompt: true,
+    streaming: false,
+    sessionLifecycle: false,
+    mcp: true,
+    vision,
+    skills: true,
+    modelSelection: true,
+    toolPermissions: 'native',
+  }
 }
 
 async function runAgentLoop(
@@ -87,6 +140,7 @@ async function runAgentLoop(
     timeoutMs: number
     cwd: string
     agentDefRoot: string
+    maxTokens: number | undefined
   },
 ): Promise<{
   text: string
@@ -94,10 +148,6 @@ async function runAgentLoop(
   usage?: Usage | undefined
 }> {
   const model = opts.defaultModel
-  // systemPrompt is computed for parity with prior behavior. The original
-  // implementation built it but never pushed it onto `messages`; preserving
-  // that here to avoid silent behavior change during the file split.
-  void buildSystemPrompt(req, opts.cwd, false, BUILTIN_TOOLS.length)
 
   const enforcer = ctx.permissions
     ? new TrustEnforcer(ctx.permissions)
@@ -120,8 +170,6 @@ async function runAgentLoop(
       : undefined,
   }
 
-  const messages: OpenAIMessage[] = [{ role: 'user', content: req.prompt }]
-
   // The runtime only builds an mcpHost for backends with toolPermissions:
   // 'wrapped'. We're 'native', so for step.mcp to actually do anything the
   // backend has to bring up the host itself and tear it down on exit.
@@ -129,6 +177,14 @@ async function runAgentLoop(
   if (ctx.mcpHost === undefined && req.mcpServers !== undefined && req.mcpServers.length > 0) {
     ownMcpHost = await createMcpHost(req.mcpServers, {
       ...(ctx.permissions !== undefined && { enforcer }),
+      // Forward the runner's event bus + identifiers so MCP tool dispatch
+      // emits tool.call / tool.result events the runner audits. Without
+      // this branch the McpHost's `publishToolCall` short-circuits on
+      // undefined `events`/`runId`/`stepId` and the audit log is empty
+      // for every MCP-driven native-agent run (F018).
+      ...(ctx.events !== undefined && { events: ctx.events }),
+      ...(ctx.runId !== undefined && { runId: ctx.runId }),
+      ...(ctx.stepId !== undefined && { stepId: ctx.stepId }),
     })
   }
   const mcpHost = ctx.mcpHost ?? ownMcpHost
@@ -139,17 +195,65 @@ async function runAgentLoop(
     // loop's else-if (mcpHost) branch below is dead: the model never sees
     // the namespaced "<serverId>.<toolName>" names and only falls back to the
     // built-in tools (F016).
-    const mcpTools = mcpHost
-      ? (await mcpHost.listTools()).map((t) => ({
-          type: 'function' as const,
-          function: {
-            name: t.id,
-            ...(t.description !== undefined && { description: t.description }),
-            ...(isObjectSchema(t.inputSchema) && { parameters: t.inputSchema }),
-          },
-        }))
-      : []
+    const mcpRawTools = mcpHost ? await mcpHost.listTools() : []
+    const mcpTools = mcpRawTools.map((t) => ({
+      type: 'function' as const,
+      function: {
+        name: t.id,
+        ...(t.description !== undefined && { description: t.description }),
+        ...(isObjectSchema(t.inputSchema) && { parameters: t.inputSchema }),
+      },
+    }))
     const tools = [...BUILTIN_TOOLS.map(toOpenAITool), ...mcpTools]
+
+    // Build a real system prompt and prepend it. Aggregate built-in + MCP tools,
+    // resolve skill summaries (body fetched on demand via fs_read), and tag the
+    // MCP servers so the model knows the namespacing convention.
+    const promptTools: Array<{ name: string; description?: string }> = [
+      ...BUILTIN_TOOLS.map((t) => ({
+        name: t.name,
+        ...(t.description !== undefined && { description: t.description }),
+      })),
+      ...mcpRawTools.map((t) => ({
+        name: t.id,
+        ...(t.description !== undefined && { description: t.description }),
+      })),
+    ]
+    const skillSummaries: Array<{ name: string; description: string; location?: string }> = []
+    if (req.skills && req.skills.length > 0 && ctx.loadSkill !== undefined) {
+      for (const skillId of req.skills) {
+        const skill = await ctx.loadSkill(skillId)
+        if (skill !== null) {
+          skillSummaries.push({
+            name: skill.id,
+            description: skill.description ?? '',
+            location: skill.source,
+          })
+        }
+      }
+    }
+    const mcpServerSummaries =
+      req.mcpServers && req.mcpServers.length > 0
+        ? req.mcpServers.map((s) => ({
+            id: s.id,
+            toolCount: mcpRawTools.filter((t) => t.id.startsWith(`${s.id}.`)).length,
+          }))
+        : undefined
+
+    const systemContent = buildSystemPromptFromRequest(req, {
+      cwd: opts.cwd,
+      platform: process.platform,
+      date: new Date().toISOString().slice(0, 10),
+      model,
+      tools: promptTools,
+      ...(skillSummaries.length > 0 && { skills: skillSummaries }),
+      ...(mcpServerSummaries && { mcpServers: mcpServerSummaries }),
+    })
+
+    const messages: OpenAIMessage[] = [
+      { role: 'system', content: systemContent },
+      { role: 'user', content: toOpenAIChatContent(req.prompt) },
+    ]
 
     const maxTurns = req.maxTurns ?? 30
     let turn = 0
@@ -162,7 +266,7 @@ async function runAgentLoop(
         model,
         messages,
         temperature: undefined,
-        maxTokens: undefined,
+        maxTokens: opts.maxTokens,
         tools,
         responseFormat: undefined,
         signal: ctx.signal,
@@ -249,6 +353,12 @@ async function runAgentLoop(
 export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
   const resolvedId = opts.id ?? 'agent'
 
+  // Vision capability is a user-declared opt-in/out: default is `true`
+  // (forward image content to the upstream and let it succeed or fail
+  // loudly). Set `vision: false` to flip on the framework's vision gate so
+  // image prompts are rejected at step start with no HTTP egress.
+  const capabilities = baseCapabilities(opts.vision ?? true)
+
   const backend: SkelmBackend = {
     id: resolvedId,
     capabilities,
@@ -263,7 +373,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
       for (const msg of req.messages) {
         messages.push({
           role: msg.role as OpenAIMessage['role'],
-          content: msg.content,
+          content: toOpenAIChatContent(msg.content),
         })
       }
 
@@ -272,7 +382,10 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
         model,
         messages,
         temperature: req.temperature as number | undefined,
-        maxTokens: req.maxTokens as number | undefined,
+        // Per-call req.maxTokens (llm step input) wins; otherwise fall back
+        // to the backend-level default. Either may be undefined → upstream
+        // picks its own default.
+        maxTokens: (req.maxTokens as number | undefined) ?? opts.maxTokens,
         responseFormat: req.outputSchema !== undefined ? { type: 'json_object' } : undefined,
         tools: undefined,
         signal: ctx.signal,
@@ -319,6 +432,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
         timeoutMs: opts.timeoutMs ?? 300_000,
         cwd,
         agentDefRoot,
+        maxTokens: opts.maxTokens,
       })
 
       let structured: unknown | undefined

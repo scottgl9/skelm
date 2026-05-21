@@ -1,8 +1,7 @@
+import parser from 'cron-parser'
 import type {
   CronTrigger,
   IntervalTrigger,
-  PollTrigger,
-  QueueTrigger,
   SchedulerConfig,
   Trigger,
   TriggerContext,
@@ -11,8 +10,7 @@ import type {
 
 /**
  * Scheduler manages long-running triggers for pipelines.
- * Handles cron, interval, webhook, poll, and queue-based triggers
- * with deduplication and overlap policies.
+ * Handles cron, interval, and webhook triggers with overlap policies.
  */
 export class Scheduler {
   private readonly config: SchedulerConfig
@@ -20,8 +18,9 @@ export class Scheduler {
   private readonly cronJobs = new Map<string, NodeJS.Timeout>()
   private readonly intervalJobs = new Map<string, NodeJS.Timeout>()
   private webhookServer: unknown | null = null
-  private pollJobs = new Map<string, NodeJS.Timeout>()
-  private queueJobs = new Map<string, NodeJS.Timeout>()
+  private readonly inFlight = new Set<Promise<unknown>>()
+  private readonly runningCount = new Map<string, number>()
+  private readonly lastRun = new Map<string, Promise<void>>()
   private isRunning = false
   private readonly runStore: { putRun: (run: unknown) => Promise<void> }
   private readonly pipelineLoader: (pipelineId: string) => Promise<unknown>
@@ -60,7 +59,6 @@ export class Scheduler {
 
     this.triggers.set(trigger.id, registration)
 
-    // Start the trigger based on type
     switch (trigger.type) {
       case 'cron':
         this.startCronTrigger(trigger)
@@ -70,12 +68,6 @@ export class Scheduler {
         break
       case 'webhook':
         // Webhook server starts separately via startWebhookServer()
-        break
-      case 'poll':
-        this.startPollTrigger(trigger)
-        break
-      case 'queue':
-        this.startQueueTrigger(trigger)
         break
     }
 
@@ -87,12 +79,11 @@ export class Scheduler {
     const registration = this.triggers.get(triggerId)
     if (!registration) return
 
-    // Stop any running jobs
     this.stopCronTrigger(triggerId)
     this.stopIntervalTrigger(triggerId)
-    this.stopPollTrigger(triggerId)
-    this.stopQueueTrigger(triggerId)
 
+    this.lastRun.delete(triggerId)
+    this.runningCount.delete(triggerId)
     this.triggers.delete(triggerId)
   }
 
@@ -104,11 +95,8 @@ export class Scheduler {
     registration.status = 'paused'
     registration.updatedAt = Date.now()
 
-    // Stop jobs for time-based triggers
     this.stopCronTrigger(triggerId)
     this.stopIntervalTrigger(triggerId)
-    this.stopPollTrigger(triggerId)
-    this.stopQueueTrigger(triggerId)
   }
 
   /** Resume a paused trigger */
@@ -121,19 +109,12 @@ export class Scheduler {
     registration.updatedAt = Date.now()
     const trigger = registration.trigger
 
-    // Restart jobs based on type
     switch (trigger.type) {
       case 'cron':
         this.startCronTrigger(trigger)
         break
       case 'interval':
         this.startIntervalTrigger(trigger)
-        break
-      case 'poll':
-        this.startPollTrigger(trigger)
-        break
-      case 'queue':
-        this.startQueueTrigger(trigger)
         break
     }
   }
@@ -150,8 +131,6 @@ export class Scheduler {
 
   /** Start the webhook server */
   async startWebhookServer(): Promise<void> {
-    // Webhook server implementation would go here
-    // Uses h3 or similar for HTTP handling
     console.log(
       `Webhook server would start on ${this.config.webhookHost}:${this.config.webhookPort}`,
     )
@@ -159,7 +138,6 @@ export class Scheduler {
 
   /** Stop the webhook server */
   async stopWebhookServer(): Promise<void> {
-    // Stop webhook server
     this.webhookServer = null
   }
 
@@ -178,69 +156,95 @@ export class Scheduler {
           case 'interval':
             this.startIntervalTrigger(trigger)
             break
-          case 'poll':
-            this.startPollTrigger(trigger)
-            break
-          case 'queue':
-            this.startQueueTrigger(trigger)
-            break
         }
       }
     }
   }
 
-  /** Stop all triggers */
+  /**
+   * Stop all triggers. Clears the timers, then waits up to 30s for any
+   * in-flight executeTrigger callbacks to settle so a SIGTERM does not
+   * leave fire-and-forget executions racing the process exit.
+   *
+   * Runs unconditionally — `register()` arms timers immediately without
+   * setting isRunning, so a stop() that gated on isRunning would leak
+   * those timers when the scheduler is constructed without start().
+   */
   async stop(): Promise<void> {
-    if (!this.isRunning) return
     this.isRunning = false
 
-    // Clear all jobs
     for (const [id, job] of this.cronJobs) {
-      clearInterval(job)
+      clearTimeout(job)
       this.cronJobs.delete(id)
     }
     for (const [id, job] of this.intervalJobs) {
       clearInterval(job)
       this.intervalJobs.delete(id)
     }
-    for (const [id, job] of this.pollJobs) {
-      clearInterval(job)
-      this.pollJobs.delete(id)
-    }
-    for (const [id, job] of this.queueJobs) {
-      clearInterval(job)
-      this.queueJobs.delete(id)
-    }
+
+    await this.drainInFlight(30_000)
+  }
+
+  /** Track a fire-and-forget execution so stop() can drain it. */
+  private track(promise: Promise<unknown>): void {
+    this.inFlight.add(promise)
+    promise.finally(() => this.inFlight.delete(promise))
+  }
+
+  private async drainInFlight(timeoutMs: number): Promise<void> {
+    if (this.inFlight.size === 0) return
+    await Promise.race([
+      Promise.allSettled([...this.inFlight]),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs).unref?.()),
+    ])
   }
 
   private startCronTrigger(trigger: CronTrigger): void {
-    // Simple cron implementation using setInterval
-    // In production, use 'cron' package for proper cron expression parsing
-    const intervalMs = this.parseCronToInterval(trigger.schedule)
+    this.scheduleNextCron(trigger)
+  }
 
-    const job = setInterval(async () => {
-      if (trigger.enabled && this.triggers.get(trigger.id)?.status === 'active') {
-        await this.executeTrigger(trigger)
+  private scheduleNextCron(trigger: CronTrigger): void {
+    let delay: number
+    try {
+      const opts: parser.ParserOptions = { currentDate: new Date() }
+      if (trigger.timezone !== undefined) opts.tz = trigger.timezone
+      const next = parser.parseExpression(trigger.schedule, opts).next().getTime()
+      delay = Math.max(0, next - Date.now())
+    } catch (err) {
+      const registration = this.triggers.get(trigger.id)
+      if (registration) {
+        registration.status = 'error'
+        registration.lastError = `Invalid cron expression "${trigger.schedule}": ${(err as Error).message}`
       }
-    }, intervalMs)
-
-    this.cronJobs.set(trigger.id, job)
+      console.error(`Trigger ${trigger.id} disabled: invalid cron "${trigger.schedule}"`)
+      return
+    }
+    const handle = setTimeout(() => {
+      const reg = this.triggers.get(trigger.id)
+      if (!reg || reg.status !== 'active' || !trigger.enabled) return
+      // Reschedule the next firing first so a slow run doesn't drift the schedule.
+      this.scheduleNextCron(trigger)
+      this.fire(trigger)
+    }, delay)
+    handle.unref?.()
+    this.cronJobs.set(trigger.id, handle)
   }
 
   private stopCronTrigger(triggerId: string): void {
     const job = this.cronJobs.get(triggerId)
     if (job) {
-      clearInterval(job)
+      clearTimeout(job)
       this.cronJobs.delete(triggerId)
     }
   }
 
   private startIntervalTrigger(trigger: IntervalTrigger): void {
-    const job = setInterval(async () => {
+    const job = setInterval(() => {
       if (trigger.enabled && this.triggers.get(trigger.id)?.status === 'active') {
-        await this.executeTrigger(trigger)
+        this.fire(trigger)
       }
     }, trigger.intervalMs)
+    job.unref?.()
 
     this.intervalJobs.set(trigger.id, job)
   }
@@ -253,48 +257,32 @@ export class Scheduler {
     }
   }
 
-  private startPollTrigger(trigger: PollTrigger): void {
-    const job = setInterval(async () => {
-      if (trigger.enabled && this.triggers.get(trigger.id)?.status === 'active') {
-        await this.executePollTrigger(trigger)
-      }
-    }, trigger.intervalMs)
+  /**
+   * Apply the overlap policy and schedule the execution.
+   * - fail-fast: skip if a previous run is in progress.
+   * - wait: chain after the previous run (next() resolves before we start).
+   * - run-concurrent: start immediately regardless.
+   */
+  private fire(trigger: Trigger): void {
+    const previous = this.lastRun.get(trigger.id)
+    const isRunning = (this.runningCount.get(trigger.id) ?? 0) > 0
+    const policy = trigger.overlap ?? 'wait'
 
-    this.pollJobs.set(trigger.id, job)
-  }
+    if (isRunning && policy === 'fail-fast') return
 
-  private stopPollTrigger(triggerId: string): void {
-    const job = this.pollJobs.get(triggerId)
-    if (job) {
-      clearInterval(job)
-      this.pollJobs.delete(triggerId)
-    }
-  }
+    const start = isRunning && policy === 'wait' && previous ? previous : Promise.resolve()
 
-  private startQueueTrigger(trigger: QueueTrigger): void {
-    const job = setInterval(async () => {
-      if (trigger.enabled && this.triggers.get(trigger.id)?.status === 'active') {
-        await this.executeQueueTrigger(trigger)
-      }
-    }, this.config.queuePollIntervalMs)
-
-    this.queueJobs.set(trigger.id, job)
-  }
-
-  private stopQueueTrigger(triggerId: string): void {
-    const job = this.queueJobs.get(triggerId)
-    if (job) {
-      clearInterval(job)
-      this.queueJobs.delete(triggerId)
-    }
+    const promise = start.then(() => this.executeTrigger(trigger))
+    this.lastRun.set(trigger.id, promise)
+    this.track(promise)
   }
 
   private async executeTrigger(trigger: Trigger): Promise<void> {
     const registration = this.triggers.get(trigger.id)
     if (!registration) return
 
+    this.runningCount.set(trigger.id, (this.runningCount.get(trigger.id) ?? 0) + 1)
     try {
-      // Check deduplication
       const ctx: TriggerContext = {
         triggerId: trigger.id,
         runId: `trigger-${trigger.id}-${Date.now()}`,
@@ -304,33 +292,11 @@ export class Scheduler {
         overlapHandled: false,
       }
 
-      // Handle overlap policy - check if already running
-      if (registration.status === 'active') {
-        // Check for concurrent run tracking (simplified)
-        const hasActiveRun = false // Would track active runs in production
-        if (hasActiveRun) {
-          ctx.overlapHandled = true
-          switch (trigger.overlap ?? 'wait') {
-            case 'fail-fast':
-              console.log(`Trigger ${trigger.id} skipped: overlap policy is fail-fast`)
-              return
-            case 'run-concurrent':
-              // Allow concurrent runs
-              break
-            default:
-              console.log(`Trigger ${trigger.id} waiting for previous run to complete`)
-              return
-          }
-        }
-      }
-
-      // Execute the pipeline
       const pipeline = await this.pipelineLoader(trigger.pipelineId)
       if (!pipeline) {
         throw new Error(`Pipeline ${trigger.pipelineId} not found`)
       }
 
-      // Create and store the run
       const run = {
         runId: ctx.runId,
         pipelineId: trigger.pipelineId,
@@ -347,52 +313,18 @@ export class Scheduler {
       registration.runCount++
       registration.lastRunAt = Date.now()
       registration.status = 'active'
-
-      console.log(`Trigger ${trigger.id} executed run ${ctx.runId}`)
     } catch (err) {
       registration.errorCount++
       registration.status = 'error'
       registration.lastError = (err as Error).message
       console.error(`Trigger ${trigger.id} error:`, err)
+    } finally {
+      const n = (this.runningCount.get(trigger.id) ?? 1) - 1
+      if (n <= 0) {
+        this.runningCount.delete(trigger.id)
+      } else {
+        this.runningCount.set(trigger.id, n)
+      }
     }
-  }
-
-  private async executePollTrigger(trigger: PollTrigger): Promise<void> {
-    // Poll implementation would fetch from URL and check for new items
-    console.log(`Polling ${trigger.url} for trigger ${trigger.id}`)
-    await this.executeTrigger(trigger)
-  }
-
-  private async executeQueueTrigger(trigger: QueueTrigger): Promise<void> {
-    // Queue implementation would poll message queue and process batches
-    console.log(`Checking queue ${trigger.queueName} for trigger ${trigger.id}`)
-    await this.executeTrigger(trigger)
-  }
-
-  private parseCronToInterval(cron: string): number {
-    // Simplified cron-to-interval conversion
-    // In production, use a proper cron library
-    if (!cron || typeof cron !== 'string') {
-      return 5 * 60 * 1000 // Default to 5 minutes
-    }
-
-    const parts = cron.split(' ')
-    if (parts.length !== 5) {
-      // Default to 5 minutes if invalid
-      return 5 * 60 * 1000
-    }
-
-    const [minute, hour, dayOfMonth, month, dayOfWeek] = parts
-
-    // Simple heuristic for common patterns
-    if (minute === '*') return 60 * 1000 // Every minute
-    if (hour === '*') return 60 * 60 * 1000 // Every hour
-    if (dayOfMonth === '*' && dayOfWeek === '*') {
-      const minVal = Number.parseInt(minute || '0', 10) || 0
-      return minVal * 60 * 1000
-    }
-
-    // Default to 5 minutes
-    return 5 * 60 * 1000
   }
 }

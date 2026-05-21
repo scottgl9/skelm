@@ -1,7 +1,22 @@
-import type { AgentRequest } from '@skelm/core/backend'
+/**
+ * Agent-package surface for the system-prompt builder.
+ *
+ * The builder itself lives in @skelm/core/system-prompt so it can be shared
+ * with other backends (e.g. anthropic) without creating a reverse dependency.
+ * This module re-exports the public API and adds the agent-only `toUsage`
+ * helper.
+ */
+
 import type { Usage } from '@skelm/core/backend'
 
 import type { OpenAIChatResponse } from './http-client.js'
+
+export {
+  DEFAULT_SECTIONS_MAX_CHARS,
+  buildSystemPrompt,
+  buildSystemPromptFromRequest,
+  type SystemPromptInput,
+} from '@skelm/core/system-prompt'
 
 export function toUsage(usage?: OpenAIChatResponse['usage']): Usage | undefined {
   if (!usage) return undefined
@@ -12,36 +27,4 @@ export function toUsage(usage?: OpenAIChatResponse['usage']): Usage | undefined 
       extras: { totalTokens: usage.total_tokens },
     }),
   }
-}
-
-export function buildSystemPrompt(
-  req: AgentRequest,
-  cwd: string,
-  hasMcpServers: boolean,
-  toolCount: number,
-): string {
-  const parts: string[] = []
-
-  if (req.agentDef) {
-    if (req.agentDef.soul) {
-      parts.push(`# SOUL.md\n${req.agentDef.soul}`)
-    }
-    parts.push(`# AGENTS.md\n${req.agentDef.instructions}`)
-  }
-
-  if (req.system) {
-    parts.push(`# Instructions\n${req.system}`)
-  }
-
-  parts.push(
-    `\n# Tool Use\n\nYou have access to ${toolCount} tool(s). Use them when appropriate.\nYour working directory is: ${cwd}\nWhen you need to use a tool, issue a tool call. When the task is complete, respond with your final answer.`,
-  )
-
-  if (hasMcpServers) {
-    parts.push(
-      '\nYou may also have access to MCP servers with additional tools. Use those when appropriate.',
-    )
-  }
-
-  return parts.join('\n\n---\n\n')
 }

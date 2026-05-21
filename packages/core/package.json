@@ -1,6 +1,6 @@
 {
   "name": "@skelm/core",
-  "version": "0.3.8",
+  "version": "0.4.2",
   "description": "skelm runtime, types, and builders",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
@@ -32,31 +32,35 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "default": "./dist/index.js"
     },
     "./backend": {
       "types": "./dist/backend.d.ts",
-      "import": "./dist/backend.js"
+      "default": "./dist/backend.js"
     },
     "./permissions": {
       "types": "./dist/permissions.d.ts",
-      "import": "./dist/permissions.js"
+      "default": "./dist/permissions.js"
     },
     "./schema": {
       "types": "./dist/schema.d.ts",
-      "import": "./dist/schema.js"
+      "default": "./dist/schema.js"
     },
     "./skills": {
       "types": "./dist/skills.d.ts",
-      "import": "./dist/skills.js"
+      "default": "./dist/skills.js"
+    },
+    "./system-prompt": {
+      "types": "./dist/system-prompt.d.ts",
+      "default": "./dist/system-prompt.js"
     },
     "./types": {
       "types": "./dist/types.d.ts",
-      "import": "./dist/types.js"
+      "default": "./dist/types.js"
     },
     "./testing": {
       "types": "./dist/testing.d.ts",
-      "import": "./dist/testing.js"
+      "default": "./dist/testing.js"
     }
   },
   "files": ["dist", "README.md", "LICENSE"],
@@ -68,11 +72,13 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "tsx ../../scripts/guards/dist-invariants.ts"
   },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
-    "better-sqlite3": "^12.9.0"
+    "better-sqlite3": "^12.9.0",
+    "tsx": "^4.19.2"
   },
   "peerDependencies": {
     "vitest": "^2.1.5"
@@ -85,5 +91,8 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "typescript": "^5.6.3"
+  },
+  "optionalDependencies": {
+    "@skelm/integration-sdk": "workspace:*"
   }
 }

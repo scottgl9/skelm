@@ -16,6 +16,8 @@ export interface RunSummary {
   readonly pipelineId: string
   /** Absolute path to the workflow file, when known. */
   readonly workflowPath?: string
+  /** Trigger id, when this run was started by a gateway-managed trigger. */
+  readonly triggerId?: string
   readonly status: RunStatus
   readonly startedAt: number
   readonly completedAt?: number
@@ -24,6 +26,8 @@ export interface RunSummary {
 export interface RunFilter {
   readonly pipelineId?: string
   readonly status?: RunStatus
+  /** Narrow to runs started by this trigger id. */
+  readonly triggerId?: string
   readonly limit?: number
   /** Inclusive lower bound on `startedAt` (epoch ms). */
   readonly startedAfter?: number
@@ -37,6 +41,64 @@ export interface AuditEntry {
   readonly action: string
   readonly data: unknown
   readonly at: number
+}
+
+/** Stable handle to a single artifact in the store. */
+export interface ArtifactRef {
+  readonly runId: RunId
+  readonly artifactId: string
+}
+
+/** Metadata describing a stored artifact (no payload). */
+export interface ArtifactDescriptor extends ArtifactRef {
+  readonly stepId?: string
+  readonly name: string
+  readonly mimeType: string
+  readonly size: number
+  readonly createdAt: number
+}
+
+/** Raised by `putArtifact` when adding an artifact would exceed the per-run quota. */
+export class ArtifactQuotaExceededError extends Error {
+  override readonly name = 'ArtifactQuotaExceededError'
+  constructor(
+    readonly runId: RunId,
+    readonly limitBytes: number,
+    readonly attemptedBytes: number,
+  ) {
+    super(
+      `artifact quota exceeded for run ${runId}: would write ${attemptedBytes} bytes, limit ${limitBytes} bytes`,
+    )
+  }
+}
+
+/**
+ * Per-step facade exposed on `ctx.artifacts`. The runner binds `runId` and
+ * `stepId` automatically — callers only specify the payload metadata.
+ */
+export interface ArtifactStoreHandle {
+  put(opts: {
+    name: string
+    mimeType: string
+    data: Uint8Array | string
+  }): Promise<ArtifactDescriptor>
+  get(ref: ArtifactRef): Promise<{ descriptor: ArtifactDescriptor; data: Uint8Array } | null>
+  list(opts?: { stepId?: string }): AsyncIterable<ArtifactDescriptor>
+}
+
+/** Persistence of binary artifacts (e.g. screenshots, evidence) by run + step. */
+export interface ArtifactStore {
+  putArtifact(opts: {
+    runId: RunId
+    stepId?: string
+    name: string
+    mimeType: string
+    data: Uint8Array | string
+  }): Promise<ArtifactDescriptor>
+  getArtifact(
+    ref: ArtifactRef,
+  ): Promise<{ descriptor: ArtifactDescriptor; data: Uint8Array } | null>
+  listArtifacts(runId: RunId, opts?: { stepId?: string }): AsyncIterable<ArtifactDescriptor>
 }
 
 /** Persistence of run lifecycle: run records, step events, and optional audit rows. */
@@ -62,7 +124,14 @@ export interface StateStore {
 }
 
 /** Combined store used by implementations that back both APIs with a single driver. */
-export type RunStore = ExecutionStore & StateStore
+export type RunStore = ExecutionStore & StateStore & ArtifactStore
+
+/**
+ * Default per-run artifact byte quota (256 MiB). Implementations may override
+ * via constructor options. The limit is checked at putArtifact time; an
+ * over-quota call rejects with `ArtifactQuotaExceededError` and writes nothing.
+ */
+export const DEFAULT_ARTIFACT_QUOTA_BYTES = 256 * 1024 * 1024
 
 export class MemoryRunStore implements RunStore {
   private readonly runs = new Map<RunId, Run>()
@@ -73,6 +142,13 @@ export class MemoryRunStore implements RunStore {
     Map<string, { value: unknown; expiresAt?: number; updatedAt: number }>
   >()
   private readonly journals = new Map<string, Map<string, Array<{ entry: unknown; at: number }>>>()
+  private readonly artifacts = new Map<RunId, Array<ArtifactDescriptor & { data: Uint8Array }>>()
+  private artifactCounter = 0
+  private readonly artifactQuotaBytes: number
+
+  constructor(opts: { artifactQuotaBytes?: number } = {}) {
+    this.artifactQuotaBytes = opts.artifactQuotaBytes ?? DEFAULT_ARTIFACT_QUOTA_BYTES
+  }
 
   async putRun(run: Run): Promise<void> {
     this.runs.set(run.runId, run)
@@ -92,6 +168,7 @@ export class MemoryRunStore implements RunStore {
     const runs = [...this.runs.values()]
       .filter((run) => filter.pipelineId === undefined || run.pipelineId === filter.pipelineId)
       .filter((run) => filter.status === undefined || run.status === filter.status)
+      .filter((run) => filter.triggerId === undefined || run.triggerId === filter.triggerId)
       .filter((run) => filter.startedAfter === undefined || run.startedAt >= filter.startedAfter)
       .filter((run) => filter.startedBefore === undefined || run.startedAt <= filter.startedBefore)
       .sort((a, b) => b.startedAt - a.startedAt)
@@ -101,6 +178,8 @@ export class MemoryRunStore implements RunStore {
       yield {
         runId: run.runId,
         pipelineId: run.pipelineId,
+        ...(run.workflowPath !== undefined && { workflowPath: run.workflowPath }),
+        ...(run.triggerId !== undefined && { triggerId: run.triggerId }),
         status: run.status,
         startedAt: run.startedAt,
         ...(run.completedAt !== undefined && { completedAt: run.completedAt }),
@@ -215,14 +294,71 @@ export class MemoryRunStore implements RunStore {
       }
     }
   }
+
+  async putArtifact(opts: {
+    runId: RunId
+    stepId?: string
+    name: string
+    mimeType: string
+    data: Uint8Array | string
+  }): Promise<ArtifactDescriptor> {
+    const bytes =
+      typeof opts.data === 'string'
+        ? Buffer.from(opts.data, 'utf8')
+        : Buffer.from(opts.data.buffer, opts.data.byteOffset, opts.data.byteLength)
+    const bucket = this.artifacts.get(opts.runId) ?? []
+    const used = bucket.reduce((sum, a) => sum + a.size, 0)
+    if (used + bytes.byteLength > this.artifactQuotaBytes) {
+      throw new ArtifactQuotaExceededError(opts.runId, this.artifactQuotaBytes, bytes.byteLength)
+    }
+    this.artifactCounter += 1
+    const descriptor: ArtifactDescriptor = {
+      runId: opts.runId,
+      artifactId: `art_${this.artifactCounter.toString(36)}`,
+      ...(opts.stepId !== undefined && { stepId: opts.stepId }),
+      name: opts.name,
+      mimeType: opts.mimeType,
+      size: bytes.byteLength,
+      createdAt: Date.now(),
+    }
+    bucket.push({ ...descriptor, data: new Uint8Array(bytes) })
+    this.artifacts.set(opts.runId, bucket)
+    return descriptor
+  }
+
+  async getArtifact(
+    ref: ArtifactRef,
+  ): Promise<{ descriptor: ArtifactDescriptor; data: Uint8Array } | null> {
+    const bucket = this.artifacts.get(ref.runId)
+    if (bucket === undefined) return null
+    const found = bucket.find((a) => a.artifactId === ref.artifactId)
+    if (found === undefined) return null
+    const { data, ...descriptor } = found
+    return { descriptor, data: new Uint8Array(data) }
+  }
+
+  async *listArtifacts(
+    runId: RunId,
+    opts: { stepId?: string } = {},
+  ): AsyncIterable<ArtifactDescriptor> {
+    const bucket = this.artifacts.get(runId) ?? []
+    for (const entry of bucket) {
+      if (opts.stepId !== undefined && entry.stepId !== opts.stepId) continue
+      const { data: _data, ...descriptor } = entry
+      yield descriptor
+    }
+  }
 }
 
 export interface SqliteRunStoreOptions {
   path?: string
+  artifactQuotaBytes?: number
 }
 
 export class SqliteRunStore implements RunStore {
   private readonly db: Database.Database
+  private readonly artifactQuotaBytes: number
+  private artifactCounter = 0
 
   constructor(opts: SqliteRunStoreOptions = {}) {
     const path = opts.path ?? ':memory:'
@@ -231,6 +367,7 @@ export class SqliteRunStore implements RunStore {
     }
     this.db = new Database(path)
     this.db.pragma('journal_mode = WAL')
+    this.artifactQuotaBytes = opts.artifactQuotaBytes ?? DEFAULT_ARTIFACT_QUOTA_BYTES
     this.init()
   }
 
@@ -238,11 +375,12 @@ export class SqliteRunStore implements RunStore {
     this.db
       .prepare(
         `INSERT INTO runs (
-          run_id, pipeline_id, workflow_path, status, input_json, steps_json, output_json, error_json, started_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id) DO UPDATE SET
           pipeline_id = excluded.pipeline_id,
           workflow_path = excluded.workflow_path,
+          trigger_id = excluded.trigger_id,
           status = excluded.status,
           input_json = excluded.input_json,
           steps_json = excluded.steps_json,
@@ -255,6 +393,7 @@ export class SqliteRunStore implements RunStore {
         run.runId,
         run.pipelineId,
         run.workflowPath ?? null,
+        run.triggerId ?? null,
         run.status,
         encodeValue(run.input),
         encodeValue(run.steps),
@@ -274,7 +413,7 @@ export class SqliteRunStore implements RunStore {
   async getRun(runId: RunId): Promise<Run | null> {
     const row = this.db
       .prepare(
-        `SELECT run_id, pipeline_id, workflow_path, status, input_json, steps_json, output_json, error_json, started_at, completed_at
+        `SELECT run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at
          FROM runs WHERE run_id = ?`,
       )
       .get(runId) as
@@ -282,6 +421,7 @@ export class SqliteRunStore implements RunStore {
           run_id: string
           pipeline_id: string
           workflow_path: string | null
+          trigger_id: string | null
           status: RunStatus
           input_json: string
           steps_json: string
@@ -296,6 +436,7 @@ export class SqliteRunStore implements RunStore {
       runId: row.run_id,
       pipelineId: row.pipeline_id,
       ...(row.workflow_path !== null && { workflowPath: row.workflow_path }),
+      ...(row.trigger_id !== null && { triggerId: row.trigger_id }),
       status: row.status,
       input: decodeValue(row.input_json),
       steps: decodeValue(row.steps_json),
@@ -317,6 +458,10 @@ export class SqliteRunStore implements RunStore {
       clauses.push('status = ?')
       params.push(filter.status)
     }
+    if (filter.triggerId !== undefined) {
+      clauses.push('trigger_id = ?')
+      params.push(filter.triggerId)
+    }
     if (filter.startedAfter !== undefined) {
       clauses.push('started_at >= ?')
       params.push(filter.startedAfter)
@@ -329,7 +474,7 @@ export class SqliteRunStore implements RunStore {
     const limit = filter.limit !== undefined ? `LIMIT ${filter.limit}` : ''
     const rows = this.db
       .prepare(
-        `SELECT run_id, pipeline_id, workflow_path, status, started_at, completed_at
+        `SELECT run_id, pipeline_id, workflow_path, trigger_id, status, started_at, completed_at
          FROM runs ${where}
          ORDER BY started_at DESC ${limit}`,
       )
@@ -337,6 +482,7 @@ export class SqliteRunStore implements RunStore {
       run_id: string
       pipeline_id: string
       workflow_path: string | null
+      trigger_id: string | null
       status: RunStatus
       started_at: number
       completed_at: number | null
@@ -346,6 +492,7 @@ export class SqliteRunStore implements RunStore {
         runId: row.run_id,
         pipelineId: row.pipeline_id,
         ...(row.workflow_path !== null && { workflowPath: row.workflow_path }),
+        ...(row.trigger_id !== null && { triggerId: row.trigger_id }),
         status: row.status,
         startedAt: row.started_at,
         ...(row.completed_at !== null && { completedAt: row.completed_at }),
@@ -509,6 +656,127 @@ export class SqliteRunStore implements RunStore {
     }
   }
 
+  async putArtifact(opts: {
+    runId: RunId
+    stepId?: string
+    name: string
+    mimeType: string
+    data: Uint8Array | string
+  }): Promise<ArtifactDescriptor> {
+    const bytes =
+      typeof opts.data === 'string'
+        ? Buffer.from(opts.data, 'utf8')
+        : Buffer.from(opts.data.buffer, opts.data.byteOffset, opts.data.byteLength)
+    const usedRow = this.db
+      .prepare('SELECT COALESCE(SUM(size), 0) AS used FROM artifacts WHERE run_id = ?')
+      .get(opts.runId) as { used: number } | undefined
+    const used = usedRow?.used ?? 0
+    if (used + bytes.byteLength > this.artifactQuotaBytes) {
+      throw new ArtifactQuotaExceededError(opts.runId, this.artifactQuotaBytes, bytes.byteLength)
+    }
+    // Monotonic in-process counter avoids same-millisecond collisions; the
+    // timestamp prefix keeps ids roughly sortable across process restarts.
+    this.artifactCounter += 1
+    const artifactId = `art_${Date.now().toString(36)}_${this.artifactCounter.toString(36)}`
+    const createdAt = Date.now()
+    this.db
+      .prepare(
+        `INSERT INTO artifacts (artifact_id, run_id, step_id, name, mime_type, data, size, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        artifactId,
+        opts.runId,
+        opts.stepId ?? null,
+        opts.name,
+        opts.mimeType,
+        bytes,
+        bytes.byteLength,
+        createdAt,
+      )
+    return {
+      runId: opts.runId,
+      artifactId,
+      ...(opts.stepId !== undefined && { stepId: opts.stepId }),
+      name: opts.name,
+      mimeType: opts.mimeType,
+      size: bytes.byteLength,
+      createdAt,
+    }
+  }
+
+  async getArtifact(
+    ref: ArtifactRef,
+  ): Promise<{ descriptor: ArtifactDescriptor; data: Uint8Array } | null> {
+    const row = this.db
+      .prepare(
+        `SELECT artifact_id, run_id, step_id, name, mime_type, data, size, created_at
+         FROM artifacts WHERE run_id = ? AND artifact_id = ?`,
+      )
+      .get(ref.runId, ref.artifactId) as
+      | {
+          artifact_id: string
+          run_id: string
+          step_id: string | null
+          name: string
+          mime_type: string
+          data: Buffer
+          size: number
+          created_at: number
+        }
+      | undefined
+    if (row === undefined) return null
+    const descriptor: ArtifactDescriptor = {
+      runId: row.run_id,
+      artifactId: row.artifact_id,
+      ...(row.step_id !== null && { stepId: row.step_id }),
+      name: row.name,
+      mimeType: row.mime_type,
+      size: row.size,
+      createdAt: row.created_at,
+    }
+    return { descriptor, data: new Uint8Array(row.data) }
+  }
+
+  async *listArtifacts(
+    runId: RunId,
+    opts: { stepId?: string } = {},
+  ): AsyncIterable<ArtifactDescriptor> {
+    const clauses = ['run_id = ?']
+    const params: unknown[] = [runId]
+    if (opts.stepId !== undefined) {
+      clauses.push('step_id = ?')
+      params.push(opts.stepId)
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT artifact_id, run_id, step_id, name, mime_type, size, created_at
+         FROM artifacts
+         WHERE ${clauses.join(' AND ')}
+         ORDER BY created_at ASC, artifact_id ASC`,
+      )
+      .all(...params) as Array<{
+      artifact_id: string
+      run_id: string
+      step_id: string | null
+      name: string
+      mime_type: string
+      size: number
+      created_at: number
+    }>
+    for (const row of rows) {
+      yield {
+        runId: row.run_id,
+        artifactId: row.artifact_id,
+        ...(row.step_id !== null && { stepId: row.step_id }),
+        name: row.name,
+        mimeType: row.mime_type,
+        size: row.size,
+        createdAt: row.created_at,
+      }
+    }
+  }
+
   close(): void {
     this.db.close()
   }
@@ -519,6 +787,7 @@ export class SqliteRunStore implements RunStore {
         run_id TEXT PRIMARY KEY,
         pipeline_id TEXT NOT NULL,
         workflow_path TEXT,
+        trigger_id TEXT,
         status TEXT NOT NULL,
         input_json TEXT NOT NULL,
         steps_json TEXT NOT NULL,
@@ -561,11 +830,26 @@ export class SqliteRunStore implements RunStore {
       );
       CREATE INDEX IF NOT EXISTS state_journal_namespace_idx
         ON state_journal(namespace, stream, at, id);
+      CREATE TABLE IF NOT EXISTS artifacts (
+        artifact_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        step_id TEXT,
+        name TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        data BLOB NOT NULL,
+        size INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS artifacts_run_idx ON artifacts(run_id, step_id, created_at, artifact_id);
     `)
-    // Migration: add workflow_path column if it doesn't exist (added in v1.1)
+    // Migration: add columns added after initial schema. Idempotent — only
+    // runs when the column is missing, so re-applies cleanly on every boot.
     const cols = this.db.prepare('PRAGMA table_info(runs)').all() as Array<{ name: string }>
     if (!cols.some((c) => c.name === 'workflow_path')) {
       this.db.exec('ALTER TABLE runs ADD COLUMN workflow_path TEXT')
+    }
+    if (!cols.some((c) => c.name === 'trigger_id')) {
+      this.db.exec('ALTER TABLE runs ADD COLUMN trigger_id TEXT')
     }
   }
 

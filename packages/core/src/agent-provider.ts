@@ -286,8 +286,18 @@ export async function executeAgentStep(
     throw new Error(`Agent provider not found: ${providerId}`)
   }
 
-  // Resolve prompt
-  const resolvedPrompt = typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt
+  // Resolve prompt — this legacy AgentRegistry path predates multimodal
+  // prompts; collapse any ContentPart[] to its text components. Function form
+  // may now be async (e.g. for prompts that load image bytes from disk), so
+  // await before flattening.
+  const promptValue = await (typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt)
+  const resolvedPrompt =
+    typeof promptValue === 'string'
+      ? promptValue
+      : promptValue
+          .filter((p) => p.type === 'text')
+          .map((p) => (p as { text: string }).text)
+          .join('')
 
   const request: AgentRequest = {
     requestId: `agent-${Date.now()}-${Math.random().toString(36).substring(7)}`,

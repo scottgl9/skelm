@@ -31,18 +31,36 @@ export async function initCommand(
   io: InitCommandIO,
 ): Promise<InitCommandResult> {
   const dir = resolve(process.cwd(), args.dir)
+  let mergeMode = false
   if (existsSync(dir) && !args.force) {
     const stat = await import('node:fs/promises').then((fs) => fs.stat(dir))
     if (stat.isDirectory() && (await isNonEmpty(dir))) {
-      io.stderr.write(`error: target directory is not empty: ${dir}\n`)
-      io.stderr.write('hint: pass --force to scaffold over an existing tree\n')
-      return { exitCode: EXIT.CLI_ERROR }
+      // Allow the common onboarding sequence:
+      //   mkdir foo && cd foo && npm init -y && npm i skelm && skelm init .
+      // by detecting the well-known npm-init residue (package.json,
+      // node_modules/, package-lock.json) and merging the scaffold into the
+      // existing tree. Anything beyond that demands --force so we don't
+      // silently overwrite a real project.
+      if (await isMergeableNpmInitDir(dir)) {
+        mergeMode = true
+      } else {
+        io.stderr.write(`error: target directory is not empty: ${dir}\n`)
+        io.stderr.write('hint: pass --force to scaffold over an existing tree\n')
+        return { exitCode: EXIT.CLI_ERROR }
+      }
     }
   }
 
   const files = scaffoldFiles()
   for (const [relPath, contents] of files) {
     const fullPath = join(dir, relPath)
+    // In merge mode, don't clobber an existing package.json — the user's
+    // `npm init` filled in name/version; we add a `skelm` dep + start script
+    // via mergePackageJson instead.
+    if (mergeMode && relPath === 'package.json' && existsSync(fullPath)) {
+      await mergePackageJson(fullPath, contents)
+      continue
+    }
     await mkdir(dirname(fullPath), { recursive: true })
     await writeFile(fullPath, contents, 'utf8')
   }
@@ -59,6 +77,73 @@ async function isNonEmpty(dir: string): Promise<boolean> {
   const fs = await import('node:fs/promises')
   const entries = await fs.readdir(dir)
   return entries.length > 0
+}
+
+const NPM_INIT_RESIDUE = new Set([
+  'package.json',
+  'package-lock.json',
+  'node_modules',
+  '.gitignore',
+  '.npmrc',
+  'README.md',
+])
+
+// Files that mean "this is already a skelm project" — if any of these exist we
+// must refuse merge so we don't overwrite the user's authored content.
+const SKELM_PROJECT_MARKERS = new Set([
+  'skelm.config.ts',
+  'skelm.config.js',
+  'skelm.config.mjs',
+  'workflows',
+])
+
+/**
+ * Decide whether `dir` is safe to merge a skelm scaffold into.
+ *
+ * Returns true when the directory either looks like fresh `npm init` /
+ * `npm i` residue, OR holds incidental files (logs, hidden dotfiles,
+ * editor turds) alongside the npm residue — anything that is NOT already
+ * a skelm project. Returns false as soon as we see a skelm marker
+ * (`skelm.config.*`, `workflows/`), so authored content is never
+ * silently overwritten.
+ */
+async function isMergeableNpmInitDir(dir: string): Promise<boolean> {
+  const fs = await import('node:fs/promises')
+  const entries = await fs.readdir(dir)
+  if (entries.length === 0) return true
+  // Hard stop: any skelm-shaped artefact means "this is already a skelm
+  // project" — demand --force.
+  if (entries.some((e) => SKELM_PROJECT_MARKERS.has(e))) return false
+  // We accept the merge when the directory has at least one npm residue
+  // marker (so we're not silently scaffolding into a random folder), but
+  // we tolerate extra files that are obviously incidental — bash history,
+  // editor swap files, scratch logs, hidden dotfiles.
+  const hasNpmResidue = entries.some((e) => NPM_INIT_RESIDUE.has(e))
+  if (!hasNpmResidue) return false
+  return entries.every((e) => NPM_INIT_RESIDUE.has(e) || isIncidentalFile(e))
+}
+
+function isIncidentalFile(name: string): boolean {
+  // Hidden dotfiles other than the ones we already scaffold.
+  if (name.startsWith('.') && !NPM_INIT_RESIDUE.has(name)) return true
+  // Logs and editor swap/temp files.
+  if (name.endsWith('.log')) return true
+  if (name.endsWith('.swp') || name.endsWith('.swo')) return true
+  if (name.endsWith('~')) return true
+  return false
+}
+
+async function mergePackageJson(path: string, scaffold: string): Promise<void> {
+  const fs = await import('node:fs/promises')
+  const existing = JSON.parse(await fs.readFile(path, 'utf8'))
+  const fresh = JSON.parse(scaffold)
+  const merged = {
+    ...existing,
+    type: existing.type ?? fresh.type,
+    scripts: { ...fresh.scripts, ...(existing.scripts ?? {}) },
+    dependencies: { ...(existing.dependencies ?? {}), ...fresh.dependencies },
+  }
+  await fs.writeFile(path, `${JSON.stringify(merged, null, 2)}\n`, 'utf8')
 }
 
 function getSkelmVersion(): string {

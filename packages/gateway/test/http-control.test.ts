@@ -7,6 +7,7 @@ import { MemoryRunStore } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { Gateway, InMemoryQueueDriver, type SuspendApprovalGate } from '../src/index.js'
+import { pickFreePort } from './utils/pick-free-port.js'
 
 let stateDir: string
 
@@ -284,6 +285,114 @@ describe('Gateway HTTP webhook trigger dispatch', () => {
       await gw.stop()
     }
   })
+
+  it('forwards the parsed body + headers as the trigger payload', async () => {
+    const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      httpProxyPort: proxyPort,
+      config: {},
+    })
+    await gw.start()
+    const base = `http://127.0.0.1:${port}`
+    try {
+      const payloads: unknown[] = []
+      gw.managers.triggers.setOnFire(async (ctx) => {
+        payloads.push(ctx.payload)
+      })
+      gw.managers.triggers.register({
+        kind: 'webhook',
+        id: 'echo',
+        workflowId: 'wf',
+        path: '/hooks/echo',
+        method: 'POST',
+      })
+      const res = await fetch(`${base}/hooks/echo`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-github-event': 'pull_request' },
+        body: JSON.stringify({ action: 'opened' }),
+      })
+      expect(res.status).toBe(200)
+      expect(payloads).toHaveLength(1)
+      const p = payloads[0] as {
+        body: { action: string }
+        headers: Record<string, string>
+        path: string
+        method: string
+      }
+      expect(p.body).toEqual({ action: 'opened' })
+      expect(p.headers['x-github-event']).toBe('pull_request')
+      expect(p.path).toBe('/hooks/echo')
+      expect(p.method).toBe('POST')
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('deduplicates webhook deliveries by header within the TTL', async () => {
+    const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      httpProxyPort: proxyPort,
+      config: {},
+    })
+    await gw.start()
+    const base = `http://127.0.0.1:${port}`
+    try {
+      const fired: string[] = []
+      gw.managers.triggers.setOnFire(async (ctx) => {
+        fired.push(ctx.triggerId)
+      })
+      gw.managers.triggers.register({
+        kind: 'webhook',
+        id: 'gh-pr',
+        workflowId: 'wf',
+        path: '/hooks/gh-pr',
+        method: 'POST',
+        dedupe: { header: 'X-GitHub-Delivery', ttlMs: 60_000 },
+      })
+
+      // First delivery fires.
+      const first = await fetch(`${base}/hooks/gh-pr`, {
+        method: 'POST',
+        headers: { 'x-github-delivery': 'abc-123' },
+      })
+      expect(first.status).toBe(200)
+      expect(await first.json()).toEqual({ ok: true, triggerId: 'gh-pr' })
+
+      // Replay with the same delivery id is deduped.
+      const replay = await fetch(`${base}/hooks/gh-pr`, {
+        method: 'POST',
+        headers: { 'x-github-delivery': 'abc-123' },
+      })
+      expect(replay.status).toBe(200)
+      expect(await replay.json()).toEqual({ ok: true, triggerId: 'gh-pr', deduped: true })
+
+      // A fresh delivery id fires again.
+      const second = await fetch(`${base}/hooks/gh-pr`, {
+        method: 'POST',
+        headers: { 'x-github-delivery': 'def-456' },
+      })
+      expect(second.status).toBe(200)
+
+      expect(fired).toEqual(['gh-pr', 'gh-pr'])
+
+      // Missing delivery header — defensive default: fire (do not silently drop).
+      const noHeader = await fetch(`${base}/hooks/gh-pr`, { method: 'POST' })
+      expect(noHeader.status).toBe(200)
+      expect(fired).toEqual(['gh-pr', 'gh-pr', 'gh-pr'])
+    } finally {
+      await gw.stop()
+    }
+  })
 })
 
 describe('Gateway HTTP /schedules', () => {
@@ -322,6 +431,61 @@ describe('Gateway HTTP /schedules', () => {
         id: string
       }>
       expect(list.map((s) => s.id)).toEqual(['s-cron'])
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('POST /schedules accepts `every` duration strings and round-trips through GET', async () => {
+    const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      httpProxyPort: proxyPort,
+      config: {},
+    })
+    await gw.start()
+    const base = `http://127.0.0.1:${port}`
+    try {
+      const created = (await fetch(`${base}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-interval-every',
+          workflowId: 'wf',
+          trigger: { kind: 'interval', every: '30m' },
+        }),
+      }).then((r) => r.json())) as { id: string; trigger: Record<string, unknown> }
+      expect(created.id).toBe('s-interval-every')
+      // The HTTP layer resolves `every` via parseDuration; both the resolved
+      // ms and the original string come back so observers can show either.
+      expect(created.trigger).toEqual({ kind: 'interval', everyMs: 1_800_000, every: '30m' })
+
+      const list = (await fetch(`${base}/schedules`).then((r) => r.json())) as Array<{
+        id: string
+        trigger: Record<string, unknown>
+      }>
+      expect(list.find((s) => s.id === 's-interval-every')?.trigger).toEqual({
+        kind: 'interval',
+        everyMs: 1_800_000,
+        every: '30m',
+      })
+
+      // Unparseable `every` values are rejected at the HTTP boundary rather
+      // than registering a never-firing schedule.
+      const bad = await fetch(`${base}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-interval-bad',
+          workflowId: 'wf',
+          trigger: { kind: 'interval', every: 'soon' },
+        }),
+      })
+      expect(bad.status).toBe(400)
     } finally {
       await gw.stop()
     }
@@ -487,6 +651,53 @@ describe('Gateway HTTP /schedules', () => {
         }),
       })
       expect(badTrigger.status).toBe(400)
+
+      // Default-deny: ms-graph webhook without clientState rejected
+      // because Graph does not sign payloads (issue #161).
+      const graphNoCs = await fetch(`http://127.0.0.1:${port}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's',
+          workflowId: 'w',
+          trigger: { kind: 'webhook', path: '/h', provider: 'ms-graph' },
+        }),
+      })
+      expect(graphNoCs.status).toBe(400)
+
+      // Empty-string clientState treated the same as omitted.
+      const graphEmptyCs = await fetch(`http://127.0.0.1:${port}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's',
+          workflowId: 'w',
+          trigger: {
+            kind: 'webhook',
+            path: '/h',
+            provider: 'ms-graph',
+            clientState: '',
+          },
+        }),
+      })
+      expect(graphEmptyCs.status).toBe(400)
+
+      // Same path with a non-empty clientState registers cleanly.
+      const graphOk = await fetch(`http://127.0.0.1:${port}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 'graph-ok',
+          workflowId: 'w',
+          trigger: {
+            kind: 'webhook',
+            path: '/hooks/graph-ok',
+            provider: 'ms-graph',
+            clientState: 'shared',
+          },
+        }),
+      })
+      expect(graphOk.status).toBe(200)
     } finally {
       await gw.stop()
     }
@@ -1298,22 +1509,3 @@ it('DELETE /schedules/:id unregisters a schedule; 404 for unknown', async () => 
     await gw.stop()
   }
 })
-
-async function pickFreePort(): Promise<number> {
-  const { createServer } = await import('node:net')
-  return new Promise((resolve, reject) => {
-    const srv = createServer()
-    srv.unref()
-    srv.once('error', reject)
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address()
-      if (addr === null || typeof addr === 'string') {
-        srv.close()
-        reject(new Error('port pick failed'))
-        return
-      }
-      const port = addr.port
-      srv.close(() => resolve(port))
-    })
-  })
-}

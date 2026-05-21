@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest'
 // Capture what we pass to the SDK so we can assert on it
 let lastServicesOptions: unknown
 let lastFromServicesOptions: unknown
+let lastRegisteredProvider: { name: string; config: unknown } | undefined
 
 const mockSession = {
   subscribe: vi.fn(),
@@ -20,7 +21,17 @@ const mockSession = {
 vi.mock('@mariozechner/pi-coding-agent', () => ({
   createAgentSessionServices: vi.fn(async (opts: unknown) => {
     lastServicesOptions = opts
-    return { cwd: '/x', agentDir: '/y', diagnostics: [] }
+    return {
+      cwd: '/x',
+      agentDir: '/y',
+      diagnostics: [],
+      modelRegistry: {
+        registerProvider: (name: string, config: unknown) => {
+          lastRegisteredProvider = { name, config }
+        },
+        find: (provider: string, model: string) => ({ provider, id: model, name: model }),
+      },
+    }
   }),
   createAgentSessionFromServices: vi.fn(async (opts: unknown) => {
     lastFromServicesOptions = opts
@@ -92,6 +103,41 @@ describe('PiSdkClient — SDK forwarding', () => {
     const opts = lastFromServicesOptions as { tools?: string[]; noTools?: string }
     expect(opts.tools).toEqual(['bash', 'read'])
     expect(opts.noTools).toBe('all')
+  })
+
+  it('registers providerOverride on the ModelRegistry before session creation (F119)', async () => {
+    lastRegisteredProvider = undefined
+    emitAgentEnd('hi')
+    await new PiSdkClient({
+      providerOverride: {
+        provider: 'openai',
+        model: 'qwen36',
+        baseUrl: 'http://localhost:8000/v1',
+        apiKey: 'unused',
+      },
+    }).prompt('go')
+    expect(lastRegisteredProvider?.name).toBe('openai')
+    const cfg = lastRegisteredProvider?.config as {
+      baseUrl?: string
+      apiKey?: string
+      models?: Array<{ id: string; api: string }>
+    }
+    expect(cfg.baseUrl).toBe('http://localhost:8000/v1')
+    expect(cfg.apiKey).toBe('unused')
+    expect(cfg.models?.[0]?.id).toBe('qwen36')
+    expect(cfg.models?.[0]?.api).toBe('openai-completions')
+    // model resolved via modelRegistry.find() is passed to the session factory
+    const opts = lastFromServicesOptions as { model?: { id: string } }
+    expect(opts.model?.id).toBe('qwen36')
+  })
+
+  it('skips override entirely when no provider/model/env hint is set', async () => {
+    lastRegisteredProvider = undefined
+    emitAgentEnd('hi')
+    await new PiSdkClient({}).prompt('go')
+    expect(lastRegisteredProvider).toBeUndefined()
+    const opts = lastFromServicesOptions as { model?: unknown }
+    expect(opts.model).toBeUndefined()
   })
 })
 

@@ -2,6 +2,16 @@
 
 Build, run, and schedule your first skelm workflow in five minutes.
 
+## TL;DR
+
+```sh
+npm i -g skelm
+skelm init my-bot && cd my-bot && npm install
+skelm run workflows/hello.workflow.ts --input '{"name":"world"}'
+```
+
+That's a code-only workflow. To add an agent step, see [Add an agent step](./add-agent.md) once the basics are working.
+
 ## Prerequisites
 
 - Node.js 20+
@@ -81,110 +91,7 @@ skelm run workflows/hello.workflow.ts --input '{"name":"world"}' --events json 2
 cat events.log
 ```
 
-### What happens during a one-shot run
-
-A one-shot run is short-lived, but it still creates a normal run record and emits lifecycle events you can inspect later.
-
-```text
-CLI input
-  ↓
-load workflow + config
-  ↓
-resolve JSON input
-  ↓
-create run id
-  ↓
-run.created / run.started
-  ↓
-input schema validation
-  ↓
-step.start → run step → step.complete
-      └──────── step.error → run.failed
-  ↓
-finalize or use last step output
-  ↓
-output schema validation
-  ↓
-run.completed → final JSON on stdout
-```
-
-The CLI resolves JSON from `--input`, `--input-file`, or stdin before the runner starts. After that, schema validation happens early in the run, so validation failures can still have a run id, events, and history.
-
-Progress and event output goes to stderr so stdout can stay reserved for the workflow's final JSON output.
-
-### Visualize the workflow shape
-
-To see the declared step graph instead of one run's event stream:
-
-```sh
-skelm describe workflows/hello.workflow.ts --format mermaid
-```
-
-The lifecycle above shows what happens during a run. `skelm describe --format mermaid` shows the workflow structure: steps, edges, and permissions.
-
-## 5. Add an agent step
-
-Agents in skelm run on the [pi coding-agent SDK](https://www.npmjs.com/package/@mariozechner/pi-coding-agent). Install it and register it as a backend in `skelm.config.ts`:
-
-```sh
-npm install @mariozechner/pi-coding-agent @skelm/pi
-```
-
-```ts
-// skelm.config.ts
-import { defineConfig } from 'skelm'
-import { createPiSdkBackend } from '@skelm/pi'
-
-export default defineConfig({
-  backends: { agent: 'pi' },
-  instances: [createPiSdkBackend({ id: 'pi' })],
-  pipelines: { discovery: 'auto', glob: 'workflows/**/*.workflow.ts' },
-  secrets: { driver: 'env' },
-})
-```
-
-Update `workflows/hello.workflow.ts`:
-
-```ts
-import { agent, pipeline } from 'skelm'
-import { z } from 'zod'
-
-export default pipeline({
-  id: 'hello',
-  description: 'Greet someone with an agent-generated message.',
-  input:  z.object({ name: z.string() }),
-  output: z.object({ greeting: z.string() }),
-  steps: [
-    agent({
-      id: 'greet',
-      backend: 'pi',
-      prompt: (ctx) =>
-        `Greet ${ctx.input.name} in one short sentence. Return JSON of the form {"greeting": "..."} and nothing else.`,
-      permissions: {
-        allowedTools:       [],          // no tools needed
-        allowedExecutables: [],
-        allowedMcpServers:  [],
-        allowedSkills:      [],
-        networkEgress:      'deny',      // backend handles its own outbound
-        fsRead:             [],
-        fsWrite:            [],
-      },
-      output: z.object({ greeting: z.string() }),
-      maxTurns: 2,
-    }),
-  ],
-})
-```
-
-Run it:
-
-```sh
-skelm run workflows/hello.workflow.ts --input '{"name":"world"}'
-```
-
-Notice: `permissions` is **explicit and default-deny**. The agent has no tools, no executables, no filesystem access, no network outside the backend's own. If the agent tries to do anything privileged, the run fails with a permission denial — by design.
-
-## 6. Schedule it
+## 5. Schedule it
 
 Run every five minutes:
 
@@ -215,7 +122,7 @@ Stop the cron schedule:
 skelm schedule stop hello-cron
 ```
 
-## 7. Run the gateway
+## 6. Run the gateway
 
 For long-running schedules (cron, webhook, poll, queue) to fire continuously, start the gateway:
 
@@ -223,17 +130,23 @@ For long-running schedules (cron, webhook, poll, queue) to fire continuously, st
 skelm gateway start
 ```
 
-The gateway listens on `127.0.0.1:14738` by default and runs your schedules. Press Ctrl-C to stop with a graceful drain.
+The gateway listens on `127.0.0.1:14738` by default and runs your schedules. Press Ctrl-C to stop with a graceful drain. It will also remind you to install it as a background service.
 
-To install it as a systemd user service so it runs across reboots:
+To install it as a persistent systemd user service that starts automatically on login and restarts on failure:
 
 ```sh
-skelm gateway install --systemd
-systemctl --user enable --now skelm-gateway
-systemctl --user status skelm-gateway
+skelm gateway install
 ```
 
-## 8. Inspect runs
+This writes the unit file, reloads systemd, and starts the service immediately. If user lingering is not enabled, you'll see a warning with the command to enable it so the service also starts at boot without a login session.
+
+To view logs from the running service:
+
+```sh
+journalctl --user -u skelm-gateway -f
+```
+
+## 7. Inspect runs
 
 ```sh
 skelm history --last 10
@@ -250,6 +163,7 @@ curl http://127.0.0.1:14738/runs/<runId>
 
 ## What's next
 
+- [Add an agent step](./add-agent.md) — install a backend and convert `hello` into an LLM-driven greeting.
 - [Concepts → Permissions](../concepts/permissions.md) — the default-deny model, how to widen safely with profiles.
 - [Concepts → Coding agents](../concepts/coding-agents.md) — how skelm's agent runtime composes with backends.
 - [Concepts → Registries](../concepts/registries.md) — workflow, skill, agent, and MCP-server registries.

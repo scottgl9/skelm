@@ -10,6 +10,7 @@ import {
   NoopAuditWriter,
   PermissionResolver,
   type RunStore,
+  Runner,
   type SecretResolver,
   type SkelmConfig,
   SqliteRunStore,
@@ -18,6 +19,7 @@ import { SuspendApprovalGate } from '../approvals/suspend-gate.js'
 import { ChainAuditWriter } from '../audit/chain.js'
 import { BreakpointRegistry } from '../debug/breakpoint-registry.js'
 import { type SkelmServer, createServer } from '../http/index.js'
+import { loadPipelineFromPath, makeGatewayPipelineRegistry } from '../http/routes/utils.js'
 import { AcpSessionManager, defaultAcpSessionStorePath } from '../managers/acp-session-manager.js'
 import { CodingAgentManager } from '../managers/coding-agent-manager.js'
 import { McpServerManager } from '../managers/mcp-server-manager.js'
@@ -28,9 +30,12 @@ import {
   SkillRegistry,
   WorkflowRegistry,
 } from '../registries/index.js'
+import { createSkillSource } from '../registries/skill-source.js'
 import { FileSecretResolver } from '../secrets/file-driver.js'
 import { TriggerCoordinator } from '../triggers/coordinator.js'
 import { createTriggerDispatcher } from '../triggers/dispatcher.js'
+import type { WorkflowArchiveService } from '../workflows/workflow-archive-service.js'
+import type { WorkflowRegistrationService } from '../workflows/workflow-registration-service.js'
 import { type DiscoveryRecord, removeDiscovery, writeDiscovery } from './discovery.js'
 import type {
   GatewayEnforcement,
@@ -40,6 +45,7 @@ import type {
   GatewayState,
 } from './gateway-types.js'
 import { type LockfileContents, acquireLockfile, releaseLockfile } from './lockfile.js'
+import { recoverInterruptedRuns } from './recovery.js'
 
 export type {
   GatewayEnforcement,
@@ -79,6 +85,12 @@ export class Gateway {
   private metricsInternal: import('@skelm/metrics').MetricsCollector | null = null
   private metricsBus: import('@skelm/core').EventBus | null = null
   private readonly breakpointsInternal: import('../debug/breakpoint-registry.js').BreakpointRegistry
+  private workflowRegistrationInternal: WorkflowRegistrationService | null = null
+  private workflowArchiveInternal: WorkflowArchiveService | null = null
+  /** In-flight reload promise; null when no reload is running. */
+  private reloadInFlight: Promise<void> | null = null
+  /** Coalesced follow-up reload promise — at most one outstanding. */
+  private reloadPendingAfter: Promise<void> | null = null
 
   constructor(private readonly options: GatewayOptions = {}) {
     this.stateDir = options.stateDir ?? join(homedir(), '.skelm')
@@ -121,26 +133,17 @@ export class Gateway {
 
   /** Throws if accessed before start() succeeds or after stop(). */
   get registries(): GatewayRegistries {
-    if (this.registriesInternal === null) {
-      throw new Error('gateway registries are not available — start() the gateway first')
-    }
-    return this.registriesInternal
+    return requireStarted(this.registriesInternal, 'gateway registries are not available')
   }
 
   /** Trust-boundary instances the gateway hands to Runners it constructs. */
   get enforcement(): GatewayEnforcement {
-    if (this.enforcementInternal === null) {
-      throw new Error('gateway enforcement is not available — start() the gateway first')
-    }
-    return this.enforcementInternal
+    return requireStarted(this.enforcementInternal, 'gateway enforcement is not available')
   }
 
   /** The durable RunStore; constructed at start() per the storage config. */
   get runStore(): RunStore {
-    if (this.runStoreInternal === null) {
-      throw new Error('gateway runStore is not available — start() the gateway first')
-    }
-    return this.runStoreInternal
+    return requireStarted(this.runStoreInternal, 'gateway runStore is not available')
   }
 
   /**
@@ -187,6 +190,42 @@ export class Gateway {
     return this.options.loadWorkflow
   }
 
+  /** Extra directories that POST /v1/workflows/register accepts. Empty by default. */
+  getAllowedRegistrationDirs(): string[] {
+    return this.options.allowedRegistrationDirs ?? []
+  }
+
+  /** Maximum items accepted by a single POST /v1/batch/runs request. */
+  getBatchMaxItemsPerRequest(): number {
+    const value = this.options.batch?.maxItemsPerRequest
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 1) return value
+    return 50
+  }
+
+  /** Maximum byte size of an uploaded workflow .zip. */
+  getWorkflowMaxArchiveBytes(): number {
+    const value = this.options.workflows?.maxArchiveBytes
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 1) return value
+    return 5 * 1024 * 1024
+  }
+
+  /**
+   * The workflow-registration service backs /v1/workflows/* routes. Lazily
+   * constructed once registries are available and replayed from disk during
+   * start(); throws if accessed before start() completes.
+   */
+  getWorkflowRegistrationService(): WorkflowRegistrationService {
+    return requireStarted(
+      this.workflowRegistrationInternal,
+      'workflow registration service is not available',
+    )
+  }
+
+  /** The archive-extraction service backing multipart .zip uploads. */
+  getWorkflowArchiveService(): WorkflowArchiveService {
+    return requireStarted(this.workflowArchiveInternal, 'workflow archive service is not available')
+  }
+
   /**
    * The breakpoint registry. Operators add step ids via the /debug HTTP
    * routes; the dispatcher's beforeStep hook consults this registry to
@@ -216,6 +255,64 @@ export class Gateway {
     this.metricsInternal.attach(bus)
   }
 
+  /**
+   * Shared async-start path used by `POST /pipelines/:id/start` and the batch
+   * fan-out route. Constructs a Runner with the gateway's enforcement, wires
+   * skills + sub-pipeline lookup, registers the run for cancellation, and
+   * fires it without awaiting. Returns the registered runId; callers handle
+   * idempotency and response shaping.
+   *
+   * Thrown errors carry a `.statusCode` so h3 surfaces them with the right
+   * HTTP status (404 for unknown id, 501 when no loader is wired). Errors
+   * raised by `loadPipelineFromPath` (load failure, missing default export)
+   * propagate through unchanged.
+   */
+  async startPipelineAsync(pipelineId: string, input: unknown): Promise<{ runId: string }> {
+    const entry = this.registries.workflows.get(pipelineId)
+    if (entry === undefined) {
+      throw startPipelineError(404, 'pipeline not found')
+    }
+    const loader = this.getWorkflowLoader()
+    if (loader === undefined) {
+      throw startPipelineError(501, 'gateway has no workflow loader')
+    }
+    const pipeline = await loadPipelineFromPath(loader, pipelineId, entry.path)
+    const enforcement = this.enforcement
+    const runner = new Runner({
+      approvalGate: enforcement.approvalGate,
+      secretResolver: enforcement.secretResolver,
+      auditWriter: enforcement.auditWriter,
+      store: this.runStore,
+    })
+    this.attachMetricsBus(runner.events)
+    const controller = new AbortController()
+    const runId = crypto.randomUUID()
+    this.registerRun(runId, controller, runner)
+    // If runner.start() throws synchronously the run never gets a handle, so
+    // the `.finally(unregisterRun)` below would leak the registration. Unwind
+    // here so an in-flight cancellation can't see a phantom runId.
+    let handle: ReturnType<Runner['start']>
+    try {
+      handle = runner.start(pipeline as Parameters<Runner['start']>[0], (input ?? {}) as never, {
+        runId,
+        signal: controller.signal,
+        skillSource: createSkillSource({
+          registry: this.registries.skills,
+          workflowPath: entry.path,
+        }),
+        pipelineRegistry: makeGatewayPipelineRegistry(this),
+      })
+    } catch (err) {
+      this.unregisterRun(runId)
+      throw err
+    }
+    void handle
+      .wait()
+      .catch(() => {})
+      .finally(() => this.unregisterRun(runId))
+    return { runId }
+  }
+
   cancel(runId: string, reason?: string): boolean {
     const controller = this.inFlightRuns.get(runId)
     if (controller === undefined) return false
@@ -226,10 +323,7 @@ export class Gateway {
 
   /** Process / session supervisors hosted by the gateway. */
   get managers(): GatewayManagers {
-    if (this.managersInternal === null) {
-      throw new Error('gateway managers are not available — start() the gateway first')
-    }
-    return this.managersInternal
+    return requireStarted(this.managersInternal, 'gateway managers are not available')
   }
 
   /**
@@ -237,11 +331,9 @@ export class Gateway {
    * The token is passed to the subprocess as SKELM_EGRESS_TOKEN.
    */
   registerEgressToken(runId: string, stepId: string, policy: NetworkPolicy): string {
-    if (this.tokenPolicyStore === null) {
-      throw new Error('egress proxy is not available — start() the gateway first')
-    }
+    const store = requireStarted(this.tokenPolicyStore, 'egress proxy is not available')
     const token = `${runId}:${stepId}`
-    this.tokenPolicyStore.set(token, policy)
+    store.set(token, policy)
     return token
   }
 
@@ -305,9 +397,16 @@ export class Gateway {
       }
       await writeDiscovery(this.discoveryPath, this.discovery)
       this.runStoreInternal = this.buildRunStore()
+      // Finalize any Run records left in `running` state from a previous
+      // process — those runs were interrupted by crash/SIGKILL/restart and
+      // must be marked failed before new runs start so listRuns reflects
+      // ground truth and operators can see what was lost.
+      await recoverInterruptedRuns(this.runStoreInternal)
       this.enforcementInternal = this.buildEnforcement()
       this.registriesInternal = await this.buildRegistries()
       this.managersInternal = await this.buildManagers()
+      this.workflowArchiveInternal = await this.buildWorkflowArchiveService()
+      this.workflowRegistrationInternal = await this.buildWorkflowRegistrationService()
       // Wire the trigger dispatcher now that managers + registries exist.
       // Without a loadWorkflow option the coordinator keeps its no-op
       // onFire — fired triggers still record their accounting but do not
@@ -330,6 +429,33 @@ export class Gateway {
       if (this.options.installSignalHandlers) this.attachSignals()
       this.state = 'running'
     } catch (err) {
+      // F042: lockfile + discovery are acquired before the HTTP listener
+      // binds, so a listen-time failure (most commonly EADDRINUSE) would
+      // leave stale state on disk if we only nulled the in-memory refs.
+      // Release every external artefact before resetting state.
+      try {
+        await this.stopEgressProxy()
+      } catch {
+        // swallow — we're already in an error path
+      }
+      if (this.httpServer !== null) {
+        try {
+          await this.httpServer.stop()
+        } catch {
+          // swallow
+        }
+        this.httpServer = null
+      }
+      try {
+        await removeDiscovery(this.discoveryPath)
+      } catch {
+        // swallow — the file may not have been written yet
+      }
+      try {
+        await releaseLockfile(this.lockfilePath)
+      } catch {
+        // swallow — best-effort cleanup
+      }
       this.state = 'stopped'
       this.lockfile = null
       this.discovery = null
@@ -339,6 +465,8 @@ export class Gateway {
       this.runStoreInternal = null
       this.egressProxy = null
       this.tokenPolicyStore = null
+      this.workflowRegistrationInternal = null
+      this.workflowArchiveInternal = null
       throw err
     }
   }
@@ -361,8 +489,37 @@ export class Gateway {
    * Hot-reload registries (and, in later phases, config + plugins) without
    * dropping in-flight runs. The default reload re-scans FS-backed
    * registries and re-applies the (unchanged) config-backed ones.
+   *
+   * Serialized: only one reload runs at a time. Concurrent callers (the
+   * SIGHUP handler, the FsWatcher's per-file change events, and an
+   * explicit `POST /gateway/reload`) all share the same in-flight
+   * promise. Without this, a burst of file edits could queue dozens of
+   * concurrent `tsImport` + `onReload` cycles and lock the event loop
+   * (the onReload hook does work proportional to the workflow count, so
+   * the pile-up is worse than the registry-refresh-only cost before
+   * `onReload` was introduced).
    */
   async reload(nextConfig?: SkelmConfig): Promise<void> {
+    if (this.reloadInFlight !== null) {
+      // If a reload is already running, await it and also schedule one
+      // more pass — there could be changes that arrived after the
+      // in-flight reload started its registry refresh. The second pass
+      // is itself coalesced by this same check, so two concurrent
+      // callers + the in-flight pass settle into at most one follow-up.
+      await this.reloadInFlight
+      if (this.reloadPendingAfter !== null) return this.reloadPendingAfter
+      this.reloadPendingAfter = this.runReload(nextConfig).finally(() => {
+        this.reloadPendingAfter = null
+      })
+      return this.reloadPendingAfter
+    }
+    this.reloadInFlight = this.runReload(nextConfig).finally(() => {
+      this.reloadInFlight = null
+    })
+    return this.reloadInFlight
+  }
+
+  private async runReload(nextConfig?: SkelmConfig): Promise<void> {
     if (this.state !== 'running' && this.state !== 'paused') {
       throw new Error(`cannot reload gateway in state ${this.state}`)
     }
@@ -380,6 +537,13 @@ export class Gateway {
         r.agents.refresh(),
         r.mcpServers.refresh(),
       ])
+    }
+    if (this.options.onReload !== undefined) {
+      try {
+        await this.options.onReload()
+      } catch (err) {
+        console.error('gateway onReload hook failed:', (err as Error).message)
+      }
     }
   }
 
@@ -422,6 +586,8 @@ export class Gateway {
       this.runStoreInternal = null
       this.egressProxy = null
       this.tokenPolicyStore = null
+      this.workflowRegistrationInternal = null
+      this.workflowArchiveInternal = null
     }
   }
 
@@ -553,7 +719,10 @@ export class Gateway {
     // an approver. AutoApproveGate is an explicit opt-in for tests.
     const approvalGate =
       this.options.approvalGate ??
-      new SuspendApprovalGate({ persistPath: join(this.stateDir, 'approvals.json') })
+      new SuspendApprovalGate({
+        persistPath: join(this.stateDir, 'approvals.json'),
+        auditWriter,
+      })
 
     return {
       permissionResolver: new PermissionResolver({
@@ -591,6 +760,36 @@ export class Gateway {
     return { workflows, skills, agents, mcpServers }
   }
 
+  private async buildWorkflowRegistrationService(): Promise<WorkflowRegistrationService> {
+    if (this.registriesInternal === null) {
+      throw new Error('registries must be built before workflow registration service')
+    }
+    const { WorkflowRegistrationService: Ctor } = await import(
+      '../workflows/workflow-registration-service.js'
+    )
+    const service = new Ctor({
+      stateDir: this.stateDir,
+      registry: this.registriesInternal.workflows,
+      projectRoot: this.projectRoot,
+      allowedDirs: this.options.allowedRegistrationDirs ?? [],
+      ...(this.workflowArchiveInternal !== null && {
+        archiveRoot: this.workflowArchiveInternal.uploadRoot,
+      }),
+    })
+    await service.loadFromDisk()
+    return service
+  }
+
+  private async buildWorkflowArchiveService(): Promise<WorkflowArchiveService> {
+    const { WorkflowArchiveService: Ctor } = await import(
+      '../workflows/workflow-archive-service.js'
+    )
+    return new Ctor({
+      uploadRoot: join(this.stateDir, 'uploaded-workflows'),
+      maxBytes: this.getWorkflowMaxArchiveBytes(),
+    })
+  }
+
   private attachSignals(): void {
     if (this.signalsAttached) return
     const stop = () => {
@@ -616,6 +815,20 @@ export class Gateway {
     this.handlers.clear()
     this.signalsAttached = false
   }
+}
+
+/** Narrow a lazily-initialized field to its non-null type, with a uniform suffix. */
+function requireStarted<T>(value: T | null, notAvailableMsg: string): T {
+  if (value === null) {
+    throw new Error(`${notAvailableMsg} — start() the gateway first`)
+  }
+  return value
+}
+
+function startPipelineError(statusCode: number, message: string): Error & { statusCode: number } {
+  const err = new Error(message) as Error & { statusCode: number }
+  err.statusCode = statusCode
+  return err
 }
 
 function expandHome(p: string): string {

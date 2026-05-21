@@ -2,159 +2,182 @@
 
 Guidance for AI coding assistants and human contributors working on **skelm** — a TypeScript-first framework for authoring, running, and operating agentic and deterministic pipelines.
 
+This file is the single source of truth for agent guidance. `CLAUDE.md` is a symlink to this file so Claude Code, Codex, Cursor, Aider, and other agents read the same rules.
+
 ## What skelm is
 
-skelm is a Node/TypeScript framework. The high-level unit is a **pipeline**: a typed, inspectable, executable orchestration that may be a single agent, a multi-step workflow with parallel branches, loops, and nested pipelines, or anything in between. Pipelines run from the CLI, are hosted by a long-running gateway service, and integrate with LLMs, agent runtimes, and tool servers under explicit, default-deny permissions.
-
-If you are about to make a change to this repo, you are working on framework code that other developers and enterprises will depend on. Treat every change accordingly.
+A Node/TypeScript framework whose unit of work is a **pipeline** — a typed, inspectable orchestration that can be a single agent or a multi-step workflow with parallel branches, loops, and nested pipelines. Pipelines run from the CLI, are hosted by a long-running gateway service, and integrate with LLMs, agent runtimes, and tool servers under explicit, default-deny permissions.
 
 ## Tenets
 
-These are the tiebreakers. When goals conflict, the higher tenet wins.
+When goals conflict, the higher tenet wins.
 
-1. **Security.** Pipelines run user code, invoke LLMs, and may drive agents with executable tools. Default-deny is the design posture. Agent permissions (allowed executables, skills, tool servers, tools, network egress, fs roots) are part of the authoring API, not an afterthought. A backend that cannot enforce a declared permission must fail at step start rather than silently bypass it.
-2. **Ease of maintenance.** A small core, single-sourced vocabulary, narrow public surface, no DSL. Internals are replaceable; the API is stable. Every package boundary exists to keep blast radius small under future change.
-3. **Robustness for long-running workflows.** Once a pipeline is authored, it runs reliably: typed context end-to-end, explicit error semantics, deterministic event log, durable wait/resume, no implicit magic. Failures are observable; recovery is explicit.
-
-These tenets explicitly outrank performance, surface area, and feature breadth.
+1. **Security.** Default-deny everywhere; agent permissions are part of the public API. A backend that cannot enforce a declared permission must fail at step start, not silently bypass.
+2. **Maintenance.** Small core, narrow public surface, replaceable internals. Every package boundary exists to keep blast radius small.
+3. **Robustness for long-running workflows.** Typed context end-to-end, explicit errors, deterministic event log, durable wait/resume. Failures observable; recovery explicit.
 
 ## Repo shape
 
 ```
 skelm/
 ├── packages/
-│   ├── core/        — runtime, types, builders, run store, MCP host
-│   ├── cli/         — bin: skelm
-│   ├── server/      — HTTP + SSE surface
-│   └── gateway/     — long-running service, embeds server + scheduler
-├── pipelines/
-│   └── internal/    — skelm dogfooding pipelines (review, test-gen, release)
+│   ├── core/             — runtime, types, builders, run store, MCP host
+│   ├── cli/              — bin: skelm
+│   ├── gateway/          — long-running service; embeds scheduler; owns poll, queue, file-watch, event-source triggers; trust boundary
+│   ├── scheduler/        — cron / interval / webhook triggers
+│   ├── skelm/            — meta-package; re-exports core + ships CLI
+│   ├── agent/            — first-party native agent backend with built-in tools
+│   ├── pi/               — Pi coding-agent backend
+│   ├── opencode/         — Opencode coding-agent backend (native + ACP)
+│   ├── codex/            — OpenAI Codex backend (@openai/codex-sdk)
+│   ├── vercel-ai/        — Vercel AI SDK backend with streaming
+│   ├── integrations/     — typed connectors (GitHub, Slack, Telegram, ms-graph, …)
+│   ├── integration-sdk/  — authoring SDK for custom integrations
+│   ├── metrics/          — Prometheus-format metrics
+│   └── otel/             — OpenTelemetry tracing
+├── pipelines/internal/   — dogfooding (review, test-gen, release)
 ├── examples/
-├── scripts/
-│   └── guards/      — small focused architectural-invariant checks
+├── scripts/guards/       — architectural-invariant checks
 ├── tests/
-└── docs/            — public documentation
+└── docs/
 ```
-
-`planning/` and `plan.md` (if present locally) are internal design notes, gitignored, not part of the shipped repository.
 
 ## Working with the codebase
 
-### Before you change anything
+- **Read before you write.** For any non-trivial change: the touched module's TSDoc, the package `README.md`, and one nearby test. Gateway / security / public-API changes also read the relevant page under `docs/`.
+- **If you can't predict what will break, read more — don't start writing.** Uncertainty is signal to keep reading, not signal to ship and find out.
+- **Prefer existing utilities.** Search the package before writing a new helper. When one almost fits, extend it rather than parallel-implementing.
+- **No speculative work.** Don't add features, refactors, or abstractions beyond what the task requires. Three similar lines beat a premature abstraction.
+- **No defensive scaffolding** for cases that can't happen. Trust internal code and framework guarantees; validate at system boundaries (user input, external APIs, plugin entries).
+- **No comments unless the *why* is non-obvious** — a hidden constraint, subtle invariant, workaround. One short line max. Don't explain what the code does; don't reference the current task or fix.
+- **Match indentation exactly** to the file you're editing. Two-space TS; tabs only where the existing file already uses tabs.
+- **Never edit generated files** (`dist/`, `coverage/`, `.skelm/`).
 
-- Read the relevant package's `README.md` and the touched module's TSDoc.
-- Run `pnpm check` once on a clean tree to confirm the gates are green before you start. If gates are red on `main`, fix or revert before opening a PR for unrelated work.
-- For non-trivial changes, sketch the diff in your head and check it against the tenets above. If a change makes the framework less secure, less maintainable, or less robust without a clear win in another tenet, reconsider.
+## Implementation discipline
 
-### While you work
+**Before every commit, run `pnpm check` and confirm it passes.** This is non-negotiable — not "when in doubt", not "for big changes", every commit. Documentation-only commits included; the doc-links and docs-orphans guards live in the same pipeline and have caught real breakage. If `pnpm check` is red, the work is not done.
 
-- Prefer editing existing files to creating new ones.
-- Default to writing no comments. Only add one when the *why* is non-obvious — a hidden constraint, a subtle invariant, a workaround. Do not explain what the code does; well-named identifiers do that.
-- Avoid TODO comments. If something needs doing, open an issue or do it.
-- Do not add features, refactor, or introduce abstractions beyond what the task requires. A bug fix doesn't need surrounding cleanup; a one-shot doesn't need a helper.
-- Do not add error handling, fallbacks, or validation for scenarios that can't happen. Trust internal code and framework guarantees. Validate at system boundaries (user input, external APIs, plugin entries).
+Every feature, fix, or behavior change follows this loop:
 
-### Implementation discipline (non-negotiable)
+1. **Build.** `pnpm build` succeeds — no TS errors, no escalated warnings.
+2. **Update or write tests.** New behavior gets new tests; changed behavior gets existing tests updated.
+3. **Run all gates.** `pnpm check` passes top to bottom (build → typecheck → lint → unit → guards → adversarial → contract → doc-links).
+4. **Commit only when green.** A commit on a red tree is a defect.
 
-Every new feature, bug fix, or behavior change follows this loop **before any commit lands**:
+If a failing test is verifiably pre-existing and unrelated to your change (same failure on `main`, environment-specific, etc.), call it out explicitly in the commit body or PR description rather than silently committing through. Don't normalize red trees.
 
-1. **Build.** `pnpm build` succeeds with no TypeScript errors and no warnings escalated to errors.
-2. **Update or write tests.** New behavior gets new tests. Changed behavior gets the existing tests updated. No exceptions for "obvious" code.
-3. **Run all tests.** `pnpm check` passes — every gate, in order. Build, typecheck, lint, unit, guards, adversarial security fixtures, backend-contract suite, doc-link verification.
-4. **Commit only when green.** A commit on a red tree is a defect. Pre-commit hooks block obvious failures; CI catches the rest.
+**Big features land in small, green increments.** Focused change → `pnpm check` → validate the increment → commit → push → continue. Confirm cadence with the user before the first commit on a fresh feature. Don't pile up unpushed work.
 
-If a change is large enough that intermediate states are red, develop on a branch and squash. Never push a red commit to `main`. Never bypass the pre-commit hook (`--no-verify`) without an explicit justification line in the commit body.
+All work lands on a branch and merges to `main` via PR; CI gates the merge. Locally, the rule is simpler: don't commit on a red tree, and don't `--no-verify` without an explicit justification line in the commit body.
 
-### Big features: commit and push at every validated checkpoint
+## Tests are mandatory for behavior changes
 
-Large features are landed in **small, green increments**. The rhythm:
+- **Permissions, audit, security paths** — adversarial tests proving default-deny on omission **and** explicit-deny on violation.
+- **Backends** — pass the backend-contract suite.
+- **Public CLI commands** — spawn the bin against a fixture; assert exit code, stdout, stderr.
+- **Gateway HTTP endpoints** — happy-path + auth-failure + validation-failure each.
 
-1. Make a focused change (one decision per commit).
-2. Run `pnpm check` — pass.
-3. Validate the increment (manual smoke, fixture run, or specific test that exercises the new path).
-4. Commit with a clear message.
-5. Push to the working branch.
-6. Continue.
+If you're tempted to skip tests for "obvious" code, that code will surprise you in production.
 
-Do not accumulate a week of unpushed work. The branch is the unit of review; the commit is the unit of audit. A reviewer should be able to trace a feature by reading commits in order. A 2,000-line PR with one commit is harder to review well than ten 200-line commits, even when the code is identical.
+**Coverage targets:** runtime, dispatcher, context, and permission enforcement should hold ≥95% line coverage, with **100% branch coverage on permission enforcement**. Every documented CLI exit code has a test.
 
-The pattern applies whether you are a human contributor or an AI assistant: validate the increment, commit it green, push, continue.
+## Git hooks
 
-### Tests are mandatory for behavior changes
+The pre-commit hook formats staged files (Biome). An optional pre-push hook runs `pnpm check` locally — install with `bash scripts/install-git-hooks.sh`. CI runs `pnpm check` on every push and PR with no `continue-on-error` anywhere.
 
-Every behavior change ships with tests:
+## Repo-specific invariants
 
-- **Permissions, audit, and security paths** carry adversarial tests that prove default-deny on omission and explicit-deny on violation.
-- **Backends** must pass the backend-contract suite.
-- **Public CLI commands** are tested by spawning the bin against a fixture project and asserting exit codes, stdout, and stderr.
-- **Server endpoints** carry a happy-path, an auth-failure, and a validation-failure test each.
+### The gateway is the trust boundary
 
-Coverage floors:
-- Runtime, dispatcher, context, permission enforcement: ≥95% line, **100% branch on permission enforcement**.
-- CLI exit codes: every documented exit code has a test.
+All security infrastructure — permission resolution, permission enforcement, secret resolution, approvals, audit-log writing — is owned by the gateway. The runtime does not enforce permissions; the gateway does. Backends do not write audit; the gateway does. Tools do not resolve secrets; the gateway does.
 
-### Public API stability
+When you write code that takes a privileged action (exec, network, fs-write, tool dispatch), route it through the gateway's enforcement helper. The guard at `scripts/guards/gateway-only-enforcement.ts` runs as part of `pnpm guards` — it fails on new `node:child_process` imports outside the allowlist without a `// @subprocess-ok: <reason>` annotation. See `scripts/guards/README.md`.
 
-Anything exported from a package's top-level `index.ts` is part of the public API. Anything inside a subpath without an explicit `exports` entry is internal. Public API changes require updating the API baseline file in the same commit; a CI guard for this (`scripts/guards/public-export-baseline.ts`) is planned but not yet implemented — see `scripts/guards/README.md`.
+### Default-deny is structural
 
-## Quality gates
+`AgentPermissions` fields default to `undefined`, which the runtime treats as deny. When adding a new permission dimension:
 
-Single entry point for all gates:
+1. Field is optional and defaults to `undefined`.
+2. Runtime treats `undefined` as deny.
+3. Add an adversarial fixture under `tests/security/` proving the deny path fires.
+4. Document the dimension in the relevant `docs/` page.
 
-```
-pnpm check
-  → build
-  → typecheck
-  → lint              (biome)
-  → unit              (vitest)
-  → guards            (architectural-invariant scripts under scripts/guards/ — currently no-op; see scripts/guards/README.md for the implementation backlog)
-  → adversarial       (security-tenet adversarial fixtures)
-  → contract          (backend-contract suite)
-  → doc-links
-```
-
-The same gates run in CI. Do not skip them locally; the round-trip from CI failure to fix is more expensive than running `pnpm check` once before pushing.
-
-A pre-commit hook runs format-and-restage on staged files. Do not bypass it (`--no-verify`) without an explicit justification line in the commit body explaining why.
+`scripts/guards/default-deny-permissions.ts` checks 1–3 mechanically as part of `pnpm guards`.
 
 ## Self-review before opening a PR
 
-skelm is dogfood-driven: there is an internal `branch-review` pipeline (under `pipelines/internal/`) that runs an agent-driven review of your branch against `main`. Run it before opening a PR:
+Run the internal branch-review pipeline before requesting human review:
 
 ```
 skelm run pipelines/internal/branch-review.pipeline.ts --input '{"branch":"my-branch"}'
 ```
 
-The review produces a structured result with sections for summary, changes, security findings, design alignment, robustness, maintenance, and follow-ups. The security section must be non-empty (or carry an explicit justified-empty marker). Address every actionable finding before requesting human review, or note in the PR why you are deferring.
+The security section must be non-empty (or carry an explicit justified-empty marker). Address every actionable finding or note in the PR description why you're deferring.
+
+## Public API
+
+Anything exported from a package's top-level `index.ts` is public. Anything inside a subpath without an explicit `exports` entry is internal. Public API changes update the matching baseline at `scripts/guards/baselines/<package>.txt` in the same commit — `scripts/guards/public-export-baseline.ts` runs as part of `pnpm guards` and fails on drift.
 
 ## Code style
 
 - TypeScript strict everywhere. No `any` without a justification comment immediately above.
-- Biome for lint and format. The pre-commit hook handles formatting; do not hand-format.
-- Imports: package imports first, then relative. No circular imports.
-- Errors: typed error classes from `@skelm/core/errors`. Never throw bare strings.
-- Schemas: standard-schema-compatible (Zod is the documented default). Validate at system boundaries.
-- Default-deny in security-relevant types: every new field of `AgentPermissions` defaults to `undefined` (treated as deny) and ships with an adversarial fixture exercising the deny path. A CI guard for this (`scripts/guards/default-deny-permissions.ts`) is planned but not yet implemented — see `scripts/guards/README.md`.
+- Biome handles lint and format at pre-commit; don't hand-format.
+- Package imports first, then relative. No circular imports.
+- Typed errors from `@skelm/core/errors`. Never throw bare strings.
+- Schemas are standard-schema-compatible (Zod is the documented default). Validate at system boundaries.
 
 ## Commits and PRs
 
-- Conventional-style commit messages (`feat:`, `fix:`, `refactor:`, `chore:`, `docs:`, `test:`).
-- One logical change per commit; one logical change per PR. Stack PRs if a feature naturally splits.
-- PR descriptions include: what changed, why, how it was tested, and any security implications.
-- Do not reference internal note paths or internal rule identifiers in commit messages or PR descriptions; commits are read by anyone who later runs `git log`.
+- Conventional prefixes: `feat:`, `fix:`, `refactor:`, `chore:`, `docs:`, `test:`.
+- One logical change per commit; one per PR. Stack PRs when a feature naturally splits.
+- PR description: what changed, why, how it was tested, security implications.
+- Don't reference internal note paths or rule identifiers in commit messages — they're read by anyone who later runs `git log`.
 
 ## Things to never do
 
-- **Never** write code that takes a privileged action (exec, network, fs-write, tool dispatch) outside the gateway's enforcement helper. Use the helper or annotate `@gateway-enforced` with a justification. CI guards this.
-- **Never** add a second audit-log writer. There is exactly one writer module; everything else logs through it.
-- **Never** mock the gateway in security-related tests. The gateway is the trust boundary; tests of permission enforcement run against the real gateway code path (in-process is fine, mocked is not).
+- **Never** take a privileged action (exec, network, fs-write, tool dispatch) outside the gateway's enforcement helper. Use the helper or annotate `@gateway-enforced` with a justification.
+- **Never** add a second audit-log writer. There is exactly one; everything else logs through it.
+- **Never** mock the gateway in security-related tests. Permission enforcement is tested against the real gateway code path.
 - **Never** widen permissions silently. A change that grows the default permission set is a security event and must be called out in the PR description.
-- **Never** ship code that produces an unhandled rejection or an uncaught exception in the gateway's main loop. Crash-only design where it makes sense (within a run); never within the gateway lifecycle.
+- **Never** ship code that produces an unhandled rejection or uncaught exception in the gateway's main loop.
+- **Never** guess on a security-related question. Escalate immediately — security is the top tenet, and the cost of asking is far below the cost of being wrong.
 
-## Where to ask
+## Tool guidance for AI assistants
 
-- For framework design questions, read the relevant package's TSDoc first, then `docs/`.
-- For API ergonomics questions, write the call site you wish you had and propose it in an issue.
-- For security-related questions, escalate immediately rather than guessing — security is the top tenet.
+- Use focused edits over full-file rewrites — diffs are easier to review.
+- Use `pnpm` for everything Node-related; this repo is a pnpm workspace. Never `npm` or `yarn`.
+- Run long-lived processes (`pnpm dev`, `skelm gateway start`, watch modes) in the background and read output later.
+- Never run destructive git operations (`reset --hard`, `push --force`, `branch -D`) without explicit user approval.
+- Track multi-step work in your agent's task list when available, and update status as you go.
+- Stay within the scope of the task. Don't expand scope without permission; don't shrink it either.
+- When uncertain, ask. The cost of a one-line clarification is low.
 
-If you are an AI coding assistant: stay within the scope of the task you were given, prefer reading before writing, and run `pnpm check` after non-trivial changes. When uncertain, ask the user before taking actions that touch the gateway, security, or public API.
+### For Claude Code specifically
+
+- `Read` for known paths; `Grep`/`Bash` for keyword search; the `Explore` agent only for open-ended cross-codebase searches (slower, uses more context).
+- Prefer `Edit` over `Write`. `Write` overwrites; `Edit` is reviewable.
+- Use `TaskCreate` for multi-step work and mark items `completed` only when truly done (gates green). Partial work stays `in_progress` with a follow-up task.
+
+## Local development quick reference
+
+```
+pnpm install
+pnpm check                  # full gates
+pnpm test                   # unit + integration
+pnpm test --watch           # watch mode
+pnpm dev                    # vitest watch on the workspace
+
+skelm run path/to/foo.pipeline.ts
+skelm run path/to/foo.pipeline.ts --events json 2> events.log > result.json
+
+skelm gateway start         # foreground; SIGTERM/Ctrl-C drains and exits
+skelm gateway install --systemd
+skelm gateway status
+skelm gateway stop
+```
+
+## End-of-session etiquette
+
+- Summarize what changed in one or two sentences.
+- If anything is unverified or undone, say so explicitly.
+- Never auto-commit. The user runs `git commit` when they decide the work is ready.

@@ -264,7 +264,17 @@ export const BUILTIN_TOOLS: BuiltInToolDef[] = [
       const decision = ctx.enforcer.canFetch(hostname)
       if (!decision.allow) {
         publishDenied(ctx.events, 'network', `http_fetch denied: ${hostname} — ${decision.reason}`)
-        return { content: `Permission denied: ${decision.reason}`, isError: true }
+        // Make the denial actionable. The intersection-only model means a
+        // step-level `networkEgress: 'allow'` can be silently narrowed to
+        // 'deny' by project defaults, which is the most common source of
+        // surprise here. Point users at where to look.
+        const hint =
+          decision.reason === 'no-policy'
+            ? ` (no network policy in effect — grant 'networkEgress: \\'allow\\'' or specific allowHosts in skelm.config.ts \`defaults.permissions\`, since step-level grants intersect with project defaults and cannot widen them).`
+            : decision.reason === 'host-not-allowed'
+              ? ` (host '${hostname}' not in allowHosts — extend the project-default \`networkEgress.allowHosts\` in skelm.config.ts).`
+              : ''
+        return { content: `Permission denied: ${decision.reason}${hint}`, isError: true }
       }
 
       const fetchFn = ctx.fetch ?? globalThis.fetch
@@ -365,7 +375,19 @@ export const BUILTIN_TOOLS: BuiltInToolDef[] = [
       if (!p.skillId) return { content: 'Error: skillId is required', isError: true }
       const skill = ctx.loadSkill ? await ctx.loadSkill(p.skillId) : null
       if (!skill) {
-        return { content: `Skill "${p.skillId}" not found or not accessible`, isError: true }
+        // The loader returns null for two distinct reasons that look
+        // identical from the tool's POV:
+        //   1. The skill id is absent from the registry / filesystem.
+        //   2. The allowedSkills policy rejected it. Step-level
+        //      `allowedSkills: ['foo']` is intersected with the project
+        //      default; if the default is `[]` (the framework's default
+        //      posture), the intersection is empty and every skill load
+        //      fails. Surface that as a hint so users know where to
+        //      widen the policy.
+        return {
+          content: `Skill "${p.skillId}" not found or not accessible (either the skill is missing from the project's skills registry, or the resolved \`allowedSkills\` policy is empty — step-level grants intersect with project defaults and cannot widen them, so set \`defaults.permissions.allowedSkills: ['${p.skillId}']\` in skelm.config.ts).`,
+          isError: true,
+        }
       }
       const info: Record<string, unknown> = {
         id: skill.id,

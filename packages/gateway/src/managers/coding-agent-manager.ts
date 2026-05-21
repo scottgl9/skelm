@@ -249,7 +249,7 @@ export class CodingAgentManager {
 
     const exitCode = await new Promise<number>((resolve, reject) => {
       child.once('error', reject)
-      child.once('exit', (code) => resolve(code ?? -1))
+      child.once('close', (code) => resolve(code ?? -1))
     })
 
     const after = (this.ephemerals.get(entry.id) ?? []).filter((r) => r !== run)

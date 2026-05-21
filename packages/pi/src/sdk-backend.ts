@@ -20,6 +20,7 @@
 import {
   assertEgressEnforceable as assertEgressEnforceableCore,
   createConcurrencySemaphore,
+  extractPromptText,
   loadSkillBodies,
 } from '@skelm/core'
 import type {
@@ -27,11 +28,50 @@ import type {
   AgentResponse,
   BackendCapabilities,
   BackendContext,
+  ContentPart,
   InferRequest,
   InferResponse,
   ResolvedPolicy,
   SkelmBackend,
 } from '@skelm/core'
+
+/**
+ * Extract image parts from a prompt for forwarding to pi's `session.prompt`
+ * via its `images` option. Pi's ImageContent (`{type:'image', data, mimeType}`)
+ * matches skelm's image ContentPart shape one-for-one.
+ */
+function extractPromptImages(
+  prompt: AgentRequest['prompt'] | InferRequest['messages'][number]['content'],
+): ReadonlyArray<{ mimeType: string; data: string }> {
+  if (typeof prompt === 'string' || prompt === undefined) return []
+  return (prompt as readonly ContentPart[])
+    .filter((p): p is Extract<ContentPart, { type: 'image' }> => p.type === 'image')
+    .map((p) => ({ mimeType: p.mimeType, data: p.data }))
+}
+
+/**
+ * Collect image parts from all `role: 'user'` messages in an `InferRequest`.
+ *
+ * Intentionally first-turn-only: pi's `session.prompt(text, { images })` is
+ * turn-scoped — it sends the supplied images alongside `text` as one user
+ * message and starts the agent loop. Multi-turn conversations that resubmit
+ * prior-turn imagery would either re-attach the same bytes (wasteful) or
+ * silently drop history images here; the simpler behavior is to bundle every
+ * image into the single outgoing turn and let pi's session history persist
+ * what the model already saw. Assistant/tool messages don't carry images on
+ * the skelm side, so filtering on `role: 'user'` is sufficient.
+ */
+function gatherImagesFromMessages(
+  messages: InferRequest['messages'],
+): ReadonlyArray<{ mimeType: string; data: string }> {
+  const out: Array<{ mimeType: string; data: string }> = []
+  for (const m of messages) {
+    if (m.role === 'user') {
+      for (const img of extractPromptImages(m.content)) out.push(img)
+    }
+  }
+  return out
+}
 import { PiSdkClient, PiSdkUpstreamError } from './sdk-client.js'
 import type { PiSdkBackendOptions } from './types.js'
 
@@ -58,7 +98,61 @@ export class PiSdkBackendTimeoutError extends PiSdkBackendError {}
  * policy so pi itself enforces which tools the agent may use. This provides
  * native enforcement rather than the advisory enforcement of the RPC backend.
  */
+/**
+ * Resolve provider/model/baseUrl/apiKey from explicit options, falling back to
+ * OPENAI_* env vars when present. Returns `undefined` when there's nothing to
+ * override — preserving the prior behavior of deferring to
+ * `~/.pi/agent/models.json`. Per finding-119.
+ *
+ * Called once at `createPiSdkBackend()` time — env vars are snapshotted at
+ * backend construction. Mutating `OPENAI_BASE_URL` (or its siblings) after
+ * the backend exists has no effect on subsequent calls; construct a fresh
+ * backend if you need to switch endpoints at runtime. This matches how every
+ * other skelm backend reads env vars at construction.
+ */
+function resolveProviderOverride(options: PiSdkBackendOptions): ProviderOverride | undefined {
+  const provider = options.provider ?? process.env.OPENAI_PROVIDER
+  const model = options.model ?? process.env.OPENAI_MODEL
+  const baseUrl = options.baseUrl ?? process.env.OPENAI_BASE_URL
+  const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY
+  // Only override when the caller has actually said something — either an
+  // explicit option or a non-empty env var. A bare `provider`/`model` without
+  // any endpoint hint defaults to provider='openai' for parity with the rest
+  // of skelm's OpenAI-compatible backends.
+  if (
+    provider === undefined &&
+    model === undefined &&
+    baseUrl === undefined &&
+    apiKey === undefined
+  ) {
+    return undefined
+  }
+  if (model === undefined) {
+    // No model id at all → cannot register a model entry; let pi pick its
+    // built-in default. Pi's default is OpenAI cloud `gpt-5.4`.
+    return undefined
+  }
+  return {
+    provider: provider ?? 'openai',
+    model,
+    ...(baseUrl !== undefined && { baseUrl }),
+    ...(apiKey !== undefined && { apiKey }),
+    contextWindow: options.contextWindow ?? 131_072,
+    maxTokens: options.maxTokens ?? 4096,
+  }
+}
+
+interface ProviderOverride {
+  provider: string
+  model: string
+  baseUrl?: string
+  apiKey?: string
+  contextWindow: number
+  maxTokens: number
+}
+
 export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBackend {
+  const providerOverride = resolveProviderOverride(options)
   const capabilities: BackendCapabilities = {
     prompt: true,
     streaming: true,
@@ -67,6 +161,15 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
     skills: true,
     modelSelection: false,
     toolPermissions: 'native',
+    // Pi natively supports multimodal user-message content via its
+    // `session.prompt(text, { images })` knob; image parts are forwarded as
+    // pi-ai's ImageContent (same shape as skelm's). Whether the configured
+    // pi model can actually process images depends on `~/.pi/agent/models.json`
+    // (the `input` field on the Model entry); non-vision models surface their
+    // own error which the backend propagates. Set `vision: false` to flip on
+    // the framework's vision gate for deployments pinned to a text-only pi
+    // model.
+    vision: options.vision ?? true,
   }
 
   const { acquire, release } = createConcurrencySemaphore(options.maxConcurrent ?? 4)
@@ -92,17 +195,20 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
           ...(options.noExtensions !== undefined && { noExtensions: options.noExtensions }),
           ...(options.noSkills !== undefined && { noSkills: options.noSkills }),
           ...(options.noContextFiles !== undefined && { noContextFiles: options.noContextFiles }),
+          ...(providerOverride !== undefined && { providerOverride }),
           ...(request.system !== undefined && {
             system: request.system,
             replaceSystemPrompt: false,
           }),
         })
 
+        const inferImages = gatherImagesFromMessages(request.messages)
         const result = await client.prompt(
           promptText,
           context.signal,
           options.timeout ?? 300_000,
           context.onPartial,
+          inferImages.length > 0 ? inferImages : undefined,
         )
 
         const response: InferResponse = {
@@ -147,6 +253,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
           ...(options.noExtensions !== undefined && { noExtensions: options.noExtensions }),
           ...(options.noSkills !== undefined && { noSkills: options.noSkills }),
           ...(options.noContextFiles !== undefined && { noContextFiles: options.noContextFiles }),
+          ...(providerOverride !== undefined && { providerOverride }),
           // System prompt: inject content and indicate whether to replace pi's base
           ...(systemContent !== undefined && {
             system: systemContent,
@@ -154,11 +261,13 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
           }),
         })
 
+        const agentImages = extractPromptImages(request.prompt)
         const result = await client.prompt(
-          request.prompt,
+          extractPromptText(request.prompt),
           context.signal,
           options.timeout ?? 300_000,
           context.onPartial,
+          agentImages.length > 0 ? agentImages : undefined,
         )
 
         return {
@@ -263,13 +372,23 @@ function buildSystemContent(
  * histories we serialize the conversation into a labeled transcript.
  */
 function buildInferPrompt(req: InferRequest): string {
+  // Pi does not support image content; collapse any multimodal messages to
+  // their text parts. Callers needing vision should route to a vision-capable
+  // backend (anthropic / openai).
+  const asText = (content: (typeof req.messages)[number]['content']): string =>
+    typeof content === 'string'
+      ? content
+      : content
+          .filter((p) => p.type === 'text')
+          .map((p) => (p as { text: string }).text)
+          .join('')
   if (req.messages.length === 1 && req.messages[0]?.role === 'user') {
-    return req.messages[0].content
+    return asText(req.messages[0].content)
   }
   return req.messages
     .map(
       (m) =>
-        `${m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : m.role}: ${m.content}`,
+        `${m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : m.role}: ${asText(m.content)}`,
     )
     .join('\n\n')
 }

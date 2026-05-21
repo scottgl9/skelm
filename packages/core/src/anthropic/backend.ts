@@ -8,7 +8,9 @@ import type {
   SkelmBackend,
   Usage,
 } from '../backend.js'
+import { isMultimodal } from '../content.js'
 import { formatSkillBlock } from '../skills.js'
+import { buildSystemPromptFromRequest } from '../system-prompt.js'
 
 export interface AnthropicBackendOptions {
   id?: string
@@ -28,6 +30,7 @@ export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): Skel
     skills: true,
     modelSelection: true,
     toolPermissions: 'unsupported',
+    vision: true,
   }
 
   const backend: SkelmBackend = {
@@ -61,25 +64,44 @@ export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): Skel
     },
     async run(req: AgentRequest, ctx: BackendContext): Promise<AgentResponse> {
       const request: AnthropicMessageRequest = {
-        messages: [{ role: 'user', content: req.prompt }],
+        messages: [{ role: 'user', content: toAnthropicContent(req.prompt) }],
         model: opts.model ?? 'claude-3-5-haiku-latest',
         maxTokens: 1024,
         outputSchema: req.outputSchema !== undefined,
       }
-      const systemParts: string[] = []
-      if (req.agentDef?.soul !== undefined) systemParts.push(req.agentDef.soul)
-      if (req.agentDef !== undefined) systemParts.push(req.agentDef.instructions)
-      if (req.system !== undefined) systemParts.push(req.system)
+      const skillBlocks: string[] = []
+      const skillSummaries: Array<{ name: string; description: string; location?: string }> = []
       if (req.skills !== undefined && req.skills.length > 0 && ctx.loadSkill !== undefined) {
         for (const skillId of req.skills) {
           const skill = await ctx.loadSkill(skillId)
           if (skill !== null) {
-            systemParts.push(formatSkillBlock(skill))
+            skillBlocks.push(formatSkillBlock(skill))
+            skillSummaries.push({
+              name: skill.id,
+              description: skill.description ?? '',
+              location: skill.source,
+            })
           }
         }
       }
-      if (systemParts.length > 0) {
-        request.system = systemParts.join('\n\n---\n\n')
+      // Anthropic's run() is single-shot and doesn't dispatch tools through
+      // skelm's permission layer — pass an empty tool list so the builder
+      // skips the tool-use / available-tools sections.
+      const systemPrompt = buildSystemPromptFromRequest(req, {
+        cwd: process.cwd(),
+        platform: process.platform,
+        date: new Date().toISOString().slice(0, 10),
+        model: request.model,
+        tools: [],
+        ...(skillSummaries.length > 0 && { skills: skillSummaries }),
+      })
+      const parts: string[] = []
+      if (systemPrompt.length > 0) parts.push(systemPrompt)
+      // Append full skill bodies after the inventory so the model has the
+      // actual instructions, not just the summary.
+      for (const block of skillBlocks) parts.push(block)
+      if (parts.length > 0) {
+        request.system = parts.join('\n\n---\n\n')
       }
       const body = await requestMessage(request, ctx, opts)
       const text = extractText(body)
@@ -103,9 +125,16 @@ export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): Skel
   return backend
 }
 
+type AnthropicContentBlock =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image'
+      source: { type: 'base64'; media_type: string; data: string }
+    }
+
 interface AnthropicMessageRequest {
   system?: string
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  messages: Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }>
   model: string
   maxTokens: number
   outputSchema: boolean
@@ -170,16 +199,31 @@ function baseUrl(url?: string): string {
 
 function toAnthropicMessages(
   messages: InferRequest['messages'],
-): Array<{ role: 'user' | 'assistant'; content: string }> {
-  const out: Array<{ role: 'user' | 'assistant'; content: string }> = []
+): Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }> {
+  const out: Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }> = []
   for (const message of messages) {
-    if (message.role === 'assistant') {
-      out.push({ role: 'assistant', content: message.content })
-    } else {
-      out.push({ role: 'user', content: message.content })
-    }
+    const role: 'user' | 'assistant' = message.role === 'assistant' ? 'assistant' : 'user'
+    out.push({ role, content: toAnthropicContent(message.content) })
   }
   return out
+}
+
+function toAnthropicContent(
+  content: InferRequest['messages'][number]['content'] | AgentRequest['prompt'],
+): string | AnthropicContentBlock[] {
+  if (!isMultimodal(content)) return content
+  const blocks: AnthropicContentBlock[] = []
+  for (const part of content) {
+    if (part.type === 'text') {
+      blocks.push({ type: 'text', text: part.text })
+    } else {
+      blocks.push({
+        type: 'image',
+        source: { type: 'base64', media_type: part.mimeType, data: part.data },
+      })
+    }
+  }
+  return blocks
 }
 
 function extractText(body: AnthropicMessageResponse): string {

@@ -1,5 +1,41 @@
 import type { Pipeline } from '@skelm/core'
+import { createError } from 'h3'
 import type { Gateway } from '../../lifecycle/gateway.js'
+
+/**
+ * Import a workflow module via the gateway's loader and validate that it
+ * exports a default Pipeline. Throws h3 errors with the same status codes
+ * the /pipelines/:id routes use (500 on import failure, 422 on missing/
+ * invalid default export) so callers can surface them uniformly.
+ *
+ * Shared by /pipelines/:id, /pipelines/:id/run, /pipelines/:id/start, and
+ * the /v1/workflows/* validate/register handlers — keeping the loader call
+ * sites identical preserves the trust model: the gateway-owned loader is
+ * the only thing that imports workflow code.
+ */
+export async function loadPipelineFromPath(
+  loader: (registryId: string, absolutePath: string) => Promise<unknown>,
+  registryId: string,
+  absolutePath: string,
+): Promise<Pipeline> {
+  let mod: unknown
+  try {
+    mod = await loader(registryId, absolutePath)
+  } catch (err) {
+    throw createError({
+      statusCode: 500,
+      message: `failed to load workflow: ${(err as Error).message}`,
+    })
+  }
+  const pipeline = extractPipeline(mod)
+  if (pipeline === undefined) {
+    throw createError({
+      statusCode: 422,
+      message: 'workflow module did not export a default pipeline',
+    })
+  }
+  return pipeline
+}
 
 /**
  * Build the `pipelineRegistry` callback that `invoke()` steps use to resolve
@@ -55,6 +91,14 @@ export function extractPipeline(mod: unknown): Pipeline | undefined {
   if (typeof mod === 'object' && mod !== null) {
     const m = mod as Record<string, unknown>
     if (isPipelineish(m.default)) return m.default as Pipeline
+    // Node 22+'s require(esm) interop double-wraps the default export
+    // when the loader follows the CJS->ESM path (tsx does this):
+    // `{ default: { default: <pipeline> } }`. Accept that shape too so
+    // the same workflow file works under both native ESM and require(esm).
+    if (typeof m.default === 'object' && m.default !== null) {
+      const inner = (m.default as Record<string, unknown>).default
+      if (isPipelineish(inner)) return inner as Pipeline
+    }
   }
   return undefined
 }

@@ -29,7 +29,7 @@ function patchStep(step: Step, workflowDir: string): Step {
       if (typeof originalSystem === 'function') {
         return {
           ...step,
-          system: (ctx) => mergeSystemPrompt(prompt, originalSystem(ctx)),
+          system: async (ctx) => mergeSystemPrompt(prompt, await originalSystem(ctx)),
         }
       }
       return {

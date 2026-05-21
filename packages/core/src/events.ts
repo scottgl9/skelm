@@ -33,6 +33,13 @@ export type RunEvent =
       at: number
     }
   | {
+      type: 'step.skipped'
+      runId: RunId
+      stepId: StepId
+      kind: StepKind
+      at: number
+    }
+  | {
       type: 'tool.call'
       runId: RunId
       stepId: StepId
@@ -95,6 +102,14 @@ export type RunEvent =
   | { type: 'run.cancelled'; runId: RunId; at: number }
   | { type: 'secret.accessed'; runId: RunId; stepId: string; name: string; at: number }
   | { type: 'secret.not_found'; runId: RunId; stepId: string; name: string; at: number }
+  | {
+      type: 'run.warning'
+      runId: RunId
+      stepId?: StepId
+      code: string
+      message: string
+      at: number
+    }
   | {
       type: 'step.partial'
       runId: RunId

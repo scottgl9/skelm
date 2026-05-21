@@ -55,6 +55,7 @@ export type {
   BackendCapabilities,
   BackendContext,
   BackendId,
+  ContentPart,
   McpServerConfig,
   InferRequest,
   InferResponse,
@@ -63,6 +64,14 @@ export type {
   ToolPermissionEnforcement,
   Usage,
 } from './backend.js'
+export {
+  extractText as extractPromptText,
+  imagePart,
+  imagePartFromFile,
+  isMultimodal,
+  messageHasImage,
+  textPart,
+} from './content.js'
 export {
   ProviderPluginBase,
   ProviderError,
@@ -166,6 +175,7 @@ export {
 } from './errors.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
+export { parseDuration } from './duration.js'
 export { describePipeline, describeStep } from './introspect.js'
 export type { DescribedStep, PipelineDescription } from './introspect.js'
 export { createRoutingBackend } from './routing-backend.js'
@@ -201,8 +211,16 @@ export type {
   AgentToolCall,
   AgentToolResult,
 } from './agent-provider.js'
-export { MemoryRunStore, SqliteRunStore } from './run-store.js'
+export {
+  ArtifactQuotaExceededError,
+  DEFAULT_ARTIFACT_QUOTA_BYTES,
+  MemoryRunStore,
+  SqliteRunStore,
+} from './run-store.js'
 export type {
+  ArtifactDescriptor,
+  ArtifactRef,
+  ArtifactStore,
   AuditEntry,
   ExecutionStore,
   RunFilter,
@@ -225,6 +243,8 @@ export {
   resolvePermissions,
   TrustEnforcer,
 } from './permissions.js'
+export { buildSystemPrompt, buildSystemPromptFromRequest } from './system-prompt.js'
+export type { SystemPromptInput, BuildFromRequestContext } from './system-prompt.js'
 export type {
   AgentPermissions,
   ApprovalPolicy,
@@ -300,4 +320,14 @@ export type {
   StepResult,
   StepStatus,
   WaitStep,
+  WhenPredicate,
+  ExecFn,
 } from './types.js'
+export { createThreadHost } from './threads.js'
+export type { Thread, ThreadHost, ThreadRef } from './threads.js'
+export type {
+  ExecRequest,
+  ExecResult,
+} from './types.js'
+export { loadTsModule, pickExport, clearTsModuleCache } from './ts-loader.js'
+export type { LoadTsModuleOptions } from './ts-loader.js'

@@ -259,12 +259,23 @@ export async function executeLlmStep(
   const messages: ChatMessage[] = []
 
   if (step.system) {
-    const systemPrompt = typeof step.system === 'function' ? step.system(ctx) : step.system
+    const systemPrompt = await (typeof step.system === 'function' ? step.system(ctx) : step.system)
     messages.push({ role: 'system', content: systemPrompt })
   }
 
-  // Add current prompt
-  const prompt = typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt
+  // Add current prompt — the ModelRegistry path predates multimodal prompts
+  // and only accepts string content; collapse any image-bearing prompt to its
+  // text components. Vision callers should target a vision-capable backend
+  // via the BackendRegistry/llm() path. Function form may be async since
+  // multimodal authoring sometimes loads bytes from disk in the resolver.
+  const promptValue = await (typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt)
+  const prompt =
+    typeof promptValue === 'string'
+      ? promptValue
+      : promptValue
+          .filter((p) => p.type === 'text')
+          .map((p) => (p as { text: string }).text)
+          .join('')
   messages.push({ role: 'user', content: prompt })
 
   const options: Partial<ModelProviderConfig> = {}

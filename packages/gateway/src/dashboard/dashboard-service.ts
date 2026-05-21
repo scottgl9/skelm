@@ -355,7 +355,8 @@ function bucketRuns(
   for (let t = start; t < end; t += bucketMs) buckets.push({ at: t, runs: [] })
   for (const r of runs) {
     const idx = Math.floor((r.startedAt - start) / bucketMs)
-    if (idx >= 0 && idx < buckets.length) buckets[idx]!.runs.push(r)
+    const bucket = idx >= 0 && idx < buckets.length ? buckets[idx] : undefined
+    if (bucket !== undefined) bucket.runs.push(r)
   }
   return buckets.map((b) => ({
     bucketStart: b.at,

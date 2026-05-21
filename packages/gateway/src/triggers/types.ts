@@ -1,8 +1,8 @@
 /** Minimal trigger surface the gateway coordinator drives. */
 
 export type TriggerSpec =
-  | { kind: 'cron'; id: string; workflowId: string; cron: string }
-  | { kind: 'interval'; id: string; workflowId: string; everyMs: number }
+  | { kind: 'cron'; id: string; workflowId: string; cron: string; tz?: string }
+  | { kind: 'interval'; id: string; workflowId: string; everyMs: number; every?: string }
   | { kind: 'manual'; id: string; workflowId: string }
   | { kind: 'immediate'; id: string; workflowId: string }
   | { kind: 'at'; id: string; workflowId: string; when: string }
@@ -13,6 +13,48 @@ export type TriggerSpec =
       path: string
       method?: string
       secret?: string
+      /** Provider hint — see `PipelineTrigger` for protocol semantics. */
+      provider?: 'slack' | 'ms-graph'
+      /**
+       * For `provider: 'ms-graph'`: the shared `clientState` value the Graph
+       * subscription was created with. Every notification carries this back;
+       * the gateway rejects POSTs whose embedded `clientState` doesn't match.
+       * Required to authenticate the sender (Graph does not sign payloads).
+       */
+      clientState?: string
+      /**
+       * Optional pre-dispatch deduplication. When set, the gateway reads the
+       * named request header and skips dispatch if the same value has been
+       * seen within `ttlMs` (default 24 hours). A `webhook.deduped` audit
+       * event is emitted on hit; the HTTP response is still 200 so the
+       * webhook source treats the delivery as accepted.
+       */
+      dedupe?: { header: string; ttlMs?: number }
+    }
+  | {
+      kind: 'event-source'
+      id: string
+      workflowId: string
+      source: 'websocket' | 'sse' | 'rss' | 'custom'
+      options: {
+        url?: string
+        feedUrl?: string
+        pollIntervalMs?: number
+        reconnect?: boolean
+        reconnectDelayMs?: number
+        maxReconnectAttempts?: number
+        initialItems?: number
+        start?: (fire: (payload: unknown) => void, signal: AbortSignal) => void | Promise<void>
+      }
+      filter?: Record<string, unknown>
+    }
+  | {
+      kind: 'file-watch'
+      id: string
+      workflowId: string
+      path: string
+      events?: readonly ('create' | 'update' | 'delete')[]
+      debounceMs?: number
     }
   | {
       kind: 'poll'
@@ -53,6 +95,14 @@ export interface TriggerRegistration {
   lastFiredAt?: string
   /** Last error from the run callback, if any. */
   lastError?: string
+  /**
+   * True when this registration came from a pipeline's declared
+   * `triggers:` array (vs `POST /schedules`). Used by the reload sweep to
+   * distinguish operator-managed schedules from declared ones, since
+   * inferring provenance from the id format would silently delete an
+   * operator schedule whose id happens to share a `#` separator.
+   */
+  declared?: boolean
 }
 
 export interface FireContext {

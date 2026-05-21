@@ -133,6 +133,20 @@ const decision = enforcer.canCallTool('gh.list_issues')
 // { allow: true } or { allow: false, reason: 'not-in-allowlist', dimension: 'tool' }
 ```
 
+## Code-step permissions
+
+`code()` steps accept the same `permissions` shape as `agent()` steps, but only `allowedExecutables` is enforced today. The runner builds a `TrustEnforcer` for every `code()` step from `defaultPermissions` ∩ step-level `permissions` and uses it to gate `ctx.exec(...)`:
+
+```ts
+code({
+  id: 'render',
+  permissions: { allowedExecutables: ['python3'] },
+  run: async (ctx) => ctx.exec!({ python: './render.py' }),
+})
+```
+
+Default-deny applies: omitting `permissions` (or omitting `allowedExecutables`) denies every `ctx.exec` call with `PermissionDeniedError` and `dimension: 'executable'`. The check uses the basename of the resolved binary (`python3` / `bash` for the `python:` / `bash:` shortcuts), not the user's input string.
+
 ## Denial reasons
 
 | Reason | Meaning |
@@ -141,7 +155,7 @@ const decision = enforcer.canCallTool('gh.list_issues')
 | `'not-in-allowlist'` | Target not in the allow set |
 | `'in-denylist'` | Target matched `deniedTools` |
 | `'host-not-allowed'` | Hostname not in `allowHosts` |
-| `'path-not-in-allowlist'` | File path not under any allowed root |
+| `'path-not-in-allowlist'` | File path not under any allowed root (paths are normalized with `path.resolve` before the boundary check, so `..` segments cannot escape an allowed root) |
 | `'star-disallowed-in-prod'` | `*` wildcard blocked in production mode |
 
 ## Testing permissions

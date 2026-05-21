@@ -1,0 +1,73 @@
+/**
+ * Per-trigger webhook deduplication store. Keys are scoped by trigger id so
+ * two webhook triggers using the same delivery-id header (e.g. two GitHub
+ * apps both keying on `X-GitHub-Delivery`) don't collide.
+ *
+ * The store is in-memory with a TTL sweep. The 24-hour default matches
+ * GitHub's redelivery window: webhook sources that retry a failed delivery
+ * within 24 h see exactly one dispatch, anything older re-dispatches.
+ *
+ * Persistence: not durable across gateway restarts. A persistent backend
+ * (e.g. SQLite via the run-store) can be plugged in by implementing the
+ * `DedupeStore` interface; the in-memory implementation is sufficient for
+ * single-process gateways since GitHub's retry window is small.
+ */
+export interface DedupeStore {
+  /**
+   * Returns true if the (triggerId, key) pair was newly recorded, false if
+   * a fresh-enough record already existed. On true, the caller proceeds with
+   * dispatch; on false, the caller short-circuits.
+   */
+  recordIfFresh(triggerId: string, key: string, ttlMs: number): boolean
+  /** Number of live entries. Useful for tests and metrics. */
+  size(): number
+  /** Drop all entries. */
+  clear(): void
+}
+
+interface Entry {
+  expiresAt: number
+}
+
+// NUL separator: invalid in trigger ids and delivery-id headers, so distinct
+// (triggerId, key) pairs cannot collide via embedded separators.
+const SEP = '\x00'
+
+export class InMemoryDedupeStore implements DedupeStore {
+  private readonly entries = new Map<string, Entry>()
+  private lastSweep = 0
+  private static readonly SWEEP_INTERVAL_MS = 60_000
+
+  recordIfFresh(triggerId: string, key: string, ttlMs: number): boolean {
+    if (!triggerId || !key) return true
+    const now = Date.now()
+    this.sweepIfDue(now)
+    const composite = `${triggerId}${SEP}${key}`
+    const existing = this.entries.get(composite)
+    if (existing !== undefined && existing.expiresAt > now) {
+      return false
+    }
+    this.entries.set(composite, { expiresAt: now + ttlMs })
+    return true
+  }
+
+  size(): number {
+    this.sweepIfDue(Date.now())
+    return this.entries.size
+  }
+
+  clear(): void {
+    this.entries.clear()
+    this.lastSweep = 0
+  }
+
+  private sweepIfDue(now: number): void {
+    if (now - this.lastSweep < InMemoryDedupeStore.SWEEP_INTERVAL_MS) return
+    this.lastSweep = now
+    for (const [key, entry] of this.entries) {
+      if (entry.expiresAt <= now) this.entries.delete(key)
+    }
+  }
+}
+
+export const DEFAULT_WEBHOOK_DEDUPE_TTL_MS = 24 * 60 * 60 * 1000

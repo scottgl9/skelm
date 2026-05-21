@@ -1,6 +1,6 @@
 {
   "name": "@skelm/scheduler",
-  "version": "0.3.8",
+  "version": "0.4.2",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
   "homepage": "https://skelm.dev/",
@@ -33,7 +33,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@skelm/core": "workspace:*"
+    "@skelm/core": "workspace:*",
+    "cron-parser": "^4.9.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

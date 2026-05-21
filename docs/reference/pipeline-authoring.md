@@ -25,19 +25,73 @@ pipeline({
 ```ts
 code({
   id: string
-  run: (ctx: Context) => TOutput | Promise<TOutput>
+  // Exactly one of `run` or `module` is required.
+  run?: (ctx: Context) => TOutput | Promise<TOutput>
+  module?: string                 // path to a .ts/.js file exporting the run function
+  export?: string                 // export name from `module` (default: 'default')
+  permissions?: AgentPermissions  // required to call `ctx.exec(...)`
+  secrets?: string[]
   retry?: RetryPolicy
+  timeoutMs?: number              // aborts ctx.signal and rejects with StepTimeoutError
 })
 ```
 
 Access prior step outputs: `ctx.steps['step-id']` (cast to the output type). Access run metadata: `ctx.run.runId`, `ctx.run.pipelineId`, `ctx.run.startedAt`.
+
+#### Loading the run function from a file
+
+Use `module:` to keep the step's body in its own file. Paths resolve relative to the pipeline file's directory (the CLI sets that automatically; programmatic callers can pass `pipeline({ baseDir, ... })`).
+
+```ts
+// steps/enrich.ts
+export default async function enrich(ctx) {
+  return { enriched: true }
+}
+
+// pipeline.ts
+code({ id: 'enrich', module: './steps/enrich.ts' })
+```
+
+Imperative loads from inside `run` are also supported — call `loadTsModule` from `@skelm/core` so transpilation matches the CLI loader.
+
+#### Spawning external executables — `ctx.exec(...)`
+
+`code()` steps can invoke binaries, Python scripts, or Bash scripts via `ctx.exec`. The call is gated by `permissions.allowedExecutables` on the step (default-deny — omitting the field denies every call):
+
+```ts
+code({
+  id: 'render',
+  permissions: { allowedExecutables: ['python3'] },
+  run: async (ctx) => {
+    const r = await ctx.exec!({ python: './scripts/render.py', args: ['--out', 'tmp/'] })
+    if (r.exitCode !== 0) throw new Error(r.stderr)
+    return r.stdout
+  },
+})
+```
+
+`ctx.exec` request fields:
+
+- `command` — bare name or absolute path. Mutually exclusive with `python` / `bash`.
+- `python` — runs `$SKELM_PYTHON` (default `python3`) with the script as the first argv.
+- `bash` — runs `$SKELM_BASH` (default `bash`) with the script as the first argv.
+- `args`, `cwd`, `env`, `stdin` — passed through to the child.
+- `timeoutMs` — kills with `SIGTERM` then `SIGKILL` after a 5s grace; result reports `timedOut: true`.
+- `throwOnNonZero` — when true, a non-zero exit throws; default is to return the result.
+
+The allowlist is checked against the **basename of the resolved binary** (`git`, `python3`, `bash`), not the user's input. Spawns never go through `shell: true`. See [permissions.md](./permissions.md#code-step-permissions) for the security model.
+
+When `timeoutMs` is set, the runtime chains an `AbortController` to `ctx.signal` and races `run()` against the budget. Authors that ignore `ctx.signal` still lose the race — the wrapping promise rejects with `StepTimeoutError` so a runaway code step cannot block the gateway.
 
 ### `llm(def)` — single-shot inference
 
 ```ts
 llm({
   id: string
-  prompt: string | ((ctx: Context) => string)
+  prompt:
+    | string
+    | readonly ContentPart[]                          // multimodal: text + image parts
+    | ((ctx: Context) => string | readonly ContentPart[])
   system?: string | ((ctx: Context) => string)
   backend?: string                // overrides config default
   model?: string
@@ -47,6 +101,54 @@ llm({
   retry?: RetryPolicy
 })
 ```
+
+Multimodal prompts use `ContentPart` blocks. Build them with the
+`textPart` / `imagePart` / `imagePartFromFile` helpers:
+
+```ts
+import { imagePartFromFile, textPart, llm } from 'skelm'
+
+llm({
+  id: 'describe',
+  backend: 'anthropic',
+  prompt: async (ctx) => [
+    textPart('Describe what is on screen.'),
+    await imagePartFromFile(ctx.steps['capture'].path),
+  ],
+})
+```
+
+Backends declare `capabilities.vision` truthfully. Submitting an image part
+to a backend that does not declare vision fails at step start with
+`BackendCapabilityError` — route image prompts to a vision-capable backend
+(the first-party `anthropic` and `openai` backends both support vision).
+
+### Binary artifacts via `ctx.artifacts`
+
+Steps can persist binary outputs (screenshots, evidence files, etc.) keyed
+by `{runId, stepId, name}`:
+
+```ts
+code({
+  id: 'capture',
+  run: async (ctx) => {
+    const png = await captureScreen()                  // your driver
+    const desc = await ctx.artifacts!.put({
+      name: 'screen.png',
+      mimeType: 'image/png',
+      data: png,                                       // Uint8Array | string
+    })
+    return { artifactId: desc.artifactId }
+  },
+})
+```
+
+Each put publishes a `tool.result` event (`tool: 'artifacts.put'`) carrying
+descriptor metadata only — the bytes never appear in the event log. A
+default per-run quota of 256 MiB (`DEFAULT_ARTIFACT_QUOTA_BYTES`) is
+enforced; exceeding it throws `ArtifactQuotaExceededError` and writes
+nothing. Retrieve with `ctx.artifacts!.get({ runId, artifactId })`; list
+all artifacts for the current run with `ctx.artifacts!.list()`.
 
 ### `agent(def)` — full agentic loop
 
@@ -169,6 +271,32 @@ export default pipeline({
 
 ---
 
+## Conditional execution — `when`
+
+Every top-level step accepts an optional `when: (ctx) => boolean | Promise<boolean>`
+predicate. When it returns `false`, the step is skipped: its handler does not
+run, its result is recorded with `status: 'skipped'` and `output: undefined`,
+and a `step.skipped` event is published. Later steps reading the skipped
+step's output via `ctx.get(id)` see `undefined`.
+
+```ts
+agent({
+  id: 'review',
+  prompt: 'Review the diff.',
+  when: (ctx) => ctx.get<{ authorIsBot: boolean }>('classify')?.authorIsBot === false,
+})
+```
+
+A predicate that throws is treated as a step failure (the run fails the same
+way as if the step body had thrown). For conditional dispatch the recommended
+pattern is `when` over `branch({ cases: { run, skip } })`.
+
+The predicate is consulted on top-level steps only; predicates on steps
+nested inside `parallel()`, `forEach()`, `branch()`, or `loop()` are not
+currently evaluated by the runtime.
+
+---
+
 ## RetryPolicy
 
 ```ts
@@ -188,7 +316,38 @@ interface Context<TInput = unknown> {
   input: TInput
   steps: Record<string, unknown>    // keyed by step id
   run: RunMetadata                  // runId, pipelineId, startedAt
+  state: State                      // typed KV + append-only streams
+  threads: ThreadHost               // see "Threaded conversations"
 }
 ```
 
 Cast step outputs when accessing: `ctx.steps['my-step'] as MyType`.
+
+## Threaded conversations — `ctx.threads`
+
+For PR / issue / Slack threads the runtime exposes a small helper that keeps
+"last-seen" markers and appended comments in a dedicated namespace so they
+don't collide with regular `ctx.state` keys.
+
+```ts
+const t = ctx.threads.get({ kind: 'github-pr', key: `${owner}/${repo}#${number}` })
+
+// Note when a new comment arrives:
+await t.appendComment(comment.id, comment)
+
+// On the next run, replay only what we haven't seen:
+const lastSeen = await t.lastSeen()
+for await (const c of t.unseenSince(lastSeen)) {
+  await handle(c.comment)
+}
+await t.markSeen(latestId)
+```
+
+`kind` and `key` are opaque to the framework — `key` is whatever string
+uniquely identifies one thread within `kind`. By convention,
+`github-pr` / `github-issue` use `${owner}/${repo}#${number}` and `slack`
+uses `${channelId}:${threadTs}`. State persists for as long as the
+configured `StateStore` retains it.
+
+Replaces hand-managed `last-comment-seen:<repo>#<n>` keys in pipelines that
+track ongoing PR / issue conversations.

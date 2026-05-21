@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="docs/public/logo.svg" alt="skelm logo" width="120" height="120" />
+  <img src="docs/public/banner.svg" alt="skelm banner" />
 </p>
-
-<h1 align="center">skelm</h1>
 
 <p align="center">
   <strong>Build secure, agentic workflows in TypeScript. Run them anywhere Node runs.</strong>
@@ -25,9 +23,11 @@ skelm is a TypeScript framework for authoring and running **workflows** — type
 
 - **TypeScript-native** — Real `.ts` modules, no DSL or JSON config
 - **Default-deny security** — Every permission must be explicitly declared
-- **Multi-backend agents** — Pi, Opencode, Vercel AI, ACP (Copilot, Claude Code, Gemini), OpenAI, Anthropic
+- **Multi-backend agents** — First-party agent, Pi, Opencode (native or ACP), Codex, Vercel AI, ACP (Copilot, Claude Code, Gemini), Anthropic, OpenAI
+- **Multimodal prompts** — `llm()` and `agent()` accept image content parts; vision routed through vision-capable backends, denied at step start for the rest. Pair with `ctx.artifacts` to persist screenshots and other binary evidence on the run record
 - **MCP-native** — Model Context Protocol servers lifecycle-managed by the gateway
-- **Scheduler-built-in** — Cron, webhooks, intervals, queues, or long-running gateway service
+- **Skill support** — Reusable `SKILL.md` capability bundles injected into agent system prompts; permission-gated via `allowedSkills`; auto-discovered from `skills/**/SKILL.md` by the gateway registry
+- **Trigger-rich runtime** — Cron, intervals, and webhooks via `@skelm/scheduler`; poll, queue, file-watch, and event-source triggers via the gateway's `TriggerCoordinator`
 
 > **Status:** Early development. APIs are unstable until v1. Feedback and contributions welcome.
 
@@ -63,13 +63,14 @@ skelm supports multiple AI backends through pluggable adapters. Choose the one t
 
 | Backend | Package | Best for |
 |---------|---------|----------|
+| **First-party** | `@skelm/agent` | OpenAI-compatible LLM, in-process permission enforcement, built-in tool surface, no external runtime dependency |
 | **Pi** | `@skelm/pi` | Pi coding agent with full permission enforcement |
-| **Opencode** | `@skelm/opencode` | Open-source coding agent backend |
+| **Opencode** | `@skelm/opencode` | Open-source coding agent backend (native; ACP transport also supported) |
+| **Codex** | `@skelm/codex` | OpenAI Codex via the official `@openai/codex-sdk` — sandbox-aware (`read-only` / `workspace-write`), MCP + skills injection, streaming, thread resumption |
 | **Vercel AI** | `@skelm/vercel-ai` | Vercel AI SDK with streaming support |
-| **ACP** | Built-in | GitHub Copilot, Claude Code, Gemini via ACP |
-| **First-party agent** | `@skelm/agent` | Native agent loop with built-in tools and MCP |
+| **ACP** | Built-in | GitHub Copilot, Claude Code, Gemini via ACP (Opencode also available as native — see above) |
 
-See [Backend documentation](./docs/backends/README.md) for setup guides and comparison.
+See [Backend documentation](./docs/backends/README.md) for setup guides, and [Codex backend](./docs/backends/codex.md) for OpenAI Codex specifically. Codex authenticates via the host `codex` CLI (`codex login`) or `CODEX_API_KEY`; skelm validates permissions at the boundary while Codex enforces its sandbox in-process.
 
 ---
 
@@ -108,6 +109,7 @@ See [Backend documentation](./docs/backends/README.md) for setup guides and comp
 - **HTTP webhooks** — Typed workflows triggered by external events
 - **Research agents** — Poll sources, store findings, resume after restart
 - **Compliance bots** — Watch S3 buckets, run checks, escalate to agents
+- **UI automation** — Vision LLM + screenshot artifacts; see the [foundations recipe](./docs/recipes/ui-automation-foundations.md)
 
 📁 See [`examples/`](./examples/) for runnable starting points.
 
@@ -121,10 +123,12 @@ See [Backend documentation](./docs/backends/README.md) for setup guides and comp
 | `@skelm/core` | Runtime, types, builders, permission model, event bus |
 | `@skelm/cli` | CLI commands — `run`, `schedule`, `gateway`, `audit` |
 | `@skelm/gateway` | Long-running orchestrator: HTTP, scheduler, agent lifecycle |
-| `@skelm/scheduler` | Cron, interval, webhook, poll, queue triggers |
+| `@skelm/scheduler` | Cron, interval, and webhook triggers (poll, queue, file-watch, event-source live in `@skelm/gateway`) |
 | `@skelm/integrations` | Typed connectors for GitHub, Slack, Telegram |
+| `@skelm/integration-sdk` | Authoring SDK for building custom skelm integrations |
 | `@skelm/pi` | Pi coding-agent backend |
 | `@skelm/opencode` | Opencode coding-agent backend |
+| `@skelm/codex` | OpenAI Codex backend via the official `@openai/codex-sdk` |
 | `@skelm/vercel-ai` | Vercel AI SDK backend with streaming |
 | `@skelm/agent` | First-party native agent backend with built-in tools |
 | `@skelm/metrics` | Prometheus-format metrics |
@@ -154,9 +158,3 @@ See [Backend documentation](./docs/backends/README.md) for setup guides and comp
 ## License
 
 [MIT](LICENSE)
-
----
-
-**Author:** Scott Glover — `scottgl@gmail.com`
-
-If you build something interesting on skelm, open an issue with the `showcase` label — we want to hear about it.

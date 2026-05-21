@@ -16,7 +16,20 @@ export default defineConfig({
 
   lastUpdated: true,
   cleanUrls: true,
-  ignoreDeadLinks: true,
+  // Dead-link check is on for authored docs. The TypeDoc-generated tree under
+  // /reference/api/ is exempt — typedoc emits a few stale `../README` and
+  // `_media/LICENSE` links we can't fix without patching the generator.
+  ignoreDeadLinks: [/^\.{1,2}\/(\.\.\/)*(README|_media\/LICENSE)/],
+
+  head: [
+    [
+      'script',
+      {
+        src: 'https://cdn.redocly.com/redoc/latest/bundles/redoc.standalone.js',
+        defer: '',
+      },
+    ],
+  ],
 
   rewrites: {
     'concepts/README.md': 'concepts/index.md',
@@ -29,7 +42,7 @@ export default defineConfig({
   },
 
   themeConfig: {
-    logo: '/logo.svg',
+    logo: '/logo-icon.svg',
     siteTitle: 'skelm',
 
     nav: [
@@ -46,7 +59,10 @@ export default defineConfig({
       '/quickstart/': [
         {
           text: 'Getting Started',
-          items: [{ text: 'Quickstart', link: '/quickstart/' }],
+          items: [
+            { text: 'Quickstart', link: '/quickstart/' },
+            { text: 'Add an agent step', link: '/quickstart/add-agent' },
+          ],
         },
       ],
       '/concepts/': [
@@ -56,6 +72,7 @@ export default defineConfig({
             { text: 'Overview', link: '/concepts/' },
             { text: 'Permissions', link: '/concepts/permissions' },
             { text: 'Coding Agents', link: '/concepts/coding-agents' },
+            { text: 'System Prompt', link: '/concepts/system-prompt' },
             { text: 'Registries', link: '/concepts/registries' },
           ],
         },
@@ -83,7 +100,9 @@ export default defineConfig({
           items: [
             { text: 'Writing a Backend', link: '/guides/writing-a-backend' },
             { text: 'Writing a Plugin', link: '/guides/writing-a-plugin' },
+            { text: 'Writing a Custom Integration', link: '/guides/writing-a-custom-integration' },
             { text: 'Testing Workflows', link: '/guides/testing-workflows' },
+            { text: 'External Scripts', link: '/guides/external-scripts' },
           ],
         },
         {
@@ -118,6 +137,7 @@ export default defineConfig({
             { text: 'Pipeline Authoring', link: '/reference/pipeline-authoring' },
             { text: 'Agent Step', link: '/reference/agent-step' },
             { text: 'Gateway', link: '/reference/gateway' },
+            { text: 'OpenAPI', link: '/reference/openapi' },
           ],
         },
         {
@@ -134,6 +154,7 @@ export default defineConfig({
             { text: 'skelm agent', link: '/backends/skelm-agent' },
             { text: 'Pi', link: '/backends/pi' },
             { text: 'Opencode', link: '/backends/opencode' },
+            { text: 'Codex', link: '/backends/codex' },
             { text: 'ACP Backends', link: '/backends/acp-backends' },
             { text: 'Vercel AI', link: '/backends/vercel-ai' },
           ],

@@ -26,6 +26,7 @@ value:createServer
 value:createSkillSource
 value:createTriggerDispatcher
 value:defaultAcpSessionStorePath
+value:isProcessAlive
 value:readDiscovery
 value:readLockfile
 value:redact

@@ -47,10 +47,20 @@ describe('skelm gateway — CLI smoke', () => {
     expect(stderr).toContain('gateway requires one of')
   })
 
-  it('rejects --detach with a helpful pointer', async () => {
+  it('--detach no longer prints the legacy "use nohup" pointer', { timeout: 10_000 }, async () => {
+    // Detach now actually forks a child via child_process.spawn. The child
+    // runs in the background and writes the lockfile under the test's
+    // SKELM_STATE_DIR. Either it acquires within the 5s probe (exit OK)
+    // or it doesn't (exit CLI_ERROR with a timeout message). Both are
+    // acceptable here; what we're locking down is that the deprecated
+    // "spawn nohup skelm gateway start --foreground &" text is gone.
     const { stderr, exitCode } = await invoke(['gateway', 'start', '--detach'])
-    expect(exitCode).toBe(EXIT.CLI_ERROR)
-    expect(stderr).toContain('--detach')
+    expect([EXIT.OK, EXIT.CLI_ERROR]).toContain(exitCode)
+    expect(stderr).not.toContain('nohup skelm gateway start')
+    // Best-effort cleanup: stop whatever the child started.
+    try {
+      await invoke(['gateway', 'stop'])
+    } catch {}
   })
 
   it('stop fails cleanly when the gateway is not running', async () => {

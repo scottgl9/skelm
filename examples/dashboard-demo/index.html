@@ -109,6 +109,74 @@
         color: var(--muted);
         font-size: 0.8rem;
       }
+      section.control {
+        padding: 0 1.5rem 1.5rem;
+      }
+      section.control h2 {
+        font-size: 0.85rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin: 1rem 0 0.5rem;
+      }
+      section.control .panel {
+        background: var(--card);
+        border-radius: 8px;
+        padding: 1rem 1.2rem;
+        border: 1px solid #232730;
+        display: grid;
+        gap: 0.5rem;
+      }
+      section.control form {
+        display: grid;
+        gap: 0.4rem;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        align-items: center;
+      }
+      section.control input,
+      section.control textarea,
+      section.control select {
+        padding: 0.4rem 0.6rem;
+        background: var(--bg);
+        color: var(--fg);
+        border: 1px solid #2a2d33;
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: 0.9rem;
+      }
+      section.control textarea {
+        font-family: ui-monospace, monospace;
+        min-height: 90px;
+      }
+      section.control button {
+        padding: 0.4rem 0.9rem;
+        background: var(--accent);
+        color: white;
+        border: 0;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      section.control button.danger {
+        background: var(--err);
+      }
+      section.control pre {
+        background: var(--bg);
+        border: 1px solid #2a2d33;
+        border-radius: 6px;
+        padding: 0.6rem;
+        font-size: 0.8rem;
+        overflow: auto;
+        max-height: 260px;
+      }
+      section.control .note {
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+      section.control .result {
+        font-size: 0.85rem;
+      }
+      section.control .result.ok { color: var(--ok); }
+      section.control .result.err { color: var(--err); }
     </style>
   </head>
   <body>
@@ -121,6 +189,59 @@
     <main id="main">
       <div class="card"><h2>Loading…</h2></div>
     </main>
+
+    <section class="control">
+      <h2>Workflows</h2>
+      <div class="panel">
+        <div id="wf-list" class="note">Loading…</div>
+        <form id="wf-path-form">
+          <input name="id" placeholder="id (e.g. demo)" required />
+          <input name="path" placeholder="absolute or project-relative path to .workflow.ts" required />
+          <input name="description" placeholder="description (optional)" />
+          <input name="version" placeholder="version (optional)" />
+          <button type="submit">Register from path</button>
+        </form>
+        <form id="wf-zip-form" enctype="multipart/form-data">
+          <input name="id" placeholder="id" required />
+          <input name="entry" placeholder="entry path inside .zip (optional)" />
+          <input name="description" placeholder="description (optional)" />
+          <input name="version" placeholder="version (optional)" />
+          <input name="archive" type="file" accept=".zip,application/zip" required />
+          <label class="note"><input name="replace" type="checkbox" /> replace existing (PUT)</label>
+          <button type="submit">Register from .zip</button>
+        </form>
+        <div id="wf-result" class="result"></div>
+      </div>
+
+      <h2>Batch run</h2>
+      <div class="panel">
+        <div class="note">Batch cap: <span id="batch-cap">?</span> items per request.</div>
+        <textarea id="batch-input" placeholder='[{"id":"demo","input":{}}]'></textarea>
+        <button id="batch-run">POST /v1/batch/runs</button>
+        <div id="batch-result"></div>
+      </div>
+
+      <h2>Gateway config</h2>
+      <div class="panel">
+        <pre id="config-pre">Loading…</pre>
+        <form id="config-form">
+          <input
+            name="maxConcurrentRuns"
+            type="number"
+            min="1"
+            placeholder="server.maxConcurrentRuns"
+          />
+          <button type="submit">PATCH /v1/config</button>
+        </form>
+        <div class="note">
+          The PATCH whitelist is intentionally narrow — only hot-reloadable,
+          side-effect-bounded, non-security-relevant fields. Auth, trust roots,
+          secret-driver paths, and storage settings require a gateway restart.
+        </div>
+        <div id="config-result" class="result"></div>
+      </div>
+    </section>
+
     <footer>
       Polls <code>/v1/dashboard/*</code>. Server enforces auth; this page just
       forwards the token you type. See
@@ -202,8 +323,8 @@
           main.appendChild(
             card(
               'Gateway',
-              `<div class="big status-ok">${overview.gateway.status}</div>
-               <div class="row"><span>version</span><span>${overview.gateway.version}</span></div>
+              `<div class="big status-ok">${escapeHtml(overview.gateway.status)}</div>
+               <div class="row"><span>version</span><span>${escapeHtml(overview.gateway.version)}</span></div>
                <div class="row"><span>uptime</span><span>${fmtMs(overview.gateway.uptimeMs)}</span></div>`,
             ),
           )
@@ -242,8 +363,8 @@
           const wfRows = (workflows.workflows ?? [])
             .map(
               (w) =>
-                `<tr><td>${w.id}</td><td>${w.totalRuns}</td>
-                 <td class="${statusClass(w.lastStatus)}">${w.lastStatus ?? '—'}</td>
+                `<tr><td>${escapeHtml(w.id)}</td><td>${w.totalRuns}</td>
+                 <td class="${statusClass(w.lastStatus)}">${escapeHtml(w.lastStatus ?? '—')}</td>
                  <td>${w.successRate == null ? '—' : `${(w.successRate * 100).toFixed(0)}%`}</td>
                  <td>${fmtDate(w.lastRunAt)}</td></tr>`,
             )
@@ -259,7 +380,7 @@
           const errRows = (errors.recent ?? [])
             .map(
               (e) =>
-                `<tr><td>${e.pipelineId}</td><td class="err">${escapeHtml(e.message)}</td><td>${fmtDate(e.at)}</td></tr>`,
+                `<tr><td>${escapeHtml(e.pipelineId)}</td><td class="err">${escapeHtml(e.message)}</td><td>${fmtDate(e.at)}</td></tr>`,
             )
             .join('')
           main.appendChild(
@@ -273,9 +394,9 @@
           const sRows = (schedules.schedules ?? [])
             .map(
               (s) =>
-                `<tr><td>${s.id}</td><td>${s.kind}</td><td>${s.fired}</td>
+                `<tr><td>${escapeHtml(s.id)}</td><td>${escapeHtml(s.kind)}</td><td>${escapeHtml(String(s.fired))}</td>
                  <td>${fmtDate(s.lastFiredAt ? Date.parse(s.lastFiredAt) : null)}</td>
-                 <td class="${s.lastError ? 'status-failed' : ''}">${s.lastError ?? '—'}</td></tr>`,
+                 <td class="${s.lastError ? 'status-failed' : ''}">${escapeHtml(s.lastError ?? '—')}</td></tr>`,
             )
             .join('')
           main.appendChild(
@@ -301,6 +422,184 @@
       render()
       // Poll every 5s — matches the server-side cache TTL.
       setInterval(render, 5000)
+
+      function baseUrl() {
+        return $('base').value.replace(/\/$/, '')
+      }
+      function authHeaders() {
+        const token = $('token').value
+        return token ? { authorization: `Bearer ${token}` } : {}
+      }
+
+      async function jsonRequest(path, init = {}) {
+        const headers = { ...authHeaders(), ...(init.headers ?? {}) }
+        if (init.body !== undefined && !(init.body instanceof FormData)) {
+          headers['content-type'] = 'application/json'
+        }
+        const res = await fetch(`${baseUrl()}${path}`, { ...init, headers })
+        const text = await res.text()
+        let parsed = text
+        try {
+          parsed = JSON.parse(text)
+        } catch {}
+        if (!res.ok) {
+          const message =
+            (parsed && typeof parsed === 'object' && parsed.message) || text || `${res.status}`
+          const err = new Error(`${res.status} ${message}`)
+          err.payload = parsed
+          throw err
+        }
+        return parsed
+      }
+
+      function setResult(id, text, ok) {
+        const el = $(id)
+        if (!el) return
+        el.textContent = text
+        el.className = `result ${ok ? 'ok' : 'err'}`
+      }
+
+      async function refreshWorkflows() {
+        try {
+          const list = await jsonRequest('/v1/workflows')
+          const container = $('wf-list')
+          if (!list.length) {
+            container.textContent = 'No registered workflows.'
+            return
+          }
+          container.innerHTML = list
+            .map(
+              (w) =>
+                `<div class="row"><span>${escapeHtml(w.id)}</span><span class="note">${escapeHtml(w.file)}</span> <button data-id="${encodeURIComponent(w.id)}" class="danger wf-delete">delete</button></div>`,
+            )
+            .join('')
+          for (const btn of container.querySelectorAll('button.wf-delete')) {
+            btn.addEventListener('click', async () => {
+              const id = btn.getAttribute('data-id')
+              try {
+                await jsonRequest(`/v1/workflows/${id}`, { method: 'DELETE' })
+                setResult('wf-result', `deleted ${decodeURIComponent(id)}`, true)
+                refreshWorkflows()
+              } catch (err) {
+                setResult('wf-result', err.message, false)
+              }
+            })
+          }
+        } catch (err) {
+          $('wf-list').textContent = `error: ${err.message}`
+        }
+      }
+
+      $('wf-path-form').addEventListener('submit', async (event) => {
+        event.preventDefault()
+        const data = new FormData(event.currentTarget)
+        const body = {
+          id: data.get('id'),
+          source: { type: 'path', path: data.get('path') },
+        }
+        if (data.get('description')) body.description = data.get('description')
+        if (data.get('version')) body.version = data.get('version')
+        try {
+          const out = await jsonRequest('/v1/workflows/register', {
+            method: 'POST',
+            body: JSON.stringify(body),
+          })
+          setResult('wf-result', `registered ${out.workflow.id}`, true)
+          refreshWorkflows()
+        } catch (err) {
+          setResult('wf-result', err.message, false)
+        }
+      })
+
+      $('wf-zip-form').addEventListener('submit', async (event) => {
+        event.preventDefault()
+        const form = event.currentTarget
+        const data = new FormData(form)
+        const replace = data.get('replace') === 'on'
+        data.delete('replace')
+        // Drop empty optional fields so the gateway can omit them.
+        for (const key of ['entry', 'description', 'version']) {
+          if (data.get(key) === '') data.delete(key)
+        }
+        const id = data.get('id')
+        const path = replace ? `/v1/workflows/${encodeURIComponent(id)}` : '/v1/workflows/register'
+        if (replace) data.delete('id')
+        try {
+          const out = await jsonRequest(path, {
+            method: replace ? 'PUT' : 'POST',
+            body: data,
+          })
+          setResult(
+            'wf-result',
+            `${replace ? 'replaced' : 'registered'} ${out.workflow.id} from archive`,
+            true,
+          )
+          refreshWorkflows()
+        } catch (err) {
+          setResult('wf-result', err.message, false)
+        }
+      })
+
+      $('batch-run').addEventListener('click', async () => {
+        let items
+        try {
+          items = JSON.parse($('batch-input').value || '[]')
+        } catch (err) {
+          $('batch-result').innerHTML = `<div class="result err">invalid JSON: ${escapeHtml(err.message)}</div>`
+          return
+        }
+        try {
+          const out = await jsonRequest('/v1/batch/runs', {
+            method: 'POST',
+            body: JSON.stringify({ items }),
+          })
+          const rows = (out.items ?? [])
+            .map(
+              (i) =>
+                `<tr><td>${escapeHtml(i.id)}</td><td class="${i.accepted ? 'status-ok' : 'status-failed'}">${i.accepted ? 'accepted' : 'rejected'}</td><td>${escapeHtml(i.description ?? '—')}</td><td>${escapeHtml(i.runId ?? i.error ?? '—')}</td></tr>`,
+            )
+            .join('')
+          $('batch-result').innerHTML = `<table><thead><tr><th>id</th><th>status</th><th>description</th><th>runId / error</th></tr></thead><tbody>${rows}</tbody></table>`
+        } catch (err) {
+          $('batch-result').innerHTML = `<div class="result err">${escapeHtml(err.message)}</div>`
+        }
+      })
+
+      async function refreshConfig() {
+        try {
+          const cfg = await jsonRequest('/v1/config')
+          $('config-pre').textContent = JSON.stringify(cfg, null, 2)
+          const cap = cfg?.server?.batch?.maxItemsPerRequest ?? 50
+          $('batch-cap').textContent = String(cap)
+        } catch (err) {
+          $('config-pre').textContent = `error: ${err.message}`
+        }
+      }
+
+      $('config-form').addEventListener('submit', async (event) => {
+        event.preventDefault()
+        const data = new FormData(event.currentTarget)
+        const value = Number(data.get('maxConcurrentRuns'))
+        if (!Number.isFinite(value) || value < 1) {
+          setResult('config-result', 'maxConcurrentRuns must be a positive number', false)
+          return
+        }
+        try {
+          await jsonRequest('/v1/config', {
+            method: 'PATCH',
+            body: JSON.stringify({ 'server.maxConcurrentRuns': value }),
+          })
+          setResult('config-result', `updated to ${value}`, true)
+          refreshConfig()
+        } catch (err) {
+          setResult('config-result', err.message, false)
+        }
+      })
+
+      refreshWorkflows()
+      refreshConfig()
+      setInterval(refreshWorkflows, 10_000)
+      setInterval(refreshConfig, 15_000)
     </script>
   </body>
 </html>

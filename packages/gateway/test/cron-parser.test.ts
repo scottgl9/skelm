@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { nextFireTime, parseCron } from '../src/triggers/cron-parser.js'
 
+// Slim ICU builds (e.g. `node --icu-data-dir=…` containers) ship only the
+// English locale and no zone offsets, which makes `Intl.DateTimeFormat` either
+// throw on a named tz or silently fall back to UTC. Skip the tz suite when
+// that's the case so the test reports the cause instead of a confusing
+// assertion failure.
+const hasFullIcu = (() => {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York' })
+    return fmt.resolvedOptions().timeZone === 'America/New_York'
+  } catch {
+    return false
+  }
+})()
+const itTz = hasFullIcu ? it : it.skip
+
 describe('parseCron', () => {
   it('rejects expressions with the wrong number of fields', () => {
     expect(parseCron('* * * *')).toBeNull()
@@ -84,5 +99,34 @@ describe('nextFireTime', () => {
     const p = parseCron('0 0 30 2 *')
     const from = new Date('2026-01-01T00:00:00.000Z')
     expect(nextFireTime(p as never, from)).toBeNull()
+  })
+
+  itTz('projects cron matching into the requested timezone', () => {
+    const winter = parseCron('0 9 * * *', 'America/New_York')
+    const summer = parseCron('0 9 * * *', 'America/New_York')
+    expect(winter).not.toBeNull()
+    expect(summer).not.toBeNull()
+
+    // 09:00 America/New_York is 14:00 UTC in winter (EST, UTC-5) and 13:00
+    // UTC in summer (EDT, UTC-4). Same cron string, different absolute time —
+    // proves the tz projection is doing real work.
+    const winterNext = nextFireTime(winter as never, new Date('2026-01-15T13:30:00.000Z'))
+    const summerNext = nextFireTime(summer as never, new Date('2026-07-15T12:30:00.000Z'))
+
+    expect(winterNext?.toISOString()).toBe('2026-01-15T14:00:00.000Z')
+    expect(summerNext?.toISOString()).toBe('2026-07-15T13:00:00.000Z')
+  })
+
+  itTz('returns null for an invalid timezone name', () => {
+    expect(parseCron('0 9 * * *', 'Not/A_Real_Timezone')).toBeNull()
+  })
+
+  it('omitting tz preserves the prior local-time behavior', () => {
+    const p = parseCron('0 9 * * *')
+    const from = new Date('2026-05-05T20:00:00.000Z')
+    const next = nextFireTime(p as never, from)
+    expect(next).not.toBeNull()
+    expect(next?.getHours()).toBe(9)
+    expect(next?.getMinutes()).toBe(0)
   })
 })

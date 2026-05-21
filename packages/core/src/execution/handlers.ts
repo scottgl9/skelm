@@ -3,18 +3,23 @@ import {
   BackendCapabilityError,
   BackendNotFoundError,
   type BackendRegistry,
+  type ContentPart,
   type SkelmBackend,
 } from '../backend.js'
 import { type ApprovalGate, EnvSecretResolver } from '../enforcement/index.js'
 import {
   ApprovalDeniedError,
+  BranchExhaustionError,
   InvokePipelineNotFoundError,
   PermissionDeniedError,
   RunCancelledError,
+  StepKindError,
   StepTimeoutError,
+  WaitConfigError,
   serializeError,
 } from '../errors.js'
 import { EventBus } from '../events.js'
+import { createExec } from '../exec.js'
 import { extractJsonFromText, tryParseJson } from '../json-utils.js'
 import { createMcpHost } from '../mcp/host.js'
 import type { AgentPermissions, NetworkPolicy, PermissionDimension } from '../permissions.js'
@@ -35,6 +40,7 @@ import { runPipeline } from '../runner.js'
 import type { RunOptions, WaitRequest } from '../runner.js'
 import { SchemaValidationError, validate } from '../schema.js'
 import { createStateHandle } from '../state.js'
+import { loadTsModule, pickExport } from '../ts-loader.js'
 import type {
   Context,
   Pipeline,
@@ -54,6 +60,7 @@ import {
   makeSkillLoader,
   resolveDeclaredSecrets,
 } from './helpers.js'
+import { createSecretsAccessor, resolveValueOrFn, resolveValueOrFnAsync } from './internal.js'
 import type { ExecutionRuntime } from './runtime.js'
 
 const defaultStateStore = new MemoryRunStore()
@@ -104,6 +111,24 @@ async function runStep(
   events?: EventBus,
   runtime?: ExecutionRuntime,
 ): Promise<unknown> {
+  // Evaluate `when` on every dispatch site (top-level steps short-circuit
+  // *before* this is reached so the top-level event sequence stays
+  // `step.skipped`-only with no preceding `step.start`; nested steps
+  // dispatched via parallel / forEach / branch / loop / idempotent /
+  // pipelineStep land here and emit `step.skipped` for observability).
+  if (step.when !== undefined) {
+    const shouldRun = await step.when(ctx)
+    if (!shouldRun) {
+      events?.publish({
+        type: 'step.skipped',
+        runId: ctx.run.runId,
+        stepId: step.id,
+        kind: step.kind,
+        at: Date.now(),
+      })
+      return undefined
+    }
+  }
   switch (step.kind) {
     case 'code':
       return await runCodeStep(step, ctx, runtime)
@@ -129,7 +154,7 @@ async function runStep(
       return await runInvokeStep(step, ctx, backends, waitForInput, events, runtime)
     default: {
       const exhaustive: never = step
-      throw new Error(`unknown step kind: ${(exhaustive as { kind: string }).kind}`)
+      throw new StepKindError((exhaustive as { kind: string }).kind)
     }
   }
 }
@@ -146,15 +171,80 @@ async function runCodeStep(
     undefined,
     ctx.run.runId,
   )
-  const secretsAccessor =
-    resolvedSecrets !== undefined
-      ? {
-          get: (name: string) => resolvedSecrets[name],
-        }
+  const secretsAccessor = createSecretsAccessor(resolvedSecrets)
+
+  const policy = resolvePermissions(
+    runtime?.defaultPermissions,
+    step.permissions,
+    runtime?.permissionProfiles ?? {},
+  )
+  const enforcer = new TrustEnforcer(policy)
+
+  // Same per-step timeout pattern used by runAgentStep: chain a fresh
+  // AbortController to ctx.signal so a runaway code step's budget aborts
+  // ctx.signal and the wrapping promise rejects with StepTimeoutError.
+  // Authors that ignore ctx.signal still lose the race; the run will not
+  // block the gateway indefinitely.
+  const stepController = step.timeoutMs !== undefined ? new AbortController() : undefined
+  const stepSignal = stepController?.signal ?? ctx.signal
+  const onParentAbort =
+    stepController !== undefined ? () => stepController.abort(ctx.signal.reason) : undefined
+  if (stepController !== undefined && onParentAbort !== undefined) {
+    if (ctx.signal.aborted) stepController.abort(ctx.signal.reason)
+    else ctx.signal.addEventListener('abort', onParentAbort, { once: true })
+  }
+  const timeoutMs = step.timeoutMs
+  const timeoutHandle =
+    timeoutMs !== undefined && stepController !== undefined
+      ? setTimeout(() => stepController.abort(new StepTimeoutError(step.id, timeoutMs)), timeoutMs)
       : undefined
-  const stepCtx =
-    secretsAccessor !== undefined ? freezeContext({ ...ctx, secrets: secretsAccessor }) : ctx
-  return await step.run(stepCtx)
+
+  const exec = createExec(enforcer, stepSignal)
+  const stepCtx = freezeContext({
+    ...ctx,
+    signal: stepSignal,
+    ...(secretsAccessor !== undefined && { secrets: secretsAccessor }),
+    exec,
+  })
+
+  const runFn = await resolveCodeRun(step, runtime?.pipelineBaseDir)
+  try {
+    if (timeoutMs === undefined) return await runFn(stepCtx)
+    return await Promise.race([
+      Promise.resolve().then(() => runFn(stepCtx)),
+      new Promise<never>((_resolve, reject) => {
+        stepSignal.addEventListener(
+          'abort',
+          () => {
+            if (stepSignal.reason instanceof StepTimeoutError) reject(stepSignal.reason)
+          },
+          { once: true },
+        )
+      }),
+    ])
+  } finally {
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle)
+    if (onParentAbort !== undefined) ctx.signal.removeEventListener('abort', onParentAbort)
+  }
+}
+
+async function resolveCodeRun(
+  step: Extract<Step, { kind: 'code' }>,
+  baseDir: string | undefined,
+): Promise<(ctx: Context) => unknown | Promise<unknown>> {
+  if (step.run !== undefined) return step.run
+  if (step.module === undefined) {
+    throw new Error(`code(${step.id}): neither "run" nor "module" is set`)
+  }
+  const mod = await loadTsModule(step.module, baseDir !== undefined ? { baseDir } : {})
+  const exportName = step.export ?? 'default'
+  const exported = pickExport(mod, exportName)
+  if (typeof exported !== 'function') {
+    throw new Error(
+      `code(${step.id}): module "${step.module}" export "${exportName}" is not a function`,
+    )
+  }
+  return exported as (ctx: Context) => unknown | Promise<unknown>
 }
 
 async function runLlmStep(
@@ -177,23 +267,22 @@ async function runLlmStep(
     undefined,
     ctx.run.runId,
   )
-  const secretsAccessor =
-    resolvedSecrets !== undefined
-      ? {
-          get: (name: string) => resolvedSecrets[name],
-        }
-      : undefined
+  const secretsAccessor = createSecretsAccessor(resolvedSecrets)
   const stepCtx =
     secretsAccessor !== undefined ? freezeContext({ ...ctx, secrets: secretsAccessor }) : ctx
-  const promptText = typeof step.prompt === 'function' ? step.prompt(stepCtx) : step.prompt
+  const promptValue = await resolveValueOrFnAsync(step.prompt, stepCtx)
   const systemText =
-    step.system === undefined
-      ? undefined
-      : typeof step.system === 'function'
-        ? step.system(stepCtx)
-        : step.system
+    step.system === undefined ? undefined : await resolveValueOrFnAsync(step.system, stepCtx)
+  const isMultimodalPrompt = Array.isArray(promptValue)
+  if (isMultimodalPrompt && backend.capabilities.vision !== true) {
+    throw new BackendCapabilityError(
+      `step "${step.id}": backend "${backend.id}" does not support image content (capabilities.vision is not true). Route image prompts to a vision-capable backend (e.g. anthropic, openai).`,
+      backend.id,
+      'vision' as keyof import('../backend.js').BackendCapabilities,
+    )
+  }
   const req = {
-    messages: [{ role: 'user' as const, content: promptText }],
+    messages: [{ role: 'user' as const, content: promptValue as string | readonly ContentPart[] }],
     ...(systemText !== undefined && { system: systemText }),
     ...(step.model !== undefined && { model: step.model }),
     ...(step.temperature !== undefined && { temperature: step.temperature }),
@@ -246,11 +335,7 @@ async function runAgentStep(
   let finishedWorkspace = false
   try {
     const workspaceConfig =
-      step.workspace === undefined
-        ? undefined
-        : typeof step.workspace === 'function'
-          ? step.workspace(ctx)
-          : step.workspace
+      step.workspace === undefined ? undefined : resolveValueOrFn(step.workspace, ctx)
     preparedWorkspace =
       workspaceConfig === undefined
         ? undefined
@@ -285,26 +370,23 @@ async function runAgentStep(
       events,
       ctx.run.runId,
     )
-    const secretsAccessor =
-      resolvedSecrets !== undefined ? { get: (name: string) => resolvedSecrets[name] } : undefined
+    const secretsAccessor = createSecretsAccessor(resolvedSecrets)
     const stepCtx =
       secretsAccessor !== undefined
         ? freezeContext({ ...workspaceCtx, secrets: secretsAccessor })
         : workspaceCtx
-    const resolvedPromptText =
-      typeof step.prompt === 'function' ? step.prompt(stepCtx) : step.prompt
+    const resolvedPromptValue = await resolveValueOrFnAsync(step.prompt, stepCtx)
+    const isMultimodalAgentPrompt = Array.isArray(resolvedPromptValue)
+    if (isMultimodalAgentPrompt && backend.capabilities.vision !== true) {
+      throw new BackendCapabilityError(
+        `step "${step.id}": backend "${backend.id}" does not support image content (capabilities.vision is not true). Route image prompts to a vision-capable backend.`,
+        backend.id,
+        'vision' as keyof import('../backend.js').BackendCapabilities,
+      )
+    }
     const resolvedSystemText =
-      step.system === undefined
-        ? undefined
-        : typeof step.system === 'function'
-          ? step.system(stepCtx)
-          : step.system
-    const mcpServers =
-      step.mcp === undefined
-        ? undefined
-        : typeof step.mcp === 'function'
-          ? step.mcp(stepCtx)
-          : step.mcp
+      step.system === undefined ? undefined : await resolveValueOrFnAsync(step.system, stepCtx)
+    const mcpServers = step.mcp === undefined ? undefined : resolveValueOrFn(step.mcp, stepCtx)
     if (policy !== undefined && mcpServers !== undefined) {
       const enforcer = new TrustEnforcer(policy)
       for (const server of mcpServers) {
@@ -385,7 +467,7 @@ async function runAgentStep(
       }
     }
     const req: AgentRequest = {
-      prompt: resolvedPromptText,
+      prompt: resolvedPromptValue as string | readonly ContentPart[],
       ...(resolvedSystemText !== undefined && { system: resolvedSystemText }),
       ...(step.maxTurns !== undefined && { maxTurns: step.maxTurns }),
       ...(preparedWorkspace !== undefined && { cwd: preparedWorkspace.handle.path }),
@@ -394,6 +476,10 @@ async function runAgentStep(
       ...(step.skills !== undefined && { skills: step.skills }),
       ...(resolvedSecrets !== undefined && { secrets: resolvedSecrets }),
       ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
+      ...(step.systemPromptMode !== undefined && { systemPromptMode: step.systemPromptMode }),
+      ...(step.systemPromptIncludeAgentDef !== undefined && {
+        systemPromptIncludeAgentDef: step.systemPromptIncludeAgentDef,
+      }),
     }
     const mcpHost =
       mcpServers !== undefined &&
@@ -468,11 +554,12 @@ async function runAgentStep(
         if (ctx.signal.aborted) stepController.abort(ctx.signal.reason)
         else ctx.signal.addEventListener('abort', onParentAbort, { once: true })
       }
+      const timeoutMs = step.timeoutMs
       const timeoutHandle =
-        step.timeoutMs !== undefined && stepController !== undefined
+        timeoutMs !== undefined && stepController !== undefined
           ? setTimeout(
-              () => stepController.abort(new StepTimeoutError(step.id, step.timeoutMs!)),
-              step.timeoutMs,
+              () => stepController.abort(new StepTimeoutError(step.id, timeoutMs)),
+              timeoutMs,
             )
           : undefined
       let response: import('../backend.js').AgentResponse
@@ -488,6 +575,14 @@ async function runAgentStep(
           ...(egressToken !== undefined && { egressToken }),
           ...(proxyEnv !== undefined && { proxyEnv }),
           ...(onPartial !== undefined && { onPartial }),
+          // Plumb the runner's event bus + run/step identifiers so any
+          // McpHost the backend brings up itself can publish tool.call /
+          // tool.result events that the runner audits. Without this,
+          // native-tool backends (toolPermissions:'native') leave no MCP
+          // audit trail.
+          ...(events !== undefined && { events }),
+          runId: ctx.run.runId,
+          stepId: step.id,
         })
       } catch (err) {
         if (stepSignal.aborted && stepSignal.reason instanceof StepTimeoutError) {
@@ -561,6 +656,7 @@ async function runParallel(
   runtime?: ExecutionRuntime,
 ): Promise<Record<string, unknown>> {
   const onError = step.onError ?? 'fail'
+  warnOnSharedWorkspaces(step, ctx, events)
   const settled = await Promise.allSettled(
     step.steps.map((child) =>
       runStep(child, ctx, backends, waitForInput, events, createDetachedWorkspaceRuntime(runtime)),
@@ -582,6 +678,70 @@ async function runParallel(
     }
   }
   return out
+}
+
+function warnOnSharedWorkspaces(
+  step: Extract<Step, { kind: 'parallel' }>,
+  ctx: Context,
+  events?: EventBus,
+): void {
+  if (events === undefined) return
+  // Map workspace-key -> the child step ids that resolve to it. A "key" is
+  // a string fingerprint of mode+identity that's robust enough to catch the
+  // common shared-workspace mistake (mode: 'persistent', name: 'shared') and
+  // mode: 'mounted' aliases. Step-resolved paths are not consulted here —
+  // we just compare the declared identity.
+  const keyToChildren = new Map<string, string[]>()
+  for (const child of step.steps) {
+    if (child.kind !== 'agent' || child.workspace === undefined) continue
+    let cfg: ReturnType<typeof resolveWorkspaceConfig>
+    try {
+      cfg = resolveWorkspaceConfig(child.workspace, ctx)
+    } catch (err) {
+      // The factory threw evaluating against the parent ctx. We can't tell
+      // if a workspace race would have occurred. Surface it as a separate
+      // warning so the shared-workspace hazard is not silently hidden.
+      events.publish({
+        type: 'run.warning',
+        runId: ctx.run.runId,
+        stepId: step.id,
+        code: 'parallel.workspace-resolve-failed',
+        message: `parallel(${step.id}): workspace factory for child "${child.id}" threw during shared-workspace inspection: ${err instanceof Error ? err.message : String(err)}. The shared-workspace warning cannot be evaluated for this child.`,
+        at: Date.now(),
+      })
+      continue
+    }
+    if (cfg === undefined) continue
+    const key =
+      cfg.mode === 'persistent'
+        ? `persistent:${cfg.base ?? ''}:${cfg.name}`
+        : cfg.mode === 'mounted'
+          ? `mounted:${cfg.path}`
+          : null
+    if (key === null) continue
+    const ids = keyToChildren.get(key)
+    if (ids === undefined) keyToChildren.set(key, [child.id])
+    else ids.push(child.id)
+  }
+  for (const [, ids] of keyToChildren) {
+    if (ids.length < 2) continue
+    events.publish({
+      type: 'run.warning',
+      runId: ctx.run.runId,
+      stepId: step.id,
+      code: 'parallel.shared-workspace',
+      message: `parallel(${step.id}): children [${ids.join(', ')}] resolve to the same workspace; concurrent writes may race silently. Use workspace mode: 'ephemeral' per child to isolate.`,
+      at: Date.now(),
+    })
+  }
+}
+
+function resolveWorkspaceConfig(
+  workspace: NonNullable<Extract<Step, { kind: 'agent' }>['workspace']>,
+  ctx: Context,
+): import('../types.js').WorkspaceConfig | undefined {
+  if (typeof workspace === 'function') return workspace(ctx)
+  return workspace
 }
 
 async function runIdempotent(
@@ -637,6 +797,28 @@ async function runForEach(
 ): Promise<unknown[]> {
   const items = step.items(ctx)
   const concurrency = step.concurrency ?? 1
+  // Eagerly materialize per-iteration child steps so we can detect duplicate
+  // ids (the natural factory pattern) before launching concurrent workers.
+  // Duplicate ids would make the egress token key (runId:stepId) collide
+  // across iterations: the first iteration to unregister deletes the token
+  // out from under siblings still in flight, silently disabling network
+  // policy enforcement. Suffix only the *colliding* ids with the iteration
+  // index so non-colliding ids stay user-visible-unchanged.
+  const children = new Array<Step>(items.length)
+  const idCounts = new Map<string, number>()
+  for (let i = 0; i < items.length; i++) {
+    const child = step.step(items[i], i)
+    idCounts.set(child.id, (idCounts.get(child.id) ?? 0) + 1)
+    children[i] = child
+  }
+  if (concurrency > 1) {
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i] as Step
+      if ((idCounts.get(child.id) ?? 0) > 1) {
+        children[i] = { ...child, id: `${child.id}#${i}` } as Step
+      }
+    }
+  }
   const results = new Array<unknown>(items.length)
   let cursor = 0
   const workers: Promise<void>[] = []
@@ -644,7 +826,7 @@ async function runForEach(
     while (cursor < items.length) {
       const i = cursor++
       const item = items[i]
-      const child = step.step(item, i)
+      const child = children[i] as Step
       const itemCtx = freezeContext({ ...ctx, item })
       results[i] = await runStep(
         child,
@@ -675,7 +857,7 @@ async function runBranch(
   const key = step.on(ctx)
   const chosen = step.cases[key] ?? step.default
   if (chosen === undefined) {
-    throw new Error(`branch(${step.id}): no case matched "${key}" and no default was provided`)
+    throw new BranchExhaustionError(step.id, key)
   }
   return await runStep(chosen, ctx, backends, waitForInput, events, runtime)
 }
@@ -716,16 +898,9 @@ async function runWait(
   events?: EventBus,
 ): Promise<unknown> {
   if (!waitForInput) {
-    throw new Error(
-      `wait(${step.id}): no wait handler configured; use Runner.start() or pass waitForInput to runPipeline()`,
-    )
+    throw new WaitConfigError(step.id)
   }
-  const message =
-    step.message === undefined
-      ? undefined
-      : typeof step.message === 'function'
-        ? step.message(ctx)
-        : step.message
+  const message = step.message === undefined ? undefined : resolveValueOrFn(step.message, ctx)
   events?.publish({
     type: 'run.waiting',
     runId: ctx.run.runId,
@@ -771,12 +946,7 @@ async function runInvokeStep(
   if (pipeline === undefined) {
     throw new InvokePipelineNotFoundError(step.pipelineId, step.id)
   }
-  const nestedInput =
-    step.input === undefined
-      ? ctx.input
-      : typeof step.input === 'function'
-        ? step.input(ctx)
-        : step.input
+  const nestedInput = step.input === undefined ? ctx.input : resolveValueOrFn(step.input, ctx)
   const nestedRun = await runPipeline(pipeline, nestedInput, {
     signal: ctx.signal,
     ...(events !== undefined && { events }),
@@ -817,12 +987,7 @@ async function runPipelineStep(
   events?: EventBus,
   runtime?: ExecutionRuntime,
 ): Promise<unknown> {
-  const nestedInput =
-    step.input === undefined
-      ? ctx.input
-      : typeof step.input === 'function'
-        ? step.input(ctx)
-        : step.input
+  const nestedInput = step.input === undefined ? ctx.input : resolveValueOrFn(step.input, ctx)
   const nestedRun = await runPipeline(step.pipeline, nestedInput, {
     signal: ctx.signal,
     ...(events !== undefined && { events }),

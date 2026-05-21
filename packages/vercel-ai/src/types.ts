@@ -33,4 +33,24 @@ export interface VercelAiBackendOptions {
    * unless the provider is told not to.
    */
   providerOptions?: VercelAiProviderOptions
+  /**
+   * Per-model vision allowlist (test_plan finding-123).
+   *
+   * The framework's vision capability check is backend-coarse: it asks
+   * `capabilities.vision` on the *backend*, not per-model. vercel-ai is
+   * always vision-capable, but the specific `LanguageModel` instance the
+   * caller wires up (e.g. `openai.chat('qwen3-text-only')`) may target a
+   * model that the upstream silently strips images from — producing a
+   * "completely blank or white" hallucination instead of an error.
+   *
+   * When this option is set, prompts that carry image content are rejected
+   * with `BackendCapabilityError` *before* dispatch unless the resolved
+   * model id appears in the list. Compared against `modelId`, which is
+   * derived from the `LanguageModel` instance (`.modelId` for ai-sdk v4+;
+   * falls back to `provider:modelId`).
+   *
+   * Leave unset to preserve the prior behavior (no per-model check; image
+   * content is always forwarded).
+   */
+  visionModels?: readonly string[]
 }

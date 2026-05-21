@@ -1,11 +1,12 @@
 import { combineSignals } from '@skelm/core'
 import type { AgentRequest, AgentResponse, BackendContext } from '@skelm/core'
-import { Output, generateText, stepCountIs, streamText } from 'ai'
+import { type ModelMessage, Output, generateText, stepCountIs, streamText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
-import { mapUsage } from './infer.js'
+import { mapMessages, mapUsage } from './infer.js'
 import { applyPolicyToTools, assertEgressEnforceable } from './permissions.js'
 import { buildSystemContent, loadSkillBodies } from './skill-injection.js'
 import type { VercelAiBackendOptions } from './types.js'
+import { assertModelSupportsImages } from './vision-gate.js'
 
 export async function vercelAiRun(
   options: VercelAiBackendOptions,
@@ -17,6 +18,15 @@ export async function vercelAiRun(
   // HTTP_PROXY env vars from the gateway egress proxy. Fail-closed instead
   // of pretending to enforce networkEgress.
   assertEgressEnforceable(policy)
+  // Per-model vision check (F123 / #177): when the backend declares a
+  // visionModels allowlist, fail loudly *before* dispatch instead of letting
+  // the upstream silently strip images and hallucinate.
+  assertModelSupportsImages({
+    backendId: 'vercel-ai',
+    model: options.model,
+    visionModels: options.visionModels,
+    prompt: request.prompt,
+  })
   const tools = applyPolicyToTools(options.tools, policy)
 
   const skillBodies = await loadSkillBodies(request, context)
@@ -28,6 +38,13 @@ export async function vercelAiRun(
   const signal = combineSignals(context.signal, timeoutCtl.signal)
 
   const maxTurns = request.maxTurns ?? 8
+
+  // Map text vs multimodal prompt to the AI SDK shape: prompt: string, or
+  // messages: ModelMessage[] when image parts are present.
+  const promptOrMessages: { prompt: string } | { messages: ModelMessage[] } =
+    typeof request.prompt === 'string'
+      ? { prompt: request.prompt }
+      : { messages: mapMessages([{ role: 'user', content: request.prompt }]) }
 
   try {
     // When the step declares an `output` schema, route through the AI SDK's
@@ -43,10 +60,22 @@ export async function vercelAiRun(
 
     if (context.onPartial !== undefined) {
       // Streaming path: use streamText to emit partial chunks as they arrive.
+      // onError captures upstream errors instead of letting the AI SDK dump
+      // a stack trace to stderr. We re-raise the captured error after the
+      // textStream completes so the step is marked failed with a clean
+      // message ("OpenAI-compatible request failed (400): image input is
+      // not supported" etc.) and the gateway/CLI report a usable cause.
+      //
+      // Race-free: the AI SDK invokes onError synchronously from inside its
+      // stream processing (not via a separate microtask) and the textStream
+      // iterator stops yielding once an error fires, so the post-loop check
+      // is guaranteed to see `streamError` populated when termination was
+      // due to error. See infer.ts for the same reasoning.
+      let streamError: unknown
       const stream = streamText({
         model: options.model,
         ...(system !== undefined ? { system } : {}),
-        prompt: request.prompt,
+        ...promptOrMessages,
         ...(Object.keys(tools).length > 0 ? { tools } : {}),
         stopWhen: stepCountIs(maxTurns),
         ...(request.outputSchema !== undefined && {
@@ -62,12 +91,18 @@ export async function vercelAiRun(
             { providerOptions: options.providerOptions as any }
           : {}),
         abortSignal: signal,
+        onError: ({ error }) => {
+          streamError = error
+        },
       })
 
       let fullText = ''
       for await (const chunk of stream.textStream) {
         fullText += chunk
         context.onPartial(chunk)
+      }
+      if (streamError !== undefined) {
+        throw streamError instanceof Error ? streamError : new Error(String(streamError))
       }
       const finalResult = await stream
 
@@ -89,7 +124,7 @@ export async function vercelAiRun(
     const result = await generateText({
       model: options.model,
       ...(system !== undefined ? { system } : {}),
-      prompt: request.prompt,
+      ...promptOrMessages,
       ...(Object.keys(tools).length > 0 ? { tools } : {}),
       stopWhen: stepCountIs(maxTurns),
       ...(request.outputSchema !== undefined && {
@@ -107,6 +142,12 @@ export async function vercelAiRun(
       abortSignal: signal,
     })
 
+    if ((result as { finishReason?: string }).finishReason === 'error') {
+      // AI SDK occasionally reports terminal errors via finishReason='error'
+      // without rejecting; treat that as a thrown failure so the step is
+      // marked failed rather than completed with empty text.
+      throw new Error(`vercel-ai run terminated with finishReason='error'`)
+    }
     const response: AgentResponse = {}
     if (typeof result.finishReason === 'string') response.stopReason = result.finishReason
     const usage = mapUsage(result.usage)

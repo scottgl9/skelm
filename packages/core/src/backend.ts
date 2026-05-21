@@ -46,12 +46,39 @@ export interface BackendCapabilities {
   modelSelection: boolean
   /** How the backend honors permissions. */
   toolPermissions: ToolPermissionEnforcement
+  /**
+   * Accepts image content parts in PromptMessage / InferRequest. Backends
+   * that omit or set this to false will be rejected at the llm-step handler
+   * when image parts are submitted. Default-deny: prefer omitting over
+   * declaring `true` if image handling is not wired through.
+   */
+  vision?: boolean
 }
+
+/**
+ * A multimodal-aware piece of message content. Text is the common case;
+ * images carry base64-encoded bytes (no `data:` prefix) and an explicit
+ * mime type so backends can map to provider-specific shapes.
+ */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image'
+      mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
+      /** Base64 bytes only — no `data:<mime>;base64,` prefix. */
+      data: string
+    }
 
 /** Single message in a chat-style prompt. */
 export interface PromptMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
-  content: string
+  /**
+   * Plain text or a sequence of typed content parts. Most callers use the
+   * string form. Image parts are only honored by backends that report
+   * `capabilities.vision === true`; submitting an image part to a non-vision
+   * backend fails at the llm-step handler with a BackendCapabilityError.
+   */
+  content: string | readonly ContentPart[]
   /** Optional tool_call_id for tool-result messages. */
   toolCallId?: string
 }
@@ -99,10 +126,25 @@ export interface InferResponse {
 
 /** Request shape for `run()` — multi-turn agent loop. */
 export interface AgentRequest {
-  /** User prompt / task description. */
-  prompt: string
+  /**
+   * User prompt / task description. Backends that declare
+   * `capabilities.vision === true` accept multimodal `ContentPart[]`; other
+   * backends will reject image-bearing prompts at step start with
+   * `BackendCapabilityError`.
+   */
+  prompt: string | readonly ContentPart[]
   /** Optional system prompt. */
   system?: string
+  /**
+   * How `system` composes with the backend's built-in default. `'extend'`
+   * (default) prepends the default; `'replace'` drops it.
+   */
+  systemPromptMode?: 'extend' | 'replace'
+  /**
+   * When `systemPromptMode === 'replace'`, controls whether AGENTS.md / SOUL.md
+   * still get injected. Default true.
+   */
+  systemPromptIncludeAgentDef?: boolean
   /** Hard cap on agent turns. */
   maxTurns?: number
   /** Optional working directory hint for the agent. */
@@ -210,6 +252,21 @@ export interface BackendContext {
    * can ignore it.
    */
   onPartial?: (delta: string) => void
+  /**
+   * Optional event bus the backend (or any sub-component it manages, like
+   * an McpHost it brought up itself) can publish to. The runner subscribes
+   * to `tool.call` / `tool.result` events on this bus to write audit
+   * entries. Without this, native-tool backends (e.g. `@skelm/agent` when
+   * it owns its own McpHost) emit no audit trail for tool dispatch.
+   *
+   * Backends should pair `events` with `runId` and `stepId` when forwarding
+   * to McpHost so the audit entries are correctly attributed.
+   */
+  events?: { publish(event: unknown): void }
+  /** Run id of the active run; supplied alongside `events`. */
+  runId?: string
+  /** Step id of the active step; supplied alongside `events`. */
+  stepId?: string
 }
 
 /**

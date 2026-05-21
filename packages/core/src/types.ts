@@ -64,6 +64,36 @@ export type WorkspaceConfig =
       /** Seed files copied into the workspace before the step runs. */
       readonly seed?: { readonly copy: readonly string[] }
     }
+  | {
+      readonly mode: 'git-repo'
+      /**
+       * Repo spec. Accepts `owner/name` (resolved to `https://github.com/owner/name.git`)
+       * or a full git URL (`https://`, `ssh://`, `git@host:owner/name`).
+       */
+      readonly repo: string
+      /** Branch, tag, or commit SHA to check out. */
+      readonly ref: string
+      /**
+       * Optional base ref to also fetch. Useful for PR review pipelines that
+       * need both the head and the base commits to compute `git diff base..head`.
+       */
+      readonly baseRef?: string
+      /**
+       * Cache directory for the clone. Defaults to
+       * `~/.skelm/repos/<owner>__<name>`. Repeated runs against the same repo
+       * reuse the clone and fall back to `git fetch` instead of cloning again.
+       */
+      readonly cacheDir?: string
+      /**
+       * Optional credential pulled from the process environment and passed
+       * to `git` via `http.extraheader` so it never persists in `git remote -v`.
+       * Example: `{ env: 'GITHUB_TOKEN' }` injects
+       * `AUTHORIZATION: bearer <token>` for each git invocation.
+       */
+      readonly auth?: { readonly env: string }
+      /** Seed files copied into the workspace before the step runs. */
+      readonly seed?: { readonly copy: readonly string[] }
+    }
 
 export interface WorkspaceHandle {
   readonly path: string
@@ -113,6 +143,18 @@ export interface Context<TInput = unknown> {
   readonly run: RunMetadata
   readonly signal: AbortSignal
   readonly state: State
+  /**
+   * Per-run accessor for tracking threaded conversation state (PR/issue
+   * threads, Slack threads, …). Use over hand-rolled `last-comment-seen:*`
+   * keys in `ctx.state` — entries written through `threads` live in a
+   * dedicated namespace (`thread:<kind>:<key>`) so they don't collide with
+   * regular pipeline state.
+   *
+   *   const t = ctx.threads.get({ kind: 'github-pr', key: 'octo/demo#42' })
+   *   await t.markSeen(commentId)
+   *   for await (const c of t.unseenSince(await t.lastSeen())) { ... }
+   */
+  readonly threads: import('./threads.js').ThreadHost
   readonly workspace?: WorkspaceHandle
   /**
    * Current item when inside a `forEach` step. Undefined outside forEach.
@@ -143,7 +185,71 @@ export interface Context<TInput = unknown> {
    * for an id that does not exist).
    */
   get<T = unknown>(stepId: StepId): T | undefined
+  /**
+   * Spawn an external executable. Available inside `code()` steps when the
+   * step's `permissions.allowedExecutables` includes the resolved binary name
+   * (basename of the resolved path: e.g. `git`, `python3`, `bash`). Omitted
+   * for steps that have no exec capability wired (e.g. inside a `forEach`
+   * iteration context derived from a non-code step).
+   */
+  readonly exec?: ExecFn
+  /**
+   * Persist binary artifacts (screenshots, evidence, etc.) on the run store.
+   * Each put automatically attaches the current `runId` and `stepId`. Calls
+   * publish a `tool.result` event for audit. Available when the runner was
+   * given an `artifacts`-capable store (the default `MemoryRunStore` /
+   * `SqliteRunStore`).
+   */
+  readonly artifacts?: import('./run-store.js').ArtifactStoreHandle
 }
+
+/** Execution request accepted by `ctx.exec`. */
+export interface ExecRequest {
+  /** Bare name or absolute path. Mutually exclusive with `python` / `bash`. */
+  readonly command?: string
+  /** Convenience: run `python3 <script> [...args]`. */
+  readonly python?: string
+  /** Convenience: run `bash <script> [...args]`. */
+  readonly bash?: string
+  readonly args?: readonly string[]
+  readonly cwd?: string
+  readonly env?: Readonly<Record<string, string>>
+  readonly stdin?: string | Uint8Array
+  readonly timeoutMs?: number
+  /** When true, non-zero exit codes throw instead of returning the result. */
+  readonly throwOnNonZero?: boolean
+  /** Cap on captured stdout bytes; default 10 MiB. */
+  readonly maxStdoutBytes?: number
+  /** Cap on captured stderr bytes; default 10 MiB. */
+  readonly maxStderrBytes?: number
+}
+
+/** Result of a completed `ctx.exec` call. */
+export interface ExecResult {
+  readonly exitCode: number
+  readonly stdout: string
+  readonly stderr: string
+  readonly signal: NodeJS.Signals | null
+  readonly durationMs: number
+  readonly timedOut: boolean
+}
+
+export type ExecFn = (req: ExecRequest) => Promise<ExecResult>
+
+/**
+ * Predicate evaluated by the runtime before a step runs. When it returns
+ * false the step is skipped: no handler is invoked, the step result is
+ * recorded with `status: 'skipped'` and `output: undefined` (for top-level
+ * steps), and a `step.skipped` event is published. Reading
+ * `ctx.get(skippedStepId)` from a later step yields `undefined`.
+ *
+ * The predicate is evaluated at every dispatch site — top-level pipeline
+ * steps *and* steps nested inside `parallel()` / `forEach()` / `branch()` /
+ * `loop()` / `idempotent()` / `pipelineStep()`. Nested skips do not produce
+ * a `StepResult` (since nested steps never produce one), but they do emit a
+ * `step.skipped` event for observability.
+ */
+export type WhenPredicate = (ctx: Context) => boolean | Promise<boolean>
 
 /** Per-step retry policy applied by the runner around step execution. */
 export interface RetryPolicy {
@@ -174,10 +280,33 @@ export interface SerializedError {
 export interface CodeStep<TOutput = unknown> {
   readonly kind: 'code'
   readonly id: StepId
-  readonly run: (ctx: Context) => TOutput | Promise<TOutput>
+  /**
+   * Inline run function. Mutually exclusive with `module`: exactly one must
+   * be supplied to `code()`. When `module` is set, the runner loads the file
+   * once on first execution and uses its exported function as `run`.
+   */
+  readonly run?: (ctx: Context) => TOutput | Promise<TOutput>
+  /**
+   * Path to an external `.ts`/`.js` module exporting the step's run function.
+   * Resolved relative to the owning pipeline's `baseDir` (or `process.cwd()`
+   * if absent). Absolute paths and `file://` URLs are accepted as-is.
+   */
+  readonly module?: string
+  /** Name of the export to use from `module`. Defaults to `'default'`. */
+  readonly export?: string
   readonly secrets?: readonly string[]
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  /**
+   * Permission policy for this step. Today only `allowedExecutables` is
+   * enforced (via `ctx.exec`); other dimensions are accepted for forward
+   * compatibility. Default-deny: omitting this field denies every
+   * `ctx.exec` call.
+   */
+  readonly permissions?: import('./permissions.js').AgentPermissions
+  /** Aborts ctx.signal and rejects with StepTimeoutError after this many ms. */
+  readonly timeoutMs?: number
+  readonly when?: WhenPredicate
 }
 
 /** An `llm()` step: single-shot inference against a backend. */
@@ -186,14 +315,23 @@ export interface LlmStep<TOutput = unknown> {
   readonly id: StepId
   readonly backend?: string | readonly string[]
   readonly model?: string
-  readonly system?: string | ((ctx: Context) => string)
-  readonly prompt: string | ((ctx: Context) => string)
+  readonly system?: string | ((ctx: Context) => string | Promise<string>)
+  readonly prompt:
+    | string
+    | readonly import('./backend.js').ContentPart[]
+    | ((
+        ctx: Context,
+      ) =>
+        | string
+        | readonly import('./backend.js').ContentPart[]
+        | Promise<string | readonly import('./backend.js').ContentPart[]>)
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   readonly temperature?: number
   readonly maxTokens?: number
   readonly secrets?: readonly string[]
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** An `agent()` step: full agentic loop against a backend.run(). */
@@ -202,8 +340,33 @@ export interface AgentStep<TOutput = unknown> {
   readonly id: StepId
   readonly backend?: string | readonly string[]
   readonly agentDef?: string
-  readonly prompt: string | ((ctx: Context) => string)
-  readonly system?: string | ((ctx: Context) => string)
+  readonly prompt:
+    | string
+    | readonly import('./backend.js').ContentPart[]
+    | ((
+        ctx: Context,
+      ) =>
+        | string
+        | readonly import('./backend.js').ContentPart[]
+        | Promise<string | readonly import('./backend.js').ContentPart[]>)
+  readonly system?: string | ((ctx: Context) => string | Promise<string>)
+  /**
+   * How `system` (and any AGENTS.md/SOUL.md) should compose with the backend's
+   * built-in default system prompt.
+   *   - `'extend'` (default): prepend the built-in default, then SOUL.md /
+   *     AGENTS.md / `system` last so user content carries recency weight.
+   *   - `'replace'`: drop the built-in default and use only the user-supplied
+   *     content. Backend will still inject AGENTS.md/SOUL.md unless
+   *     `systemPromptIncludeAgentDef: false`.
+   */
+  readonly systemPromptMode?: 'extend' | 'replace'
+  /**
+   * Only meaningful with `systemPromptMode: 'replace'`. Default true — keeps
+   * the agent's AGENTS.md / SOUL.md even when the rest of the built-in default
+   * is dropped. Set false to send the user's `system` verbatim with no other
+   * skelm-authored content.
+   */
+  readonly systemPromptIncludeAgentDef?: boolean
   readonly mcp?:
     | readonly import('./backend.js').McpServerConfig[]
     | ((ctx: Context) => readonly import('./backend.js').McpServerConfig[])
@@ -230,6 +393,7 @@ export interface AgentStep<TOutput = unknown> {
   readonly timeoutMs?: number
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 export interface IdempotentStep<TOutput = unknown> {
@@ -240,6 +404,7 @@ export interface IdempotentStep<TOutput = unknown> {
   readonly ttlMs?: number
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 export type ParallelWaitFor = 'all' | 'any' | { atLeast: number }
@@ -254,6 +419,7 @@ export interface ParallelStep {
   readonly onError?: ParallelOnError
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** A `forEach()` step: maps a step factory over a collection. */
@@ -265,6 +431,7 @@ export interface ForEachStep {
   readonly step: (item: unknown, index: number) => Step
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** A `branch()` step: discriminator-driven case selection. */
@@ -276,6 +443,7 @@ export interface BranchStep {
   readonly default?: Step
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** A `loop()` step: bounded iteration while a predicate holds. */
@@ -287,6 +455,7 @@ export interface LoopStep {
   readonly step: Step
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** A `wait()` step: pause until a caller resumes the run with input. */
@@ -298,6 +467,7 @@ export interface WaitStep<TOutput = unknown> {
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** A `pipelineStep()` step: run a nested pipeline and adopt its output. */
@@ -308,6 +478,7 @@ export interface PipelineStep<TInput = unknown, TOutput = unknown> {
   readonly input?: TInput | ((ctx: Context) => TInput)
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** An `invoke()` step: run a pipeline looked up by ID from the workflow registry at runtime. */
@@ -320,6 +491,7 @@ export interface InvokeStep<TInput = unknown, TOutput = unknown> {
   readonly input?: TInput | ((ctx: Context) => TInput)
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
+  readonly when?: WhenPredicate
 }
 
 /** Discriminated union of all step kinds. */
@@ -346,9 +518,130 @@ export type Step =
  */
 export type PipelineTrigger =
   | { kind: 'queue'; id?: string; sourceId: string; config?: Record<string, unknown> }
-  | { kind: 'webhook'; id?: string; path: string; method?: string; secret?: string }
-  | { kind: 'cron'; id?: string; cron: string }
-  | { kind: 'interval'; id?: string; everyMs: number }
+  | {
+      kind: 'webhook'
+      id?: string
+      path: string
+      method?: string
+      secret?: string
+      /**
+       * Optional provider hint. When set, the gateway delegates protocol
+       * specifics to the matching `@skelm/integrations` integration:
+       *
+       * - `'slack'`: `secret` is the signing secret. The gateway verifies
+       *   `X-Slack-Signature` over the raw body using
+       *   `verifySlackSignature`, rejects timestamps older than 5 minutes,
+       *   and short-circuits the `url_verification` challenge.
+       * - `'ms-graph'`: GET requests carrying `?validationToken=…` are
+       *   answered in plain text without firing the pipeline. POST
+       *   notifications are rejected with 401 unless every entry under
+       *   `value[].clientState` equals the `clientState` declared here.
+       *   Graph does not sign payloads, so `clientState` is the only
+       *   per-subscription secret — supplying it is mandatory for
+       *   production deployments.
+       */
+      provider?: 'slack' | 'ms-graph'
+      /**
+       * For `provider: 'ms-graph'`: the shared `clientState` value the Graph
+       * subscription was created with. The gateway rejects POSTs whose
+       * embedded `clientState` doesn't match (see `verifyMsGraphClientState`).
+       */
+      clientState?: string
+      /**
+       * Optional pre-dispatch deduplication. The gateway reads the named
+       * request header on each delivery and skips dispatch when the same
+       * value has been seen within `ttlMs` (default 24 hours, i.e. matches
+       * GitHub's `X-GitHub-Delivery` retry window). A `webhook.deduped`
+       * audit event is emitted on a hit; the HTTP response is still 200.
+       */
+      dedupe?: { header: string; ttlMs?: number }
+    }
+  | {
+      /**
+       * Subscribe to an external event source. The gateway owns the
+       * connection lifecycle (open, reconnect with exponential backoff,
+       * close on unregister) and fires the pipeline with the normalized
+       * payload below. Provider-specific sockets — Slack socket mode,
+       * Discord gateway — live in `@skelm/integrations`, not here.
+       */
+      kind: 'event-source'
+      id?: string
+      /**
+       * Generic protocol used by the source:
+       *  - `websocket`: open a WebSocket; fire on each message
+       *  - `sse`: open an SSE stream; fire on each event
+       *  - `rss`: poll a feed; fire once per new item (deduped by guid)
+       *  - `custom`: the caller supplies a `start(fire, signal)` hook
+       */
+      source: 'websocket' | 'sse' | 'rss' | 'custom'
+      options: {
+        /** websocket / sse: URL to connect to */
+        url?: string
+        /** rss: feed URL to poll */
+        feedUrl?: string
+        /** rss: poll interval in ms (default 300_000 = 5 min) */
+        pollIntervalMs?: number
+        /** websocket / sse: auto-reconnect on disconnect (default true) */
+        reconnect?: boolean
+        /** websocket / sse: reconnect delay in ms (default 5_000) */
+        reconnectDelayMs?: number
+        /** websocket / sse: max reconnect attempts (default Infinity) */
+        maxReconnectAttempts?: number
+        /** rss: max items to fire on the first poll (default 0 = skip existing) */
+        initialItems?: number
+        /** custom: start/stop hook — only valid when source='custom' */
+        start?: (fire: (payload: unknown) => void, signal: AbortSignal) => void | Promise<void>
+      }
+      /** Optional payload filter; equality on each key. */
+      filter?: Record<string, unknown>
+    }
+  | { kind: 'cron'; id?: string; cron: string; tz?: string }
+  | { kind: 'interval'; id?: string; everyMs?: number; every?: string }
+  | {
+      /**
+       * Watch a filesystem path and fire the pipeline on file events. The
+       * gateway runs `fs.watch` with `recursive: true`; rename events are
+       * mapped to `create`/`delete` based on whether the path exists after.
+       */
+      kind: 'file-watch'
+      id?: string
+      /** Path to watch (file or directory). */
+      path: string
+      /** Events to fire on. Default: all three. */
+      events?: readonly ('create' | 'update' | 'delete')[]
+      /** Coalesce rapid events into one fire (default 100 ms). */
+      debounceMs?: number
+    }
+  | {
+      /**
+       * GitHub PR-aware trigger. The gateway wires this to a `webhook` trigger
+       * with dedupe on `X-GitHub-Delivery` (item 4) and delivers a normalized
+       * `{ pr, kind, raw, authorIsBot }` payload to the pipeline. Use
+       * `registerGitHubPrTrigger()` from `@skelm/integrations` to bind a
+       * declared trigger to a running gateway at startup.
+       */
+      kind: 'github-pr'
+      id?: string
+      /** Webhook receive path, e.g. `/hooks/github/prs`. */
+      path: string
+      /** HMAC shared secret for `x-hub-signature-256` (verified by the helper). */
+      secret?: string
+      /** GitHub event kinds to forward. Default: every kind. */
+      events?: readonly (
+        | 'opened'
+        | 'synchronize'
+        | 'reopened'
+        | 'closed'
+        | 'review_requested'
+        | 'commented'
+        | 'submitted'
+      )[]
+      /** Filters applied to the normalized payload before firing the pipeline. */
+      filter?: {
+        readonly dropBotAuthors?: boolean
+        readonly repos?: readonly string[]
+      }
+    }
 
 /** A pipeline value produced by `pipeline()`. */
 export interface Pipeline<TInput = unknown, TOutput = unknown> {
@@ -356,6 +649,14 @@ export interface Pipeline<TInput = unknown, TOutput = unknown> {
   readonly description?: string
   readonly version?: string
   readonly steps: readonly Step[]
+  /**
+   * Absolute directory used to resolve relative paths declared on steps
+   * (e.g. `code({ module: './step.ts' })`). Populated by the CLI workflow
+   * loader from the pipeline file's location; left undefined when a pipeline
+   * is constructed programmatically, in which case relative paths resolve
+   * against `process.cwd()`.
+   */
+  readonly baseDir?: string
   readonly finalize?: (ctx: Context<TInput>) => TOutput | Promise<TOutput>
   /** Optional input schema; validated at run start. */
   readonly inputSchema?: import('./schema.js').SkelmSchema<TInput>
@@ -383,6 +684,13 @@ export interface Run<TInput = unknown, TOutput = unknown> {
    * for runs started directly via `runPipeline()` or the CLI.
    */
   readonly workflowPath?: string
+  /**
+   * Id of the trigger that produced this run, when the run was started by a
+   * cron / webhook / queue / interval / manual trigger via the gateway.
+   * Absent for runs started directly via `runPipeline()` or HTTP `/runs`.
+   * Used by `/runs?triggerId=…` filters and dashboard groupings.
+   */
+  readonly triggerId?: string
   readonly status: RunStatus
   readonly input: TInput
   readonly steps: readonly StepResult[]

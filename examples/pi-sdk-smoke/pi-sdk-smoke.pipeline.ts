@@ -5,7 +5,6 @@ import { agent, pipeline } from '@skelm/core'
  */
 export default pipeline({
   id: 'pi-sdk-smoke',
-  name: 'Pi SDK smoke test',
   description: 'Verifies the @skelm/pi SDK backend runs an agent step with bash exec.',
   steps: [
     agent({

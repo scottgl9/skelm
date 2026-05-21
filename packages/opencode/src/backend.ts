@@ -35,6 +35,13 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
     skills: true,
     modelSelection: options.model !== undefined,
     toolPermissions: 'native',
+    // Image content is threaded into opencode as a `FilePartInput` alongside
+    // the text part (see buildOpencodePromptParts in client.ts); whether the
+    // *upstream* model actually processes images depends on the configured
+    // opencode model (Sonnet, GPT-4o, etc. — see opencode docs). Set
+    // `vision: false` via the second capability block above if a deployment
+    // pins a known text-only model.
+    vision: options.vision ?? true,
   }
 
   // Single client instance per backend — server started on first call and
@@ -91,14 +98,23 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
         return result
       } catch (error) {
         if (error instanceof Error) {
+          // The opencode SDK surfaces these conditions as plain Errors
+          // with descriptive messages; substring matching is the only
+          // signal available. The original error is attached as `cause`
+          // so callers retain stack and any provider-specific fields.
           if (error.message.includes('Authentication')) {
-            throw new BackendAuthenticationError(`Opencode authentication failed: ${error.message}`)
+            throw new BackendAuthenticationError(
+              `Opencode authentication failed: ${error.message}`,
+              { cause: error },
+            )
           }
           if (error.message.includes('Rate limit')) {
-            throw new BackendRateLimitError(`Opencode rate limit exceeded: ${error.message}`)
+            throw new BackendRateLimitError(`Opencode rate limit exceeded: ${error.message}`, {
+              cause: error,
+            })
           }
           if (error.message.includes('timed out')) {
-            throw new BackendTimeoutError(error.message)
+            throw new BackendTimeoutError(error.message, { cause: error })
           }
         }
         throw error
@@ -156,22 +172,22 @@ function createEmptyPolicy(): ResolvedPolicy {
  * Custom error types for opencode backend
  */
 export class BackendAuthenticationError extends Error {
-  constructor(message: string) {
-    super(message)
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
     this.name = 'BackendAuthenticationError'
   }
 }
 
 export class BackendRateLimitError extends Error {
-  constructor(message: string) {
-    super(message)
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
     this.name = 'BackendRateLimitError'
   }
 }
 
 export class BackendTimeoutError extends Error {
-  constructor(message: string) {
-    super(message)
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
     this.name = 'BackendTimeoutError'
   }
 }

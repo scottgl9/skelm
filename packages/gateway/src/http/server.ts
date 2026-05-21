@@ -207,17 +207,21 @@ export function createServer(
     '/runs',
     eventHandler(async (event: H3Event) => {
       const url = event.node.req.url ?? ''
-      const pipelineId = url.includes('pipelineId=')
-        ? (new URLSearchParams(url).get('pipelineId') ?? undefined)
-        : undefined
-      const statusParam = url.includes('status=')
-        ? (new URLSearchParams(url).get('status') as RunStatus | undefined)
-        : undefined
-      const limit = Number.parseInt(new URLSearchParams(url).get('limit') ?? '50')
+      const params = new URLSearchParams(url.includes('?') ? url.split('?', 2)[1] : '')
+      const pipelineId = params.get('pipelineId') ?? undefined
+      const statusParam = (params.get('status') as RunStatus | null) ?? undefined
+      const triggerId = params.get('triggerId') ?? undefined
+      const limit = Number.parseInt(params.get('limit') ?? '50')
 
-      const filter: { pipelineId?: string; status?: RunStatus; limit?: number } = {}
+      const filter: {
+        pipelineId?: string
+        status?: RunStatus
+        triggerId?: string
+        limit?: number
+      } = {}
       if (pipelineId !== undefined) filter.pipelineId = pipelineId
       if (statusParam !== undefined) filter.status = statusParam
+      if (triggerId !== undefined) filter.triggerId = triggerId
       if (!Number.isNaN(limit)) filter.limit = limit
 
       const runs: RunSummary[] = []
@@ -229,6 +233,7 @@ export function createServer(
         runId: r.runId,
         pipelineId: r.pipelineId,
         ...(r.workflowPath !== undefined && { workflowPath: r.workflowPath }),
+        ...(r.triggerId !== undefined && { triggerId: r.triggerId }),
         status: r.status,
         startedAt: r.startedAt,
         completedAt: r.completedAt,
@@ -378,11 +383,31 @@ export function createServer(
     async start() {
       const http = await import('node:http')
       server = http.createServer(toNodeListener(app))
-      await new Promise<void>((resolve) => {
-        server?.listen({ port, host }, () => {
+      // F042: an EADDRINUSE (or any other listen-time error) used to fall
+      // through as an unhandled `error` event because the Promise only
+      // resolved on the listening callback. That crashed the process and
+      // — because the caller had already written the lockfile — left a
+      // stale lockfile on disk. Reject the promise instead so the caller
+      // can run its catch block.
+      await new Promise<void>((resolve, reject) => {
+        if (server === null) {
+          reject(new Error('gateway server was disposed before start'))
+          return
+        }
+        const onError = (err: Error) => {
+          server?.off('listening', onListening)
+          server = null
+          isRunningFlag = false
+          reject(err)
+        }
+        const onListening = () => {
+          server?.off('error', onError)
           isRunningFlag = true
           resolve()
-        })
+        }
+        server.once('error', onError)
+        server.once('listening', onListening)
+        server.listen({ port, host })
       })
     },
 

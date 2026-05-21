@@ -7,7 +7,12 @@
 // Pi does NOT speak ACP; this backend uses the native pi RPC protocol
 // documented in @mariozechner/pi-coding-agent/docs/rpc.md.
 
-import { PermissionDeniedError, createConcurrencySemaphore, loadSkillBodies } from '@skelm/core'
+import {
+  PermissionDeniedError,
+  createConcurrencySemaphore,
+  extractPromptText,
+  loadSkillBodies,
+} from '@skelm/core'
 import type {
   AgentPermissions,
   AgentRequest,
@@ -55,6 +60,10 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
     mcp: false, // pi manages its own tools; no external MCP wiring
     skills: true,
     modelSelection: options.model !== undefined,
+    // RPC mode forwards prompts as text to a subprocess; image bytes
+    // cannot cross that boundary, so vision is explicitly off. Callers
+    // wanting multimodal must use the pi-sdk backend.
+    vision: false,
     // RPC mode runs pi in a subprocess; skelm cannot intercept tool_call events
     // mid-run, so it cannot enforce allowedTools, allowedExecutables,
     // fsRead/fsWrite, allowedMcpServers, or allowedSkills. The new gateway
@@ -208,6 +217,6 @@ function buildPrompt(req: AgentRequest, skillBodies: string[] = []): string {
   if (req.system) systemParts.push(req.system)
   for (const body of skillBodies) systemParts.push(body)
   if (systemParts.length > 0) parts.push(`[System: ${systemParts.join('\n\n---\n\n')}]`)
-  parts.push(req.prompt)
+  parts.push(extractPromptText(req.prompt))
   return parts.join('\n\n')
 }
