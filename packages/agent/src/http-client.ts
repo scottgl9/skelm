@@ -4,6 +4,8 @@
  * through wire-format types.
  */
 
+import { BackendUpstreamError } from '@skelm/core'
+
 export interface OpenAIErrorResponse {
   error?: {
     message?: string
@@ -132,7 +134,11 @@ export async function chatCompletion(
     } catch {
       // ignore
     }
-    throw new Error(`OpenAI-compatible request failed (${res.status}): ${errMsg}`)
+    throw new BackendUpstreamError(
+      `OpenAI-compatible request failed (${res.status}): ${errMsg}`,
+      undefined,
+      res.status,
+    )
   }
 
   return (await res.json()) as OpenAIChatResponse

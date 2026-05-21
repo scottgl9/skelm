@@ -44,10 +44,14 @@ export type {
 } from './config.js'
 
 export {
+  AgentMaxTurnsError,
   BackendCapabilityError,
+  BackendConfigError,
   BackendNotFoundError,
   BackendRegistry,
+  BackendSessionError,
   BackendUnavailableError,
+  BackendUpstreamError,
   LLMTruncatedError,
 } from './backend.js'
 export type {

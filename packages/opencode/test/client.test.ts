@@ -263,7 +263,7 @@ describe('OpencodeClientWrapper — SSE streaming (#3)', () => {
     mockSubscribeStream = makeSseStream([idleEvent('sess-123')])
     await expect(
       new OpencodeClientWrapper({}).prompt({ prompt: 'go' }, makeSignal(true)),
-    ).rejects.toThrow(/aborted/)
+    ).rejects.toThrow(/cancelled/)
   })
 
   it('returns stopReason end_turn', async () => {

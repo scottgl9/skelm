@@ -346,6 +346,69 @@ export class LLMTruncatedError extends Error {
 }
 
 /**
+ * Thrown when a backend factory is given missing or invalid options
+ * (no API key, missing model id, mutually-exclusive flags, etc).
+ * Distinct from BackendUnavailableError, which signals a runtime
+ * failure on an already-built backend.
+ */
+export class BackendConfigError extends Error {
+  override readonly name = 'BackendConfigError'
+  constructor(
+    message: string,
+    readonly backendId?: BackendId,
+  ) {
+    super(message)
+  }
+}
+
+/**
+ * Thrown when an upstream LLM/agent provider returns an error response,
+ * a malformed response, or a non-2xx status. `status` is the HTTP code
+ * when known; `cause` carries the parsed upstream body when present.
+ */
+export class BackendUpstreamError extends Error {
+  override readonly name = 'BackendUpstreamError'
+  constructor(
+    message: string,
+    readonly backendId?: BackendId,
+    readonly status?: number,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options)
+  }
+}
+
+/**
+ * Thrown when an agent session operation (create, prompt, mcp.add,
+ * subscribe) fails. Wraps the upstream error payload as `cause`.
+ */
+export class BackendSessionError extends Error {
+  override readonly name = 'BackendSessionError'
+  constructor(
+    message: string,
+    readonly backendId?: BackendId,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options)
+  }
+}
+
+/**
+ * Thrown by an agent loop when the configured `maxTurns` budget is
+ * exceeded without the agent terminating. Caller policy decides whether
+ * to retry with a larger budget or fail the step.
+ */
+export class AgentMaxTurnsError extends Error {
+  override readonly name = 'AgentMaxTurnsError'
+  constructor(
+    readonly maxTurns: number,
+    readonly backendId?: BackendId,
+  ) {
+    super(`agent exceeded max turns (${maxTurns})`)
+  }
+}
+
+/**
  * Minimal in-memory registry. The gateway will eventually use this; tests
  * already do. Resolution order: explicit backend id → first backend that
  * supports the requested capability → throw.
