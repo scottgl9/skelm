@@ -2,8 +2,8 @@ import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { EXIT } from './exit-codes.js'
+import type { MainIO, MainResult } from './internal/io.js'
 import { writeJsonOutput } from './internal/output.js'
-import type { MainIO, MainResult } from './main.js'
 
 /**
  * Approval-policy management. The policy file is the source of truth for

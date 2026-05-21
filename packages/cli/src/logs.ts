@@ -2,8 +2,8 @@ import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { EXIT } from './exit-codes.js'
+import type { MainIO, MainResult } from './internal/io.js'
 import { safeForTty } from './internal/safe-text.js'
-import type { MainIO, MainResult } from './main.js'
 
 export interface LogsArgs {
   /** When omitted, print every line in the file. */

@@ -27,8 +27,8 @@ function contractSuite(name: string, makeStore: () => ArtifactStore): void {
 
       const fetched = await store.getArtifact(desc)
       expect(fetched).not.toBeNull()
-      expect(Buffer.from(fetched!.data).equals(png)).toBe(true)
-      expect(fetched!.descriptor.name).toBe('screen.png')
+      expect(Buffer.from(fetched?.data).equals(png)).toBe(true)
+      expect(fetched?.descriptor.name).toBe('screen.png')
 
       const collected: string[] = []
       for await (const d of store.listArtifacts('run-1')) {
@@ -52,7 +52,7 @@ function contractSuite(name: string, makeStore: () => ArtifactStore): void {
         data: 'hello world',
       })
       const fetched = await store.getArtifact(desc)
-      expect(Buffer.from(fetched!.data).toString('utf8')).toBe('hello world')
+      expect(Buffer.from(fetched?.data).toString('utf8')).toBe('hello world')
     })
 
     it('returns null for unknown refs', async () => {
@@ -128,7 +128,7 @@ describe('SqliteRunStore artifact migration', () => {
     const b = new SqliteRunStore({ path })
     const fetched = await b.getArtifact(desc)
     expect(fetched).not.toBeNull()
-    expect(Array.from(fetched!.data)).toEqual([1, 2, 3])
+    expect(Array.from(fetched?.data)).toEqual([1, 2, 3])
     b.close()
   })
 })

@@ -21,15 +21,8 @@ import { sessionsCommand } from './sessions.js'
 import { validateCommand } from './validate.js'
 import { workspaceCommand } from './workspace.js'
 
-export interface MainIO {
-  stdout: NodeJS.WritableStream
-  stderr: NodeJS.WritableStream
-  stdin: NodeJS.ReadableStream
-}
-
-export interface MainResult {
-  exitCode: ExitCode
-}
+export type { MainIO, MainResult } from './internal/io.js'
+import type { MainIO, MainResult } from './internal/io.js'
 
 /**
  * Pure entry point — argv in, IO streams in, exit code out. The `bin.ts`

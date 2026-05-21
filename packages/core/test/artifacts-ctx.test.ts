@@ -26,7 +26,7 @@ describe('ctx.artifacts binding', () => {
         code({
           id: 'capture',
           run: async (ctx) => {
-            const desc = await ctx.artifacts!.put({
+            const desc = await ctx.artifacts?.put({
               name: 'screen.png',
               mimeType: 'image/png',
               data: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
@@ -45,11 +45,11 @@ describe('ctx.artifacts binding', () => {
     // The artifact actually landed in the store.
     const fetched = await store.getArtifact({
       runId: run.runId,
-      artifactId: out!.artifactId,
+      artifactId: out?.artifactId,
     })
     expect(fetched).not.toBeNull()
-    expect(fetched!.descriptor.stepId).toBe('capture')
-    expect(Array.from(fetched!.data)).toEqual([0x89, 0x50, 0x4e, 0x47])
+    expect(fetched?.descriptor.stepId).toBe('capture')
+    expect(Array.from(fetched?.data)).toEqual([0x89, 0x50, 0x4e, 0x47])
 
     // The audit/event trail recorded a tool.result for the put.
     expect(seen).toEqual([
@@ -71,7 +71,7 @@ describe('ctx.artifacts binding', () => {
         code({
           id: 'capture',
           run: async (ctx) => {
-            await ctx.artifacts!.put({
+            await ctx.artifacts?.put({
               name: 'big.bin',
               mimeType: 'application/octet-stream',
               data: big,

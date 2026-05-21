@@ -15,9 +15,9 @@ import {
 import { tsImport } from 'tsx/esm/api'
 import { buildBackendRegistry } from './backends.js'
 import { EXIT } from './exit-codes.js'
+import type { MainIO, MainResult } from './internal/io.js'
 import { writeJsonOutput } from './internal/output.js'
 import { loadSkelmConfig } from './load-config.js'
-import type { MainIO, MainResult } from './main.js'
 
 export interface GatewayArgs {
   subcommand: 'start' | 'stop' | 'pause' | 'resume' | 'reload' | 'status' | 'install' | 'uninstall'
