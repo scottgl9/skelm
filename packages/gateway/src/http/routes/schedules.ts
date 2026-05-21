@@ -14,8 +14,32 @@ export function registerScheduleRoutes(router: Router, gateway: Gateway): void {
     eventHandler(async (event) => {
       const id = event.context.params?.id
       if (!id) throw createError({ statusCode: 400, message: 'trigger id required' })
-      await gateway.managers.triggers.fire(id)
-      return { ok: true }
+      const status = await gateway.managers.triggers.fire(id)
+      // F127: surface the overlap-policy decision so callers can distinguish
+      // a dispatched fire from one that was skipped/cancelled because a
+      // previous fire was still in flight. Webhook + queue paths still get
+      // their own bespoke responses on the routes below; this is only the
+      // manual-fire endpoint that operators hit directly.
+      switch (status) {
+        case 'dispatched':
+        case 'queued':
+          return { ok: true, status }
+        case 'skipped':
+        case 'cancelled':
+          throw createError({
+            statusCode: 409,
+            message: `trigger ${id} ${status} by overlap policy (previous fire still in flight)`,
+            data: { ok: false, status },
+          })
+        case 'stopping':
+          throw createError({
+            statusCode: 503,
+            message: 'gateway is stopping; refusing new fires',
+            data: { ok: false, status },
+          })
+        case 'unknown':
+          throw createError({ statusCode: 404, message: `trigger ${id} not found` })
+      }
     }),
   )
 
