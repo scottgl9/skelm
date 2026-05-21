@@ -121,12 +121,42 @@ export class PiSdkClient {
 
     const cwd = this.opts.cwd ?? process.cwd()
 
+    // Issue #193: pi's built-in coding-agent system prompt (~13 KB, "You are
+    // an expert coding assistant operating inside pi …") strongly biases the
+    // model toward file/code workflows and away from visual reasoning. When
+    // the caller threads image content but supplies no system override of
+    // their own, qwen35-VL / GPT-4V / Claude-Vision reliably reply "I cannot
+    // view or analyze images" — even though pi-coding-agent itself correctly
+    // packs the image into the chat-completions `image_url` content part.
+    // The image bytes reach the wire; the model just disengages because the
+    // system prompt told it it's a coding tool.
+    //
+    // Fix: when this turn contains images, append a short vision-enable hint
+    // to whichever base+user system prompt would otherwise be sent. The hint
+    // does NOT override pi's coding-agent prompt — it augments it — so
+    // coding-on-screenshot pipelines still get coding-agent capabilities AND
+    // visual reasoning.
+    const hasImages = images !== undefined && images.length > 0
+    const userSystem = this.opts.system
+    const replace = this.opts.replaceSystemPrompt === true
+    const visionHint =
+      'The user has attached one or more images to their message. ' +
+      'You have vision capability — look at the image(s) and address what you see when answering.'
+
     const systemPromptOverride =
-      this.opts.system !== undefined
-        ? (base: string | undefined): string | undefined =>
-            this.opts.replaceSystemPrompt
-              ? this.opts.system
-              : [base, this.opts.system].filter(Boolean).join('\n\n')
+      userSystem !== undefined || hasImages
+        ? (base: string | undefined): string | undefined => {
+            // Caller fully replaces pi's prompt — they own the whole shape.
+            // Trust the caller covered image guidance themselves; don't
+            // double-inject the vision hint.
+            if (replace && userSystem !== undefined) return userSystem
+
+            const parts: string[] = []
+            if (!replace && base !== undefined && base.length > 0) parts.push(base)
+            if (userSystem !== undefined) parts.push(userSystem)
+            if (hasImages) parts.push(visionHint)
+            return parts.length > 0 ? parts.join('\n\n') : undefined
+          }
         : undefined
 
     const services = await createAgentSessionServices({

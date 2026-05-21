@@ -37,16 +37,7 @@ describe('skelm schedule — CLI smoke', () => {
   })
 
   it('add --cron → list → stop round-trip against a real gateway', async () => {
-    const port = await pickFreePort()
-    const gw = new Gateway({
-      stateDir,
-      watchRegistries: false,
-      enableHttp: true,
-      httpPort: port,
-      url: `http://127.0.0.1:${port}`,
-      config: {},
-    })
-    await gw.start()
+    const gw = await startGatewayOnFreePort(stateDir)
     try {
       // Empty list
       const empty = await invoke(['schedule', 'list'])
@@ -93,16 +84,7 @@ describe('skelm schedule — CLI smoke', () => {
   })
 
   it('stop returns CLI_ERROR for unknown schedule id', async () => {
-    const port = await pickFreePort()
-    const gw = new Gateway({
-      stateDir,
-      watchRegistries: false,
-      enableHttp: true,
-      httpPort: port,
-      url: `http://127.0.0.1:${port}`,
-      config: {},
-    })
-    await gw.start()
+    const gw = await startGatewayOnFreePort(stateDir)
     try {
       const result = await invoke(['schedule', 'stop', 'no-such-id'])
       expect(result.exitCode).toBe(EXIT.CLI_ERROR)
@@ -113,16 +95,7 @@ describe('skelm schedule — CLI smoke', () => {
   })
 
   it('add --webhook registers a webhook trigger', async () => {
-    const port = await pickFreePort()
-    const gw = new Gateway({
-      stateDir,
-      watchRegistries: false,
-      enableHttp: true,
-      httpPort: port,
-      url: `http://127.0.0.1:${port}`,
-      config: {},
-    })
-    await gw.start()
+    const gw = await startGatewayOnFreePort(stateDir)
     try {
       const added = await invoke([
         'schedule',
@@ -141,16 +114,7 @@ describe('skelm schedule — CLI smoke', () => {
   })
 
   it('add --cron --json returns the schedule as JSON', async () => {
-    const port = await pickFreePort()
-    const gw = new Gateway({
-      stateDir,
-      watchRegistries: false,
-      enableHttp: true,
-      httpPort: port,
-      url: `http://127.0.0.1:${port}`,
-      config: {},
-    })
-    await gw.start()
+    const gw = await startGatewayOnFreePort(stateDir)
     try {
       const result = await invoke([
         'schedule',
@@ -172,16 +136,7 @@ describe('skelm schedule — CLI smoke', () => {
   })
 
   it('add --cron --tz wires timezone through to the registered trigger', async () => {
-    const port = await pickFreePort()
-    const gw = new Gateway({
-      stateDir,
-      watchRegistries: false,
-      enableHttp: true,
-      httpPort: port,
-      url: `http://127.0.0.1:${port}`,
-      config: {},
-    })
-    await gw.start()
+    const gw = await startGatewayOnFreePort(stateDir)
     try {
       const result = await invoke([
         'schedule',
@@ -209,16 +164,7 @@ describe('skelm schedule — CLI smoke', () => {
   })
 
   it('add --every <duration> registers an interval trigger', async () => {
-    const port = await pickFreePort()
-    const gw = new Gateway({
-      stateDir,
-      watchRegistries: false,
-      enableHttp: true,
-      httpPort: port,
-      url: `http://127.0.0.1:${port}`,
-      config: {},
-    })
-    await gw.start()
+    const gw = await startGatewayOnFreePort(stateDir)
     try {
       const result = await invoke([
         'schedule',
@@ -244,16 +190,7 @@ describe('skelm schedule — CLI smoke', () => {
   })
 
   it('add --tz without --cron rejects', async () => {
-    const port = await pickFreePort()
-    const gw = new Gateway({
-      stateDir,
-      watchRegistries: false,
-      enableHttp: true,
-      httpPort: port,
-      url: `http://127.0.0.1:${port}`,
-      config: {},
-    })
-    await gw.start()
+    const gw = await startGatewayOnFreePort(stateDir)
     try {
       const { stderr, exitCode } = await invoke([
         'schedule',
@@ -272,16 +209,7 @@ describe('skelm schedule — CLI smoke', () => {
   })
 
   it('add without trigger flag exits CLI_ERROR', async () => {
-    const port = await pickFreePort()
-    const gw = new Gateway({
-      stateDir,
-      watchRegistries: false,
-      enableHttp: true,
-      httpPort: port,
-      url: `http://127.0.0.1:${port}`,
-      config: {},
-    })
-    await gw.start()
+    const gw = await startGatewayOnFreePort(stateDir)
     try {
       const result = await invoke(['schedule', 'add', 'wf'])
       expect(result.exitCode).toBe(EXIT.CLI_ERROR)
@@ -338,4 +266,40 @@ async function pickFreePort(): Promise<number> {
       srv.close(() => resolve(port))
     })
   })
+}
+
+/**
+ * Start a real Gateway listening on a kernel-assigned free port, retrying
+ * on EADDRINUSE. There is an inherent TOCTOU race between picking a port
+ * (open + close a temp listener on :0) and the gateway binding it: parallel
+ * vitest workers occasionally race onto the same ephemeral port and one
+ * loses with `Error: listen EADDRINUSE`. Retrying with a fresh pick removes
+ * the flake while keeping the test against a real HTTP server.
+ */
+async function startGatewayOnFreePort(stateDir: string): Promise<Gateway> {
+  const MAX_ATTEMPTS = 6
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      url: `http://127.0.0.1:${port}`,
+      config: {},
+    })
+    try {
+      await gw.start()
+      return gw
+    } catch (err) {
+      lastErr = err
+      const code = (err as NodeJS.ErrnoException)?.code
+      if (code !== 'EADDRINUSE') throw err
+      // Failed gw may have already initialized some listeners — make sure
+      // we don't leak them across the retry.
+      await gw.stop().catch(() => {})
+    }
+  }
+  throw lastErr ?? new Error(`could not bind a free port after ${MAX_ATTEMPTS} attempts`)
 }
