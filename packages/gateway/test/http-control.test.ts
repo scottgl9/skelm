@@ -599,8 +599,61 @@ describe('Gateway HTTP /schedules', () => {
       // Fire it through the manual fire endpoint.
       const fired = await fetch(`${base}/triggers/s-fire/fire`, { method: 'POST' })
       expect(fired.status).toBe(200)
+      const firedBody = (await fired.json()) as { ok: boolean; status: string }
+      expect(firedBody).toEqual({ ok: true, status: 'dispatched' })
       // onFire receives the persisted input as the payload.
       expect(seenPayloads).toEqual([{ foo: 'bar' }])
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('POST /triggers/:id/fire returns 409 when overlap=skip rejects a concurrent fire (F127)', async () => {
+    const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
+    let release: () => void = () => {}
+    const inFlight = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let fires = 0
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      httpProxyPort: proxyPort,
+      config: {},
+    })
+    await gw.start()
+    gw.managers.triggers.setOnFire(async () => {
+      fires++
+      await inFlight
+    })
+    try {
+      const base = `http://127.0.0.1:${port}`
+      await fetch(`${base}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-skip',
+          workflowId: 'wf',
+          trigger: { kind: 'manual' },
+          overlap: 'skip',
+        }),
+      }).then((r) => r.json())
+      // Fire 1 dispatches and blocks inside onFire (inFlight not released).
+      const first = fetch(`${base}/triggers/s-skip/fire`, { method: 'POST' })
+      // Allow the first fire's onFire to start so `inflight` flips true.
+      await new Promise((r) => setTimeout(r, 30))
+      // Fire 2 hits while fire 1 is still in flight → 409 skipped.
+      const second = await fetch(`${base}/triggers/s-skip/fire`, { method: 'POST' })
+      expect(second.status).toBe(409)
+      const body = (await second.json()) as { statusMessage?: string; data?: { status?: string } }
+      expect(body.data?.status).toBe('skipped')
+      release()
+      const firstRes = await first
+      expect(firstRes.status).toBe(200)
+      expect(fires).toBe(1)
     } finally {
       await gw.stop()
     }

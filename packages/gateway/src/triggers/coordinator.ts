@@ -31,6 +31,13 @@ export type PollSourceFn = () => Promise<unknown> | unknown
 export type PollDedupeKeyFn = (value: unknown) => string
 
 /**
+ * Outcome of `TriggerCoordinator.fire()`. Exposes the overlap-policy decision
+ * to HTTP callers so they can map it onto a status code (200 vs 409) instead
+ * of always seeing a bare `{ok:true}` (closes F127).
+ */
+export type FireStatus = 'dispatched' | 'queued' | 'skipped' | 'cancelled' | 'unknown' | 'stopping'
+
+/**
  * Drives the configured triggers and routes fires through `onFire`.
  *
  * Intentionally narrow in Phase 10: cron + interval + manual. The richer
@@ -360,10 +367,10 @@ export class TriggerCoordinator {
     this.queues.delete(id)
   }
 
-  async fire(id: string, when?: Date, payload?: unknown): Promise<void> {
-    if (this.stopping) return
+  async fire(id: string, when?: Date, payload?: unknown): Promise<FireStatus> {
+    if (this.stopping) return 'stopping'
     const reg = this.registrations.get(id)
-    if (reg === undefined) return
+    if (reg === undefined) return 'unknown'
     // Per-fire payload from the source (queue driver, webhook adapter) takes
     // precedence; otherwise fall back to the registration's stored `input`
     // so workflows scheduled with `skelm schedule add --input <json>` see
@@ -385,20 +392,21 @@ export class TriggerCoordinator {
     if (reg.inflight) {
       switch (reg.overlap) {
         case 'skip':
-          return
+          return 'skipped'
         case 'queue': {
           const q = this.queues.get(id) ?? []
           q.push(ctx)
           this.queues.set(id, q)
-          return
+          return 'queued'
         }
         case 'cancel':
           // No real cancellation channel in Phase 10; treat as skip.
-          return
+          return 'cancelled'
       }
     }
     reg.inflight = true
     await this.dispatch(reg, ctx)
+    return 'dispatched'
   }
 
   private async dispatch(reg: TriggerRegistration, ctx: FireContext): Promise<void> {
