@@ -457,7 +457,21 @@ async function runAgentStep(
       }
       throw err
     }
-    if (policy?.approval && runtime?.approvalGate !== undefined) {
+    if (policy?.approval) {
+      if (runtime?.approvalGate === undefined) {
+        // Default-deny: a step that declares approval gating cannot run
+        // when no gate is wired. Silently skipping the check would mean
+        // a workflow asking for human approval got none and ran anyway.
+        events?.publish({
+          type: 'permission.denied',
+          runId: ctx.run.runId,
+          stepId: step.id,
+          dimension: 'tool',
+          detail: `step "${step.id}" requires approval (on: ${[...policy.approval.on].join(',') || 'all'}) but no approvalGate is configured on the runtime`,
+          at: Date.now(),
+        })
+        throw new ApprovalDeniedError(step.id, undefined, 'no approval gate configured')
+      }
       const decision = await runtime.approvalGate.request({
         runId: ctx.run.runId,
         stepId: step.id,

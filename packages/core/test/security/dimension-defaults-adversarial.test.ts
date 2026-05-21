@@ -81,6 +81,16 @@ describe('dimension defaults — TrustEnforcer per-dimension default-deny', () =
     expect(decision.allow).toBe(false)
     if (!decision.allow) expect(decision.dimension).toBe('fs.write')
   })
+
+  it('approval: policy declares approval but no gate configured → fail closed', () => {
+    // Pinned at the resolved-policy level: approval is carried through
+    // resolvePermissions for the runtime to honour. The runtime-side
+    // adversarial test (runs/agent-approval-no-gate.test) covers the
+    // ApprovalDeniedError throw when no gate is wired.
+    const policy = resolvePermissions({ approval: { on: ['tool'] } }, undefined)
+    expect(policy.approval).not.toBeNull()
+    expect(policy.approval?.on).toContain('tool')
+  })
 })
 
 describe('dimension defaults — explicit-mismatch denials', () => {
