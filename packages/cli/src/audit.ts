@@ -2,8 +2,8 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { ChainAuditWriter, FileSecretResolver } from '@skelm/gateway'
 import { EXIT } from './exit-codes.js'
+import type { MainIO, MainResult } from './internal/io.js'
 import { writeJsonOutput } from './internal/output.js'
-import type { MainIO, MainResult } from './main.js'
 
 export interface AuditQueryArgs {
   runId?: string | undefined

@@ -7,8 +7,8 @@ import {
   gatewayStateDir,
   httpError,
 } from './internal/gateway-client.js'
+import type { MainIO, MainResult } from './internal/io.js'
 import { writeJsonOutput } from './internal/output.js'
-import type { MainIO, MainResult } from './main.js'
 
 export interface ApprovalsArgs {
   subcommand: 'list' | 'approve' | 'deny'

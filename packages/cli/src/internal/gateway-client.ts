@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { type DiscoveryRecord, readDiscovery } from '@skelm/gateway'
 import { EXIT } from '../exit-codes.js'
-import type { MainIO, MainResult } from '../main.js'
+import type { MainIO, MainResult } from './io.js'
 
 export interface GatewayClient {
   discovery: DiscoveryRecord

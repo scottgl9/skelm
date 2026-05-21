@@ -1,7 +1,7 @@
 import { EXIT } from './exit-codes.js'
 import { ensureGatewayReady, fetchHttp, httpError } from './internal/gateway-client.js'
+import type { MainIO, MainResult } from './internal/io.js'
 import { writeJsonOutput } from './internal/output.js'
-import type { MainIO, MainResult } from './main.js'
 
 export interface DebugArgs {
   subcommand: 'breakpoints' | 'add' | 'remove' | 'runs' | 'release'
