@@ -16,6 +16,19 @@ export type SchedulerRunStore = Pick<RunStore, 'putRun'>
 export type SchedulerPipelineLoader = (pipelineId: string) => Promise<Pipeline | null>
 
 /**
+ * Executes a loaded pipeline for a trigger fire. Must return the terminal
+ * Run record (with status set to one of `completed`, `failed`, or
+ * `cancelled` and `completedAt` populated) so the scheduler can persist a
+ * complete entry. When omitted, fires register the trigger metadata but
+ * do not produce Run records — see Scheduler.executeTrigger.
+ */
+export type SchedulerPipelineExecutor = (
+  pipeline: Pipeline,
+  input: unknown,
+  ctx: TriggerContext,
+) => Promise<Run>
+
+/**
  * Scheduler manages long-running triggers for pipelines.
  * Handles cron, interval, and webhook triggers with overlap policies.
  */
@@ -31,12 +44,15 @@ export class Scheduler {
   private isRunning = false
   private readonly runStore: SchedulerRunStore
   private readonly pipelineLoader: SchedulerPipelineLoader
+  private readonly pipelineExecutor: SchedulerPipelineExecutor | undefined
+  private readonly noExecutorWarned = new Set<string>()
 
   constructor(
     config: SchedulerConfig,
     deps: {
       runStore: SchedulerRunStore
       pipelineLoader: SchedulerPipelineLoader
+      pipelineExecutor?: SchedulerPipelineExecutor
     },
   ) {
     const cfg: SchedulerConfig = {
@@ -51,6 +67,7 @@ export class Scheduler {
     this.config = cfg
     this.runStore = deps.runStore
     this.pipelineLoader = deps.pipelineLoader
+    this.pipelineExecutor = deps.pipelineExecutor
   }
 
   /** Register a new trigger */
@@ -304,22 +321,31 @@ export class Scheduler {
         throw new Error(`Pipeline ${trigger.pipelineId} not found`)
       }
 
-      const run: Run = {
-        runId: ctx.runId,
-        pipelineId: trigger.pipelineId,
-        input: trigger.inputTemplate ?? {},
-        status: 'running',
-        steps: [],
-        output: undefined,
-        error: undefined,
-        startedAt: Date.now(),
-        completedAt: undefined,
+      if (this.pipelineExecutor === undefined) {
+        // No executor wired: register the fire but do NOT persist a
+        // status='running' Run. Persisting one without anything to
+        // finalize it leaves an orphan that crash-recovery cannot
+        // distinguish from a real interrupted run. Production callers
+        // wire pipelineExecutor (typically the gateway TriggerCoordinator,
+        // not this class). Warn once per trigger so the misconfig is loud.
+        if (!this.noExecutorWarned.has(trigger.id)) {
+          this.noExecutorWarned.add(trigger.id)
+          console.warn(
+            `Scheduler: trigger ${trigger.id} fired but no pipelineExecutor is configured; Run will not be persisted. Wire deps.pipelineExecutor to execute pipelines.`,
+          )
+        }
+        registration.runCount++
+        registration.lastRunAt = Date.now()
+        registration.status = 'active'
+      } else {
+        const input = trigger.inputTemplate ?? {}
+        const run: Run = await this.pipelineExecutor(pipeline, input, ctx)
+        await this.runStore.putRun(run)
+        registration.runCount++
+        registration.lastRunAt = Date.now()
+        registration.status = run.status === 'failed' ? 'error' : 'active'
+        if (run.error?.message) registration.lastError = run.error.message
       }
-
-      await this.runStore.putRun(run)
-      registration.runCount++
-      registration.lastRunAt = Date.now()
-      registration.status = 'active'
     } catch (err) {
       registration.errorCount++
       registration.status = 'error'
