@@ -52,7 +52,10 @@ export function registerRunRoutes(router: Router, gateway: Gateway): void {
       if (state === null) throw createError({ statusCode: 404, message: 'Run not found' })
 
       const query = getQuery(event)
-      const opts: { since?: number; limit?: number } = {}
+      // Clamp limit: default 1000 events, hard cap 5000 per request so a
+      // single GET cannot materialise the entire event log of a
+      // long-running pipeline. Use `since` for incremental tailing.
+      const opts: { since?: number; limit?: number } = { limit: 1000 }
       const sinceRaw = query.since
       const limitRaw = query.limit
       if (typeof sinceRaw === 'string') {
@@ -61,7 +64,7 @@ export function registerRunRoutes(router: Router, gateway: Gateway): void {
       }
       if (typeof limitRaw === 'string') {
         const limit = Number.parseInt(limitRaw, 10)
-        if (!Number.isNaN(limit)) opts.limit = limit
+        if (!Number.isNaN(limit)) opts.limit = Math.max(1, Math.min(5000, limit))
       }
 
       const events: RunEvent[] = []
