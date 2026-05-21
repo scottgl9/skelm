@@ -4,10 +4,14 @@
  * Receives HTTP webhook events and emits them as trigger events
  */
 
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http'
 import { parse } from 'node:url'
 import { TriggerPluginBase } from './base.js'
 import type { TriggerConfig, TriggerEvent, TriggerHealthStatus, TriggerType } from './types.js'
+
+/** Default replay window in seconds for `x-webhook-timestamp`. */
+const DEFAULT_REPLAY_WINDOW_S = 300
 
 /**
  * Webhook trigger configuration
@@ -17,8 +21,17 @@ export interface WebhookTriggerConfig extends TriggerConfig {
   port: number
   /** Path to listen on (e.g., "/webhook") */
   path?: string
-  /** Optional secret for signing requests */
+  /**
+   * Optional HMAC secret. When set, requests must carry an HMAC-SHA256
+   * signature in `x-webhook-signature` (format: `sha256=<hex>`) computed
+   * over `<timestamp>.<raw-body>` and a `x-webhook-timestamp` header
+   * within the replay window. Missing or invalid signature → 401.
+   */
   secret?: string
+  /** Replay window for the timestamp header in seconds. Defaults to 300 (5 min). */
+  replayWindowSeconds?: number
+  /** Maximum request body size in bytes. Defaults to 1 MiB. */
+  maxBodyBytes?: number
   /** Optional workflow ID to invoke */
   workflowId?: string
   /** Optional input data to pass to the workflow */
@@ -107,7 +120,7 @@ export class WebhookTrigger extends TriggerPluginBase {
    */
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const { pathname } = parse(req.url || '/')
-    const config = this.config
+    const config = this.config as WebhookTriggerConfig | undefined
 
     if (!config || pathname !== config.path) {
       res.writeHead(404)
@@ -115,21 +128,29 @@ export class WebhookTrigger extends TriggerPluginBase {
       return
     }
 
-    // Verify secret if configured
-    if (config.secret) {
-      const signature = req.headers['x-webhook-signature']
-      if (signature !== config.secret) {
-        this.logger.warn('Invalid webhook signature')
+    const maxBytes = config.maxBodyBytes ?? 1_048_576
+    let raw: string
+    try {
+      raw = await this.readRawBody(req, maxBytes)
+    } catch (err) {
+      this.logger.warn(`webhook body read failed: ${(err as Error).message}`)
+      res.writeHead(413)
+      res.end('Payload Too Large')
+      return
+    }
+
+    if (config.secret !== undefined) {
+      const verdict = verifySignature(req, raw, config.secret, config.replayWindowSeconds)
+      if (verdict !== 'ok') {
+        this.logger.warn(`webhook auth rejected: ${verdict}`)
         res.writeHead(401)
         res.end('Unauthorized')
         return
       }
     }
 
-    // Read request body
-    const body = await this.readBody(req)
-
-    this.logger.debug(`Received webhook: ${JSON.stringify(body)}`)
+    const body = parseJsonBody(raw)
+    this.logger.debug(`Received webhook payload (${raw.length} bytes)`)
 
     // Create event
     const event: TriggerEvent = {
@@ -156,27 +177,32 @@ export class WebhookTrigger extends TriggerPluginBase {
   }
 
   /**
-   * Read request body
+   * Read the request body as a UTF-8 string, capped at maxBytes. Rejects
+   * with a typed error when the body exceeds the cap so the caller can
+   * return 413 instead of buffering an unbounded payload. The remaining
+   * body is drained (not destroyed) so the caller's response can still
+   * be written cleanly before the socket closes.
    */
-  private readBody(req: IncomingMessage): Promise<unknown> {
-    return new Promise((resolve) => {
+  private readRawBody(req: IncomingMessage, maxBytes: number): Promise<string> {
+    return new Promise((resolve, reject) => {
       const chunks: Buffer[] = []
-
+      let received = 0
+      let exceeded = false
       req.on('data', (chunk: Buffer) => {
+        if (exceeded) return
+        received += chunk.length
+        if (received > maxBytes) {
+          exceeded = true
+          reject(new Error(`body exceeds maxBodyBytes (${maxBytes})`))
+          return
+        }
         chunks.push(chunk)
       })
-
       req.on('end', () => {
-        const body = Buffer.concat(chunks).toString('utf8')
-        try {
-          resolve(body ? JSON.parse(body) : {})
-        } catch {
-          resolve({ raw: body })
-        }
+        if (!exceeded) resolve(Buffer.concat(chunks).toString('utf8'))
       })
-
-      req.on('error', () => {
-        resolve({})
+      req.on('error', (err) => {
+        if (!exceeded) reject(err)
       })
     })
   }
@@ -198,6 +224,50 @@ export class WebhookTrigger extends TriggerPluginBase {
     }
 
     return sanitized
+  }
+}
+
+/**
+ * Verify a webhook signature against the raw body using HMAC-SHA256.
+ *
+ * Expected headers:
+ *   x-webhook-signature: sha256=<hex>
+ *   x-webhook-timestamp: <unix-seconds>
+ *
+ * Signed payload: `<timestamp>.<raw-body>` — binding the timestamp into
+ * the MAC prevents an attacker from replaying a captured signed body
+ * outside the replay window.
+ *
+ * Exported for tests; the trigger itself calls it inline.
+ */
+export function verifySignature(
+  req: IncomingMessage,
+  rawBody: string,
+  secret: string,
+  replayWindowSeconds: number = DEFAULT_REPLAY_WINDOW_S,
+): 'ok' | 'missing-signature' | 'missing-timestamp' | 'stale-timestamp' | 'bad-signature' {
+  const sigHeader = req.headers['x-webhook-signature']
+  if (typeof sigHeader !== 'string' || sigHeader.length === 0) return 'missing-signature'
+  const tsHeader = req.headers['x-webhook-timestamp']
+  if (typeof tsHeader !== 'string' || tsHeader.length === 0) return 'missing-timestamp'
+  const ts = Number.parseInt(tsHeader, 10)
+  if (!Number.isFinite(ts)) return 'missing-timestamp'
+  const skew = Math.abs(Math.floor(Date.now() / 1000) - ts)
+  if (skew > replayWindowSeconds) return 'stale-timestamp'
+  const expected = createHmac('sha256', secret).update(`${ts}.${rawBody}`).digest('hex')
+  const provided = sigHeader.startsWith('sha256=') ? sigHeader.slice(7) : sigHeader
+  const a = Buffer.from(expected, 'hex')
+  const b = Buffer.from(provided, 'hex')
+  if (a.length !== b.length) return 'bad-signature'
+  return timingSafeEqual(a, b) ? 'ok' : 'bad-signature'
+}
+
+function parseJsonBody(raw: string): unknown {
+  if (!raw) return {}
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return { raw }
   }
 }
 
