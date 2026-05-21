@@ -19,7 +19,12 @@ vi.mock('../src/sdk-client.js', async () => {
   return { ...actual, PiSdkClient: MockPiSdkClient }
 })
 
-import { PiSdkBackendError, createPiSdkBackend, derivePiToolAllowlist } from '../src/sdk-backend.js'
+import {
+  PiSdkBackendAuthenticationError,
+  PiSdkBackendError,
+  createPiSdkBackend,
+  derivePiToolAllowlist,
+} from '../src/sdk-backend.js'
 import { PiSdkClient, PiSdkUpstreamError } from '../src/sdk-client.js'
 
 function makeCtx(overrides: Partial<BackendContext> = {}): BackendContext {
@@ -74,9 +79,14 @@ describe('createPiSdkBackend', () => {
       model: process.env.OPENAI_MODEL,
       provider: process.env.OPENAI_PROVIDER,
     }
-    Reflect.deleteProperty(process.env, 'OPENAI_BASE_URL')
-    Reflect.deleteProperty(process.env, 'OPENAI_API_KEY')
-    Reflect.deleteProperty(process.env, 'OPENAI_MODEL')
+    // Install a default test provider so the F131 deny-by-default guard
+    // (sdk-backend.ts:assertProviderConfigured) doesn't refuse every
+    // run/infer call in tests that don't care about the providerOverride
+    // shape. Tests that exercise F131 / F119 explicitly delete and/or
+    // override these inside their own try/finally.
+    process.env.OPENAI_BASE_URL = 'http://test.invalid/v1'
+    process.env.OPENAI_API_KEY = 'test-key'
+    process.env.OPENAI_MODEL = 'test-model'
     Reflect.deleteProperty(process.env, 'OPENAI_PROVIDER')
   })
   afterEach(() => {
@@ -246,24 +256,30 @@ describe('createPiSdkBackend', () => {
     expect(lastConstructorArgs()?.noExtensions).toBe(false)
   })
 
-  it('forwards providerOverride built from explicit options (F119)', async () => {
+  it('forwards providerOverride built from explicit options (F119) — promotes sentinel apiKey (F129)', async () => {
     await createPiSdkBackend({
       provider: 'openai',
       model: 'qwen36',
       baseUrl: 'http://localhost:8000/v1',
       apiKey: 'unused',
     }).run?.({ prompt: 'go' }, makeCtx())
+    // F129: 'unused'/'' / undefined apiKey is promoted to a non-empty
+    // placeholder so @earendil-works/0.75+ doesn't reject the provider.
     expect(lastConstructorArgs()?.providerOverride).toEqual({
       provider: 'openai',
       model: 'qwen36',
       baseUrl: 'http://localhost:8000/v1',
-      apiKey: 'unused',
+      apiKey: 'sk-no-key-required',
       contextWindow: 131_072,
       maxTokens: 4096,
     })
   })
 
-  it('passes explicit contextWindow / maxTokens through to providerOverride', async () => {
+  it('passes explicit contextWindow / maxTokens through to providerOverride; promotes missing apiKey (F129)', async () => {
+    // Clear the default env apiKey so the F129 promotion path fires.
+    Reflect.deleteProperty(process.env, 'OPENAI_API_KEY')
+    Reflect.deleteProperty(process.env, 'OPENAI_BASE_URL')
+    Reflect.deleteProperty(process.env, 'OPENAI_MODEL')
     await createPiSdkBackend({
       provider: 'openai',
       model: 'qwen-4k',
@@ -273,9 +289,34 @@ describe('createPiSdkBackend', () => {
     expect(lastConstructorArgs()?.providerOverride).toEqual({
       provider: 'openai',
       model: 'qwen-4k',
+      apiKey: 'sk-no-key-required',
       contextWindow: 4096,
       maxTokens: 1024,
     })
+  })
+
+  it('preserves a real apiKey verbatim — no promotion (F129)', async () => {
+    await createPiSdkBackend({
+      provider: 'openai',
+      model: 'gpt-4',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'sk-real-1234',
+    }).run?.({ prompt: 'go' }, makeCtx())
+    expect(lastConstructorArgs()?.providerOverride?.apiKey).toBe('sk-real-1234')
+  })
+
+  it('promotes empty-string apiKey to the placeholder (F129)', async () => {
+    process.env.OPENAI_BASE_URL = 'http://localhost:8000/v1'
+    process.env.OPENAI_MODEL = 'qwen36'
+    process.env.OPENAI_API_KEY = ''
+    try {
+      await createPiSdkBackend().run?.({ prompt: 'go' }, makeCtx())
+      expect(lastConstructorArgs()?.providerOverride?.apiKey).toBe('sk-no-key-required')
+    } finally {
+      Reflect.deleteProperty(process.env, 'OPENAI_BASE_URL')
+      Reflect.deleteProperty(process.env, 'OPENAI_MODEL')
+      Reflect.deleteProperty(process.env, 'OPENAI_API_KEY')
+    }
   })
 
   it('forwards providerOverride built from OPENAI_* env vars (F119)', async () => {
@@ -304,20 +345,39 @@ describe('createPiSdkBackend', () => {
     }
   })
 
-  it('omits providerOverride when no env vars / options are set (preserves pi defaults)', async () => {
+  it('refuses to run() when no env vars / options are set (F131 — deny by default)', async () => {
     const prev = {
       base: process.env.OPENAI_BASE_URL,
       key: process.env.OPENAI_API_KEY,
       model: process.env.OPENAI_MODEL,
     }
-    // Reflect.deleteProperty avoids biome's lint/performance/noDelete on
-    // the `delete` operator; semantics are identical for env-var removal.
     Reflect.deleteProperty(process.env, 'OPENAI_BASE_URL')
     Reflect.deleteProperty(process.env, 'OPENAI_API_KEY')
     Reflect.deleteProperty(process.env, 'OPENAI_MODEL')
     try {
-      await createPiSdkBackend().run?.({ prompt: 'go' }, makeCtx())
-      expect(lastConstructorArgs()?.providerOverride).toBeUndefined()
+      await expect(createPiSdkBackend().run?.({ prompt: 'go' }, makeCtx())).rejects.toBeInstanceOf(
+        PiSdkBackendAuthenticationError,
+      )
+    } finally {
+      restoreEnv('OPENAI_BASE_URL', prev.base)
+      restoreEnv('OPENAI_API_KEY', prev.key)
+      restoreEnv('OPENAI_MODEL', prev.model)
+    }
+  })
+
+  it('refuses to infer() when no env vars / options are set (F131)', async () => {
+    const prev = {
+      base: process.env.OPENAI_BASE_URL,
+      key: process.env.OPENAI_API_KEY,
+      model: process.env.OPENAI_MODEL,
+    }
+    Reflect.deleteProperty(process.env, 'OPENAI_BASE_URL')
+    Reflect.deleteProperty(process.env, 'OPENAI_API_KEY')
+    Reflect.deleteProperty(process.env, 'OPENAI_MODEL')
+    try {
+      await expect(
+        createPiSdkBackend().infer?.({ messages: [{ role: 'user', content: 'go' }] }, makeCtx()),
+      ).rejects.toBeInstanceOf(PiSdkBackendAuthenticationError)
     } finally {
       restoreEnv('OPENAI_BASE_URL', prev.base)
       restoreEnv('OPENAI_API_KEY', prev.key)

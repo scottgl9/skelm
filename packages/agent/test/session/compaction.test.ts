@@ -233,7 +233,7 @@ describe('compact — preserveSystem', () => {
     content,
   })
 
-  it('keeps a leading system message verbatim and emits [system, summary, ...suffix]', async () => {
+  it('merges the leading system message into the summary — single system at head (finding-128)', async () => {
     const msgs: SessionMessage[] = [
       m('system', 'persistent system'),
       m('user', 'q1'),
@@ -245,11 +245,32 @@ describe('compact — preserveSystem', () => {
     const out = await compact(msgs, { summarize, keepRecent: 2 })
 
     expect(out.collapsedCount).toBe(2)
-    expect(out.messages).toHaveLength(4)
-    expect(out.messages[0]).toEqual(msgs[0])
-    expect(out.messages[1]?.role).toBe('system')
-    expect(out.messages[1]?.content).toContain('past chatter')
-    expect(out.messages.slice(2)).toEqual([m('user', 'q2'), m('assistant', 'a2')])
+    // [merged_system, user q2, assistant a2] — three messages, not four.
+    expect(out.messages).toHaveLength(3)
+    expect(out.messages[0]?.role).toBe('system')
+    expect(out.messages[0]?.content).toContain('persistent system')
+    expect(out.messages[0]?.content).toContain('past chatter')
+    // No second consecutive system message — see finding-128 / agent-session.ts:124.
+    expect(out.messages[1]?.role).not.toBe('system')
+    expect(out.messages.slice(1)).toEqual([m('user', 'q2'), m('assistant', 'a2')])
+  })
+
+  it('never emits two consecutive system messages regardless of preserveSystem (finding-128 invariant)', async () => {
+    const msgs: SessionMessage[] = [
+      m('system', 'sys'),
+      m('user', 'q1'),
+      m('assistant', 'a1'),
+      m('user', 'q2'),
+      m('assistant', 'a2'),
+      m('user', 'q3'),
+      m('assistant', 'a3'),
+    ]
+    const summarize = async () => 'summary'
+    for (const preserveSystem of [true, false] as const) {
+      const out = await compact(msgs, { summarize, keepRecent: 2, preserveSystem })
+      const headSystems = out.messages.findIndex((x) => x.role !== 'system')
+      expect(headSystems, `preserveSystem=${preserveSystem}`).toBe(1)
+    }
   })
 
   it('does not pass the preserved system message to summarize()', async () => {
