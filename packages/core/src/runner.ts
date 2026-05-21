@@ -548,13 +548,18 @@ export async function runPipeline<TInput, TOutput>(
     })
   }
   const controller = new AbortController()
+  // Capture the abort handler so finalizeStoredRun can detach it before
+  // returning. Without removeEventListener, a long-lived caller signal
+  // (test harness, embedded host) accumulates one listener per run.
+  let unsubscribeAbort: (() => void) | undefined
   if (options.signal) {
     if (options.signal.aborted) {
       controller.abort(options.signal.reason)
     } else {
-      options.signal.addEventListener('abort', () => controller.abort(options.signal?.reason), {
-        once: true,
-      })
+      const callerSignal = options.signal
+      const abortHandler = () => controller.abort(callerSignal.reason)
+      callerSignal.addEventListener('abort', abortHandler, { once: true })
+      unsubscribeAbort = () => callerSignal.removeEventListener('abort', abortHandler)
     }
   }
 
@@ -632,6 +637,7 @@ export async function runPipeline<TInput, TOutput>(
         storeWrites,
         unsubscribeStore,
         auditWrites,
+        unsubscribeAbort,
       )
     }
   }
@@ -875,6 +881,7 @@ export async function runPipeline<TInput, TOutput>(
     storeWrites,
     unsubscribeStore,
     auditWrites,
+    unsubscribeAbort,
   )
 }
 
@@ -886,6 +893,7 @@ async function finalizeStoredRun<TRun extends Run>(
   storeWrites: Promise<void>[],
   unsubscribeStore: (() => void) | undefined,
   auditWrites: Promise<void>[] = [],
+  unsubscribeAbort?: () => void,
 ): Promise<TRun> {
   try {
     await Promise.all(storeWrites)
@@ -894,5 +902,6 @@ async function finalizeStoredRun<TRun extends Run>(
     return run
   } finally {
     unsubscribeStore?.()
+    unsubscribeAbort?.()
   }
 }

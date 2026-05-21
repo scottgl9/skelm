@@ -153,6 +153,56 @@ describe('TriggerCoordinator', () => {
     await c.stop()
   })
 
+  it("'queue' overlap drains the queue while holding inflight=true (no race)", async () => {
+    let resolveFirst: (() => void) | null = null
+    const block = new Promise<void>((r) => {
+      resolveFirst = r
+    })
+    const inflightObservations: boolean[] = []
+    let calls = 0
+    const c = new TriggerCoordinator({
+      defaultOverlap: 'queue',
+      onFire: async () => {
+        calls++
+        if (calls === 1) await block
+      },
+    })
+    c.register({ kind: 'manual', id: 't', workflowId: 'wf' })
+    const first = c.fire('t')
+    await new Promise((r) => setTimeout(r, 5))
+    await c.fire('t')
+    await c.fire('t')
+    // While the first is still in flight inflight must be true.
+    inflightObservations.push(c.get('t')?.inflight ?? false)
+    resolveFirst?.()
+    // Sample inflight as the drain progresses; under the buggy recursive
+    // form there was a microtask window where inflight flipped to false
+    // between the queued fires.
+    while ((c.get('t')?.fired ?? 0) < 3) {
+      inflightObservations.push(c.get('t')?.inflight ?? false)
+      await new Promise((r) => setImmediate(r))
+    }
+    await first
+    expect(calls).toBe(3)
+    expect(inflightObservations.every((v) => v === true)).toBe(true)
+    await c.stop()
+  })
+
+  it('invokes onFireError when the dispatcher throws', async () => {
+    const errors: unknown[] = []
+    const c = new TriggerCoordinator({
+      onFire: async () => {
+        throw new Error('boom')
+      },
+      onFireError: (_id, err) => errors.push(err),
+    })
+    c.register({ kind: 'manual', id: 't', workflowId: 'wf' })
+    await c.fire('t')
+    expect(errors).toHaveLength(1)
+    expect((errors[0] as Error).message).toBe('boom')
+    await c.stop()
+  })
+
   it('records onFire errors as lastError without throwing', async () => {
     const c = new TriggerCoordinator({
       onFire: async () => {
