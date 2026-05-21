@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { EXIT } from './exit-codes.js'
+import { safeForTty } from './internal/safe-text.js'
 import type { MainIO, MainResult } from './main.js'
 
 export interface LogsArgs {
@@ -114,6 +115,10 @@ function parseLine(line: string): ParsedEntry {
 function formatHuman(entry: ParsedEntry): string {
   const ts = entry.timestamp ?? '-'
   const lv = (entry.level ?? 'info').toUpperCase().padEnd(5)
-  const msg = entry.message ?? entry.raw
+  // Strip ANSI/VT control sequences from message before rendering. Log
+  // producers stamp external-API errors and webhook excerpts into
+  // entry.message; without stripping, those could move the cursor, clear
+  // the screen, or overwrite earlier lines via \r when piped to a TTY.
+  const msg = safeForTty(entry.message ?? entry.raw)
   return `${ts}  ${lv}  ${msg}`
 }

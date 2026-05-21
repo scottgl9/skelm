@@ -165,12 +165,23 @@ export class OpencodeClientWrapper {
       ensureSignalHook()
 
       let resolved = false
-      let buf = ''
+      let stdoutBuf = ''
+      const MAX_BUF_BYTES = 64 * 1024
+      // opencode prints its listen URL on stdout. Parse stdout only and
+      // anchor strictly to a loopback URL so noisy stderr (or LLM output
+      // proxied through stderr) cannot redirect the gateway to an
+      // attacker-controlled URL. The buffer is capped so a flood of
+      // non-matching output can't be retained indefinitely.
+      const LISTEN_RE =
+        /(?:^|\n)opencode(?: \w+)? listening on (https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):\d+)(?=\s|$)/
 
-      const tryParse = (chunk: Buffer) => {
+      const tryParseStdout = (chunk: Buffer) => {
         if (resolved) return
-        buf += chunk.toString()
-        const m = buf.match(/listening on (https?:\/\/[^\s]+)/)
+        stdoutBuf += chunk.toString('utf8')
+        if (stdoutBuf.length > MAX_BUF_BYTES) {
+          stdoutBuf = stdoutBuf.slice(stdoutBuf.length - MAX_BUF_BYTES)
+        }
+        const m = stdoutBuf.match(LISTEN_RE)
         if (m?.[1]) {
           resolved = true
           this.client = createOpencodeClient({ baseUrl: m[1].trim() })
@@ -178,8 +189,10 @@ export class OpencodeClientWrapper {
         }
       }
 
-      proc.stdout?.on('data', tryParse)
-      proc.stderr?.on('data', tryParse)
+      proc.stdout?.on('data', tryParseStdout)
+      // stderr is consumed only to drain the pipe and avoid backpressure;
+      // its content is no longer parsed for the listen URL.
+      proc.stderr?.on('data', () => {})
       proc.once('error', (err) => {
         if (!resolved) reject(err)
         else this._handleExit()
