@@ -11,30 +11,94 @@
 // Subprocess spawning happens only after a successful permission check; the
 // step-level policy is intersected with project defaults by the runner.
 import { type ChildProcess, spawn } from 'node:child_process'
-import { basename } from 'node:path'
+import { basename, sep } from 'node:path'
 import { ExecConfigError, PermissionDeniedError } from './errors.js'
+import type { EventBus, RunEvent } from './events.js'
 import type { TrustEnforcer } from './permissions.js'
-import type { ExecFn, ExecRequest, ExecResult } from './types.js'
+import type { ExecFn, ExecRequest, ExecResult, RunId, StepId } from './types.js'
 
 const DEFAULT_MAX_BYTES = 10 * 1024 * 1024 // 10 MiB
 const KILL_GRACE_MS = 5_000
+
+export interface CreateExecOptions {
+  /** Event bus for audit emission. When supplied, every exec call emits
+   *  tool.call + tool.result (or permission.denied on deny). */
+  events?: EventBus
+  runId?: RunId
+  stepId?: StepId
+}
 
 /**
  * Build a `ctx.exec` function bound to a step's resolved policy and the
  * run-level AbortSignal. The returned function is what gets attached to
  * `ctx.exec` in `runCodeStep`.
+ *
+ * When an event bus + run/step id are supplied, every exec call is audited
+ * through the existing tool.call / tool.result / permission.denied audit
+ * subscriber. Without them the helper still enforces canExec but skips
+ * audit emission — useful for embedded callers that don't have a bus.
  */
-export function createExec(enforcer: TrustEnforcer, runSignal: AbortSignal): ExecFn {
+export function createExec(
+  enforcer: TrustEnforcer,
+  runSignal: AbortSignal,
+  options: CreateExecOptions = {},
+): ExecFn {
+  const { events, runId, stepId } = options
+  const canAudit = events !== undefined && runId !== undefined && stepId !== undefined
   return async function exec(req: ExecRequest): Promise<ExecResult> {
     const { binary, argv } = resolveCommand(req)
-    const binName = basename(binary)
-    const decision = enforcer.canExec(binName)
+    // Default-deny on path-injection: if the binary value contains a path
+    // separator the policy must allowlist that exact value. Without this,
+    // an allowlist of ['git'] would accept '/tmp/evil/git' because the
+    // basename matched.
+    const hasPathSeparator = binary.includes('/') || binary.includes(sep)
+    const checkName = hasPathSeparator ? binary : basename(binary)
+    const decision = enforcer.canExec(checkName)
     if (!decision.allow) {
+      if (canAudit) {
+        const denyEvent: Extract<RunEvent, { type: 'permission.denied' }> = {
+          type: 'permission.denied',
+          runId: runId as RunId,
+          stepId: stepId as StepId,
+          dimension: 'executable',
+          detail: `exec denied: "${checkName}" not in allowedExecutables`,
+          at: Date.now(),
+        }
+        events?.publish(denyEvent)
+      }
       throw new PermissionDeniedError(
-        `exec denied: "${binName}" not in allowedExecutables (reason: ${decision.reason})`,
+        `exec denied: "${checkName}" not in allowedExecutables (reason: ${decision.reason})`,
       )
     }
-    return await runChild(binary, argv, req, runSignal)
+    const toolName = `exec:${basename(binary)}`
+    const startedAt = Date.now()
+    if (canAudit) {
+      events?.publish({
+        type: 'tool.call',
+        runId: runId as RunId,
+        stepId: stepId as StepId,
+        tool: toolName,
+        arguments: { binary, argv },
+        at: startedAt,
+      })
+    }
+    const result = await runChild(binary, argv, req, runSignal)
+    if (canAudit) {
+      events?.publish({
+        type: 'tool.result',
+        runId: runId as RunId,
+        stepId: stepId as StepId,
+        tool: toolName,
+        result: {
+          exitCode: result.exitCode,
+          durationMs: result.durationMs,
+          timedOut: result.timedOut,
+        },
+        durationMs: result.durationMs,
+        at: Date.now(),
+      })
+    }
+    return result
   }
 }
 

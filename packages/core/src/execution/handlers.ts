@@ -131,7 +131,7 @@ async function runStep(
   }
   switch (step.kind) {
     case 'code':
-      return await runCodeStep(step, ctx, runtime)
+      return await runCodeStep(step, ctx, events, runtime)
     case 'llm':
       return await runLlmStep(step, ctx, backends, events, runtime)
     case 'agent':
@@ -162,6 +162,7 @@ async function runStep(
 async function runCodeStep(
   step: Extract<Step, { kind: 'code' }>,
   ctx: Context,
+  events: EventBus | undefined,
   runtime?: ExecutionRuntime,
 ): Promise<unknown> {
   const resolvedSecrets = await resolveDeclaredSecrets(
@@ -199,7 +200,11 @@ async function runCodeStep(
       ? setTimeout(() => stepController.abort(new StepTimeoutError(step.id, timeoutMs)), timeoutMs)
       : undefined
 
-  const exec = createExec(enforcer, stepSignal)
+  const exec = createExec(enforcer, stepSignal, {
+    ...(events !== undefined && { events }),
+    runId: ctx.run.runId,
+    stepId: step.id,
+  })
   const stepCtx = freezeContext({
     ...ctx,
     signal: stepSignal,
