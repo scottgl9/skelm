@@ -128,6 +128,7 @@ value:serializeError
 value:terminalEventTypeFor
 value:textPart
 value:timeoutSignal
+value:timingSafeStringEqual
 value:wait
 type:AcpBackendOptions
 type:AcpPromptResult

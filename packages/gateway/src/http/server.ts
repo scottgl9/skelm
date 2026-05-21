@@ -5,6 +5,7 @@
 // mountControlRoutes below. Without a gateway this surface is intentionally
 // narrower; embedded callers reach those features through the gateway.
 
+import { timingSafeStringEqual } from '@skelm/core'
 import type { Pipeline, Run, RunStatus, RunStore, RunSummary } from '@skelm/core'
 import type { Runner } from '@skelm/core'
 import type { RunEvent } from '@skelm/core'
@@ -74,7 +75,10 @@ export function createServer(
         })
       }
 
-      if (!authHeader?.startsWith('Bearer ') || authHeader.slice(7) !== providedToken) {
+      if (
+        !authHeader?.startsWith('Bearer ') ||
+        !timingSafeStringEqual(authHeader.slice(7), providedToken)
+      ) {
         throw createError({
           statusCode: 401,
           message: 'Unauthorized',

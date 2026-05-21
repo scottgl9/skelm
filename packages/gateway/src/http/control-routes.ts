@@ -1,3 +1,4 @@
+import { timingSafeStringEqual } from '@skelm/core'
 import {
   getMsGraphValidationToken,
   verifyMsGraphClientState,
@@ -91,8 +92,8 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
             })
           }
         } else {
-          const provided = event.headers.get('x-webhook-secret')
-          if (provided !== reg.spec.secret) {
+          const provided = event.headers.get('x-webhook-secret') ?? ''
+          if (!timingSafeStringEqual(provided, reg.spec.secret)) {
             throw createError({ statusCode: 401, message: 'webhook secret mismatch' })
           }
         }
