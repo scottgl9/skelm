@@ -193,6 +193,51 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
       ),
     ).rejects.toThrow(/empty response/i)
   })
+
+  it('sends options.maxTokens as max_tokens when req.maxTokens is unset', async () => {
+    const capped = createSkelmAgentBackend({
+      baseUrl: 'http://example.invalid',
+      model: 'mock-model',
+      maxTokens: 256,
+    })
+    const fetchSpy = stubFetch([{ content: 'ok' }])
+    await capped.infer?.(
+      { messages: [{ role: 'user', content: 'hi' }] },
+      { signal: new AbortController().signal },
+    )
+    const body = JSON.parse((fetchSpy.mock.calls[0]?.[1] as { body: string }).body) as {
+      max_tokens?: number
+    }
+    expect(body.max_tokens).toBe(256)
+  })
+
+  it('per-call req.maxTokens overrides options.maxTokens', async () => {
+    const capped = createSkelmAgentBackend({
+      baseUrl: 'http://example.invalid',
+      model: 'mock-model',
+      maxTokens: 256,
+    })
+    const fetchSpy = stubFetch([{ content: 'ok' }])
+    await capped.infer?.({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 64 } as never, {
+      signal: new AbortController().signal,
+    })
+    const body = JSON.parse((fetchSpy.mock.calls[0]?.[1] as { body: string }).body) as {
+      max_tokens?: number
+    }
+    expect(body.max_tokens).toBe(64)
+  })
+
+  it('omits max_tokens when neither option nor request sets it', async () => {
+    const fetchSpy = stubFetch([{ content: 'ok' }])
+    await backend.infer?.(
+      { messages: [{ role: 'user', content: 'hi' }] },
+      { signal: new AbortController().signal },
+    )
+    const body = JSON.parse((fetchSpy.mock.calls[0]?.[1] as { body: string }).body) as {
+      max_tokens?: number
+    }
+    expect(body.max_tokens).toBeUndefined()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -215,6 +260,23 @@ describe('SkelmAgentBackend — run / tool loop (mocked)', () => {
 
     expect(response?.text).toBe('NATIVE_OK')
     expect(response?.stopReason).toBe('stop')
+  })
+
+  it('agent loop honors options.maxTokens on every turn', async () => {
+    const capped = createSkelmAgentBackend({
+      baseUrl: 'http://example.invalid',
+      model: 'mock-model',
+      maxTokens: 512,
+    })
+    const fetchSpy = stubFetch([{ content: 'NATIVE_OK' }])
+    await capped.run?.(
+      { prompt: 'Reply with NATIVE_OK.', maxTurns: 3 },
+      { signal: new AbortController().signal, permissions: makePolicy() },
+    )
+    const body = JSON.parse((fetchSpy.mock.calls[0]?.[1] as { body: string }).body) as {
+      max_tokens?: number
+    }
+    expect(body.max_tokens).toBe(512)
   })
 
   it('dispatches a fs_read tool call and feeds the result back into the loop', async () => {

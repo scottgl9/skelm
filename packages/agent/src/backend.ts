@@ -57,6 +57,18 @@ export interface SkelmAgentOptions {
    * deterministic error before any HTTP egress).
    */
   vision?: boolean
+  /**
+   * Default cap on output tokens per chat completion. Sent as `max_tokens`
+   * on the OpenAI Chat Completions request body. Per-call `req.maxTokens`
+   * (on `llm()` steps) overrides this default; the agent loop (`run()`)
+   * uses it on every turn since `req.maxTokens` isn't plumbed there.
+   *
+   * Omit to let the upstream pick its own default (typically the model's
+   * full output context). For local llama.cpp / sglang servers this is
+   * usually unbounded by default and can produce very long replies; set
+   * an explicit ceiling for predictable latency.
+   */
+  maxTokens?: number
 }
 
 function createDefaultPolicy(cwd: string, agentDefRoot: string): ResolvedPolicy {
@@ -128,6 +140,7 @@ async function runAgentLoop(
     timeoutMs: number
     cwd: string
     agentDefRoot: string
+    maxTokens: number | undefined
   },
 ): Promise<{
   text: string
@@ -253,7 +266,7 @@ async function runAgentLoop(
         model,
         messages,
         temperature: undefined,
-        maxTokens: undefined,
+        maxTokens: opts.maxTokens,
         tools,
         responseFormat: undefined,
         signal: ctx.signal,
@@ -369,7 +382,10 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
         model,
         messages,
         temperature: req.temperature as number | undefined,
-        maxTokens: req.maxTokens as number | undefined,
+        // Per-call req.maxTokens (llm step input) wins; otherwise fall back
+        // to the backend-level default. Either may be undefined → upstream
+        // picks its own default.
+        maxTokens: (req.maxTokens as number | undefined) ?? opts.maxTokens,
         responseFormat: req.outputSchema !== undefined ? { type: 'json_object' } : undefined,
         tools: undefined,
         signal: ctx.signal,
@@ -416,6 +432,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
         timeoutMs: opts.timeoutMs ?? 300_000,
         cwd,
         agentDefRoot,
+        maxTokens: opts.maxTokens,
       })
 
       let structured: unknown | undefined
