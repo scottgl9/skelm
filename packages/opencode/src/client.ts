@@ -16,7 +16,12 @@ import type {
   McpServerConfig,
   ResolvedPolicy,
 } from '@skelm/core'
-import { TrustEnforcer, extractPromptText } from '@skelm/core'
+import {
+  BackendSessionError,
+  RunCancelledError,
+  TrustEnforcer,
+  extractPromptText,
+} from '@skelm/core'
 import type { OpencodeBackendOptions } from './types.js'
 
 /**
@@ -223,7 +228,7 @@ export class OpencodeClientWrapper {
     onPartial?: (delta: string) => void,
   ): Promise<AgentResponse> {
     await this.ensureStarted()
-    if (!this.client) throw new Error('opencode serve not ready')
+    if (!this.client) throw new BackendSessionError('opencode serve not ready', 'opencode')
 
     const cwd = request.cwd ?? process.cwd()
 
@@ -237,7 +242,11 @@ export class OpencodeClientWrapper {
 
     const sessResult = await this.client.session.create({ query: { directory: cwd } })
     if (!sessResult.data) {
-      throw new Error(`session.create failed: ${JSON.stringify(sessResult.error)}`)
+      throw new BackendSessionError(
+        `session.create failed: ${JSON.stringify(sessResult.error)}`,
+        'opencode',
+        { cause: sessResult.error },
+      )
     }
     const sessionId = sessResult.data.id
 
@@ -267,7 +276,11 @@ export class OpencodeClientWrapper {
         },
       })
       if (!promptResult.data) {
-        throw new Error(`session.promptAsync failed: ${JSON.stringify(promptResult.error)}`)
+        throw new BackendSessionError(
+          `session.promptAsync failed: ${JSON.stringify(promptResult.error)}`,
+          'opencode',
+          { cause: promptResult.error },
+        )
       }
 
       return await this._collectFromStream(stream, sessionId, signal, onPartial, resolvedPolicy)
@@ -303,7 +316,11 @@ export class OpencodeClientWrapper {
       if (event.type === 'session.error') {
         const props = event.properties as { sessionID?: string; error?: unknown }
         if (!props.sessionID || props.sessionID === sessionId) {
-          throw new Error(`opencode session error: ${JSON.stringify(props.error)}`)
+          throw new BackendSessionError(
+            `opencode session error: ${JSON.stringify(props.error)}`,
+            'opencode',
+            { cause: props.error },
+          )
         }
       }
 
@@ -381,7 +398,7 @@ export class OpencodeClientWrapper {
       }
     }
 
-    if (signal.aborted) throw new Error('opencode agent aborted')
+    if (signal.aborted) throw new RunCancelledError()
 
     const text = [...textParts.values()].join('')
     return { text: text.trim(), stopReason: 'end_turn' }
@@ -397,8 +414,9 @@ export class OpencodeClientWrapper {
     for (const server of servers) {
       if (this.attachedMcp.has(server.id)) continue
       if (server.transport !== 'stdio') {
-        throw new Error(
+        throw new BackendSessionError(
           `opencode backend currently only forwards stdio MCP servers; "${server.id}" uses ${server.transport}`,
+          'opencode',
         )
       }
       const command = [server.command, ...(server.args ?? [])]
@@ -414,7 +432,11 @@ export class OpencodeClientWrapper {
         },
       })
       if (result.error !== undefined) {
-        throw new Error(`opencode mcp.add(${server.id}) failed: ${JSON.stringify(result.error)}`)
+        throw new BackendSessionError(
+          `opencode mcp.add(${server.id}) failed: ${JSON.stringify(result.error)}`,
+          'opencode',
+          { cause: result.error },
+        )
       }
       this.attachedMcp.add(server.id)
     }

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  BackendConfigError,
   buildSystemPromptFromRequest,
   extractPromptText,
   loadSkillBodies,
@@ -240,9 +241,9 @@ function buildCodexMultimodalInput(
       try {
         writeFileSync(file, Buffer.from(part.data, 'base64'))
       } catch (err) {
-        throw new Error(
+        throw new BackendConfigError(
           `codex backend: failed to materialize image to ${file}: ${(err as Error).message}`,
-          { cause: err },
+          'codex',
         )
       }
       parts.push({ type: 'local_image', path: file })

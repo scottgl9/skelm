@@ -10,6 +10,7 @@
  * the state through the run store.
  */
 
+import { BackendSessionError } from '@skelm/core'
 import type {
   SessionEvent,
   SessionEventListener,
@@ -109,7 +110,7 @@ export class AgentSession {
   }
 
   async prompt(text: string, opts: PromptOptions = {}): Promise<SessionPromptResult> {
-    if (this._disposed) throw new Error('AgentSession disposed')
+    if (this._disposed) throw new BackendSessionError('AgentSession disposed')
 
     const userMsg: SessionMessage = { role: 'user', content: text }
     this._messages.push(userMsg)
@@ -188,7 +189,7 @@ export class AgentSession {
 
   static fromJSON(json: SerializedSession, dispatch: InferDispatch): AgentSession {
     if (json.version !== 1) {
-      throw new Error(`unsupported SerializedSession version: ${json.version}`)
+      throw new BackendSessionError(`unsupported SerializedSession version: ${json.version}`)
     }
     return new AgentSession(dispatch, {
       ...(json.systemPrompt !== undefined && { systemPrompt: json.systemPrompt }),

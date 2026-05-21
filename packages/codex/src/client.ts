@@ -9,6 +9,7 @@
  */
 
 import { Codex, type CodexOptions, type ThreadEvent, type ThreadOptions } from '@openai/codex-sdk'
+import { BackendUpstreamError } from '@skelm/core'
 
 import type { CodexBackendOptions } from './types.js'
 
@@ -159,11 +160,11 @@ export async function consumeStream(
       case 'turn.failed':
         stopReason = 'turn.failed'
         callbacks.onError?.(ev.error.message)
-        throw new Error(`codex turn failed: ${ev.error.message}`)
+        throw new BackendUpstreamError(`codex turn failed: ${ev.error.message}`, 'codex')
       case 'error':
         stopReason = 'error'
         callbacks.onError?.(ev.message)
-        throw new Error(`codex stream error: ${ev.message}`)
+        throw new BackendUpstreamError(`codex stream error: ${ev.message}`, 'codex')
       // thread.started, turn.started, item.started, item.updated: not
       // material to the final response; surface via onItem if the caller
       // wants per-item audit (it doesn't, by default).

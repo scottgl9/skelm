@@ -1,6 +1,7 @@
 value:AcpClient
 value:AcpProtocolError
 value:AgentDefinitionError
+value:AgentMaxTurnsError
 value:AgentProviderBase
 value:AgentRegistry
 value:ApprovalDeniedError
@@ -9,9 +10,12 @@ value:AutoApproveGate
 value:AutoDenyGate
 value:BackendCapabilityError
 value:BackendChainExhaustedError
+value:BackendConfigError
 value:BackendNotFoundError
 value:BackendRegistry
+value:BackendSessionError
 value:BackendUnavailableError
+value:BackendUpstreamError
 value:CronTrigger
 value:CustomTrigger
 value:DEFAULT_ARTIFACT_QUOTA_BYTES

@@ -4,7 +4,7 @@
  * Implements ProviderPluginBase for the opencode.ai coding agent.
  */
 
-import { ProviderPluginBase } from '@skelm/core'
+import { BackendConfigError, ProviderPluginBase } from '@skelm/core'
 import type {
   PluginConfig,
   PluginHealthStatus,
@@ -124,8 +124,9 @@ export class OpencodeProvider extends ProviderPluginBase {
     // Validate API key
     const apiKey = config.apiKey ?? process.env.OPENCODE_API_KEY
     if (!apiKey) {
-      throw new Error(
+      throw new BackendConfigError(
         'Opencode API key is required. Set apiKey config or OPENCODE_API_KEY env var.',
+        'opencode',
       )
     }
   }
@@ -137,7 +138,10 @@ export class OpencodeProvider extends ProviderPluginBase {
     options?: OpencodeBackendOptions,
   ): Promise<ReturnType<typeof createOpencodeBackend>> {
     if (!this.initialized) {
-      throw new Error('Provider must be initialized before creating backends')
+      throw new BackendConfigError(
+        'Provider must be initialized before creating backends',
+        'opencode',
+      )
     }
 
     const config: OpencodeBackendOptions = {}
@@ -258,7 +262,7 @@ export class OpencodeProvider extends ProviderPluginBase {
   protected override validateConfig(config: OpencodeProviderConfig): OpencodeProviderConfig {
     const apiKey = config.apiKey ?? process.env.OPENCODE_API_KEY
     if (!apiKey) {
-      throw new Error('Opencode API key is required')
+      throw new BackendConfigError('Opencode API key is required', 'opencode')
     }
     return config
   }
