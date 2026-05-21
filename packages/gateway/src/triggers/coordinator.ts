@@ -29,6 +29,13 @@ export interface TriggerCoordinatorOptions {
    * is a no-op; the gateway wires this to a metric / audit writer.
    */
   onQueueDrop?: (triggerId: string, queueDepth: number) => void
+  /**
+   * Invoked when the onFire dispatcher throws. Without this hook the error
+   * is only recorded in `reg.lastError` (the next failure overwrites the
+   * previous), so operators never see a continuous error stream. Default
+   * is a no-op.
+   */
+  onFireError?: (triggerId: string, err: unknown) => void
 }
 
 const DEFAULT_MAX_QUEUE_DEPTH = 1000
@@ -95,10 +102,14 @@ export class TriggerCoordinator {
   }
 
   /**
-   * Compute the next cron fire and schedule it via setTimeout. After the fire
-   * resolves, schedules itself again. Stops chaining when the trigger is
-   * unregistered (cronTimers no longer holds an entry for it) or the
-   * coordinator is stopping.
+   * Compute the next cron fire and schedule it via setTimeout. The next
+   * tick is scheduled BEFORE awaiting the current fire so a long-running
+   * pipeline cannot make the cron schedule "walk forward" from
+   * completion time — the cron cadence is preserved even when individual
+   * fires overrun the period.
+   *
+   * Stops chaining when the trigger is unregistered or the coordinator
+   * is stopping.
    */
   private scheduleNextCron(triggerId: string, parsed: ParsedCron): void {
     if (this.stopping) return
@@ -107,10 +118,12 @@ export class TriggerCoordinator {
     if (next === null) return
     const delay = Math.max(0, next.getTime() - Date.now())
     const t = setTimeout(() => {
-      void (async () => {
-        await this.fire(triggerId, next)
-        this.scheduleNextCron(triggerId, parsed)
-      })()
+      // Schedule the *next* fire before invoking this one so a fire that
+      // outlives its period does not skip ticks. The coordinator's
+      // overlap policy on the registration decides what happens when a
+      // fresh fire arrives while the previous one is still running.
+      this.scheduleNextCron(triggerId, parsed)
+      void this.fire(triggerId, next)
     }, delay)
     t.unref?.()
     this.cronTimers.set(triggerId, t)
@@ -433,20 +446,32 @@ export class TriggerCoordinator {
   private async dispatch(reg: TriggerRegistration, ctx: FireContext): Promise<void> {
     // Caller must have already set `reg.inflight = true` *before* the await
     // so that concurrent fire() invocations observe inflight and route
-    // through the overlap policy. The fire() check-and-set guards this.
-    reg.lastFiredAt = ctx.firedAt
-    reg.fired += 1
+    // through the overlap policy.
+    //
+    // Drain the queue inside a while loop so inflight stays true across
+    // back-to-back fires. The previous recursive form cleared inflight in
+    // the finally and re-set it on the next iteration, leaving a window
+    // where a new fire() observed inflight=false and either ran in
+    // parallel (overlap=skip would have skipped if inflight=true) or
+    // reordered with the queued items. The loop holds inflight=true
+    // until the queue is fully drained, and uses iteration instead of
+    // async-stack recursion so long backlogs don't grow stack frames.
     try {
-      await this.opts.onFire(ctx)
-    } catch (err) {
-      reg.lastError = (err as Error).message
+      let current: FireContext | undefined = ctx
+      while (current !== undefined) {
+        reg.lastFiredAt = current.firedAt
+        reg.fired += 1
+        try {
+          await this.opts.onFire(current)
+        } catch (err) {
+          reg.lastError = (err as Error).message
+          this.opts.onFireError?.(reg.spec.id, err)
+        }
+        if (this.stopping) break
+        current = this.queues.get(reg.spec.id)?.shift()
+      }
     } finally {
       reg.inflight = false
-    }
-    const queued = this.queues.get(reg.spec.id)?.shift()
-    if (queued !== undefined && !this.stopping) {
-      reg.inflight = true
-      await this.dispatch(reg, queued)
     }
   }
 
