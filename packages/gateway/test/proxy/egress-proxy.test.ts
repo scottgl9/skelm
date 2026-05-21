@@ -150,13 +150,39 @@ describe('egress-proxy', () => {
       expect(result.statusCode).toBe(403)
     })
 
-    test('emits audit event with unknown runId/stepId', async () => {
+    test('emits audit event preserving the literal runId/stepId parsed from a well-formed token', async () => {
       const port = await startProxyWithPolicy('allow')
       await makeConnectRequest(port, 'api.openai.com:443', 'unknown:token')
 
       expect(auditWriter.events.length).toBe(1)
       expect(auditWriter.events[0].details?.runId).toBe('unknown')
       expect(auditWriter.events[0].details?.stepId).toBe('token')
+    })
+
+    test('omits runId/stepId in audit event when no auth header is sent (#173)', async () => {
+      const port = await startProxyWithPolicy('allow')
+      await makeConnectRequest(port, 'api.openai.com:443', undefined)
+
+      expect(auditWriter.events.length).toBe(1)
+      const details = auditWriter.events[0].details
+      expect(details).toBeDefined()
+      expect(details).not.toHaveProperty('runId')
+      expect(details).not.toHaveProperty('stepId')
+      // The other forensic fields still land:
+      expect(details?.tokenPresent).toBe(false)
+      expect(details?.reason).toBe('unknown-token')
+    })
+
+    test('omits runId/stepId for malformed (no-colon) tokens (#173)', async () => {
+      const port = await startProxyWithPolicy('allow')
+      await makeConnectRequest(port, 'api.openai.com:443', 'malformedtoken')
+
+      expect(auditWriter.events.length).toBe(1)
+      const details = auditWriter.events[0].details
+      expect(details).not.toHaveProperty('stepId')
+      // For a colon-less token we keep the runId (it's a literal identifier
+      // the caller supplied); stepId has nowhere to come from.
+      expect(details?.runId).toBe('malformedtoken')
     })
   })
 

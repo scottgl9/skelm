@@ -42,7 +42,26 @@ export function registerScheduleRoutes(router: Router, gateway: Gateway): void {
       if (trigger === undefined || typeof trigger.kind !== 'string') {
         throw createError({ statusCode: 400, message: 'trigger.kind required' })
       }
-      const overlap = (body.overlap as 'skip' | 'queue' | 'cancel' | undefined) ?? 'skip'
+      // Validate overlap strictly rather than silently coercing — #184: a
+      // client sending `overlap: 'fail-fast'` (a value that DOES exist in
+      // some scheduler libraries) used to be cast to undefined → default
+      // 'skip', so the operator thought they had stricter semantics than
+      // they did. Refuse unknown values up front.
+      const VALID_OVERLAP = ['skip', 'queue', 'cancel'] as const
+      const rawOverlap = body.overlap
+      let overlap: 'skip' | 'queue' | 'cancel' = 'skip'
+      if (rawOverlap !== undefined) {
+        if (
+          typeof rawOverlap !== 'string' ||
+          !(VALID_OVERLAP as readonly string[]).includes(rawOverlap)
+        ) {
+          throw createError({
+            statusCode: 400,
+            message: `invalid overlap: ${JSON.stringify(rawOverlap)} — expected one of ${VALID_OVERLAP.join(', ')}`,
+          })
+        }
+        overlap = rawOverlap as 'skip' | 'queue' | 'cancel'
+      }
       const spec = scheduleTriggerToSpec(id, workflowId, trigger as { kind: string })
       if (spec === 'invalid') {
         throw createError({ statusCode: 400, message: 'invalid trigger configuration' })

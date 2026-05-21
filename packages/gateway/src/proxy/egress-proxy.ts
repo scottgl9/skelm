@@ -358,10 +358,12 @@ export class EgressProxy {
     isUnknownToken: boolean
     socket: Socket
   }): void {
+    const runId = extractRunIdFromToken(args.token)
+    const stepId = extractStepIdFromToken(args.token)
     const event: NetworkEgressEvent = {
       event: 'network.egress',
-      runId: extractRunIdFromToken(args.token),
-      stepId: extractStepIdFromToken(args.token),
+      ...(runId !== undefined && { runId }),
+      ...(stepId !== undefined && { stepId }),
       host: args.host,
       decision: args.allowed ? 'allow' : 'deny',
       timestamp: new Date().toISOString(),
@@ -486,19 +488,23 @@ function hasAuthHeader(request: string): boolean {
 /**
  * Token format: `<runId>:<stepId>`. Use the FIRST `:` as the delimiter so
  * stepIds that contain `:` (e.g. `cohort:a`) are not silently truncated.
+ * Returns `undefined` when the token is absent or malformed — the audit
+ * event then omits the field, so downstream consumers can use plain
+ * presence checks instead of special-casing the historical sentinel
+ * string `"unknown"`.
  */
-function extractRunIdFromToken(token: string | undefined): string {
-  if (!token) return 'unknown'
+function extractRunIdFromToken(token: string | undefined): string | undefined {
+  if (!token) return undefined
   const idx = token.indexOf(':')
-  if (idx < 0) return token || 'unknown'
-  return token.slice(0, idx) || 'unknown'
+  if (idx < 0) return token || undefined
+  return token.slice(0, idx) || undefined
 }
 
-function extractStepIdFromToken(token: string | undefined): string {
-  if (!token) return 'unknown'
+function extractStepIdFromToken(token: string | undefined): string | undefined {
+  if (!token) return undefined
   const idx = token.indexOf(':')
-  if (idx < 0) return 'unknown'
-  return token.slice(idx + 1) || 'unknown'
+  if (idx < 0) return undefined
+  return token.slice(idx + 1) || undefined
 }
 
 /**

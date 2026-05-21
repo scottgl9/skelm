@@ -183,15 +183,119 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
     expect(headers.Authorization).toBe('Bearer sk-test')
   })
 
-  it('throws when the upstream returns an empty response', async () => {
+  it('returns empty text + finishReason="stop" when upstream has nothing to say (#182)', async () => {
+    // Aligned with the agent-loop path: a clean finish with empty content
+    // is a successful inference of empty text, not an error.
     stubFetch([{ content: '' }])
 
+    const result = await backend.infer?.(
+      { messages: [{ role: 'user', content: 'x' }] },
+      { signal: new AbortController().signal },
+    )
+
+    expect(result?.text).toBe('')
+    expect(result?.finishReason).toBe('stop')
+  })
+
+  it('throws when the upstream returns no message at all', async () => {
+    // Genuine "no choice / no message" failure mode — distinct from a
+    // clean finish with empty content.
+    const fetchSpy = vi.fn(async (_url: unknown, _init?: unknown): Promise<Response> => {
+      return new Response(JSON.stringify({ id: 'x', model: 'm', choices: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchSpy)
     await expect(
       backend.infer?.(
         { messages: [{ role: 'user', content: 'x' }] },
         { signal: new AbortController().signal },
       ),
     ).rejects.toThrow(/empty response/i)
+  })
+
+  it('throws LLMTruncatedError when finish_reason="length" + empty content (#182)', async () => {
+    const { LLMTruncatedError } = await import('@skelm/core')
+    // Mirrors qwen36 thinking-mode behavior: max_tokens fit inside the
+    // model's reasoning block so `content` is "" while `reasoning_content`
+    // carries the partial thought.
+    const fetchSpy = vi.fn(async (_url: unknown, _init?: unknown): Promise<Response> => {
+      return new Response(
+        JSON.stringify({
+          id: 'x',
+          model: 'qwen36',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: '',
+                reasoning_content: "Here's a thinking process: 1. analyze ...",
+              },
+              finish_reason: 'length',
+            },
+          ],
+          usage: { prompt_tokens: 5, completion_tokens: 32, total_tokens: 37 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await expect(
+      backend.infer?.(
+        { messages: [{ role: 'user', content: 'x' }] },
+        { signal: new AbortController().signal },
+      ),
+    ).rejects.toBeInstanceOf(LLMTruncatedError)
+
+    // Round-trip the reasoning + finishReason via the error
+    try {
+      await backend.infer?.(
+        { messages: [{ role: 'user', content: 'x' }] },
+        { signal: new AbortController().signal },
+      )
+      throw new Error('expected throw')
+    } catch (err) {
+      expect((err as InstanceType<typeof LLMTruncatedError>).finishReason).toBe('length')
+      expect((err as InstanceType<typeof LLMTruncatedError>).reasoning).toContain(
+        'thinking process',
+      )
+    }
+  })
+
+  it('surfaces reasoning_content on successful InferResponse (#182)', async () => {
+    const fetchSpy = vi.fn(async (_url: unknown, _init?: unknown): Promise<Response> => {
+      return new Response(
+        JSON.stringify({
+          id: 'x',
+          model: 'qwen36',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: 'final answer',
+                reasoning_content: '<think>analyzing</think>',
+              },
+              finish_reason: 'stop',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const result = await backend.infer?.(
+      { messages: [{ role: 'user', content: 'x' }] },
+      { signal: new AbortController().signal },
+    )
+
+    expect(result?.text).toBe('final answer')
+    expect(result?.reasoning).toBe('<think>analyzing</think>')
+    expect(result?.finishReason).toBe('stop')
   })
 
   it('sends options.maxTokens as max_tokens when req.maxTokens is unset', async () => {

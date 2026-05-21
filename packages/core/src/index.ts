@@ -48,6 +48,7 @@ export {
   BackendNotFoundError,
   BackendRegistry,
   BackendUnavailableError,
+  LLMTruncatedError,
 } from './backend.js'
 export type {
   AgentRequest,

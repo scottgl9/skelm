@@ -23,6 +23,7 @@ value:GitHubTrigger
 value:InvokePipelineNotFoundError
 value:JsonRpcLineTransport
 value:JsonRpcStdioTransport
+value:LLMTruncatedError
 value:MCP_PROTOCOL_VERSION
 value:MatrixTrigger
 value:McpClient

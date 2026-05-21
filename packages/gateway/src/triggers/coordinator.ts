@@ -375,6 +375,13 @@ export class TriggerCoordinator {
       firedAt: (when ?? new Date()).toISOString(),
       ...(effectivePayload !== undefined && { payload: effectivePayload }),
     }
+    // Check-and-set inflight atomically. JS is single-threaded so concurrent
+    // fire() calls cannot interleave between the read on the next line and
+    // the assignment two lines down — but they CAN interleave between this
+    // synchronous check and the eventual `dispatch()` body if we let
+    // dispatch() be the one to set inflight (as it used to). #184: closing
+    // that race is what makes overlap: 'skip' / 'queue' actually enforce on
+    // burst fires from POST /triggers/:id/fire.
     if (reg.inflight) {
       switch (reg.overlap) {
         case 'skip':
@@ -390,11 +397,14 @@ export class TriggerCoordinator {
           return
       }
     }
+    reg.inflight = true
     await this.dispatch(reg, ctx)
   }
 
   private async dispatch(reg: TriggerRegistration, ctx: FireContext): Promise<void> {
-    reg.inflight = true
+    // Caller must have already set `reg.inflight = true` *before* the await
+    // so that concurrent fire() invocations observe inflight and route
+    // through the overlap policy. The fire() check-and-set guards this.
     reg.lastFiredAt = ctx.firedAt
     reg.fired += 1
     try {
@@ -406,6 +416,7 @@ export class TriggerCoordinator {
     }
     const queued = this.queues.get(reg.spec.id)?.shift()
     if (queued !== undefined && !this.stopping) {
+      reg.inflight = true
       await this.dispatch(reg, queued)
     }
   }

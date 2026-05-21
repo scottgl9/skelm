@@ -120,6 +120,21 @@ export interface InferResponse {
   text?: string
   /** Structured output (when outputSchema was requested). */
   structured?: unknown
+  /**
+   * Reasoning/"thinking" trace from reasoning-mode models (Qwen 3.x,
+   * DeepSeek-R1, o1-style). Populated when the upstream surfaces a
+   * separate `reasoning_content` field. Distinct from `text`: do NOT
+   * concatenate without an explicit caller opt-in.
+   */
+  reasoning?: string
+  /**
+   * Why the upstream stopped: `'stop'` (natural end), `'length'`
+   * (`max_tokens` truncated the output — `text` may be empty if the
+   * cap fits inside a reasoning block), `'tool_calls'`, `'content_filter'`,
+   * or a backend-specific string. Populated when the backend can
+   * determine it; absence does not imply `'stop'`.
+   */
+  finishReason?: string
   /** Token / cost accounting. */
   usage?: Usage
 }
@@ -190,6 +205,12 @@ export interface AgentResponse {
   structured?: unknown
   /** Reason the agent stopped. */
   stopReason?: string
+  /**
+   * Reasoning/"thinking" trace from reasoning-mode models on the last
+   * turn. Same shape as `InferResponse.reasoning`. See that field for
+   * caveats.
+   */
+  reasoning?: string
   /** Token / cost accounting. */
   usage?: Usage
 }
@@ -312,6 +333,25 @@ export class BackendUnavailableError extends Error {
   constructor(
     message: string,
     readonly backendId: BackendId,
+  ) {
+    super(message)
+  }
+}
+
+/**
+ * Thrown when the upstream LLM stopped because it hit a `max_tokens` cap
+ * (`finish_reason: 'length'`) and the visible assistant `text` was empty
+ * (typical of reasoning-mode models whose entire output was consumed by
+ * an internal monologue). Callers can distinguish this from a genuine
+ * "upstream returned nothing" failure and decide whether to retry with
+ * a larger cap, surface `reasoning`, or fail.
+ */
+export class LLMTruncatedError extends Error {
+  override readonly name = 'LLMTruncatedError'
+  constructor(
+    message: string,
+    readonly finishReason: string,
+    readonly reasoning?: string,
   ) {
     super(message)
   }

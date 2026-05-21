@@ -13,6 +13,36 @@ describe('TriggerCoordinator', () => {
     await c.stop()
   })
 
+  it("'skip' overlap policy enforces on bursts of concurrent fires (#184)", async () => {
+    // The pre-fix race: fire() set reg.inflight=true inside dispatch() AFTER
+    // the first await tick, so two concurrent fire() calls both observed
+    // inflight=false and both dispatched. Closing the race means firing three
+    // overlapping fires while one is in-flight yields exactly one dispatch.
+    let resolveBlock: (() => void) | null = null
+    const inFlight = new Promise<void>((r) => {
+      resolveBlock = r
+    })
+    let fires = 0
+    const c = new TriggerCoordinator({
+      defaultOverlap: 'skip',
+      onFire: async () => {
+        fires++
+        await inFlight
+      },
+    })
+    c.register({ kind: 'manual', id: 't', workflowId: 'wf' })
+    // Kick off three concurrent fires; the first dispatches and blocks on
+    // inFlight, the other two see inflight=true and route through 'skip'.
+    const burst = Promise.all([c.fire('t'), c.fire('t'), c.fire('t')])
+    // Give the microtask queue a tick to let all three fire() bodies see
+    // the inflight state.
+    await new Promise((r) => setTimeout(r, 10))
+    expect(fires).toBe(1)
+    resolveBlock?.()
+    await burst
+    await c.stop()
+  })
+
   it("'skip' overlap policy drops fires while one is in flight", async () => {
     let resolveBlock: (() => void) | null = null
     const inFlight = new Promise<void>((r) => {
