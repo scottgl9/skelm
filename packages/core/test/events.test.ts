@@ -33,6 +33,34 @@ describe('EventBus', () => {
     expect(seen[0]?.runId).toBe('r1')
   })
 
+  it('forRun is indexed by runId — global subscribers do not see per-run events twice', () => {
+    const bus = new EventBus()
+    let global = 0
+    let r1 = 0
+    let r2 = 0
+    bus.subscribe(() => global++)
+    bus.forRun('r1', () => r1++)
+    bus.forRun('r2', () => r2++)
+    bus.publish({ type: 'run.started', runId: 'r1', at: 0 })
+    bus.publish({ type: 'run.started', runId: 'r2', at: 0 })
+    bus.publish({ type: 'run.started', runId: 'r3', at: 0 })
+    expect(global).toBe(3)
+    expect(r1).toBe(1)
+    expect(r2).toBe(1)
+    expect(bus.listenerCount).toBe(3)
+  })
+
+  it('forRun unsubscribe cleans up empty per-run bucket', () => {
+    const bus = new EventBus()
+    const unsub = bus.forRun('r1', () => {})
+    expect(bus.listenerCount).toBe(1)
+    unsub()
+    expect(bus.listenerCount).toBe(0)
+    // After cleanup, publishing for that runId is a no-op (regression: ensure
+    // we don't keep an empty Set in the map that would still be iterated).
+    expect(() => bus.publish({ type: 'run.started', runId: 'r1', at: 0 })).not.toThrow()
+  })
+
   it('a throwing subscriber does not break the bus or other subscribers', () => {
     const bus = new EventBus()
     let after = 0
