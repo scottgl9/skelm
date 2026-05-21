@@ -52,22 +52,27 @@ export async function approvalsConfigCommand(
   io: MainIO,
 ): Promise<MainResult> {
   const path = resolveConfigPath()
-  switch (args.action) {
-    case 'show':
-      return showPolicy(path, args, io)
-    case 'validate':
-      return validatePolicy(path, args, io)
-    case 'set':
-      return setKey(path, args, io)
-    case 'approvers-add':
-      return mutateApprovers(path, args, 'add', io)
-    case 'approvers-remove':
-      return mutateApprovers(path, args, 'remove', io)
-    default: {
-      const exhaustive: never = args.action
-      io.stderr.write(`internal: unhandled approvals-config action ${exhaustive as string}\n`)
-      return { exitCode: EXIT.CLI_ERROR }
+  try {
+    switch (args.action) {
+      case 'show':
+        return await showPolicy(path, args, io)
+      case 'validate':
+        return await validatePolicy(path, args, io)
+      case 'set':
+        return await setKey(path, args, io)
+      case 'approvers-add':
+        return await mutateApprovers(path, args, 'add', io)
+      case 'approvers-remove':
+        return await mutateApprovers(path, args, 'remove', io)
+      default: {
+        const exhaustive: never = args.action
+        io.stderr.write(`internal: unhandled approvals-config action ${exhaustive as string}\n`)
+        return { exitCode: EXIT.CLI_ERROR }
+      }
     }
+  } catch (err) {
+    io.stderr.write(`approvals config: ${(err as Error).message}\n`)
+    return { exitCode: EXIT.CLI_ERROR }
   }
 }
 
@@ -80,11 +85,75 @@ function resolveConfigPath(): string {
 async function readPolicy(path: string): Promise<ApprovalPolicy> {
   try {
     const raw = await fs.readFile(path, 'utf8')
-    return JSON.parse(raw) as ApprovalPolicy
+    const parsed: unknown = JSON.parse(raw)
+    return assertApprovalPolicy(parsed)
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {}
     throw err
   }
+}
+
+/**
+ * Defensive shape check on a parsed policy file. The CLI is the only
+ * writer in v1 but hand-edited or corrupted files used to be silently
+ * spread back over the in-memory shape; this catches the obvious
+ * misshapes (top-level non-object, wrong-typed scalar fields, approvers
+ * array containing non-objects or missing `id`) before they corrupt
+ * downstream writes.
+ */
+function assertApprovalPolicy(value: unknown): ApprovalPolicy {
+  if (value === undefined || value === null) return {}
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('approvals config: top-level value must be a JSON object')
+  }
+  const p = value as Record<string, unknown>
+  const out: ApprovalPolicy = {}
+  if (p.defaultTimeoutMs !== undefined) {
+    if (typeof p.defaultTimeoutMs !== 'number' || !Number.isFinite(p.defaultTimeoutMs)) {
+      throw new Error("approvals config: 'defaultTimeoutMs' must be a finite number")
+    }
+    out.defaultTimeoutMs = p.defaultTimeoutMs
+  }
+  if (p.stepKindsRequiringApproval !== undefined) {
+    if (
+      !Array.isArray(p.stepKindsRequiringApproval) ||
+      !p.stepKindsRequiringApproval.every((k): k is string => typeof k === 'string')
+    ) {
+      throw new Error("approvals config: 'stepKindsRequiringApproval' must be an array of strings")
+    }
+    out.stepKindsRequiringApproval = p.stepKindsRequiringApproval
+  }
+  if (p.approvers !== undefined) {
+    if (!Array.isArray(p.approvers)) {
+      throw new Error("approvals config: 'approvers' must be an array")
+    }
+    const approvers: ApprovalPolicy['approvers'] = []
+    for (const [i, entry] of p.approvers.entries()) {
+      if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+        throw new Error(`approvals config: approvers[${i}] must be an object`)
+      }
+      const a = entry as Record<string, unknown>
+      if (typeof a.id !== 'string' || a.id.length === 0) {
+        throw new Error(`approvals config: approvers[${i}].id must be a non-empty string`)
+      }
+      const rec: { id: string; email?: string; channel?: string } = { id: a.id }
+      if (a.email !== undefined) {
+        if (typeof a.email !== 'string') {
+          throw new Error(`approvals config: approvers[${i}].email must be a string`)
+        }
+        rec.email = a.email
+      }
+      if (a.channel !== undefined) {
+        if (typeof a.channel !== 'string') {
+          throw new Error(`approvals config: approvers[${i}].channel must be a string`)
+        }
+        rec.channel = a.channel
+      }
+      approvers.push(rec)
+    }
+    out.approvers = approvers
+  }
+  return out
 }
 
 async function writePolicy(path: string, policy: ApprovalPolicy): Promise<void> {

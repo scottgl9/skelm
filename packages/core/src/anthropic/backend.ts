@@ -181,7 +181,27 @@ async function requestMessage(
   if (!response.ok) {
     throw new Error(`Anthropic request failed (${response.status} ${response.statusText})`)
   }
-  return (await response.json()) as AnthropicMessageResponse
+  const raw: unknown = await response.json()
+  return assertAnthropicResponse(raw)
+}
+
+/**
+ * Defensive shape check on the parsed JSON body. Protects against a
+ * proxy injecting an error envelope, a misrouted endpoint, or a
+ * silent API change yielding a payload that crashes extractText().
+ */
+function assertAnthropicResponse(body: unknown): AnthropicMessageResponse {
+  if (typeof body !== 'object' || body === null) {
+    throw new Error('Anthropic response was not a JSON object')
+  }
+  const b = body as Record<string, unknown>
+  if (b.content !== undefined && !Array.isArray(b.content)) {
+    throw new Error("Anthropic response 'content' was not an array")
+  }
+  if (b.usage !== undefined && (typeof b.usage !== 'object' || b.usage === null)) {
+    throw new Error("Anthropic response 'usage' was not an object")
+  }
+  return body as AnthropicMessageResponse
 }
 
 function resolveApiKey(explicit?: string): string {
