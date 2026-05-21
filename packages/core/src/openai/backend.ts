@@ -1,20 +1,31 @@
-import type {
-  BackendCapabilities,
-  BackendContext,
-  InferRequest,
-  InferResponse,
-  SkelmBackend,
-  Usage,
+import {
+  type BackendCapabilities,
+  BackendConfigError,
+  type BackendContext,
+  type InferRequest,
+  type InferResponse,
+  type SkelmBackend,
+  type Usage,
 } from '../backend.js'
 import { isMultimodal } from '../content.js'
+import type { SecretResolver } from '../enforcement/index.js'
 
 export interface OpenAIBackendOptions {
   id?: string
   label?: string
+  /** Inline API key. Wins over secretResolver and process.env. */
   apiKey?: string
   baseUrl?: string
   model?: string
   fetch?: typeof fetch
+  /**
+   * Optional SecretResolver. When provided and `apiKey` is unset, the
+   * backend resolves `OPENAI_API_KEY` through the resolver instead of
+   * reading process.env directly. Pass the gateway's resolver here so
+   * secret access stays audited; omit for embedded callers that want
+   * the existing env fallback.
+   */
+  secretResolver?: SecretResolver
 }
 
 export function createOpenAIBackend(opts: OpenAIBackendOptions = {}): SkelmBackend {
@@ -34,7 +45,7 @@ export function createOpenAIBackend(opts: OpenAIBackendOptions = {}): SkelmBacke
     label: opts.label ?? 'OpenAI',
     capabilities,
     async infer(req: InferRequest, ctx: BackendContext): Promise<InferResponse> {
-      const apiKey = resolveApiKey(opts.apiKey)
+      const apiKey = await resolveApiKey(opts.apiKey, opts.secretResolver)
       const response = await (opts.fetch ?? fetch)(
         new URL('/chat/completions', baseUrl(opts.baseUrl)),
         {
@@ -111,12 +122,20 @@ function assertOpenAIResponse(body: unknown): OpenAIChatCompletionResponse {
   return body as OpenAIChatCompletionResponse
 }
 
-function resolveApiKey(explicit?: string): string {
-  const apiKey = explicit ?? process.env.OPENAI_API_KEY
-  if (!apiKey) {
-    throw new Error('OpenAI backend requires an API key (OPENAI_API_KEY)')
+async function resolveApiKey(
+  explicit: string | undefined,
+  resolver: SecretResolver | undefined,
+): Promise<string> {
+  if (explicit) return explicit
+  if (resolver !== undefined) {
+    const resolved = await resolver.resolve('OPENAI_API_KEY')
+    if (resolved) return resolved
   }
-  return apiKey
+  const env = process.env.OPENAI_API_KEY
+  if (!env) {
+    throw new BackendConfigError('OpenAI backend requires an API key (OPENAI_API_KEY)', 'openai')
+  }
+  return env
 }
 
 function baseUrl(url?: string): string {

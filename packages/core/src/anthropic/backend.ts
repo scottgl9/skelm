@@ -1,24 +1,34 @@
-import type {
-  AgentRequest,
-  AgentResponse,
-  BackendCapabilities,
-  BackendContext,
-  InferRequest,
-  InferResponse,
-  SkelmBackend,
-  Usage,
+import {
+  type AgentRequest,
+  type AgentResponse,
+  type BackendCapabilities,
+  BackendConfigError,
+  type BackendContext,
+  type InferRequest,
+  type InferResponse,
+  type SkelmBackend,
+  type Usage,
 } from '../backend.js'
 import { isMultimodal } from '../content.js'
+import type { SecretResolver } from '../enforcement/index.js'
 import { formatSkillBlock } from '../skills.js'
 import { buildSystemPromptFromRequest } from '../system-prompt.js'
 
 export interface AnthropicBackendOptions {
   id?: string
   label?: string
+  /** Inline API key. Wins over secretResolver and process.env. */
   apiKey?: string
   baseUrl?: string
   model?: string
   fetch?: typeof fetch
+  /**
+   * Optional SecretResolver. When provided and `apiKey` is unset, the
+   * backend resolves `ANTHROPIC_API_KEY` through the resolver instead of
+   * reading process.env directly. Pass the gateway's resolver here so
+   * secret access stays audited.
+   */
+  secretResolver?: SecretResolver
 }
 
 export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): SkelmBackend {
@@ -154,7 +164,7 @@ async function requestMessage(
   ctx: BackendContext,
   opts: AnthropicBackendOptions,
 ): Promise<AnthropicMessageResponse> {
-  const apiKey = resolveApiKey(opts.apiKey)
+  const apiKey = await resolveApiKey(opts.apiKey, opts.secretResolver)
   const response = await (opts.fetch ?? fetch)(new URL('/v1/messages', baseUrl(opts.baseUrl)), {
     method: 'POST',
     headers: {
@@ -204,12 +214,23 @@ function assertAnthropicResponse(body: unknown): AnthropicMessageResponse {
   return body as AnthropicMessageResponse
 }
 
-function resolveApiKey(explicit?: string): string {
-  const apiKey = explicit ?? process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    throw new Error('Anthropic backend requires an API key (ANTHROPIC_API_KEY)')
+async function resolveApiKey(
+  explicit: string | undefined,
+  resolver: SecretResolver | undefined,
+): Promise<string> {
+  if (explicit) return explicit
+  if (resolver !== undefined) {
+    const resolved = await resolver.resolve('ANTHROPIC_API_KEY')
+    if (resolved) return resolved
   }
-  return apiKey
+  const env = process.env.ANTHROPIC_API_KEY
+  if (!env) {
+    throw new BackendConfigError(
+      'Anthropic backend requires an API key (ANTHROPIC_API_KEY)',
+      'anthropic',
+    )
+  }
+  return env
 }
 
 function baseUrl(url?: string): string {
