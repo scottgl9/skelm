@@ -12,7 +12,7 @@
 // step-level policy is intersected with project defaults by the runner.
 import { type ChildProcess, spawn } from 'node:child_process'
 import { basename } from 'node:path'
-import { PermissionDeniedError } from './errors.js'
+import { ExecConfigError, PermissionDeniedError } from './errors.js'
 import type { TrustEnforcer } from './permissions.js'
 import type { ExecFn, ExecRequest, ExecResult } from './types.js'
 
@@ -43,11 +43,13 @@ function resolveCommand(req: ExecRequest): { binary: string; argv: string[] } {
   let chosen: 'command' | 'python' | 'bash' | undefined
   if (req.command !== undefined) chosen = 'command'
   if (req.python !== undefined) {
-    if (chosen !== undefined) throw new Error('exec: choose exactly one of command/python/bash')
+    if (chosen !== undefined)
+      throw new ExecConfigError('exec: choose exactly one of command/python/bash')
     chosen = 'python'
   }
   if (req.bash !== undefined) {
-    if (chosen !== undefined) throw new Error('exec: choose exactly one of command/python/bash')
+    if (chosen !== undefined)
+      throw new ExecConfigError('exec: choose exactly one of command/python/bash')
     chosen = 'bash'
   }
   switch (chosen) {
@@ -62,7 +64,7 @@ function resolveCommand(req: ExecRequest): { binary: string; argv: string[] } {
       return { binary: interpreter, argv: [req.bash as string, ...args] }
     }
     default:
-      throw new Error('exec: must supply one of command/python/bash')
+      throw new ExecConfigError('exec: must supply one of command/python/bash')
   }
 }
 

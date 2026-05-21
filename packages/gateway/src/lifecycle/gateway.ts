@@ -308,7 +308,12 @@ export class Gateway {
     }
     void handle
       .wait()
-      .catch(() => {})
+      .catch((err) => {
+        // Runner already persists the failure to the run store; this log
+        // surfaces it in the gateway process output so an operator tailing
+        // stderr sees the rejection instead of silent loss.
+        console.error(`gateway: run ${runId} wait rejected:`, (err as Error)?.message ?? err)
+      })
       .finally(() => this.unregisterRun(runId))
     return { runId }
   }

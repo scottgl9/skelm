@@ -160,34 +160,24 @@ describe('createCodexBackend.run', () => {
     expect(Object.keys(ctorArgs.config ?? {})).toEqual(['mcp_servers'])
   })
 
-  it('drops HTTP/SSE MCP servers from the Codex config and audits them', async () => {
+  it('drops HTTP/SSE MCP servers from the Codex config', async () => {
     startThread.mockReturnValue(makeThread(okStream()))
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      await createCodexBackend().run?.(
-        {
-          prompt: '.',
-          permissions: policy({ fsWrite: [], allowedMcpServers: ['stdio-ok', 'remote'] }),
-          mcpServers: [
-            { id: 'stdio-ok', transport: 'stdio', command: 'a-cmd' },
-            { id: 'remote', transport: 'http', url: 'https://example.com/mcp' },
-          ],
-        } as AgentRequest,
-        makeContext(),
-      )
-      const ctorArgs = codexCtor.mock.calls[0]?.[0] as {
-        config?: Record<string, unknown>
-      }
-      // Only the stdio server should reach Codex.
-      expect(Object.keys((ctorArgs.config?.mcp_servers as object) ?? {})).toEqual(['stdio-ok'])
-      // The dropped HTTP server must surface as an audit warning.
-      const payloads = warnSpy.mock.calls.map((c) => c[0] as string)
-      const droppedAudit = payloads.find((p) => p.includes('transport-unsupported'))
-      expect(droppedAudit).toBeDefined()
-      expect(droppedAudit).toContain('"ids":["remote"]')
-    } finally {
-      warnSpy.mockRestore()
+    await createCodexBackend().run?.(
+      {
+        prompt: '.',
+        permissions: policy({ fsWrite: [], allowedMcpServers: ['stdio-ok', 'remote'] }),
+        mcpServers: [
+          { id: 'stdio-ok', transport: 'stdio', command: 'a-cmd' },
+          { id: 'remote', transport: 'http', url: 'https://example.com/mcp' },
+        ],
+      } as AgentRequest,
+      makeContext(),
+    )
+    const ctorArgs = codexCtor.mock.calls[0]?.[0] as {
+      config?: Record<string, unknown>
     }
+    // Only the stdio server should reach Codex.
+    expect(Object.keys((ctorArgs.config?.mcp_servers as object) ?? {})).toEqual(['stdio-ok'])
   })
 
   it('forwards BackendContext.proxyEnv into the spawned codex env', async () => {

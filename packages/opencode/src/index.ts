@@ -5,7 +5,7 @@
  * with granular permission enforcement and multi-agent support.
  */
 
-export { createOpencodeBackend, createOpencodeAcpBackend } from './backend.js'
+export { createOpencodeBackend } from './backend.js'
 export { createOpencodeBackendFromConfig } from './factory.js'
 export type { OpencodeBackendConfig } from './factory.js'
 export { OpencodeProvider, createOpencodeProvider } from './provider.js'

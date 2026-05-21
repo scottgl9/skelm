@@ -1,4 +1,4 @@
-import { loadSkillBodies } from '@skelm/core'
+import { PermissionDeniedError, loadSkillBodies } from '@skelm/core'
 import type {
   AgentRequest,
   AgentResponse,
@@ -9,11 +9,7 @@ import type {
   SkelmBackend,
 } from '@skelm/core'
 import { OpencodeClientWrapper } from './client.js'
-import {
-  buildPermissionAuditEntry,
-  mapSkelmPermissionsToOpencode,
-  validatePermissions,
-} from './permission-mapper.js'
+import { mapSkelmPermissionsToOpencode, validatePermissions } from './permission-mapper.js'
 import type { OpencodeBackendOptions } from './types.js'
 
 /**
@@ -67,19 +63,11 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
       })
 
       if (!permissionResult.allowed) {
-        // Log audit entry for denied permissions
-        const auditEntry = buildPermissionAuditEntry(
-          'unknown', // runId not available in BackendContext
-          'unknown', // stepId not available in AgentRequest
-          policy,
-          permissionResult,
+        // Throw the typed error so the runner's audit writer (the single
+        // durable record) captures the denial; no parallel console log.
+        throw new PermissionDeniedError(
+          `opencode: permission denied: ${permissionResult.denied.join(', ')}`,
         )
-
-        // In production, this would be written to the audit log
-        // For now, we log to console
-        console.warn('Permission denied:', JSON.stringify(auditEntry, null, 2))
-
-        throw new Error(`Permission denied: ${permissionResult.denied.join(', ')}`)
       }
 
       // Load skills and inject into system prompt before forwarding
@@ -190,50 +178,4 @@ export class BackendTimeoutError extends Error {
     super(message, options)
     this.name = 'BackendTimeoutError'
   }
-}
-
-/**
- * Create an opencode backend with ACP compatibility mode
- *
- * This runs opencode as a subprocess via ACP instead of using the SDK directly.
- * Useful for testing or when API access is restricted.
- */
-export function createOpencodeAcpBackend(options: {
-  command?: string
-  args?: readonly string[]
-  cwd?: string
-  env?: NodeJS.ProcessEnv
-  id?: string
-  label?: string
-}): SkelmBackend {
-  const command = options.command ?? 'opencode'
-  const args = options.args ?? ['acp']
-
-  const capabilities: BackendCapabilities = {
-    prompt: true,
-    streaming: true,
-    sessionLifecycle: true,
-    mcp: true,
-    skills: false, // ACP mode has limited skill control
-    modelSelection: false,
-    toolPermissions: 'unsupported', // ACP forwards permissions as metadata only
-  }
-
-  const backend: SkelmBackend = {
-    id: options.id ?? 'opencode-acp',
-    capabilities,
-    ...(options.label !== undefined && { label: options.label }),
-
-    async run(request: AgentRequest, context: BackendContext): Promise<AgentResponse> {
-      // ACP mode: permissions are advisory only
-      // Forward the request to opencode via stdio
-      // This is a placeholder - full ACP implementation would use the AcpClient
-
-      throw new Error(
-        'ACP mode not yet implemented. Use SDK mode with createOpencodeBackend() instead.',
-      )
-    },
-  }
-
-  return backend
 }

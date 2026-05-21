@@ -19,6 +19,7 @@ import {
   InvokePipelineNotFoundError,
   PermissionDeniedError,
   RunCancelledError,
+  RunStateError,
   WaitTimeoutError,
   serializeError,
 } from './errors.js'
@@ -240,12 +241,8 @@ export class Runner {
       secretResolver: options.secretResolver ?? new EnvSecretResolver(),
       approvalGate: options.approvalGate ?? new AutoApproveGate(),
     }
-    // Translate permission.denied events into audit rows. The MCP host and
-    // any future enforcer publishes the event for observability; the audit
-    // writer is the durable record. Without this subscription, callers
-    // wiring SuspendApprovalGate + ChainAuditWriter would still see denial
-    // events but find nothing in the audit log — the M3 acceptance bullet
-    // demands "permission denial produces an audit row".
+    // The bus emits denial/secret/tool events for observability; the audit
+    // writer is the durable record, so translate the relevant events here.
     this.events.subscribe((event) => {
       if (event.type === 'permission.denied') {
         void this.enforcement.auditWriter
@@ -276,10 +273,8 @@ export class Runner {
             // audit writer failures must not poison the run.
           })
       }
-      // Bridge MCP tool dispatch events so the audit log records what tools
-      // were actually called. Without this, a successful MCP run leaves the
-      // jsonl empty (only denials made it through), which masks legitimate
-      // privileged operations from after-the-fact review.
+      // Record successful tool calls so the audit log captures legitimate
+      // privileged operations, not just denials.
       if (event.type === 'tool.call') {
         void this.enforcement.auditWriter
           .write({
@@ -343,7 +338,7 @@ export class Runner {
   async resume(runId: string, value: unknown): Promise<void> {
     const pending = this.pendingWaits.get(runId)
     if (!pending) {
-      throw new Error(`run ${runId} is not waiting`)
+      throw new RunStateError(runId, `run ${runId} is not waiting`)
     }
     this.pendingWaits.delete(runId)
     if (pending.timer !== undefined) {
@@ -354,7 +349,7 @@ export class Runner {
 
   private awaitResume(request: WaitRequest): Promise<unknown> {
     if (this.pendingWaits.has(request.runId)) {
-      throw new Error(`run ${request.runId} is already waiting`)
+      throw new RunStateError(request.runId, `run ${request.runId} is already waiting`)
     }
     return new Promise<unknown>((resolve, reject) => {
       const pending: {
