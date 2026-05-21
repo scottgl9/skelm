@@ -52,7 +52,12 @@ interface GitHubRequest {
   readonly method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
   readonly path: string
   readonly body?: unknown
+  /** Per-request timeout in ms; default 30s. A hung GitHub edge cannot
+   *  hold a gateway request handler indefinitely. */
+  readonly timeoutMs?: number
 }
+
+const DEFAULT_GITHUB_TIMEOUT_MS = 30_000
 
 /**
  * Make a JSON-bodied GitHub REST call. Returns the parsed JSON response;
@@ -73,6 +78,7 @@ export async function githubFetch<T = unknown>(req: GitHubRequest): Promise<T> {
   const init: RequestInit = {
     method: req.method,
     headers,
+    signal: AbortSignal.timeout(req.timeoutMs ?? DEFAULT_GITHUB_TIMEOUT_MS),
     ...(req.body !== undefined && { body: JSON.stringify(req.body) }),
   }
   const res = await fetch(url, init)
