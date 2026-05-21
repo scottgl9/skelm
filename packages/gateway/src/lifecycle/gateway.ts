@@ -552,12 +552,17 @@ export class Gateway {
     }
   }
 
-  async stop(_options: { timeoutMs?: number } = {}): Promise<void> {
+  async stop(options: { timeoutMs?: number } = {}): Promise<void> {
     if (this.state === 'stopped') return
     this.state = 'stopping'
-    try {
+    // Bounded drain: a wedged HTTP server / MCP manager / coding agent
+    // child must not hold up SIGTERM indefinitely. Race the full drain
+    // against a timeout; on timeout the finally block still clears
+    // in-memory state and the operator's supervisor (systemd) sees the
+    // exit instead of being forced to SIGKILL.
+    const timeoutMs = options.timeoutMs ?? 30_000
+    const drain = (async () => {
       this.detachSignals()
-      // Stop the egress proxy before HTTP server
       await this.stopEgressProxy()
       if (this.httpServer !== null) {
         await this.httpServer.stop()
@@ -576,11 +581,22 @@ export class Gateway {
           this.registriesInternal.mcpServers.close(),
         ])
       }
-      // Drain pending approvals if the gate is the suspend implementation
       const gate = this.enforcementInternal?.approvalGate
       if (gate instanceof SuspendApprovalGate) gate.drain('gateway stopping')
       await removeDiscovery(this.discoveryPath)
       await releaseLockfile(this.lockfilePath)
+    })()
+    try {
+      await Promise.race([
+        drain,
+        new Promise<void>((_, reject) => {
+          const t = setTimeout(
+            () => reject(new Error(`gateway stop exceeded ${timeoutMs}ms drain budget`)),
+            timeoutMs,
+          )
+          t.unref?.()
+        }),
+      ])
     } finally {
       this.state = 'stopped'
       this.lockfile = null
@@ -798,13 +814,18 @@ export class Gateway {
   private attachSignals(): void {
     if (this.signalsAttached) return
     const stop = () => {
-      void this.stop().catch(() => {
-        /* swallow — process is exiting */
+      void this.stop().catch((err: unknown) => {
+        // Log + exit non-zero. Previously this catch was empty, so a stop
+        // failure (lockfile error, port unbind, audit flush) left the
+        // gateway half-down with no operator-visible signal. Force-exit so
+        // systemd / supervisors see the failure and can restart.
+        process.stderr.write(`gateway stop failed during signal: ${(err as Error).message}\n`)
+        process.exit(1)
       })
     }
     const reload = () => {
-      void this.reload().catch(() => {
-        /* swallow — best-effort */
+      void this.reload().catch((err: unknown) => {
+        process.stderr.write(`gateway reload failed: ${(err as Error).message}\n`)
       })
     }
     this.handlers.set('SIGTERM', stop)

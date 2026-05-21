@@ -39,6 +39,17 @@ describe('Gateway HTTP control surface', () => {
       expect(health.status).toBe('ok')
       expect(health.state).toBe('running')
 
+      // Liveness vs readiness split: /healthz mirrors /health; /readyz is
+      // 200 only when state==='running'; both return JSON.
+      const healthz = await fetch(`${base}/healthz`)
+      expect(healthz.status).toBe(200)
+      const healthzBody = await healthz.json()
+      expect(healthzBody.status).toBe('ok')
+      const readyz = await fetch(`${base}/readyz`)
+      expect(readyz.status).toBe(200)
+      const readyBody = await readyz.json()
+      expect(readyBody.status).toBe('ready')
+
       const pause = await fetch(`${base}/gateway/pause`, { method: 'POST' }).then((r) => r.json())
       expect(pause.state).toBe('paused')
       const resume = await fetch(`${base}/gateway/resume`, { method: 'POST' }).then((r) => r.json())
