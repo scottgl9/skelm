@@ -1,6 +1,6 @@
 import type { BackendContext, ResolvedPolicy, Skill } from '@skelm/core'
 import { PermissionDeniedError } from '@skelm/core'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock PiSdkClient so no real pi process is required. Pass through the
 // PiSdkUpstreamError class (and other named exports) from the real module
@@ -60,7 +60,31 @@ function restoreEnv(name: string, value: string | undefined): void {
 }
 
 describe('createPiSdkBackend', () => {
-  beforeEach(() => vi.clearAllMocks())
+  // `resolveProviderOverride` (sdk-backend.ts:113-141) reads OPENAI_* env vars
+  // as fallbacks for explicit options. Tests that assert the *shape* of the
+  // override built from options alone must run with those env vars cleared,
+  // or the developer's shell pollutes the assertion. The §51 env-var pickup
+  // tests below restore the env vars they need via their own try/finally.
+  let _envBefore: { base?: string; key?: string; model?: string; provider?: string }
+  beforeEach(() => {
+    vi.clearAllMocks()
+    _envBefore = {
+      base: process.env.OPENAI_BASE_URL,
+      key: process.env.OPENAI_API_KEY,
+      model: process.env.OPENAI_MODEL,
+      provider: process.env.OPENAI_PROVIDER,
+    }
+    Reflect.deleteProperty(process.env, 'OPENAI_BASE_URL')
+    Reflect.deleteProperty(process.env, 'OPENAI_API_KEY')
+    Reflect.deleteProperty(process.env, 'OPENAI_MODEL')
+    Reflect.deleteProperty(process.env, 'OPENAI_PROVIDER')
+  })
+  afterEach(() => {
+    restoreEnv('OPENAI_BASE_URL', _envBefore.base)
+    restoreEnv('OPENAI_API_KEY', _envBefore.key)
+    restoreEnv('OPENAI_MODEL', _envBefore.model)
+    restoreEnv('OPENAI_PROVIDER', _envBefore.provider)
+  })
 
   it('capabilities.skills is true', () => {
     expect(createPiSdkBackend().capabilities.skills).toBe(true)

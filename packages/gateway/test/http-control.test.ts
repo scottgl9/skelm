@@ -436,6 +436,41 @@ describe('Gateway HTTP /schedules', () => {
     }
   })
 
+  it('POST /schedules rejects unknown overlap values with 400 (#184)', async () => {
+    const port = await pickFreePort()
+    const proxyPort = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      httpProxyPort: proxyPort,
+      config: {},
+    })
+    await gw.start()
+    const base = `http://127.0.0.1:${port}`
+    try {
+      const res = await fetch(`${base}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-bad-overlap',
+          workflowId: 'wf',
+          trigger: { kind: 'manual' },
+          overlap: 'fail-fast', // not a valid OverlapPolicy
+        }),
+      })
+      expect(res.status).toBe(400)
+      // h3's default error renderer returns only `{statusCode}` in the body
+      // and a generic "Bad Request" statusText, so we verify the route did
+      // NOT register the trigger as a stronger signal than text matching.
+      const listing = (await fetch(`${base}/schedules`).then((r) => r.json())) as Array<unknown>
+      expect(listing).toEqual([])
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('POST /schedules accepts `every` duration strings and round-trips through GET', async () => {
     const port = await pickFreePort()
     const proxyPort = await pickFreePort()

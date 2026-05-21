@@ -22,6 +22,14 @@ export interface OpenAIChatResponse {
     message?: {
       role?: string
       content?: string | null
+      /**
+       * Reasoning/"thinking" text emitted by models that surface their
+       * internal monologue separately from the final assistant `content`
+       * (Qwen 3.x, DeepSeek-R1, o1-style). The OpenAI Chat Completions
+       * spec doesn't define this field, but most local/sglang/vLLM
+       * deployments and providers like OpenRouter pass it through here.
+       */
+      reasoning_content?: string | null
       tool_calls?: Array<{
         id: string
         type: string

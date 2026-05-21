@@ -14,7 +14,7 @@
  *   dispatching tool calls; no external sandbox required.
  */
 
-import { type McpHost, createMcpHost } from '@skelm/core'
+import { LLMTruncatedError, type McpHost, createMcpHost } from '@skelm/core'
 import type {
   AgentRequest,
   AgentResponse,
@@ -282,9 +282,11 @@ async function runAgentLoop(
       if (!toolCalls || toolCalls.length === 0) {
         const content = choice.message.content
         const text = typeof content === 'string' ? content : content !== null ? String(content) : ''
+        const reasoning = choice.message.reasoning_content
         return {
           text,
           stopReason: choice.finish_reason ?? 'stop',
+          ...(typeof reasoning === 'string' && reasoning.length > 0 && { reasoning }),
           usage: toUsage(response.usage),
         }
       }
@@ -392,31 +394,65 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
         timeoutMs: opts.timeoutMs ?? 300_000,
       })
 
-      const choice = response.choices?.[0]?.message
-      if (!choice?.content) {
-        throw new Error('LLM returned empty response')
-      }
-
+      const rawChoice = response.choices?.[0]
+      const choice = rawChoice?.message
+      const finishReason = rawChoice?.finish_reason
+      const reasoning = choice?.reasoning_content ?? undefined
+      const content = choice?.content ?? ''
       const usage = toUsage(response.usage)
+
+      // Distinguish three cases when `content` is empty:
+      //   1. `finish_reason === 'length'` → the `max_tokens` cap fit
+      //      inside the model's reasoning block (Qwen 3.x / DeepSeek-R1
+      //      / o1-style). Surface as `LLMTruncatedError` so callers can
+      //      retry with a larger cap or inspect `reasoning`.
+      //   2. No choice / no message at all → the upstream really did
+      //      return nothing usable. Fall back to the generic error.
+      //   3. Empty content but a real `finish_reason: 'stop'` → return
+      //      the empty text with `finishReason` populated; the model
+      //      legitimately had nothing to say (e.g. it emitted only
+      //      reasoning and decided that was sufficient).
+      if (content === '') {
+        if (finishReason === 'length') {
+          const suffix =
+            reasoning !== undefined
+              ? ' (model produced reasoning but no final answer — consider raising maxTokens or routing to a non-reasoning model)'
+              : ''
+          throw new LLMTruncatedError(
+            `LLM stopped because it hit \`max_tokens\` before emitting any assistant content${suffix}`,
+            finishReason,
+            reasoning,
+          )
+        }
+        if (!choice) {
+          throw new Error('LLM returned empty response')
+        }
+      }
 
       if (req.outputSchema !== undefined) {
         try {
-          const structured = JSON.parse(choice.content)
+          const structured = JSON.parse(content)
           return {
-            text: choice.content,
+            text: content,
             structured,
+            ...(reasoning !== undefined && reasoning.length > 0 && { reasoning }),
+            ...(finishReason !== undefined && { finishReason }),
             ...(usage && { usage }),
           }
         } catch {
           return {
-            text: choice.content,
+            text: content,
+            ...(reasoning !== undefined && reasoning.length > 0 && { reasoning }),
+            ...(finishReason !== undefined && { finishReason }),
             ...(usage && { usage }),
           }
         }
       }
 
       return {
-        text: choice.content,
+        text: content,
+        ...(reasoning !== undefined && reasoning.length > 0 && { reasoning }),
+        ...(finishReason !== undefined && { finishReason }),
         ...(usage && { usage }),
       }
     },

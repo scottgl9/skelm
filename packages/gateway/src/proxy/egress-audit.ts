@@ -9,8 +9,14 @@ import type { AuditWriter } from '@skelm/core'
  */
 export interface NetworkEgressEvent {
   event: 'network.egress'
-  runId: string
-  stepId: string
+  /**
+   * Resolved from the proxy token (`<runId>:<stepId>`). `undefined` when the
+   * request carried no token (typical of an untokened probe) or the token
+   * was malformed. Downstream consumers should special-case absence rather
+   * than the historical sentinel string `"unknown"`.
+   */
+  runId?: string
+  stepId?: string
   host: string
   decision: 'allow' | 'deny'
   reason?: 'egress-denied' | 'not-in-allowlist' | 'unknown-token' | 'unknown'
@@ -19,7 +25,7 @@ export interface NetworkEgressEvent {
    * Remote peer of the proxy connection (the agent subprocess, a probe,
    * or an unexpected lateral mover). Populated whenever the proxy can
    * read the socket's peer info. Lets an operator correlate an
-   * `runId: "unknown"` deny back to a process via `ss` / `lsof`.
+   * untokened deny back to a process via `ss` / `lsof`.
    */
   source?: {
     address: string
@@ -54,12 +60,12 @@ export async function emitEgressAudit(
 ): Promise<void> {
   await auditWriter.write({
     timestamp: event.timestamp,
-    runId: event.runId,
+    ...(event.runId !== undefined && { runId: event.runId }),
     actor: 'egress-proxy',
     action: event.decision === 'allow' ? 'network.egress:allow' : 'network.egress:deny',
     details: {
-      runId: event.runId,
-      stepId: event.stepId,
+      ...(event.runId !== undefined && { runId: event.runId }),
+      ...(event.stepId !== undefined && { stepId: event.stepId }),
       host: event.host,
       decision: event.decision,
       reason: event.reason,
