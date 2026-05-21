@@ -30,6 +30,8 @@ import type { ResolvedPolicy } from '@skelm/core/permissions'
 import { TrustEnforcer } from '@skelm/core/permissions'
 
 import { type OpenAIContentPart, type OpenAIMessage, chatCompletion } from './http-client.js'
+import type { ModelRegistry } from './models/registry.js'
+import type { ResolvedModel } from './models/types.js'
 import { buildSystemPromptFromRequest, toUsage } from './prompt.js'
 import { BUILTIN_TOOLS, type ToolExecutionContext, type ToolResult, toOpenAITool } from './tools.js'
 
@@ -38,8 +40,12 @@ export interface SkelmAgentOptions {
   id?: string
   /** Human-readable label for diagnostics. */
   label?: string
-  /** Base URL of an OpenAI-compatible chat completions endpoint. */
-  baseUrl: string
+  /**
+   * Base URL of an OpenAI-compatible chat completions endpoint. Required
+   * unless `registry` is set; with a registry, the provider entry supplies
+   * the URL per call.
+   */
+  baseUrl?: string
   /** API key (required for most providers). */
   apiKey?: string
   /** Default model id used when the step doesn't specify one. */
@@ -69,6 +75,61 @@ export interface SkelmAgentOptions {
    * an explicit ceiling for predictable latency.
    */
   maxTokens?: number
+  /**
+   * Optional multi-provider model registry. When set, per-call routing
+   * uses `req.model` (or `defaultModel`) to look up a `ResolvedModel` from
+   * the registry; the entry carries its own `baseUrl`/`apiKey`/cost shape
+   * and overrides the top-level `baseUrl`/`apiKey`/`model`.
+   *
+   * Backwards compatible — leave unset to keep the single-endpoint config.
+   */
+  registry?: ModelRegistry
+  /**
+   * Required when `registry` is set. Identifies which entry to use when
+   * the per-call request omits an explicit model.
+   */
+  defaultModel?: { provider: string; id: string }
+}
+
+function resolveCallModel(
+  opts: SkelmAgentOptions,
+  requestedModelId: string | undefined,
+):
+  | { kind: 'registry'; resolved: ResolvedModel }
+  | { kind: 'single'; baseUrl: string; apiKey: string | undefined; modelId: string } {
+  if (opts.registry !== undefined) {
+    const reg = opts.registry
+    const fallback = opts.defaultModel
+    if (requestedModelId !== undefined) {
+      const providers = reg.listProviders()
+      for (const provider of providers) {
+        const hit = reg.find(provider, requestedModelId)
+        if (hit !== undefined) return { kind: 'registry', resolved: hit }
+      }
+      if (fallback === undefined) {
+        throw new Error(
+          `model '${requestedModelId}' not found in registry and no defaultModel configured`,
+        )
+      }
+    }
+    if (fallback === undefined) {
+      throw new Error('SkelmAgentOptions.registry set without defaultModel')
+    }
+    const hit = reg.find(fallback.provider, fallback.id)
+    if (hit === undefined) {
+      throw new Error(`defaultModel ${fallback.provider}/${fallback.id} not found in registry`)
+    }
+    return { kind: 'registry', resolved: hit }
+  }
+  if (opts.baseUrl === undefined) {
+    throw new Error('SkelmAgentOptions requires either `baseUrl` or `registry` + `defaultModel`')
+  }
+  return {
+    kind: 'single',
+    baseUrl: opts.baseUrl,
+    apiKey: opts.apiKey,
+    modelId: requestedModelId ?? opts.model ?? 'qwen36',
+  }
 }
 
 function createDefaultPolicy(cwd: string, agentDefRoot: string): ResolvedPolicy {
@@ -366,7 +427,14 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
     capabilities,
 
     async infer(req: InferRequest, ctx: BackendContext): Promise<InferResponse> {
-      const model = req.model ?? opts.model ?? 'qwen36'
+      const route = resolveCallModel(opts, req.model)
+      const baseUrl = route.kind === 'registry' ? route.resolved.baseUrl : route.baseUrl
+      const apiKey = route.kind === 'registry' ? route.resolved.apiKey : route.apiKey
+      const model = route.kind === 'registry' ? route.resolved.entry.id : route.modelId
+      const perCallMax =
+        (req.maxTokens as number | undefined) ??
+        (route.kind === 'registry' ? route.resolved.entry.maxTokens : undefined) ??
+        opts.maxTokens
 
       const messages: OpenAIMessage[] = []
       if (req.system) {
@@ -379,15 +447,15 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
         })
       }
 
-      const response = await chatCompletion(opts.baseUrl, {
-        apiKey: opts.apiKey,
+      const response = await chatCompletion(baseUrl, {
+        apiKey,
         model,
         messages,
         temperature: req.temperature as number | undefined,
         // Per-call req.maxTokens (llm step input) wins; otherwise fall back
-        // to the backend-level default. Either may be undefined → upstream
-        // picks its own default.
-        maxTokens: (req.maxTokens as number | undefined) ?? opts.maxTokens,
+        // to the registry entry's maxTokens, then the backend-level default.
+        // Any may be undefined → upstream picks its own default.
+        maxTokens: perCallMax,
         responseFormat: req.outputSchema !== undefined ? { type: 'json_object' } : undefined,
         tools: undefined,
         signal: ctx.signal,
@@ -460,15 +528,21 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
     async run(req: AgentRequest, ctx: BackendContext): Promise<AgentResponse> {
       const cwd = req.cwd ?? process.cwd()
       const agentDefRoot = cwd
+      const route = resolveCallModel(opts, undefined)
+      const baseUrl = route.kind === 'registry' ? route.resolved.baseUrl : route.baseUrl
+      const apiKey = route.kind === 'registry' ? route.resolved.apiKey : route.apiKey
+      const model = route.kind === 'registry' ? route.resolved.entry.id : route.modelId
+      const perCallMax =
+        (route.kind === 'registry' ? route.resolved.entry.maxTokens : undefined) ?? opts.maxTokens
 
       const result = await runAgentLoop(req, ctx, {
-        baseUrl: opts.baseUrl,
-        apiKey: opts.apiKey,
-        defaultModel: opts.model ?? 'qwen36',
+        baseUrl,
+        apiKey,
+        defaultModel: model,
         timeoutMs: opts.timeoutMs ?? 300_000,
         cwd,
         agentDefRoot,
-        maxTokens: opts.maxTokens,
+        maxTokens: perCallMax,
       })
 
       let structured: unknown | undefined
