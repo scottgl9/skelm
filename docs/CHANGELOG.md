@@ -6,6 +6,85 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-05-21
+
+### Added
+
+- **`when` predicate for conditional steps** — `when: (ctx) => boolean` on any step skips the step and emits `step.skipped` when the predicate returns false; no special handling needed in the surrounding branch.
+- **`git-repo` workspace mode** — `workspace: { mode: 'git-repo', url, ref, auth }` clones a repository into a per-run temp dir and sets `ctx.workspaceDir`; supports SSH and token auth.
+- **`ctx.threads` conversation helper** — typed multi-turn conversation manager available inside `agent()` and `llm()` steps; carries history across tool invocations without manual message array management.
+- **`ctx.artifacts` binary artifact store** — `ctx.artifacts.write(name, buffer, mimeType)` persists binary run artifacts (screenshots, evidence, reports); `artifacts.read(ref)` retrieves them; each write emits an `artifact.created` audit event.
+- **Multimodal image content** — `llm()` and `agent()` steps now accept `{ type: 'image', … }` parts in prompt messages. All first-party backends (`@skelm/agent`, `@skelm/vercel-ai`, `@skelm/codex`, `@skelm/pi`, `@skelm/opencode`, Anthropic, OpenAI) handle image content; `@skelm/vercel-ai` enforces a `visionModels` per-model allowlist.
+- **`@skelm/agent` model registry, session lifecycle, and compaction** — `ModelRegistry` maps model ids to capabilities; `AgentSession` manages context-window lifecycle; compaction trims conversation history when the context budget is approached while honouring `preserveSystem`.
+- **Event-source triggers** — `eventSource({ websocket | sse | rss | custom })` declares a long-poll or streaming trigger; the gateway manages reconnect and backpressure.
+- **File-watch trigger** — `fileWatch({ glob, events })` fires a pipeline run on matching filesystem changes; single-file paths are supported without path doubling.
+- **Webhook providers** — `webhookProvider: 'slack'` (Slack signing secret validation) and `webhookProvider: 'ms-graph'` (Microsoft Graph `clientState` enforcement) on `webhook()` triggers.
+- **GitHub PR trigger** — `githubPr({ repo, events })` primitive that fires on pull-request lifecycle events via the real GitHub REST API.
+- **Cron timezone support** — `cron({ expr, tz })` accepts an IANA timezone identifier; fires are computed in the declared zone.
+- **Duration strings for interval triggers** — `interval({ every: '5m' | '2h30m' | … })` accepts human-readable duration strings (max 30 days); `parseDuration` is exported from `@skelm/core`.
+- **Pre-dispatch webhook deduplication** — the gateway tracks delivery ids per webhook trigger; duplicate deliveries within the replay window are rejected before dispatch.
+- **`skelm schedule add --tz` and `--every`** — new flags wire timezone and duration-string interval directly from the CLI.
+- **Gateway declared-trigger reconciliation on reload** — `skelm gateway reload` (SIGHUP) now diffs the running trigger set against `skelm.config.ts` and registers new triggers, updates changed ones, and sweeps orphans.
+- **`/healthz` and `/readyz` endpoints** — `/healthz` returns 200 while the process is alive; `/readyz` returns 200 only when `state === 'running'` (503 during startup/shutdown); `/health` retained as a backward-compatible alias.
+
+### Changed
+
+- **`SecretResolver` wired into OpenAI and Anthropic backends** — backends now resolve `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` through the gateway's `SecretResolver` (auditable, swappable) before falling back to `process.env`. Pass `secretResolver` in backend options to enable.
+- **Typed errors replace bare `Error` throws in backends** — four new error classes in `@skelm/core/backend`: `BackendConfigError`, `BackendUpstreamError`, `BackendSessionError`, `AgentMaxTurnsError`. All 25 bare `new Error(…)` throws in `@skelm/agent`, `@skelm/codex`, and `@skelm/opencode` are replaced.
+- **Circular imports eliminated** — `@skelm/core` reduced from 6 cycles to 2 (leaf types hoisted to `types-base.ts`, `mcp/types.ts`, `artifact-types.ts`); `@skelm/cli` reduced from 9 cycles to 0 (`MainIO`/`MainResult` hoisted to `internal/io.ts`).
+- **`@skelm/pi` migrated to `@earendil-works/pi-coding-agent`** — updated SDK dependency; env-var resolution for `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `OPENAI_MODEL` is now honoured.
+- **`MemoryRunStore` documents dev/test scope** — capped at 10k runs / 50k events / 100k audit entries by default; `listRuns` hot path collapsed from five chained `.filter()` calls to a single pass.
+- **`ChainAuditWriter` serializes writes and fsyncs per append** — concurrent callers no longer interleave partial entries; the file is synced before the write resolves.
+
+### Fixed
+
+- **Scheduler**: real cron expression parsing replaces stub; overlap policy (`skip` / `queue` / `replace`) is fully implemented; per-trigger state cleared on `unregister`; timer leak closed; orphaned runs when no executor is wired now fail the run explicitly instead of parking forever.
+- **Coordinator drift and queue-drain race** — next cron tick is scheduled _before_ the current fire so cadence does not walk forward on slow pipelines; queue-drain holds `inflight=true` through the full drain, closing a microtask window that could allow concurrent fires.
+- **Runner abort-listener leak** — `runPipeline` now unregisters its `abort` listener on every return path (success, validation failure, run failure), preventing listener accumulation on long-lived `AbortController` instances.
+- **Approval gate fail-closed** — a step declaring an approval policy against a runtime with no `approvalGate` wired now fails with `ApprovalDeniedError` + `permission.denied` event instead of silently proceeding.
+- **`exec` basename-bypass closed** — `canExec` now requires the exact path in the allowlist when the binary contains a path separator; bare names still resolve via `basename`; `tool.call` / `tool.result` / `permission.denied` audit events emitted on every exec.
+- **Atomic `FileSecretResolver` writes** — `set`/`unset` are serialised per instance; writes go through tmp-file + fsync + rename so the file is always intact.
+- **API boundary validation** — OpenAI and Anthropic responses are shape-checked before use; approvals policy JSON is validated on read; malformed inputs now produce typed errors with actionable messages instead of crashes or silent corruption.
+- **Gateway shutdown bounded** — `Gateway.stop()` now races a 30 s overall timeout; stop-time failures (lockfile, port unbind, audit flush) are logged to stderr and trigger `exit(1)` so systemd sees the failure instead of silently swallowing it.
+- **`/runs` and `/runs/:id/events` memory caps** — `GET /runs?limit=…` clamped to [1, 1000]; `/runs/:id/events` gets a default of 1000 and hard cap of 5000, preventing heap exhaustion from oversized queries.
+- **Event bus indexed by `runId`** — `EventBus.subscribe(runId, …)` is O(1) instead of linear scan; SSE streams heartbeat every 15 s to prevent proxy timeouts.
+- **Trigger queue depth capped** — `overlap='queue'` now enforces a hard cap (default 100); fires exceeding the cap return `'skipped'` and increment a dropped counter rather than growing the queue unboundedly.
+- **opencode URL parsing hardened** — server URL is parsed from stdout only, anchored to start-of-line, and restricted to loopback addresses; parse buffer capped at 64 KiB.
+- **CLI ANSI stripping** — step ids, run error messages, and log entry text pass through `safeForTty` (backed by `util.stripVTControlCharacters`) before reaching stdout/stderr, preventing VT sequences from forging terminal output.
+- **Default fetch timeouts** — CLI gateway-client and `githubFetch` now default to a 30 s `AbortSignal.timeout`; callers that supply their own signal retain their existing behaviour.
+- **`@skelm/agent` `preserveSystem` honoured in compaction** — `findCutPoint` no longer trims the system prompt block; `maxTokens` cap applied correctly to chat-completion calls.
+- **`@skelm/pi` vision hint** — system prompt receives an image-capability hint when the request includes image content parts.
+- **Gateway async event-source `start()` errors captured** — previously thrown into an unhandled rejection; now written to `lastError` on the trigger registration.
+- **MS Graph webhook `clientState` enforced** — requests without a matching `clientState` are rejected 400; unenforced delivery was an integrity gap.
+- **`gateway reload` concurrent serialization** — multiple simultaneous SIGHUP signals no longer race on config re-read.
+- **`parseDuration` bounded to 30 days** — durations above the cap return a parse error instead of silently scheduling a multi-year interval.
+- **File-watch single-file path** — the trigger no longer doubled the basename when a plain file path (not a glob) was provided.
+- **`skelm gateway start` crash handlers** — uncaught-exception and unhandled-rejection handlers installed before startup; gateway crash no longer leaves a stale lockfile.
+- **`better-sqlite3` postinstall allowlisted** — `chore(deps)!` pins an exact version and adds the native-build postinstall to the allowed-scripts list, unblocking CI on clean installs.
+
+### Security
+
+- **Constant-time secret comparisons** — gateway bearer-token check, webhook-secret check, and `GitHubTrigger` HMAC compare all replaced with `timingSafeStringEqual` (new export from `@skelm/core`); previous `!==` comparisons leaked timing.
+- **GitHub trigger fail-closed on missing signature** — a secret-configured `githubPr`/`webhook` trigger that receives an unsigned delivery now rejects with 401 instead of accepting it.
+- **Webhook HMAC required** — `webhook()` triggers with `secret` configured now require a valid HMAC signature _and_ enforce a 5-minute replay window; requests outside the window are rejected.
+- **`exec` path-injection guard** — absolute paths in `ctx.exec` must be explicitly listed in `allowedExecutables`; basename matching only applies to bare command names, closing the `/tmp/evil/git` bypass.
+
+### Tests
+
+- Closed testing gaps H7–H13, H19–H24, H28–H33: coordinator drift/race, runner abort-listener leak, exec audit + path-injection, atomic secrets, API boundary validation, gateway shutdown, memory caps, ANSI stripping, URL parsing, all covered CLI exit codes, gateway auth sweep across all 16 route modules, approval fail-closed, wait/resume event ordering, and `@skelm/skelm` meta-package smoke tests.
+
+### Docs
+
+- **Triggers guide** — cron timezone, duration strings, file-watch, event-source, and webhook provider configuration documented under `docs/guides/triggers/`.
+- **Quickstart** — run lifecycle and troubleshooting sections clarified.
+- **AGENTS.md / CLAUDE.md** — merged into a single source; README scheduler scope corrected.
+
+### Breaking Changes
+
+- **`webhook()` triggers with `secret` now require HMAC + replay window** — requests without a valid `X-Hub-Signature-256` header (or outside the 5-minute window) are rejected. Update any webhook sender that was relying on the secret being advisory.
+- **Scheduler no longer silently parks runs when no executor is wired** — pipelines fired by a trigger without a wired executor now fail the run explicitly (`RUN_FAILED`). Previously they disappeared with no event.
+- **`better-sqlite3` pinned to exact version** — installs that previously resolved a wider range may need to run `pnpm install` to update the lockfile.
+
 ## [0.4.2] - 2026-05-18
 
 ### Added
@@ -265,7 +344,13 @@ First public release on npmjs.com. Versions of all published packages are aligne
 
 Pre-public releases distributed via GitHub Packages and git tags. See `git log` for full history.
 
-[Unreleased]: https://github.com/scottgl9/skelm/compare/v0.3.7...HEAD
+[Unreleased]: https://github.com/scottgl9/skelm/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/scottgl9/skelm/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/scottgl9/skelm/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/scottgl9/skelm/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/scottgl9/skelm/compare/v0.3.9...v0.4.0
+[0.3.9]: https://github.com/scottgl9/skelm/compare/v0.3.8...v0.3.9
+[0.3.8]: https://github.com/scottgl9/skelm/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/scottgl9/skelm/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/scottgl9/skelm/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/scottgl9/skelm/compare/v0.3.4...v0.3.5
