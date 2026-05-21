@@ -131,6 +131,36 @@ describe('findCutPoint', () => {
     expect(findCutPoint(msgs, { keepRecent: 2 })).toBe(4)
     expect(findCutPoint(msgs, { keepRecent: 4 })).toBe(2)
   })
+
+  it('preserveSystem (default) treats a leading system as fixed prefix when measuring the tail', () => {
+    // tail (after the system) is 2 messages, keepRecent default 4 → tail is
+    // already short enough, no compaction warranted.
+    const msgs: SessionMessage[] = [m('system', 0), m('user', 1), m('assistant', 2)]
+    expect(findCutPoint(msgs)).toBe(0)
+  })
+
+  it('preserveSystem leaves room above the system message when the tail is long enough', () => {
+    const msgs: SessionMessage[] = [
+      m('system', 0),
+      m('user', 1),
+      m('assistant', 2),
+      m('user', 3),
+      m('assistant', 4),
+    ]
+    // tail = 4 messages, keepRecent = 2, so a cut is warranted at len-keep = 3.
+    expect(findCutPoint(msgs, { keepRecent: 2 })).toBe(3)
+  })
+
+  it('preserveSystem: false ignores any leading system when computing the cut', () => {
+    const msgs: SessionMessage[] = [m('system', 0), m('user', 1), m('assistant', 2)]
+    // Without preservation, length 3 > keepRecent 2, so cut at 3 - 2 = 1.
+    expect(findCutPoint(msgs, { keepRecent: 2, preserveSystem: false })).toBe(1)
+  })
+
+  it('preserveSystem only triggers when messages[0].role === system', () => {
+    const msgs: SessionMessage[] = [m('user', 1), m('assistant', 2), m('user', 3)]
+    expect(findCutPoint(msgs, { keepRecent: 2, preserveSystem: true })).toBe(1)
+  })
 })
 
 describe('compact', () => {
@@ -194,6 +224,80 @@ describe('compact', () => {
     })
     await compact(msgs, { summarize, keepRecent: 2 })
     expect(received?.map((x) => x.content)).toEqual(['user1', 'assistant2'])
+  })
+})
+
+describe('compact — preserveSystem', () => {
+  const m = (role: 'system' | 'user' | 'assistant', content: string): SessionMessage => ({
+    role,
+    content,
+  })
+
+  it('keeps a leading system message verbatim and emits [system, summary, ...suffix]', async () => {
+    const msgs: SessionMessage[] = [
+      m('system', 'persistent system'),
+      m('user', 'q1'),
+      m('assistant', 'a1'),
+      m('user', 'q2'),
+      m('assistant', 'a2'),
+    ]
+    const summarize = vi.fn().mockResolvedValue('past chatter')
+    const out = await compact(msgs, { summarize, keepRecent: 2 })
+
+    expect(out.collapsedCount).toBe(2)
+    expect(out.messages).toHaveLength(4)
+    expect(out.messages[0]).toEqual(msgs[0])
+    expect(out.messages[1]?.role).toBe('system')
+    expect(out.messages[1]?.content).toContain('past chatter')
+    expect(out.messages.slice(2)).toEqual([m('user', 'q2'), m('assistant', 'a2')])
+  })
+
+  it('does not pass the preserved system message to summarize()', async () => {
+    const msgs: SessionMessage[] = [
+      m('system', 'persistent system'),
+      m('user', 'q1'),
+      m('assistant', 'a1'),
+      m('user', 'q2'),
+      m('assistant', 'a2'),
+    ]
+    let received: readonly SessionMessage[] | undefined
+    const summarize = vi.fn(async (s: readonly SessionMessage[]) => {
+      received = s
+      return 'past chatter'
+    })
+    await compact(msgs, { summarize, keepRecent: 2 })
+    expect(received?.map((x) => x.role)).toEqual(['user', 'assistant'])
+    expect(received?.some((x) => x.content === 'persistent system')).toBe(false)
+  })
+
+  it('preserveSystem: false includes the system message in the summarized slice', async () => {
+    const msgs: SessionMessage[] = [
+      m('system', 'persistent system'),
+      m('user', 'q1'),
+      m('assistant', 'a1'),
+      m('user', 'q2'),
+      m('assistant', 'a2'),
+    ]
+    let received: readonly SessionMessage[] | undefined
+    const summarize = vi.fn(async (s: readonly SessionMessage[]) => {
+      received = s
+      return 'all collapsed'
+    })
+    const out = await compact(msgs, { summarize, keepRecent: 2, preserveSystem: false })
+    expect(received?.[0]?.role).toBe('system')
+    expect(out.messages[0]?.role).toBe('system')
+    expect(out.messages[0]?.content).toContain('all collapsed')
+    // No second preserved head — exactly [summary, ...suffix].
+    expect(out.messages).toHaveLength(3)
+  })
+
+  it('makes no changes when the system-preserved tail is already short enough', async () => {
+    const msgs: SessionMessage[] = [m('system', 'persistent'), m('user', 'q'), m('assistant', 'a')]
+    const summarize = vi.fn().mockResolvedValue('should not be called')
+    const out = await compact(msgs, { summarize, keepRecent: 4 })
+    expect(out.messages).toEqual(msgs)
+    expect(out.collapsedCount).toBe(0)
+    expect(summarize).not.toHaveBeenCalled()
   })
 })
 
