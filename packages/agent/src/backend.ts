@@ -528,6 +528,11 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
     async run(req: AgentRequest, ctx: BackendContext): Promise<AgentResponse> {
       const cwd = req.cwd ?? process.cwd()
       const agentDefRoot = cwd
+      // AgentRequest has no `model` field, so the agent-loop path always
+      // uses the backend's defaultModel (or opts.model in single-endpoint
+      // mode). Per-call model routing is only available on the infer() path
+      // via InferRequest.model. To switch models within an agent run, build
+      // a separate backend instance per model.
       const route = resolveCallModel(opts, undefined)
       const baseUrl = route.kind === 'registry' ? route.resolved.baseUrl : route.baseUrl
       const apiKey = route.kind === 'registry' ? route.resolved.apiKey : route.apiKey

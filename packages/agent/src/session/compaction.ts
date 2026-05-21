@@ -94,21 +94,32 @@ export interface FindCutPointOptions {
 }
 
 /**
- * Returns the message index BEFORE which everything should be summarized,
- * and at or after which messages should be kept verbatim.
+ * Returns the message index where the kept-verbatim suffix starts. Messages
+ * before that index are candidates for summarization; messages at or after
+ * are kept verbatim. Returns 0 when no compaction is warranted.
+ *
+ * When `preserveSystem` is true (the default) and `messages[0].role` is
+ * `'system'`, that leading system message is treated as fixed prefix — it
+ * never participates in the summarized range, and the keepRecent budget is
+ * computed against the remaining tail. `compact()` honors the same rule
+ * and emits `[messages[0], summary, ...suffix]`.
  *
  * Examples (with keepRecent=2):
  *  - [user, assistant, user, assistant] → 2 (keep last two)
  *  - [user, assistant] → 0 (already shorter than keepRecent)
  *  - [system, user, assistant, user, assistant] with preserveSystem
  *    → 3 (summary slot replaces messages[1..3))
+ *  - [system, user, assistant] with preserveSystem
+ *    → 0 (tail too short to summarize)
  */
 export function findCutPoint(
   messages: readonly SessionMessage[],
   opts: FindCutPointOptions = {},
 ): number {
   const keep = opts.keepRecent ?? 4
-  if (messages.length <= keep) return 0
+  const preserve = (opts.preserveSystem ?? true) && messages[0]?.role === 'system' ? 1 : 0
+  const tailLength = messages.length - preserve
+  if (tailLength <= keep) return 0
   return messages.length - keep
 }
 
@@ -144,8 +155,14 @@ export async function compact(
     return { messages: [...messages], collapsedCount: 0, estimatedTokenSavings: 0 }
   }
 
-  const prefix = messages.slice(0, cut)
+  const preserveSystem = (opts.preserveSystem ?? true) && messages[0]?.role === 'system'
+  const preservedHead = preserveSystem ? messages.slice(0, 1) : []
+  const prefix = messages.slice(preservedHead.length, cut)
   const suffix = messages.slice(cut)
+
+  if (prefix.length === 0) {
+    return { messages: [...messages], collapsedCount: 0, estimatedTokenSavings: 0 }
+  }
 
   const beforeTokens = estimateMessagesTokens(prefix)
   const summary = await opts.summarize(prefix)
@@ -156,7 +173,7 @@ export async function compact(
   const afterTokens = estimateMessagesTokens([summaryMsg])
 
   return {
-    messages: [summaryMsg, ...suffix],
+    messages: [...preservedHead, summaryMsg, ...suffix],
     collapsedCount: prefix.length,
     estimatedTokenSavings: beforeTokens - afterTokens,
   }
