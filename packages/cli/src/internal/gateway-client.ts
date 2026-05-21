@@ -31,13 +31,22 @@ export async function ensureGatewayReady(io: MainIO): Promise<GatewayClient | nu
   return { discovery, headers, stateDir }
 }
 
+/** Default per-request timeout: long enough for cold-start runs, short
+ *  enough that a wedged gateway doesn't hang the CLI forever. */
+const DEFAULT_CLI_FETCH_TIMEOUT_MS = 30_000
+
 export async function fetchHttp(
   url: string,
   init: RequestInit | undefined,
   io: MainIO,
+  timeoutMs: number = DEFAULT_CLI_FETCH_TIMEOUT_MS,
 ): Promise<Response | null> {
   try {
-    return await fetch(url, init)
+    const merged: RequestInit = {
+      ...init,
+      signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
+    }
+    return await fetch(url, merged)
   } catch (err) {
     io.stderr.write(`error: gateway HTTP request failed: ${(err as Error).message}\n`)
     return null
