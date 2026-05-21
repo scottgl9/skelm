@@ -182,6 +182,11 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     return { exitCode: EXIT.CLI_ERROR }
   }
 
+  // AGENTS.md invariant: the gateway main loop must not produce an unhandled
+  // rejection or uncaught exception. These last-line handlers log, attempt a
+  // bounded drain, and exit non-zero so systemd/supervisors see the failure.
+  installCrashHandlers(gateway, io)
+
   // Build a backend registry covering BOTH `config.instances` (pre-built
   // backends like vercel-ai / opencode SDK / pi-sdk) AND `config.backends.<id>`
   // factory entries (Pi RPC, opencode subprocess, …). Without the latter,
@@ -224,6 +229,47 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
   await gateway.stop()
   io.stdout.write('skelm gateway stopped\n')
   return { exitCode: EXIT.OK }
+}
+
+const CRASH_SHUTDOWN_GRACE_MS = 5_000
+let crashHandlersInstalled = false
+
+/**
+ * Install last-line unhandledRejection / uncaughtException handlers on the
+ * current process. Logs the error, attempts a bounded gateway drain, then
+ * forces exit(1) so supervisors observe the failure. `exitFn` is injectable
+ * for tests; default is `process.exit`.
+ */
+export function installCrashHandlers(
+  gateway: Pick<Gateway, 'stop'>,
+  io: MainIO,
+  exitFn: (code: number) => void = (code) => process.exit(code),
+): void {
+  if (crashHandlersInstalled) return
+  crashHandlersInstalled = true
+  const handle = (kind: 'unhandledRejection' | 'uncaughtException', err: unknown): void => {
+    const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err)
+    io.stderr.write(`gateway ${kind}: ${msg}\n`)
+    const forceExit = setTimeout(() => exitFn(1), CRASH_SHUTDOWN_GRACE_MS).unref()
+    gateway
+      .stop()
+      .catch((stopErr) => {
+        io.stderr.write(`gateway stop failed during ${kind}: ${(stopErr as Error).message}\n`)
+      })
+      .finally(() => {
+        clearTimeout(forceExit)
+        exitFn(1)
+      })
+  }
+  process.on('unhandledRejection', (reason) => handle('unhandledRejection', reason))
+  process.on('uncaughtException', (err) => handle('uncaughtException', err))
+}
+
+/** Test-only: reset the install-once flag so a second test invocation works. */
+export function __resetCrashHandlersForTest(): void {
+  crashHandlersInstalled = false
+  process.removeAllListeners('unhandledRejection')
+  process.removeAllListeners('uncaughtException')
 }
 
 async function statusGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> {
