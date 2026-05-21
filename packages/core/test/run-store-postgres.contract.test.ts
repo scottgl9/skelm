@@ -30,11 +30,10 @@ describe('PostgresRunStore — seam (M4)', () => {
   })
 })
 
-// Re-running the full RunStore contract suite against PostgresRunStore
-// is what the M4 implementation will need. Kept as a skipped sentinel
-// so the M4 PR doesn't need to add the harness — only flip `.skip` off.
-describe.skip('PostgresRunStore — full RunStore contract (unskip when M4 lands)', () => {
-  it('placeholder', () => {
-    /* Replace with imports of the shared contract harness once it exists. */
-  })
-})
+// The full RunStore contract suite for PostgresRunStore is gated on the
+// M4 driver implementation. The previous `describe.skip` placeholder
+// reported as "1 skipped" in CI, which read as if real contract coverage
+// existed for the postgres path. Removed to stop conveying false
+// confidence — once the driver lands, import the shared contract
+// harness (see packages/core/test/run-store.test.ts for the SqliteRunStore
+// invocation) and feed it a containerised pg fixture.
