@@ -130,20 +130,33 @@ export type EventListener = (event: RunEvent) => void
  * (subscribers must complete before publish returns); subscribers run in
  * registration order; each subscriber's exception is caught and logged
  * to stderr but does not break the bus or other subscribers.
+ *
+ * forRun() subscribers are indexed by runId so publish() only fans out to
+ * listeners interested in the event's runId — keeping per-publish work
+ * O(global + per-run) instead of O(total).
  */
 export class EventBus {
   private readonly listeners: Set<EventListener> = new Set()
+  private readonly byRun: Map<RunId, Set<EventListener>> = new Map()
 
   publish(event: RunEvent): void {
     for (const listener of this.listeners) {
-      try {
-        listener(event)
-      } catch (err) {
-        // Subscribers are expected to be infallible; if one throws, log and
-        // continue. We do not let one bad subscriber poison the run.
-        const detail = err instanceof Error ? err.message : String(err)
-        process.stderr.write(`[skelm event subscriber error] ${detail}\n`)
+      this.invoke(listener, event)
+    }
+    const indexed = this.byRun.get(event.runId)
+    if (indexed !== undefined) {
+      for (const listener of indexed) {
+        this.invoke(listener, event)
       }
+    }
+  }
+
+  private invoke(listener: EventListener, event: RunEvent): void {
+    try {
+      listener(event)
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err)
+      process.stderr.write(`[skelm event subscriber error] ${detail}\n`)
     }
   }
 
@@ -153,18 +166,29 @@ export class EventBus {
   }
 
   /**
-   * Filter helper: subscribe but only fire the listener for events whose
-   * runId matches. Returns an unsubscribe function.
+   * Subscribe only to events for a specific runId. Indexed by runId so
+   * publish() does not iterate unrelated subscribers.
    */
   forRun(runId: RunId, listener: EventListener): () => void {
-    return this.subscribe((event) => {
-      if (event.runId === runId) listener(event)
-    })
+    let set = this.byRun.get(runId)
+    if (set === undefined) {
+      set = new Set()
+      this.byRun.set(runId, set)
+    }
+    set.add(listener)
+    return () => {
+      const s = this.byRun.get(runId)
+      if (s === undefined) return
+      s.delete(listener)
+      if (s.size === 0) this.byRun.delete(runId)
+    }
   }
 
-  /** Number of active listeners; useful in tests. */
+  /** Total active listeners across global + per-run indexes. */
   get listenerCount(): number {
-    return this.listeners.size
+    let n = this.listeners.size
+    for (const s of this.byRun.values()) n += s.size
+    return n
   }
 }
 
