@@ -6,29 +6,26 @@
 //   - Context = the typed state flowing through the run.
 //   - Run     = one execution of a pipeline.
 
-/** Stable run identifier. UUID v4 in practice; opaque string in the type. */
-export type RunId = string
-
-/** Stable identifier for a step within a pipeline. */
-export type StepId = string
-
-export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'waiting'
-
-export type StepStatus = 'completed' | 'failed' | 'skipped' | 'waiting'
-
-/** Discriminator for step kinds; the union grows in later stages. */
-export type StepKind =
-  | 'code'
-  | 'llm'
-  | 'agent'
-  | 'idempotent'
-  | 'parallel'
-  | 'forEach'
-  | 'branch'
-  | 'loop'
-  | 'wait'
-  | 'pipelineStep'
-  | 'invoke'
+// Identifier + payload primitives are kept in a leaf module so other
+// runtime files (run-store, events, errors) can depend on them without
+// pulling in this file's richer shapes — those inline-import back into
+// run-store/permissions/backend and would close import cycles.
+export type {
+  RunId,
+  StepId,
+  RunStatus,
+  StepStatus,
+  StepKind,
+  SerializedError,
+} from './types-base.js'
+import type {
+  RunId,
+  RunStatus,
+  SerializedError,
+  StepId,
+  StepKind,
+  StepStatus,
+} from './types-base.js'
 
 /** Metadata about the current run, available on `ctx.run`. */
 export interface RunMetadata {
@@ -200,7 +197,7 @@ export interface Context<TInput = unknown> {
    * given an `artifacts`-capable store (the default `MemoryRunStore` /
    * `SqliteRunStore`).
    */
-  readonly artifacts?: import('./run-store.js').ArtifactStoreHandle
+  readonly artifacts?: import('./artifact-types.js').ArtifactStoreHandle
 }
 
 /** Execution request accepted by `ctx.exec`. */
@@ -267,13 +264,6 @@ export interface StepResult<TOutput = unknown> {
   readonly startedAt: number
   readonly completedAt: number
   readonly error?: SerializedError
-}
-
-/** A serialized error suitable for storage and event payloads. */
-export interface SerializedError {
-  readonly name: string
-  readonly message: string
-  readonly stack?: string
 }
 
 /** A `code()` step: arbitrary deterministic TypeScript. */
@@ -368,8 +358,8 @@ export interface AgentStep<TOutput = unknown> {
    */
   readonly systemPromptIncludeAgentDef?: boolean
   readonly mcp?:
-    | readonly import('./backend.js').McpServerConfig[]
-    | ((ctx: Context) => readonly import('./backend.js').McpServerConfig[])
+    | readonly import('./mcp/types.js').McpServerConfig[]
+    | ((ctx: Context) => readonly import('./mcp/types.js').McpServerConfig[])
   readonly skills?: readonly string[]
   /**
    * Secret names this step declares it needs. Resolved through the runner's

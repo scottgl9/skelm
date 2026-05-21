@@ -12,20 +12,8 @@ import type { SkelmSchema } from './schema.js'
 
 export type BackendId = string
 
-export type McpServerConfig =
-  | {
-      id: string
-      transport: 'stdio'
-      command: string
-      args?: readonly string[]
-      env?: Readonly<Record<string, string>>
-    }
-  | {
-      id: string
-      transport: 'http' | 'sse'
-      url: string
-      headers?: Readonly<Record<string, string>>
-    }
+export type { McpServerConfig } from './mcp/types.js'
+import type { McpServerConfig } from './mcp/types.js'
 
 /** Discriminator describing how the backend handles permissions. */
 export type ToolPermissionEnforcement = 'native' | 'wrapped' | 'unsupported'

@@ -1,5 +1,5 @@
 import type { PermissionDenialReason, PermissionDimension } from './permissions.js'
-import type { RunId, RunStatus, SerializedError, StepId, StepKind } from './types.js'
+import type { RunId, RunStatus, SerializedError, StepId, StepKind } from './types-base.js'
 
 /**
  * Discriminated union of run-level events emitted by the runtime. Every

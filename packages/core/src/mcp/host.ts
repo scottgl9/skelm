@@ -1,11 +1,11 @@
 import { basename } from 'node:path'
-import type { McpServerConfig } from '../backend.js'
 import { PermissionDeniedError, RunCancelledError } from '../errors.js'
 import type { EventBus } from '../events.js'
 import type { PermissionDimension, TrustEnforcer } from '../permissions.js'
-import type { RunId, StepId } from '../types.js'
+import type { RunId, StepId } from '../types-base.js'
 import { McpClient } from './client.js'
 import type { ToolCallResponse } from './protocol.js'
+import type { McpServerConfig } from './types.js'
 
 export interface McpHostedTool {
   id: string

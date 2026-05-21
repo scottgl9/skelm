@@ -1,4 +1,4 @@
-import type { SerializedError } from './types.js'
+import type { SerializedError } from './types-base.js'
 
 /** Thrown when a step handler throws an error not otherwise typed. */
 export class StepError extends Error {
