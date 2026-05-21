@@ -96,6 +96,14 @@ export interface TriggerRegistration {
   /** Last error from the run callback, if any. */
   lastError?: string
   /**
+   * Maximum number of queued fires when `overlap: 'queue'`. Defaults to the
+   * coordinator's `defaultMaxQueueDepth` (1000). Fires arriving past the cap
+   * are dropped and counted in `dropped`. Has no effect for other overlaps.
+   */
+  maxQueueDepth?: number
+  /** Number of fires dropped because the per-trigger queue was full. */
+  dropped: number
+  /**
    * True when this registration came from a pipeline's declared
    * `triggers:` array (vs `POST /schedules`). Used by the reload sweep to
    * distinguish operator-managed schedules from declared ones, since
