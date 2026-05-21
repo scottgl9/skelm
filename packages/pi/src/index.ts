@@ -1,7 +1,7 @@
 /**
  * @skelm/pi - Pi coding agent backend for skelm
  *
- * Integration with the Pi coding agent (@mariozechner/pi-coding-agent) via
+ * Integration with the Pi coding agent (@earendil-works/pi-coding-agent) via
  * RPC mode. Spawns `pi --mode rpc` per call, uses the documented JSONL
  * protocol to stream the response.
  */

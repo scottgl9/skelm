@@ -110,10 +110,10 @@ export class PiSdkClient {
     onPartial?: (delta: string) => void,
     images?: ReadonlyArray<{ mimeType: string; data: string }>,
   ): Promise<PiSdkResponse> {
-    // Dynamic import keeps @mariozechner/pi-coding-agent optional at runtime
-    const pi = await import('@mariozechner/pi-coding-agent').catch(() => {
+    // Dynamic import keeps @earendil-works/pi-coding-agent optional at runtime
+    const pi = await import('@earendil-works/pi-coding-agent').catch(() => {
       throw new Error(
-        'pi SDK not installed. Add @mariozechner/pi-coding-agent to your project: npm install @mariozechner/pi-coding-agent',
+        'pi SDK not installed. Add @earendil-works/pi-coding-agent to your project: npm install @earendil-works/pi-coding-agent',
       )
     })
 
@@ -184,7 +184,7 @@ export class PiSdkClient {
   }
 
   private _run(
-    session: import('@mariozechner/pi-coding-agent').AgentSession,
+    session: import('@earendil-works/pi-coding-agent').AgentSession,
     text: string,
     signal: AbortSignal | undefined,
     timeoutMs: number,
