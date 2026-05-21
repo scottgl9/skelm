@@ -133,6 +133,16 @@ export type RunStore = ExecutionStore & StateStore & ArtifactStore
  */
 export const DEFAULT_ARTIFACT_QUOTA_BYTES = 256 * 1024 * 1024
 
+/**
+ * Default caps for {@link MemoryRunStore}. The store is intended for
+ * development, tests, and the embedded default in `runPipeline`; under a
+ * long-running gateway it would otherwise grow without bound. Production
+ * deployments should use {@link PostgresRunStore} or {@link SqliteRunStore}.
+ */
+export const DEFAULT_MAX_RUNS_IN_MEMORY = 10_000
+export const DEFAULT_MAX_EVENTS_PER_RUN_IN_MEMORY = 50_000
+export const DEFAULT_MAX_AUDIT_ENTRIES_IN_MEMORY = 100_000
+
 export class MemoryRunStore implements RunStore {
   private readonly runs = new Map<RunId, Run>()
   private readonly events = new Map<RunId, RunEvent[]>()
@@ -145,13 +155,54 @@ export class MemoryRunStore implements RunStore {
   private readonly artifacts = new Map<RunId, Array<ArtifactDescriptor & { data: Uint8Array }>>()
   private artifactCounter = 0
   private readonly artifactQuotaBytes: number
+  private readonly maxRuns: number
+  private readonly maxEventsPerRun: number
+  private readonly maxAuditEntries: number
 
-  constructor(opts: { artifactQuotaBytes?: number } = {}) {
+  constructor(
+    opts: {
+      artifactQuotaBytes?: number
+      /** Cap on total Run records retained. Oldest-by-startedAt evicted
+       *  when exceeded. Default: 10_000. */
+      maxRuns?: number
+      /** Cap on events kept per run. Oldest dropped when exceeded.
+       *  Default: 50_000. */
+      maxEventsPerRun?: number
+      /** Cap on audit entries retained. Oldest dropped when exceeded.
+       *  Default: 100_000. */
+      maxAuditEntries?: number
+    } = {},
+  ) {
     this.artifactQuotaBytes = opts.artifactQuotaBytes ?? DEFAULT_ARTIFACT_QUOTA_BYTES
+    this.maxRuns = opts.maxRuns ?? DEFAULT_MAX_RUNS_IN_MEMORY
+    this.maxEventsPerRun = opts.maxEventsPerRun ?? DEFAULT_MAX_EVENTS_PER_RUN_IN_MEMORY
+    this.maxAuditEntries = opts.maxAuditEntries ?? DEFAULT_MAX_AUDIT_ENTRIES_IN_MEMORY
   }
 
   async putRun(run: Run): Promise<void> {
     this.runs.set(run.runId, run)
+    if (this.runs.size > this.maxRuns) this.evictOldestRun()
+  }
+
+  /**
+   * Evict the oldest run (by startedAt) along with its events and
+   * artifacts. Called after putRun exceeds the cap to prevent unbounded
+   * growth under a long-running gateway using the in-memory store.
+   */
+  private evictOldestRun(): void {
+    let oldestId: RunId | undefined
+    let oldestStarted = Number.POSITIVE_INFINITY
+    for (const run of this.runs.values()) {
+      if (run.startedAt < oldestStarted) {
+        oldestStarted = run.startedAt
+        oldestId = run.runId
+      }
+    }
+    if (oldestId !== undefined) {
+      this.runs.delete(oldestId)
+      this.events.delete(oldestId)
+      this.artifacts.delete(oldestId)
+    }
   }
 
   async updateRun(runId: RunId, patch: Partial<Run>): Promise<void> {
@@ -165,15 +216,19 @@ export class MemoryRunStore implements RunStore {
   }
 
   async *listRuns(filter: RunFilter = {}): AsyncIterable<RunSummary> {
-    const runs = [...this.runs.values()]
-      .filter((run) => filter.pipelineId === undefined || run.pipelineId === filter.pipelineId)
-      .filter((run) => filter.status === undefined || run.status === filter.status)
-      .filter((run) => filter.triggerId === undefined || run.triggerId === filter.triggerId)
-      .filter((run) => filter.startedAfter === undefined || run.startedAt >= filter.startedAfter)
-      .filter((run) => filter.startedBefore === undefined || run.startedAt <= filter.startedBefore)
-      .sort((a, b) => b.startedAt - a.startedAt)
-
-    const limited = filter.limit === undefined ? runs : runs.slice(0, filter.limit)
+    // Single-pass filter avoids four intermediate-array allocations on
+    // the hot list path. The sort is unavoidable without an index.
+    const matches: Run[] = []
+    for (const run of this.runs.values()) {
+      if (filter.pipelineId !== undefined && run.pipelineId !== filter.pipelineId) continue
+      if (filter.status !== undefined && run.status !== filter.status) continue
+      if (filter.triggerId !== undefined && run.triggerId !== filter.triggerId) continue
+      if (filter.startedAfter !== undefined && run.startedAt < filter.startedAfter) continue
+      if (filter.startedBefore !== undefined && run.startedAt > filter.startedBefore) continue
+      matches.push(run)
+    }
+    matches.sort((a, b) => b.startedAt - a.startedAt)
+    const limited = filter.limit === undefined ? matches : matches.slice(0, filter.limit)
     for (const run of limited) {
       yield {
         runId: run.runId,
@@ -190,6 +245,12 @@ export class MemoryRunStore implements RunStore {
   async appendEvent(event: RunEvent): Promise<void> {
     const current = this.events.get(event.runId) ?? []
     current.push(event)
+    if (current.length > this.maxEventsPerRun) {
+      // Drop the oldest event(s) so per-run memory stays bounded under
+      // a long-running gateway. Newest events are the most useful for
+      // tailing /stream and reconstructing a failed run.
+      current.splice(0, current.length - this.maxEventsPerRun)
+    }
     this.events.set(event.runId, current)
   }
 
@@ -207,6 +268,9 @@ export class MemoryRunStore implements RunStore {
 
   async putAudit(entry: AuditEntry): Promise<void> {
     this.audit.push(entry)
+    if (this.audit.length > this.maxAuditEntries) {
+      this.audit.splice(0, this.audit.length - this.maxAuditEntries)
+    }
   }
 
   async getState<T>(namespace: string, key: string): Promise<T | undefined> {
