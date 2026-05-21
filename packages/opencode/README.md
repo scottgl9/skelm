@@ -74,7 +74,7 @@ export default pipeline({
 ## What's exported
 
 ```ts
-export { createOpencodeBackend, createOpencodeAcpBackend } from './backend.js'
+export { createOpencodeBackend } from './backend.js'
 export { createOpencodeBackendFromConfig } from './factory.js'
 export { OpencodeProvider, createOpencodeProvider } from './provider.js'
 export { OpencodeClientWrapper } from './client.js'

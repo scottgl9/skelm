@@ -6,6 +6,7 @@
  */
 
 export { Scheduler } from './scheduler.js'
+export type { SchedulerRunStore, SchedulerPipelineLoader } from './scheduler.js'
 export {
   createCronTrigger,
   createIntervalTrigger,

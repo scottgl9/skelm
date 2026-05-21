@@ -89,6 +89,21 @@ export class BranchExhaustionError extends Error {
   }
 }
 
+/** Thrown when ctx.exec() is invoked with an invalid command/python/bash combination. */
+export class ExecConfigError extends Error {
+  override readonly name = 'ExecConfigError'
+}
+
+/** Thrown when Runner.resume() or awaitResume() is called against an illegal run state. */
+export class RunStateError extends Error {
+  override readonly name = 'RunStateError'
+  readonly runId: string
+  constructor(runId: string, message: string) {
+    super(message)
+    this.runId = runId
+  }
+}
+
 /** Thrown when a wait() step runs without a waitForInput handler wired by the runner. */
 export class WaitConfigError extends Error {
   override readonly name = 'WaitConfigError'
