@@ -57,6 +57,52 @@ describe('code() exec — explicit-deny', () => {
     expect(run.error?.message).toMatch(/"node"/)
   })
 
+  it('rejects absolute-path binaries when only the basename is allowlisted (basename-bypass)', async () => {
+    // Without the path-injection guard, an allowlist of ['node'] would
+    // accept `/tmp/evil/node` because basename matched. The fix requires
+    // the full value to be in the allowlist when the value contains a
+    // path separator.
+    const wf = pipeline({
+      id: 'wf-basename-bypass',
+      steps: [
+        code({
+          id: 'try-abs-path',
+          permissions: { allowedExecutables: ['node'] },
+          run: async (ctx) => {
+            return await (ctx.exec as ExecFn)({
+              command: '/usr/bin/node',
+              args: ['-e', 'process.stdout.write("never")'],
+            })
+          },
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, undefined)
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('PermissionDeniedError')
+    expect(run.error?.message).toMatch(/\/usr\/bin\/node/)
+  })
+
+  it('absolute paths are accepted when explicitly allowlisted by full path', async () => {
+    const wf = pipeline({
+      id: 'wf-abs-allowlist',
+      steps: [
+        code({
+          id: 'try-abs-allowed',
+          permissions: { allowedExecutables: [process.execPath] },
+          run: async (ctx) => {
+            return await (ctx.exec as ExecFn)({
+              command: process.execPath,
+              args: ['-e', 'process.stdout.write("ok")'],
+            })
+          },
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, undefined)
+    expect(run.status).toBe('completed')
+  })
+
   it('denial surfaces dimension via error message', async () => {
     const wf = pipeline({
       id: 'wf-dimension',
