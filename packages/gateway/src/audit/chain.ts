@@ -29,24 +29,44 @@ export class ChainAuditWriter implements AuditWriter {
   private lastHash: string | null = null
   private nextSeq = 1
   private initPromise: Promise<void> | null = null
+  // Serializes concurrent write() calls so seq/prevHash are assigned in append
+  // order, and a failed append leaves in-memory state untouched for retry.
+  private writeQueue: Promise<void> = Promise.resolve()
 
   constructor(private readonly path: string) {}
 
   async write(event: AuditEvent): Promise<void> {
     await this.ensureInitialized()
-    const seq = this.nextSeq++
-    const timestamp = event.timestamp ?? new Date().toISOString()
-    const prevHash = this.lastHash ?? '0'.repeat(64)
-    const partial: Omit<ChainEntry, 'entryHash'> = {
-      ...event,
-      seq,
-      timestamp,
-      prevHash,
+    const previous = this.writeQueue
+    let release!: () => void
+    this.writeQueue = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    try {
+      await previous.catch(() => {})
+      const seq = this.nextSeq
+      const timestamp = event.timestamp ?? new Date().toISOString()
+      const prevHash = this.lastHash ?? '0'.repeat(64)
+      const partial: Omit<ChainEntry, 'entryHash'> = {
+        ...event,
+        seq,
+        timestamp,
+        prevHash,
+      }
+      const entryHash = hashCanonical(partial)
+      const entry: ChainEntry = { ...partial, entryHash }
+      const fh = await fs.open(this.path, 'a')
+      try {
+        await fh.appendFile(`${JSON.stringify(entry)}\n`)
+        await fh.sync()
+      } finally {
+        await fh.close()
+      }
+      this.lastHash = entryHash
+      this.nextSeq = seq + 1
+    } finally {
+      release()
     }
-    const entryHash = hashCanonical(partial)
-    const entry: ChainEntry = { ...partial, entryHash }
-    this.lastHash = entryHash
-    await fs.appendFile(this.path, `${JSON.stringify(entry)}\n`)
   }
 
   async readAll(): Promise<ChainEntry[]> {
