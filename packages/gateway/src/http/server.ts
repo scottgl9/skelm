@@ -261,15 +261,29 @@ export function createServer(
       if (!state) throw createError({ statusCode: 404, message: 'Run not found' })
 
       const eventStream = createEventStream(event)
-      const unsubscribe = runner.events.subscribe((runEvent: RunEvent) => {
-        if (runEvent.runId === runId) {
-          eventStream.push({ event: runEvent.type, data: JSON.stringify(runEvent) })
-        }
+      // Indexed subscription: bus only fans out to this listener for events
+      // bound to runId, instead of every subscriber filtering on the hot path.
+      const unsubscribe = runner.events.forRun(runId, (runEvent: RunEvent) => {
+        eventStream
+          .push({ event: runEvent.type, data: JSON.stringify(runEvent) })
+          .catch(() => closed())
       })
-      eventStream.onClosed(() => {
+      // 15s heartbeat keeps NAT/proxy timeouts at bay and surfaces dead
+      // peers via a failed push() so we can release the subscription
+      // instead of leaking it indefinitely on a half-open TCP socket.
+      const heartbeat = setInterval(() => {
+        eventStream.push({ event: 'ping', data: '{}' }).catch(() => closed())
+      }, 15_000)
+      heartbeat.unref?.()
+      let isClosed = false
+      const closed = (): void => {
+        if (isClosed) return
+        isClosed = true
+        clearInterval(heartbeat)
         unsubscribe()
-        eventStream.close()
-      })
+        eventStream.close().catch(() => {})
+      }
+      eventStream.onClosed(closed)
       await eventStream.push({
         event: 'run.state',
         data: JSON.stringify({
@@ -288,7 +302,7 @@ export function createServer(
         state.status === 'failed' ||
         state.status === 'cancelled'
       ) {
-        eventStream.close()
+        closed()
       }
       return eventStream.send()
     }),
