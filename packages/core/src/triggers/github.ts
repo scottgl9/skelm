@@ -6,6 +6,7 @@
 
 import { createHmac } from 'node:crypto'
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http'
+import { timingSafeStringEqual } from '../crypto.js'
 import { TriggerPluginBase } from './base.js'
 import type { TriggerConfig, TriggerEvent, TriggerHealthStatus, TriggerType } from './types.js'
 
@@ -204,33 +205,35 @@ export class GitHubTrigger extends TriggerPluginBase {
     // Verify GitHub signature
     const signature = req.headers['x-hub-signature-256'] as string | undefined
     const event = req.headers['x-github-event'] as string | undefined
+    const body = await this.readBody(req)
 
-    if (config.secret && signature) {
-      const body = await this.readBody(req)
-      const expectedSignature = this.computeSignature(config.secret, body)
-
-      if (signature !== expectedSignature) {
+    if (config.secret !== undefined) {
+      // Fail-closed: secret configured ⇒ signature required. The previous
+      // short-circuit (`config.secret && signature`) silently accepted
+      // unsigned requests when only the header was missing.
+      if (signature === undefined) {
+        this.logger.warn('GitHub webhook missing x-hub-signature-256 (secret configured)')
+        res.writeHead(401)
+        res.end('Unauthorized')
+        return
+      }
+      const expected = this.computeSignature(config.secret, body)
+      if (!timingSafeStringEqual(signature, expected)) {
         this.logger.warn('Invalid GitHub signature')
         res.writeHead(401)
         res.end('Unauthorized')
         return
       }
-
-      // Check event filter
-      if (config.events && event && !config.events.includes(event)) {
-        this.logger.debug(`Ignoring GitHub event: ${event}`)
-        res.writeHead(200)
-        res.end('Ignored')
-        return
-      }
-
-      await this.emitWebhookEvent(event || 'unknown', body)
-    } else {
-      // No secret configured, accept all events
-      const body = await this.readBody(req)
-      await this.emitWebhookEvent(event || 'unknown', body)
     }
 
+    if (config.events && event && !config.events.includes(event)) {
+      this.logger.debug(`Ignoring GitHub event: ${event}`)
+      res.writeHead(200)
+      res.end('Ignored')
+      return
+    }
+
+    await this.emitWebhookEvent(event || 'unknown', body)
     res.writeHead(200)
     res.end('OK')
   }
