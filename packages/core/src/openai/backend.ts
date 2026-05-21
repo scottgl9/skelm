@@ -56,7 +56,8 @@ export function createOpenAIBackend(opts: OpenAIBackendOptions = {}): SkelmBacke
       if (!response.ok) {
         throw new Error(`OpenAI request failed (${response.status} ${response.statusText})`)
       }
-      const body = (await response.json()) as OpenAIChatCompletionResponse
+      const rawBody: unknown = await response.json()
+      const body = assertOpenAIResponse(rawBody)
       const content = extractMessageContent(body)
       const usage = toUsage(body.usage)
       if (req.outputSchema !== undefined) {
@@ -87,6 +88,27 @@ interface OpenAIChatCompletionResponse {
     completion_tokens?: number
     total_tokens?: number
   }
+}
+
+/**
+ * Defensive shape check on the parsed JSON body. The OpenAI API
+ * generally returns the documented shape, but a misrouted endpoint, a
+ * proxy injecting an error envelope, or a future API change can yield
+ * an unexpected payload. Reject loudly here rather than letting the
+ * downstream extract silently return empty content.
+ */
+function assertOpenAIResponse(body: unknown): OpenAIChatCompletionResponse {
+  if (typeof body !== 'object' || body === null) {
+    throw new Error('OpenAI response was not a JSON object')
+  }
+  const b = body as Record<string, unknown>
+  if (b.choices !== undefined && !Array.isArray(b.choices)) {
+    throw new Error("OpenAI response 'choices' was not an array")
+  }
+  if (b.usage !== undefined && (typeof b.usage !== 'object' || b.usage === null)) {
+    throw new Error("OpenAI response 'usage' was not an object")
+  }
+  return body as OpenAIChatCompletionResponse
 }
 
 function resolveApiKey(explicit?: string): string {

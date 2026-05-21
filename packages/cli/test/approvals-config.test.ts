@@ -131,6 +131,27 @@ describe('skelm approvals config', () => {
     expect(r.exitCode).toBe(EXIT.CLI_ERROR)
     expect(r.stderr).toMatch(/show \| validate \| set \| approvers/)
   })
+
+  it('rejects a top-level non-object policy file', async () => {
+    writeFileSync(configPath, '[1, 2, 3]')
+    const r = await invoke(['approvals', 'config', 'show', '--json'])
+    expect(r.exitCode).not.toBe(EXIT.OK)
+    expect(r.stderr).toMatch(/top-level value must be a JSON object/)
+  })
+
+  it('rejects approvers entries missing an id', async () => {
+    writeFileSync(configPath, JSON.stringify({ approvers: [{ email: 'x@y' }] }))
+    const r = await invoke(['approvals', 'config', 'show', '--json'])
+    expect(r.exitCode).not.toBe(EXIT.OK)
+    expect(r.stderr).toMatch(/approvers\[0\]\.id/)
+  })
+
+  it('rejects a non-numeric defaultTimeoutMs', async () => {
+    writeFileSync(configPath, JSON.stringify({ defaultTimeoutMs: 'soon' }))
+    const r = await invoke(['approvals', 'config', 'show', '--json'])
+    expect(r.exitCode).not.toBe(EXIT.OK)
+    expect(r.stderr).toMatch(/defaultTimeoutMs/)
+  })
 })
 
 interface InvocationResult {
