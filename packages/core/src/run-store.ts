@@ -2,14 +2,8 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import Database from 'better-sqlite3'
 import type { RunEvent } from './events.js'
-import type {
-  Run,
-  RunId,
-  RunStatus,
-  StateEntry,
-  StateReadOptions,
-  StateSetOptions,
-} from './types.js'
+import type { RunId, RunStatus } from './types-base.js'
+import type { Run, StateEntry, StateReadOptions, StateSetOptions } from './types.js'
 
 export interface RunSummary {
   readonly runId: RunId
@@ -43,20 +37,11 @@ export interface AuditEntry {
   readonly at: number
 }
 
-/** Stable handle to a single artifact in the store. */
-export interface ArtifactRef {
-  readonly runId: RunId
-  readonly artifactId: string
-}
-
-/** Metadata describing a stored artifact (no payload). */
-export interface ArtifactDescriptor extends ArtifactRef {
-  readonly stepId?: string
-  readonly name: string
-  readonly mimeType: string
-  readonly size: number
-  readonly createdAt: number
-}
+// Artifact handle shapes live in a leaf module to keep types.ts from
+// inline-importing this file (which would close a types ↔ run-store
+// cycle). Re-exported here for back-compat.
+export type { ArtifactRef, ArtifactDescriptor, ArtifactStoreHandle } from './artifact-types.js'
+import type { ArtifactDescriptor, ArtifactRef } from './artifact-types.js'
 
 /** Raised by `putArtifact` when adding an artifact would exceed the per-run quota. */
 export class ArtifactQuotaExceededError extends Error {
@@ -70,20 +55,6 @@ export class ArtifactQuotaExceededError extends Error {
       `artifact quota exceeded for run ${runId}: would write ${attemptedBytes} bytes, limit ${limitBytes} bytes`,
     )
   }
-}
-
-/**
- * Per-step facade exposed on `ctx.artifacts`. The runner binds `runId` and
- * `stepId` automatically — callers only specify the payload metadata.
- */
-export interface ArtifactStoreHandle {
-  put(opts: {
-    name: string
-    mimeType: string
-    data: Uint8Array | string
-  }): Promise<ArtifactDescriptor>
-  get(ref: ArtifactRef): Promise<{ descriptor: ArtifactDescriptor; data: Uint8Array } | null>
-  list(opts?: { stepId?: string }): AsyncIterable<ArtifactDescriptor>
 }
 
 /** Persistence of binary artifacts (e.g. screenshots, evidence) by run + step. */
