@@ -19,6 +19,7 @@ value:DEFAULT_CONFIG
 value:DiscordTrigger
 value:EnvSecretResolver
 value:EventBus
+value:ExecConfigError
 value:GitHubTrigger
 value:InvokePipelineNotFoundError
 value:JsonRpcLineTransport
@@ -47,6 +48,7 @@ value:ProviderRateLimitError
 value:ProviderSelectionError
 value:ProviderTimeoutError
 value:RunCancelledError
+value:RunStateError
 value:Runner
 value:SchemaValidationError
 value:ScriptTrigger

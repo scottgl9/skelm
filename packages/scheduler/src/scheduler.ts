@@ -1,3 +1,4 @@
+import type { Pipeline, Run, RunStore } from '@skelm/core'
 import parser from 'cron-parser'
 import type {
   CronTrigger,
@@ -7,6 +8,12 @@ import type {
   TriggerContext,
   TriggerRegistration,
 } from './types.js'
+
+/** The slice of `RunStore` the scheduler depends on for recording triggered runs. */
+export type SchedulerRunStore = Pick<RunStore, 'putRun'>
+
+/** Resolves a registered pipeline ID to the executable pipeline, or `null` if unknown. */
+export type SchedulerPipelineLoader = (pipelineId: string) => Promise<Pipeline | null>
 
 /**
  * Scheduler manages long-running triggers for pipelines.
@@ -22,14 +29,14 @@ export class Scheduler {
   private readonly runningCount = new Map<string, number>()
   private readonly lastRun = new Map<string, Promise<void>>()
   private isRunning = false
-  private readonly runStore: { putRun: (run: unknown) => Promise<void> }
-  private readonly pipelineLoader: (pipelineId: string) => Promise<unknown>
+  private readonly runStore: SchedulerRunStore
+  private readonly pipelineLoader: SchedulerPipelineLoader
 
   constructor(
     config: SchedulerConfig,
     deps: {
-      runStore: { putRun: (run: unknown) => Promise<void> }
-      pipelineLoader: (pipelineId: string) => Promise<unknown>
+      runStore: SchedulerRunStore
+      pipelineLoader: SchedulerPipelineLoader
     },
   ) {
     const cfg: SchedulerConfig = {
@@ -297,12 +304,12 @@ export class Scheduler {
         throw new Error(`Pipeline ${trigger.pipelineId} not found`)
       }
 
-      const run = {
+      const run: Run = {
         runId: ctx.runId,
         pipelineId: trigger.pipelineId,
         input: trigger.inputTemplate ?? {},
-        status: 'running' as const,
-        steps: {},
+        status: 'running',
+        steps: [],
         output: undefined,
         error: undefined,
         startedAt: Date.now(),

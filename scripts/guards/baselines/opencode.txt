@@ -1,7 +1,6 @@
 value:OpencodeClientWrapper
 value:OpencodeProvider
 value:buildPermissionAuditEntry
-value:createOpencodeAcpBackend
 value:createOpencodeBackend
 value:createOpencodeBackendFromConfig
 value:createOpencodeProvider

@@ -166,9 +166,11 @@ export {
   wait,
 } from './builders.js'
 export {
+  ExecConfigError,
   InvokePipelineNotFoundError,
   PermissionDeniedError,
   RunCancelledError,
+  RunStateError,
   StepError,
   StepTimeoutError,
   WaitTimeoutError,

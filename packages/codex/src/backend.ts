@@ -89,21 +89,10 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
         ...(request.cwd !== undefined && { workingDirectory: request.cwd }),
       })
 
-      // Filter requested MCP servers through the allowlist.
+      // Filter requested MCP servers through the allowlist; the runner's
+      // audit writer is the single durable record for denials.
       const allowed = filterAllowedMcp(request.mcpServers, policy.allowedMcpServers)
       const mcpConfig = buildMcpServerConfig(allowed.allowed)
-      const deniedMcp = allowed.denied.map((s) => s.id)
-      // Audit-only for now; the runner's audit writer is the durable record.
-      const logDenial = (dimension: string, ids: string[], reason: string) =>
-        console.warn(
-          JSON.stringify({ event: 'permission.denied', dimension, ids, reason, backend: 'codex' }),
-        )
-      if (deniedMcp.length > 0) {
-        logDenial('mcp', deniedMcp, 'not-in-allowlist')
-      }
-      if (mcpConfig !== null && mcpConfig.dropped.length > 0) {
-        logDenial('mcp', mcpConfig.dropped, 'transport-unsupported')
-      }
 
       // Construct the SDK client with config + proxy env. Only forward
       // `mcp_servers` to Codex — never leak the `dropped` bookkeeping field.
