@@ -215,18 +215,21 @@ export function createServer(
       const pipelineId = params.get('pipelineId') ?? undefined
       const statusParam = (params.get('status') as RunStatus | null) ?? undefined
       const triggerId = params.get('triggerId') ?? undefined
-      const limit = Number.parseInt(params.get('limit') ?? '50')
+      // Clamp user-supplied limit so a single GET can't materialise the
+      // entire run history into JSON (heap blow + event-loop stall on
+      // stringify). Default 50, hard cap 1000.
+      const rawLimit = Number.parseInt(params.get('limit') ?? '50')
+      const limit = Number.isNaN(rawLimit) ? 50 : Math.max(1, Math.min(1000, rawLimit))
 
       const filter: {
         pipelineId?: string
         status?: RunStatus
         triggerId?: string
         limit?: number
-      } = {}
+      } = { limit }
       if (pipelineId !== undefined) filter.pipelineId = pipelineId
       if (statusParam !== undefined) filter.status = statusParam
       if (triggerId !== undefined) filter.triggerId = triggerId
-      if (!Number.isNaN(limit)) filter.limit = limit
 
       const runs: RunSummary[] = []
       for await (const run of runStore.listRuns(filter)) {
