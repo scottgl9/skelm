@@ -80,7 +80,9 @@ Output:
 {"greeting":"hello, world"}
 ```
 
-`skelm run` is sugar for "register an immediate-schedule, run it, deregister." Every workflow run goes through the scheduler; `run` is the convenient one-shot form.
+`skelm run` is the local one-shot path for executing a workflow immediately. It loads the workflow, resolves the input, runs the pipeline, and prints the final JSON output to stdout.
+
+It does not leave a cron, webhook, interval, poll, or queue trigger registered. Long-running triggers are hosted by `skelm gateway start`.
 
 Want to see the run's events?
 
@@ -168,12 +170,64 @@ curl http://127.0.0.1:14738/runs/<runId>
 - [Recipes](../recipes/README.md) — complete examples of long-running and HTTP-triggered patterns.
 - [CLI reference](../reference/cli.md) and [HTTP reference](../reference/http.md).
 
-## Common gotchas
+## Troubleshooting and FAQ
 
-**"Permission denied: tool X"** — agent tried to use a tool not in `permissions.allowedTools`. Add the tool id explicitly. Resist the urge to use `*` — narrow allow-lists are the security tenet at work.
+### `invalid JSON from --input`
 
-**"Backend X not registered"** — your `skelm.config.ts` has no entry for the backend name. Add it under `backends:` and set `backend:` on the workflow or step.
+Pass valid JSON as one shell argument:
 
-**"Gateway not reachable"** — `skelm` CLI commands that need a running gateway look for one at `SKELM_GATEWAY_URL`, then `~/.skelm/gateway.json`, then `http://127.0.0.1:14738`. Start it with `skelm gateway start`, or run the workflow locally with no gateway running and skelm will spin up an in-process one for the duration.
+```sh
+skelm run workflows/hello.workflow.ts --input '{"name":"world"}'
+```
 
-**"Schema validation failed"** — input did not match the workflow's `input` schema. Check `skelm describe` on the workflow for the expected shape.
+For larger inputs, use a file:
+
+```sh
+skelm run workflows/hello.workflow.ts --input-file input.json
+```
+
+### `Schema validation failed`
+
+The value passed to `--input`, `--input-file`, or stdin does not match the workflow's `input` schema.
+
+Check the workflow definition first. In the scaffolded project, the example input expects:
+
+```ts
+z.object({ name: z.string().min(1) })
+```
+
+### Why did the run fail before any step started?
+
+Input schema validation runs before the first step. If the input is invalid, skelm emits a run failure without any `step.start` events.
+
+### `Permission denied: tool X`
+
+An agent tried to use a tool that was not listed in the step permissions.
+
+Add the narrowest permission that actually belongs in the workflow. Avoid widening everything at once; default-deny is the point.
+
+### `Backend X not registered`
+
+The workflow or step references a backend id that is not configured.
+
+Register the backend in `skelm.config.ts`, then make sure the step's `backend:` value uses the same id.
+
+### Do I need the gateway for `skelm run`?
+
+No. `skelm run` is the local one-shot path.
+
+You need the gateway for long-running schedules, webhooks, queues, HTTP inspection, approvals, sessions, and other persistent concerns.
+
+### I added a schedule, but nothing fires
+
+Start the gateway:
+
+```sh
+skelm gateway start
+```
+
+Schedules, webhooks, pollers, and queue sources need the long-running gateway process to stay alive.
+
+### Why do events go to stderr?
+
+The final workflow output is written to stdout. Progress lines and JSON event streams are written to stderr so you can pipe the final result without mixing it with logs.
