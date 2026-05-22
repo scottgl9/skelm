@@ -216,8 +216,16 @@ export function probeHttp(def: {
  * separately. `stop()` carries `continueOnError: true` so the gateway is
  * always cleaned up even if earlier steps fail.
  *
+ * The `dataDir` option controls per-instance gateway state (lockfile, run
+ * store, audit log). It is threaded to the child as `SKELM_STATE_DIR` env so
+ * two `gatewayFixture` instances on different ports can run side-by-side
+ * without sharing a lockfile. `configFile`, when supplied, is used as the
+ * spawn's working directory — the CLI walks up from `cwd` to find
+ * `skelm.config.mts`, so pointing `configFile` at a directory containing
+ * the desired config picks it up.
+ *
  * ```ts
- * const gw = gatewayFixture({ port: 4099 })
+ * const gw = gatewayFixture({ port: 4099, dataDir: '/tmp/gw-4099' })
  * pipeline({
  *   id: 'gateway-section',
  *   steps: [
@@ -231,11 +239,17 @@ export function probeHttp(def: {
 export function gatewayFixture(opts: {
   port?: number
   dataDir?: string | ((ctx: Context) => string)
+  /**
+   * Optional working directory for the spawned gateway process. The CLI
+   * walks up from `cwd` to find `skelm.config.mts`; point this at the
+   * directory holding the config you want loaded. (The CLI does not yet
+   * accept a `--config` flag.)
+   */
   configFile?: string | ((ctx: Context) => string)
   startupTimeoutMs?: number
 }): {
   readonly port: number
-  start(): CodeStep<{ pid: number; port: number }>
+  start(): CodeStep<{ pid: number; port: number; dataDir: string }>
   stop(): CodeStep<{ durationMs: number }>
 } {
   const port = opts.port ?? 4099
@@ -243,7 +257,7 @@ export function gatewayFixture(opts: {
   return {
     port,
     start: () =>
-      code<{ pid: number; port: number }>({
+      code<{ pid: number; port: number; dataDir: string }>({
         id: `gateway-start-${port}`,
         permissions: testExecPermissions,
         run: async (ctx) => {
@@ -251,21 +265,23 @@ export function gatewayFixture(opts: {
             typeof opts.dataDir === 'function'
               ? opts.dataDir(ctx)
               : (opts.dataDir ?? ctx.workspace?.path ?? `/tmp/skelm-gw-${port}`)
-          const configFile =
-            typeof opts.configFile === 'function' ? opts.configFile(ctx) : opts.configFile
+          const cwd = typeof opts.configFile === 'function' ? opts.configFile(ctx) : opts.configFile
+          // The CLI's `gateway start` does not (yet) accept --data-dir or
+          // --config flags; it picks them up from SKELM_STATE_DIR and the
+          // working directory. Pass both per-instance so two fixtures on
+          // different ports keep distinct state and don't share a lockfile.
+          const childEnv: Record<string, string> = {
+            ...(Object.fromEntries(
+              Object.entries(process.env).filter(([, v]) => v !== undefined),
+            ) as Record<string, string>),
+            SKELM_STATE_DIR: dataDir,
+          }
 
           await ctx.exec?.({
             command: 'skelm',
-            args: [
-              'gateway',
-              'start',
-              '--detach',
-              '--http-port',
-              String(port),
-              '--data-dir',
-              dataDir,
-              ...(configFile !== undefined ? ['--config', configFile] : []),
-            ],
+            args: ['gateway', 'start', '--detach', '--http-port', String(port)],
+            env: childEnv,
+            ...(cwd !== undefined && { cwd }),
             throwOnNonZero: true,
           })
 
@@ -284,6 +300,7 @@ export function gatewayFixture(opts: {
                   const pidR = await ctx.exec?.({
                     command: 'skelm',
                     args: ['gateway', 'status', '--json'],
+                    env: childEnv,
                   })
                   if (pidR !== undefined) {
                     const info = JSON.parse(pidR.stdout || '{}') as { pid?: number }
@@ -292,7 +309,7 @@ export function gatewayFixture(opts: {
                 } catch {
                   // status probe is best-effort
                 }
-                return { pid, port }
+                return { pid, port, dataDir }
               }
             } catch {
               // keep polling
@@ -312,10 +329,21 @@ export function gatewayFixture(opts: {
         permissions: testExecPermissions,
         run: async (ctx) => {
           const start = Date.now()
+          const dataDir =
+            typeof opts.dataDir === 'function'
+              ? opts.dataDir(ctx)
+              : (opts.dataDir ?? ctx.workspace?.path ?? `/tmp/skelm-gw-${port}`)
+          const childEnv: Record<string, string> = {
+            ...(Object.fromEntries(
+              Object.entries(process.env).filter(([, v]) => v !== undefined),
+            ) as Record<string, string>),
+            SKELM_STATE_DIR: dataDir,
+          }
           try {
             await ctx.exec?.({
               command: 'skelm',
               args: ['gateway', 'stop'],
+              env: childEnv,
             })
           } catch {
             // already stopped — fine

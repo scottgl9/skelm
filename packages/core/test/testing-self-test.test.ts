@@ -5,6 +5,7 @@ import { runPipeline } from '../src/runner.js'
 import {
   type SectionResult,
   type SummaryReport,
+  gatewayFixture,
   probeHttp,
   summarizeChecks,
   summarizeSections,
@@ -203,5 +204,75 @@ describe('probeHttp()', () => {
       }),
     } as unknown as Parameters<NonNullable<typeof step.run>>[0]
     await expect(step.run?.(ctx)).rejects.toThrow(/did not return 200 within 30ms/)
+  })
+})
+
+describe('gatewayFixture()', () => {
+  it('passes SKELM_STATE_DIR=<dataDir> to skelm gateway start (per-port isolation)', async () => {
+    const gw = gatewayFixture({ port: 4131, dataDir: '/tmp/gw-test-4131' })
+    const step = gw.start()
+    const execCalls: { args?: readonly string[]; env?: Record<string, string> }[] = []
+    let curlCalls = 0
+    const ctx = {
+      exec: async (req: { args?: readonly string[]; env?: Record<string, string> }) => {
+        execCalls.push(req)
+        if (req.args?.[0] === 'gateway' && req.args[1] === 'start') {
+          return { stdout: '', stderr: '', exitCode: 0, timedOut: false, durationMs: 0 }
+        }
+        if (req.args?.[0] === '-sf') {
+          // first poll fails, second succeeds
+          curlCalls += 1
+          return {
+            stdout: '',
+            stderr: '',
+            exitCode: curlCalls < 2 ? 1 : 0,
+            timedOut: false,
+            durationMs: 0,
+          }
+        }
+        // gateway status --json
+        return {
+          stdout: JSON.stringify({ pid: 12345 }),
+          stderr: '',
+          exitCode: 0,
+          timedOut: false,
+          durationMs: 0,
+        }
+      },
+    } as unknown as Parameters<NonNullable<typeof step.run>>[0]
+
+    const result = (await step.run?.(ctx)) as {
+      pid: number
+      port: number
+      dataDir: string
+    }
+    expect(result.port).toBe(4131)
+    expect(result.dataDir).toBe('/tmp/gw-test-4131')
+    expect(result.pid).toBe(12345)
+
+    const startCall = execCalls.find((c) => c.args?.[0] === 'gateway' && c.args?.[1] === 'start')
+    expect(startCall).toBeDefined()
+    expect(startCall?.env?.SKELM_STATE_DIR).toBe('/tmp/gw-test-4131')
+    // Confirm we did NOT pass the unsupported --data-dir flag
+    expect(startCall?.args).not.toContain('--data-dir')
+    expect(startCall?.args).toContain('--detach')
+    expect(startCall?.args).toContain('--http-port')
+  })
+
+  it('stop() passes SKELM_STATE_DIR matching the same fixture', async () => {
+    const gw = gatewayFixture({ port: 4132, dataDir: '/tmp/gw-test-4132' })
+    const step = gw.stop()
+    const execCalls: { args?: readonly string[]; env?: Record<string, string> }[] = []
+    const ctx = {
+      exec: async (req: { args?: readonly string[]; env?: Record<string, string> }) => {
+        execCalls.push(req)
+        return { stdout: '', stderr: '', exitCode: 0, timedOut: false, durationMs: 0 }
+      },
+    } as unknown as Parameters<NonNullable<typeof step.run>>[0]
+
+    await step.run?.(ctx)
+    const stopCall = execCalls.find((c) => c.args?.[1] === 'stop')
+    expect(stopCall).toBeDefined()
+    expect(stopCall?.env?.SKELM_STATE_DIR).toBe('/tmp/gw-test-4132')
   })
 })
