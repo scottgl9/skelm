@@ -38,7 +38,7 @@ This scaffolds:
 
 ```
 my-bot/
-├── skelm.config.ts          # default-deny permissions, env-driven secrets
+├── skelm.config.mts         # default-deny permissions, env-driven secrets
 ├── workflows/
 │   └── hello.workflow.mts    # example: prints a greeting
 ├── package.json

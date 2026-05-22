@@ -13,7 +13,7 @@ export interface ResolvedConfig {
 }
 
 /**
- * Locate and load a skelm.config.ts (or .js) by walking up from `fromDir`.
+ * Locate and load a skelm.config.mts (or .ts/.js/.mjs) by walking up from `fromDir`.
  * Falls back to DEFAULT_CONFIG when nothing is found.
  */
 export async function loadSkelmConfig(opts?: {
@@ -37,7 +37,12 @@ export async function loadSkelmConfig(opts?: {
   return { config: mergeWithDefaults(config), source: found, projectRoot: dirname(found) }
 }
 
-const CONFIG_FILENAMES = ['skelm.config.ts', 'skelm.config.js', 'skelm.config.mjs']
+const CONFIG_FILENAMES = [
+  'skelm.config.mts',
+  'skelm.config.ts',
+  'skelm.config.js',
+  'skelm.config.mjs',
+]
 
 function walkUpForConfig(start: string): string | null {
   let dir = resolve(start)
