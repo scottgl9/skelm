@@ -1,6 +1,6 @@
 {
   "name": "@skelm/opencode",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Opencode.ai backend for skelm with full permission enforcement",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",

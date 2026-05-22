@@ -19,10 +19,10 @@ From the repo root:
 
 ```sh
 pnpm build
-node packages/skelm/dist/bin.js run examples/hello/hello.workflow.ts --input '{"name":"world"}'
-node packages/skelm/dist/bin.js run examples/sum/sum.workflow.ts --input '{"a":2,"b":3}'
-node packages/skelm/dist/bin.js run examples/permissions-demo/demo.workflow.ts --input '{}'
-node packages/skelm/dist/bin.js run examples/multi-step-pipeline/multi-step.workflow.ts --input '{"task":"investigate the login bug"}'
+node packages/skelm/dist/bin.js run examples/hello/hello.workflow.mts --input '{"name":"world"}'
+node packages/skelm/dist/bin.js run examples/sum/sum.workflow.mts --input '{"a":2,"b":3}'
+node packages/skelm/dist/bin.js run examples/permissions-demo/demo.workflow.mts --input '{}'
+node packages/skelm/dist/bin.js run examples/multi-step-pipeline/multi-step.workflow.mts --input '{"task":"investigate the login bug"}'
 ```
 
 Once `skelm` is installed globally (`npm i -g skelm`), the same commands shorten to `skelm run examples/...`.
