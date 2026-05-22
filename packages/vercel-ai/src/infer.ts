@@ -11,7 +11,7 @@ import { type ModelMessage, generateObject, generateText, streamText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
 import { assertEgressEnforceable } from './permissions.js'
 import type { VercelAiBackendOptions } from './types.js'
-import { assertModelSupportsImages } from './vision-gate.js'
+import { assertModelMatchesBound, assertModelSupportsImages } from './vision-gate.js'
 
 export async function vercelAiInfer(
   options: VercelAiBackendOptions,
@@ -22,6 +22,12 @@ export async function vercelAiInfer(
   // HTTP_PROXY env vars from the gateway egress proxy. Fail-closed instead
   // of pretending to enforce networkEgress.
   assertEgressEnforceable(context.permissions)
+  // Per-call model override guard (F133): vercel-ai binds a LanguageModel
+  // at construction time and cannot route req.model to a different
+  // upstream — silently honouring the bound model would mask routing
+  // mistakes (e.g. asking for a text model on a vision-bound backend and
+  // getting the vision model's reply).
+  assertModelMatchesBound('vercel-ai', options.model, request.model)
   // Per-model vision check (F123 / #177): when the backend declares a
   // visionModels allowlist, fail loudly *before* dispatch instead of letting
   // the upstream silently strip images and hallucinate.

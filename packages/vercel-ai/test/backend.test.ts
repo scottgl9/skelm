@@ -305,3 +305,49 @@ describe('createVercelAiBackend — visionModels allowlist (F123)', () => {
     expect(result?.text).toBe('plain text')
   })
 })
+
+describe('createVercelAiBackend — per-call model override guard (F133)', () => {
+  it('throws BackendCapabilityError on infer() when req.model differs from bound model', async () => {
+    const backend = createVercelAiBackend({ model: mockModel('bound-reply') })
+    await expect(
+      backend.infer?.(
+        { messages: [{ role: 'user', content: 'hi' }], model: 'some-other-model' },
+        makeCtx(),
+      ),
+    ).rejects.toThrow(/cannot honour per-call model overrides/)
+  })
+
+  it('passes infer() when req.model matches bound model id', async () => {
+    const backend = createVercelAiBackend({ model: mockModel('bound-reply') })
+    const result = await backend.infer?.(
+      { messages: [{ role: 'user', content: 'hi' }], model: 'mock-model-id' },
+      makeCtx(),
+    )
+    expect(result?.text).toBe('bound-reply')
+  })
+
+  it('passes infer() when req.model matches the provider:modelId form', async () => {
+    const backend = createVercelAiBackend({ model: mockModel('bound-reply') })
+    const result = await backend.infer?.(
+      { messages: [{ role: 'user', content: 'hi' }], model: 'mock-provider:mock-model-id' },
+      makeCtx(),
+    )
+    expect(result?.text).toBe('bound-reply')
+  })
+
+  it('is a no-op when req.model is undefined (preserves prior behavior)', async () => {
+    const backend = createVercelAiBackend({ model: mockModel('bound-reply') })
+    const result = await backend.infer?.({ messages: [{ role: 'user', content: 'hi' }] }, makeCtx())
+    expect(result?.text).toBe('bound-reply')
+  })
+
+  it('error message names both bound model and requested model', async () => {
+    const backend = createVercelAiBackend({ model: mockModel('bound-reply') })
+    await expect(
+      backend.infer?.(
+        { messages: [{ role: 'user', content: 'hi' }], model: 'qwen3-8b' },
+        makeCtx(),
+      ),
+    ).rejects.toThrow(/bound to model "mock-provider:mock-model-id".*requested "qwen3-8b"/)
+  })
+})
