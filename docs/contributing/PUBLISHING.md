@@ -5,7 +5,7 @@ skelm is published to two npm registries:
 - **npmjs.org** — the canonical home, scope `@skelm`, package name `skelm`. This is the registry `npm install skelm` uses by default. Public.
 - **GitHub Packages** — a mirror under `@scottgl9` on `https://npm.pkg.github.com`. Discoverable from the GitHub UI and useful for teams that want a single GitHub-auth code/package surface.
 
-Both registries publish the same compiled tarball. Versions move in lockstep — every release publishes all twelve packages at the same version on both registries.
+Both registries publish the same compiled tarball. Versions move in lockstep — every release publishes all fourteen packages at the same version on both registries.
 
 ## Packages
 
@@ -16,11 +16,13 @@ Both registries publish the same compiled tarball. Versions move in lockstep —
 | `@skelm/gateway`       | `@scottgl9/gateway`       | Long-running HTTP orchestrator                     |
 | `@skelm/scheduler`     | `@scottgl9/scheduler`     | Cron / interval / webhook / poll / queue triggers  |
 | `@skelm/integrations`  | `@scottgl9/integrations`  | Typed connectors (GitHub, Slack, …)                |
+| `@skelm/integration-sdk` | `@scottgl9/integration-sdk` | Authoring SDK for custom integrations          |
 | `@skelm/metrics`       | `@scottgl9/metrics`       | Prometheus metrics                                 |
 | `@skelm/otel`          | `@scottgl9/otel`          | OpenTelemetry tracing                              |
 | `@skelm/agent`         | `@scottgl9/agent`         | First-party skelm agent backend                    |
 | `@skelm/opencode`      | `@scottgl9/opencode`      | Opencode coding-agent backend                      |
 | `@skelm/pi`            | `@scottgl9/pi`            | Pi coding-agent backend                            |
+| `@skelm/codex`         | `@scottgl9/codex`         | OpenAI Codex backend                               |
 | `@skelm/vercel-ai`     | `@scottgl9/vercel-ai`     | Vercel AI SDK backend                              |
 | `skelm`                | `@scottgl9/skelm`         | Meta-package — bin + re-exports                    |
 
@@ -38,7 +40,7 @@ Every user-visible change goes in [`CHANGELOG.md`](../CHANGELOG.md) under a clea
 
 ## Prerequisites
 
-- **Node.js ≥ 20**, **pnpm@8** (this repo's `packageManager`).
+- **Node.js ≥ 22.18**, **pnpm@8** (this repo's `packageManager`).
 - For npmjs publishing: account that owns the `skelm` package + `@skelm` scope. `npm whoami` should report your user.
 - For GitHub Packages publishing: a classic PAT (`ghp_…`) with `write:packages, read:packages, repo` scope. The `repo` scope is required so the published package links to its source repository — that link drives the "Public" visibility setting (see below).
 
@@ -64,7 +66,7 @@ Run from `main`. Replace `0.X.Y` with the new version.
 
 ```bash
 # every package, including the workspace root, moves in lockstep
-for pkg in core cli gateway scheduler integrations metrics otel agent opencode pi vercel-ai skelm; do
+for pkg in core scheduler integration-sdk integrations metrics otel opencode codex pi vercel-ai agent gateway cli skelm; do
   (cd packages/$pkg && npm version 0.X.Y --no-git-tag-version --allow-same-version)
 done
 node -e "const fs=require('fs'); const p=require('./package.json'); p.version='0.X.Y'; fs.writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n');"
@@ -102,7 +104,7 @@ The script:
 1. Syncs every package version with `npm version --allow-same-version`.
 2. `pnpm install --frozen-lockfile && pnpm build && pnpm typecheck && pnpm test`.
 3. Runs `scripts/rewrite-workspace-deps.mjs rewrite` — replaces every `workspace:*` with `^0.X.Y` on disk. A trapped `restore` reverts even if publish fails.
-4. Publishes each package in dependency order: `core → scheduler → integrations → metrics → otel → opencode → pi → vercel-ai → agent → gateway → cli → skelm`.
+4. Publishes each package in dependency order: `core → scheduler → integration-sdk → integrations → metrics → otel → opencode → codex → pi → vercel-ai → agent → gateway → cli → skelm`.
 
 > Why on-disk rewrite? `pnpm publish` rewrites `workspace:*` inside the tarball; `npm publish` does **not**. We rewrite explicitly so every publish path produces an identical tarball, and so a botched run leaves audit-friendly evidence on disk.
 

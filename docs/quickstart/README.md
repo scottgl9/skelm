@@ -14,7 +14,7 @@ That's a code-only workflow. To add an agent step, see [Add an agent step](./add
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22.18+
 - A terminal
 - (Optional, for the LLM example) An OpenAI-compatible endpoint and API key (any vendor that speaks the OpenAI Chat Completions protocol)
 - (Optional, for the agent example) The pi coding-agent SDK: `npm install @earendil-works/pi-coding-agent`. Pi reads its provider/model from `~/.pi/auth.json` and `~/.pi/models.json` — see [pi's docs](https://github.com/mariozechner/pi) to point it at your model
