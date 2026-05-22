@@ -6,7 +6,7 @@ import { WorkflowRegistrationError } from './workflow-registration-service.js'
 /**
  * File extensions an uploaded workflow archive is allowed to contain. The
  * gateway extracts the archive into a managed directory and the runtime
- * `tsImport()`s the entry file from there, so the surface that ever touches
+ * `import()`s the entry file from there, so the surface that ever touches
  * code is the loader — but defence-in-depth: anything that isn't a workflow
  * source, schema, or docs file is rejected at extraction time.
  */

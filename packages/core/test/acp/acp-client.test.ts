@@ -10,7 +10,7 @@ describe('AcpClient — against a mock ACP agent', () => {
     try {
       const init = await client.start({
         command: 'node',
-        args: ['--import', 'tsx/esm', MOCK_AGENT],
+        args: [MOCK_AGENT],
       })
       expect(init.protocolVersion).toBe(1)
 
@@ -30,7 +30,7 @@ describe('AcpClient — against a mock ACP agent', () => {
     const client = new AcpClient()
     const observed: string[] = []
     try {
-      await client.start({ command: 'node', args: ['--import', 'tsx/esm', MOCK_AGENT] })
+      await client.start({ command: 'node', args: [MOCK_AGENT] })
       await client.newSession({ cwd: process.cwd() })
       await client.prompt({
         text: 'world',
@@ -47,7 +47,7 @@ describe('AcpClient — against a mock ACP agent', () => {
     try {
       const init = await client.start({
         command: 'node',
-        args: ['--import', 'tsx/esm', MOCK_AGENT],
+        args: [MOCK_AGENT],
         env: { SKELM_ACP_MOCK_OUTPUT: 'jsonl' },
       })
       expect(init.protocolVersion).toBe(1)
@@ -67,7 +67,7 @@ describe('AcpClient — against a mock ACP agent', () => {
   it('throws when prompt is called before newSession', async () => {
     const client = new AcpClient()
     try {
-      await client.start({ command: 'node', args: ['--import', 'tsx/esm', MOCK_AGENT] })
+      await client.start({ command: 'node', args: [MOCK_AGENT] })
       await expect(() => client.prompt({ text: 'x' })).rejects.toThrow(/session not started/)
     } finally {
       await client.stop()

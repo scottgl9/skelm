@@ -10,7 +10,7 @@ function makeFactory() {
     const backend = createAcpBackend({
       id: 'acp-mock',
       command: 'node',
-      args: ['--import', 'tsx/esm', new URL('./mock-acp-agent.ts', import.meta.url).pathname],
+      args: [new URL('./mock-acp-agent.ts', import.meta.url).pathname],
     })
     return backend
   }
@@ -28,7 +28,7 @@ describe('acp-backend — fails closed on nontrivial permissions', () => {
     const backend = createAcpBackend({
       id: 'acp-fail',
       command: 'node',
-      args: ['--import', 'tsx/esm', new URL('./mock-acp-agent.ts', import.meta.url).pathname],
+      args: [new URL('./mock-acp-agent.ts', import.meta.url).pathname],
     })
     try {
       const ctx: Partial<BackendContext> = {
@@ -58,7 +58,7 @@ describe('acp-backend — fails closed on nontrivial permissions', () => {
     const backend = createAcpBackend({
       id: 'acp-fail',
       command: 'node',
-      args: ['--import', 'tsx/esm', new URL('./mock-acp-agent.ts', import.meta.url).pathname],
+      args: [new URL('./mock-acp-agent.ts', import.meta.url).pathname],
     })
     try {
       const ctx: Partial<BackendContext> = {
@@ -88,7 +88,7 @@ describe('acp-backend — fails closed on nontrivial permissions', () => {
     const backend = createAcpBackend({
       id: 'acp-fail',
       command: 'node',
-      args: ['--import', 'tsx/esm', new URL('./mock-acp-agent.ts', import.meta.url).pathname],
+      args: [new URL('./mock-acp-agent.ts', import.meta.url).pathname],
     })
     try {
       const ctx: Partial<BackendContext> = {
@@ -118,7 +118,7 @@ describe('acp-backend — fails closed on nontrivial permissions', () => {
     const backend = createAcpBackend({
       id: 'acp-fail',
       command: 'node',
-      args: ['--import', 'tsx/esm', new URL('./mock-acp-agent.ts', import.meta.url).pathname],
+      args: [new URL('./mock-acp-agent.ts', import.meta.url).pathname],
     })
     try {
       const ctx: Partial<BackendContext> = {
@@ -148,7 +148,7 @@ describe('acp-backend — fails closed on nontrivial permissions', () => {
     const backend = createAcpBackend({
       id: 'acp-fail',
       command: 'node',
-      args: ['--import', 'tsx/esm', new URL('./mock-acp-agent.ts', import.meta.url).pathname],
+      args: [new URL('./mock-acp-agent.ts', import.meta.url).pathname],
     })
     try {
       const ctx: Partial<BackendContext> = {
@@ -178,7 +178,7 @@ describe('acp-backend — fails closed on nontrivial permissions', () => {
     const backend = createAcpBackend({
       id: 'acp-fail',
       command: 'node',
-      args: ['--import', 'tsx/esm', new URL('./mock-acp-agent.ts', import.meta.url).pathname],
+      args: [new URL('./mock-acp-agent.ts', import.meta.url).pathname],
     })
     try {
       const ctx: Partial<BackendContext> = {

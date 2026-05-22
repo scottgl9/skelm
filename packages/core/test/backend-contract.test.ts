@@ -136,7 +136,7 @@ runBackendContract(
     createAcpBackend({
       id: 'acp-contract',
       command: 'node',
-      args: ['--import', 'tsx/esm', MOCK_ACP_AGENT],
+      args: [MOCK_ACP_AGENT],
     }),
   {
     name: 'copilot-acp',

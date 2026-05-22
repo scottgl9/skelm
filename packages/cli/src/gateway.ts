@@ -12,7 +12,6 @@ import {
   readDiscovery,
   readLockfile,
 } from '@skelm/gateway'
-import { tsImport } from 'tsx/esm/api'
 import { buildBackendRegistry } from './backends.js'
 import { EXIT } from './exit-codes.js'
 import type { MainIO, MainResult } from './internal/io.js'
@@ -148,7 +147,7 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
   // workflow modules). Without this on the Gateway constructor, HTTP /run
   // returns 501 and invoke() targets fail with "pipeline not found".
   const loadWorkflow = async (_id: string, absolutePath: string): Promise<unknown> =>
-    tsImport(pathToFileURL(absolutePath).href, import.meta.url)
+    import(pathToFileURL(absolutePath).href)
 
   // F043: SKELM_STATE_DIR env override must thread through to the Gateway
   // constructor; without an explicit option the constructor falls back to
@@ -584,15 +583,12 @@ export async function syncDeclaredTriggers(gateway: Gateway, io: MainIO): Promis
   for (const entry of gateway.registries.workflows.list()) {
     liveWorkflowIds.add(entry.id)
     try {
-      const mod = (await tsImport(pathToFileURL(entry.path).href, import.meta.url)) as Record<
-        string,
-        unknown
-      >
+      const mod = (await import(pathToFileURL(entry.path).href)) as Record<string, unknown>
 
       // `pickExport` strips the `{ default: { default: <value> } }` wrap
-      // Node 22+ produces under tsx's CJS loader path. Without it,
-      // workflows without top-level imports (or test fixtures) silently
-      // produce zero declared triggers instead of registering correctly.
+      // Node 22+ produces under CJS interop. Without it, workflows
+      // without top-level imports (or test fixtures) silently produce
+      // zero declared triggers instead of registering correctly.
       const pipeline = pickExport(mod, 'default') as
         | { triggers?: readonly Record<string, unknown>[] }
         | undefined

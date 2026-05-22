@@ -499,7 +499,7 @@ export class Gateway {
    * SIGHUP handler, the FsWatcher's per-file change events, and an
    * explicit `POST /gateway/reload`) all share the same in-flight
    * promise. Without this, a burst of file edits could queue dozens of
-   * concurrent `tsImport` + `onReload` cycles and lock the event loop
+   * concurrent `import()` + `onReload` cycles and lock the event loop
    * (the onReload hook does work proportional to the workflow count, so
    * the pile-up is worse than the registry-refresh-only cost before
    * `onReload` was introduced).
@@ -702,7 +702,7 @@ export class Gateway {
     })
     // The coordinator starts with a no-op onFire. start() replaces it with
     // a createTriggerDispatcher() callback when GatewayOptions.loadWorkflow
-    // is supplied — production wires this to tsx's tsImport(); tests can
+    // is supplied — production wires this to native dynamic import(); tests can
     // pass a fake loader.
     const triggers = new TriggerCoordinator({ onFire: async () => {} })
     await mcp.startAll(this.config.registries?.mcpServers ?? [])
