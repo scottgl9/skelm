@@ -219,6 +219,23 @@ describe('/v1/workflows/* zip upload', () => {
     }
   })
 
+  it('accepts .mts and .cts workflow entries', async () => {
+    const { gw, base } = await bootGateway()
+    try {
+      const archive = buildArchive({
+        'wf.workflow.mts': 'export default {}',
+        'helper.cts': 'module.exports = {}',
+      })
+      const res = await postArchive(base, '/v1/workflows/register', 'POST', {
+        id: 'mts-entry',
+        archive: { filename: 'wf.zip', data: archive },
+      })
+      expect(res.status).toBe(200)
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('rejects archives exceeding the size cap', async () => {
     const { gw, base } = await bootGateway({ workflows: { maxArchiveBytes: 256 } })
     try {
