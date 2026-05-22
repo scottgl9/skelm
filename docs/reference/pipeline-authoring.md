@@ -33,6 +33,8 @@ code({
   secrets?: string[]
   retry?: RetryPolicy
   timeoutMs?: number              // aborts ctx.signal and rejects with StepTimeoutError
+  workspace?: WorkspaceConfig | ((ctx) => WorkspaceConfig) // provisions ctx.workspace
+  continueOnError?: boolean       // failure is recorded but pipeline continues
 })
 ```
 
@@ -294,6 +296,57 @@ pattern is `when` over `branch({ cases: { run, skip } })`.
 The predicate is consulted on top-level steps only; predicates on steps
 nested inside `parallel()`, `forEach()`, `branch()`, or `loop()` are not
 currently evaluated by the runtime.
+
+---
+
+## `continueOnError` — soft step failures
+
+Every top-level step builder (`code`, `llm`, `agent`, `parallel`, `forEach`,
+`branch`, `loop`, `wait`, `pipelineStep`, `invoke`, `idempotent`) accepts an
+optional `continueOnError?: boolean`. Default `false`.
+
+When `true`, a thrown failure in the step is recorded as a failed `StepResult`
+(observable in `ctx.steps[id]` as `undefined` and in the run's `stepResults`),
+but the runner moves on to the next step instead of aborting. The run's final
+status is still `'failed'` and `runError` is set to the most recent
+`continueOnError` failure if no later step fails.
+
+`RunCancelledError` always aborts the run regardless of `continueOnError` —
+cancellation is not a soft failure.
+
+```ts
+pipeline({
+  id: 'soft-failure-demo',
+  steps: [
+    code({ id: 'a', run: () => 1 }),
+    code({ id: 'b', continueOnError: true, run: () => { throw new Error('boom') } }),
+    code({ id: 'c', run: () => 3 }),  // still runs
+  ],
+})
+```
+
+Used by the `check()` test-authoring helper (see `@skelm/core/testing`) to
+keep a failing assertion from short-circuiting the rest of a test section.
+
+## `workspace` on `code()`
+
+`code()` accepts the same `workspace?: WorkspaceConfig | ((ctx) => WorkspaceConfig)`
+field as `agent()`, with identical provisioning and cleanup semantics. See
+[agent-step.md](./agent-step.md#workspace-modes) for the full lifecycle. The handle
+is exposed as `ctx.workspace` inside the step's `run`, and the runner releases
+it on run completion according to `cleanup`.
+
+```ts
+code({
+  id: 'scratch',
+  workspace: { mode: 'ephemeral', cleanup: 'on-run-end' },
+  run: async (ctx) => {
+    const scratchPath = ctx.workspace!.path
+    // ... use scratchPath ...
+    return { scratchPath }
+  },
+})
+```
 
 ---
 

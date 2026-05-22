@@ -296,7 +296,22 @@ export interface CodeStep<TOutput = unknown> {
   readonly permissions?: import('./permissions.js').AgentPermissions
   /** Aborts ctx.signal and rejects with StepTimeoutError after this many ms. */
   readonly timeoutMs?: number
+  /**
+   * Optional workspace for this step. When present, the runner provisions a
+   * workspace before the step runs and exposes it as `ctx.workspace`. Lifecycle
+   * (cleanup) follows `WorkspaceConfig.cleanup` semantics — identical to the
+   * `agent()` step's workspace handling.
+   */
+  readonly workspace?: WorkspaceConfig | ((ctx: Context) => WorkspaceConfig)
   readonly when?: WhenPredicate
+  /**
+   * When true, a thrown failure in this step is recorded as a failed
+   * StepResult but does not abort the pipeline — the runner continues to the
+   * next step. The run's status still ends as `'failed'` and `runError` is
+   * populated. `RunCancelledError` always aborts regardless of this flag.
+   * Default: false. Used by test-authoring primitives (see `check()`).
+   */
+  readonly continueOnError?: boolean
 }
 
 /** An `llm()` step: single-shot inference against a backend. */
@@ -322,6 +337,14 @@ export interface LlmStep<TOutput = unknown> {
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
   readonly when?: WhenPredicate
+  /**
+   * When true, a thrown failure in this step is recorded as a failed
+   * StepResult but does not abort the pipeline — the runner continues to the
+   * next step. The run's status still ends as `'failed'` and `runError` is
+   * populated. `RunCancelledError` always aborts regardless of this flag.
+   * Default: false. Used by test-authoring primitives (see `check()`).
+   */
+  readonly continueOnError?: boolean
 }
 
 /** An `agent()` step: full agentic loop against a backend.run(). */
@@ -384,6 +407,14 @@ export interface AgentStep<TOutput = unknown> {
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
   readonly when?: WhenPredicate
+  /**
+   * When true, a thrown failure in this step is recorded as a failed
+   * StepResult but does not abort the pipeline — the runner continues to the
+   * next step. The run's status still ends as `'failed'` and `runError` is
+   * populated. `RunCancelledError` always aborts regardless of this flag.
+   * Default: false. Used by test-authoring primitives (see `check()`).
+   */
+  readonly continueOnError?: boolean
 }
 
 export interface IdempotentStep<TOutput = unknown> {
@@ -395,6 +426,14 @@ export interface IdempotentStep<TOutput = unknown> {
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
   readonly when?: WhenPredicate
+  /**
+   * When true, a thrown failure in this step is recorded as a failed
+   * StepResult but does not abort the pipeline — the runner continues to the
+   * next step. The run's status still ends as `'failed'` and `runError` is
+   * populated. `RunCancelledError` always aborts regardless of this flag.
+   * Default: false. Used by test-authoring primitives (see `check()`).
+   */
+  readonly continueOnError?: boolean
 }
 
 export type ParallelWaitFor = 'all' | 'any' | { atLeast: number }
@@ -410,6 +449,14 @@ export interface ParallelStep {
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
   readonly when?: WhenPredicate
+  /**
+   * When true, a thrown failure in this step is recorded as a failed
+   * StepResult but does not abort the pipeline — the runner continues to the
+   * next step. The run's status still ends as `'failed'` and `runError` is
+   * populated. `RunCancelledError` always aborts regardless of this flag.
+   * Default: false. Used by test-authoring primitives (see `check()`).
+   */
+  readonly continueOnError?: boolean
 }
 
 /** A `forEach()` step: maps a step factory over a collection. */
@@ -422,6 +469,14 @@ export interface ForEachStep {
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
   readonly when?: WhenPredicate
+  /**
+   * When true, a thrown failure in this step is recorded as a failed
+   * StepResult but does not abort the pipeline — the runner continues to the
+   * next step. The run's status still ends as `'failed'` and `runError` is
+   * populated. `RunCancelledError` always aborts regardless of this flag.
+   * Default: false. Used by test-authoring primitives (see `check()`).
+   */
+  readonly continueOnError?: boolean
 }
 
 /** A `branch()` step: discriminator-driven case selection. */
@@ -434,6 +489,14 @@ export interface BranchStep {
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
   readonly when?: WhenPredicate
+  /**
+   * When true, a thrown failure in this step is recorded as a failed
+   * StepResult but does not abort the pipeline — the runner continues to the
+   * next step. The run's status still ends as `'failed'` and `runError` is
+   * populated. `RunCancelledError` always aborts regardless of this flag.
+   * Default: false. Used by test-authoring primitives (see `check()`).
+   */
+  readonly continueOnError?: boolean
 }
 
 /** A `loop()` step: bounded iteration while a predicate holds. */
@@ -446,6 +509,14 @@ export interface LoopStep {
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
   readonly when?: WhenPredicate
+  /**
+   * When true, a thrown failure in this step is recorded as a failed
+   * StepResult but does not abort the pipeline — the runner continues to the
+   * next step. The run's status still ends as `'failed'` and `runError` is
+   * populated. `RunCancelledError` always aborts regardless of this flag.
+   * Default: false. Used by test-authoring primitives (see `check()`).
+   */
+  readonly continueOnError?: boolean
 }
 
 /** A `wait()` step: pause until a caller resumes the run with input. */
@@ -458,6 +529,14 @@ export interface WaitStep<TOutput = unknown> {
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
   readonly when?: WhenPredicate
+  /**
+   * When true, a thrown failure in this step is recorded as a failed
+   * StepResult but does not abort the pipeline — the runner continues to the
+   * next step. The run's status still ends as `'failed'` and `runError` is
+   * populated. `RunCancelledError` always aborts regardless of this flag.
+   * Default: false. Used by test-authoring primitives (see `check()`).
+   */
+  readonly continueOnError?: boolean
 }
 
 /** A `pipelineStep()` step: run a nested pipeline and adopt its output. */
@@ -469,6 +548,14 @@ export interface PipelineStep<TInput = unknown, TOutput = unknown> {
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
   readonly when?: WhenPredicate
+  /**
+   * When true, a thrown failure in this step is recorded as a failed
+   * StepResult but does not abort the pipeline — the runner continues to the
+   * next step. The run's status still ends as `'failed'` and `runError` is
+   * populated. `RunCancelledError` always aborts regardless of this flag.
+   * Default: false. Used by test-authoring primitives (see `check()`).
+   */
+  readonly continueOnError?: boolean
 }
 
 /** An `invoke()` step: run a pipeline looked up by ID from the workflow registry at runtime. */
@@ -482,6 +569,14 @@ export interface InvokeStep<TInput = unknown, TOutput = unknown> {
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
   readonly when?: WhenPredicate
+  /**
+   * When true, a thrown failure in this step is recorded as a failed
+   * StepResult but does not abort the pipeline — the runner continues to the
+   * next step. The run's status still ends as `'failed'` and `runError` is
+   * populated. `RunCancelledError` always aborts regardless of this flag.
+   * Default: false. Used by test-authoring primitives (see `check()`).
+   */
+  readonly continueOnError?: boolean
 }
 
 /** Discriminated union of all step kinds. */

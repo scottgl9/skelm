@@ -805,7 +805,19 @@ export async function runPipeline<TInput, TOutput>(
         error: serialized,
         at: completedAt,
       })
-      runStatus = err instanceof RunCancelledError ? 'cancelled' : 'failed'
+      if (err instanceof RunCancelledError) {
+        runStatus = 'cancelled'
+        runError = serialized
+        break
+      }
+      if (step.continueOnError) {
+        if (runStatus === 'running') {
+          runStatus = 'failed'
+          runError = serialized
+        }
+        continue
+      }
+      runStatus = 'failed'
       runError = serialized
       break
     }

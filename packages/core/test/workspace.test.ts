@@ -149,6 +149,41 @@ describe('agent workspaces in the runner', () => {
     }
   })
 
+  it('provisions an ephemeral workspace for a code() step and cleans it on run end', async () => {
+    const workspaceBase = await mkdtemp(join(tmpdir(), 'skelm-code-ephemeral-'))
+    const captured: { path: string | undefined; existedInStep: boolean } = {
+      path: undefined,
+      existedInStep: false,
+    }
+
+    const wf = pipeline({
+      id: 'code-workspace',
+      steps: [
+        code({
+          id: 'scratch',
+          workspace: { mode: 'ephemeral', cleanup: 'on-run-end' },
+          run: async (ctx) => {
+            captured.path = ctx.workspace?.path
+            captured.existedInStep = ctx.workspace ? await pathExists(ctx.workspace.path) : false
+            return { wrote: true }
+          },
+        }),
+      ],
+    })
+
+    try {
+      const run = await runPipeline(wf, undefined, {
+        workspaceManager: new WorkspaceManager({ ephemeralBase: workspaceBase }),
+      })
+      expect(run.status).toBe('completed')
+      expect(captured.path).toBeDefined()
+      expect(captured.existedInStep).toBe(true)
+      expect(await pathExists(captured.path as string)).toBe(false)
+    } finally {
+      await rm(workspaceBase, { recursive: true, force: true })
+    }
+  })
+
   it('cleans ephemeral workspaces on step end when configured', async () => {
     const workspaceBase = await mkdtemp(join(tmpdir(), 'skelm-ephemeral-workspaces-'))
     const registry = new BackendRegistry()
