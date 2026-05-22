@@ -32,15 +32,14 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
-    "prepublishOnly": "tsx ../../scripts/guards/dist-invariants.ts"
+    "prepublishOnly": "node ../../scripts/guards/dist-invariants.ts"
   },
   "dependencies": {
     "@skelm/codex": "workspace:*",
     "@skelm/core": "workspace:*",
     "@skelm/opencode": "workspace:*",
     "@skelm/pi": "workspace:*",
-    "@skelm/gateway": "workspace:*",
-    "tsx": "^4.19.2"
+    "@skelm/gateway": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.6.3"
