@@ -21,7 +21,7 @@ export interface InitCommandResult {
 
 /**
  * Scaffold a new skelm project at args.dir. Creates a package.json,
- * tsconfig.json, skelm.config.ts, an example workflow under workflows/,
+ * tsconfig.json, skelm.config.mts, an example workflow under workflows/,
  * and a .gitignore.
  *
  * Refuses to overwrite an existing project unless --force is passed.
@@ -91,6 +91,7 @@ const NPM_INIT_RESIDUE = new Set([
 // Files that mean "this is already a skelm project" — if any of these exist we
 // must refuse merge so we don't overwrite the user's authored content.
 const SKELM_PROJECT_MARKERS = new Set([
+  'skelm.config.mts',
   'skelm.config.ts',
   'skelm.config.js',
   'skelm.config.mjs',
@@ -137,9 +138,14 @@ async function mergePackageJson(path: string, scaffold: string): Promise<void> {
   const fs = await import('node:fs/promises')
   const existing = JSON.parse(await fs.readFile(path, 'utf8'))
   const fresh = JSON.parse(scaffold)
+  // The scaffold's config + workflow are ESM (.mts uses `import`). When an
+  // existing package.json carries `"type": "commonjs"` (npm init's default
+  // on some versions), preserving it would force Node's loader to parse
+  // .mts/.ts as CJS and explode on the first `import` statement. The
+  // scaffold's `"module"` always wins for that reason.
   const merged = {
     ...existing,
-    type: existing.type ?? fresh.type,
+    type: fresh.type,
     scripts: { ...fresh.scripts, ...(existing.scripts ?? {}) },
     dependencies: { ...(existing.dependencies ?? {}), ...fresh.dependencies },
   }
@@ -161,7 +167,7 @@ function scaffoldFiles(): ReadonlyArray<readonly [string, string]> {
   return [
     ['package.json', makePackageJson(skelmVersion)],
     ['tsconfig.json', TSCONFIG],
-    ['skelm.config.ts', SKELM_CONFIG],
+    ['skelm.config.mts', SKELM_CONFIG],
     ['workflows/hello.workflow.mts', HELLO_WORKFLOW],
     ['.gitignore', GITIGNORE],
     ['README.md', PROJECT_README],
@@ -196,7 +202,7 @@ const TSCONFIG = `{
     "skipLibCheck": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["workflows/**/*.mts", "workflows/**/*.ts", "skelm.config.ts"]
+  "include": ["workflows/**/*.mts", "workflows/**/*.ts", "skelm.config.mts"]
 }
 `
 
@@ -252,6 +258,12 @@ dist/
 const PROJECT_README = `# skelm-project
 
 A skelm project scaffolded by \`skelm init\`.
+
+## Layout
+
+- \`skelm.config.mts\` — project config (ESM \`.mts\` keeps Node's native loader
+  honest regardless of \`package.json\` \`"type"\`).
+- \`workflows/\` — pipeline source files. \`.mts\` is canonical; \`.ts\` also works.
 
 ## Run
 

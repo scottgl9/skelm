@@ -46,7 +46,7 @@ skelm init my-bot && cd my-bot && npm install
 skelm run workflows/hello.workflow.mts --input '{"name":"world"}'
 ```
 
-That's it. From here you can edit workflows, add agent steps, schedule them, or stand up the gateway:
+`skelm init` scaffolds canonical `.mts` modules (`skelm.config.mts` and `workflows/*.mts`) so Node's native loader handles them regardless of `package.json` `"type"`. From here you can edit workflows, add agent steps, schedule them, or stand up the gateway:
 
 ```bash
 skelm schedule add workflows/hello.workflow.mts --cron '0 * * * *'  # cron job
