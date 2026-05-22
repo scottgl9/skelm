@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { createAcpBackend } from '../src/acp/backend.js'
 import { createAnthropicBackend } from '../src/anthropic/backend.js'
 import { createOpenAIBackend } from '../src/openai/backend.js'
-import { runBackendContract } from '../src/testing.js'
+import { runBackendContract } from '../src/testing/contract.js'
 
 const MOCK_ACP_AGENT = fileURLToPath(new URL('./acp/mock-acp-agent.ts', import.meta.url))
 

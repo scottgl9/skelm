@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createAcpBackend } from '../../src/acp/backend.js'
 import type { BackendContext } from '../../src/backend.js'
-import { runBackendContract } from '../../src/testing.js'
+import { runBackendContract } from '../../src/testing/contract.js'
 
 // Minimal factory that starts/stops the mock ACP agent (same mock as
 // acp-client.test.ts) so we can run contract tests against a real process.
