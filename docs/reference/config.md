@@ -66,6 +66,9 @@ export default defineConfig({
     },
   },
   plugins?: readonly string[],               // package names imported at gateway startup
+
+  // ── Environment variables ───────────────────────────────────────────
+  env?: Record<string, string>,              // static defaults; layered with .env (see below)
 })
 ```
 
@@ -199,6 +202,41 @@ export default defineConfig({
   },
 })
 ```
+
+## Environment variables — `.env` and `config.env`
+
+The CLI loads environment variables from two layered sources at startup so workflow authors can keep model names, base URLs, and similar defaults out of code:
+
+1. **`config.env`** — static defaults declared inside `skelm.config.mts`.
+2. **`<projectRoot>/.env`** — a [dotenv](https://github.com/motdotla/dotenv) file at the same directory as the config file. Add it to `.gitignore` if it carries secrets.
+3. **`process.env`** — the parent process's environment, always wins.
+
+Precedence is `process.env > .env > config.env`. The CLI merges the lower layers into `process.env` so subprocess steps (`ctx.exec`, coding agents, MCP servers) inherit them, but **values already set in the parent process are never overwritten** — running `OPENAI_BASE_URL=https://staging skelm run …` keeps the explicit override.
+
+```ts
+// skelm.config.mts
+import { defineConfig } from 'skelm'
+
+export default defineConfig({
+  env: {
+    OPENAI_MODEL: 'gpt-4o-mini',
+    OPENAI_BASE_URL: 'https://api.openai.com/v1',
+  },
+})
+```
+
+```bash
+# .env (gitignored)
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o   # overrides config.env default
+```
+
+```bash
+# explicit override wins over both
+OPENAI_MODEL=gpt-4-turbo skelm run my.workflow.mts
+```
+
+For secrets accessed via `step.secrets` declarations, the existing `secrets.driver` mechanism is the right channel — the `.env` layer is intended for non-secret defaults and for operators who already manage secrets via `.env` files.
 
 ## Notes
 
