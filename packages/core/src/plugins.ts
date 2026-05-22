@@ -458,6 +458,12 @@ export class PluginLoader {
    * Dynamically import @skelm/integration-sdk and wrap an Integration as a
    * WorkflowPlugin. The dynamic import keeps @skelm/core free of a hard dep
    * on @skelm/integration-sdk.
+   *
+   * @skelm/core does NOT declare @skelm/integration-sdk in its package.json
+   * (not even as an optionalDependency) because integration-sdk peer-depends
+   * on @skelm/core, which would form a workspace cycle. End users that load
+   * Integration plugins install @skelm/integration-sdk directly, or pull it
+   * in transitively via the `skelm` meta-package or @skelm/integrations.
    */
   private async wrapIntegration(integration: unknown): Promise<SkelmPlugin> {
     let sdk: { createIntegrationPlugin: (i: unknown) => unknown }
