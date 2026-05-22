@@ -58,7 +58,7 @@ export async function initCommand(
     // `npm init` filled in name/version; we add a `skelm` dep + start script
     // via mergePackageJson instead.
     if (mergeMode && relPath === 'package.json' && existsSync(fullPath)) {
-      await mergePackageJson(fullPath, contents)
+      await mergePackageJson(fullPath, contents, io)
       continue
     }
     await mkdir(dirname(fullPath), { recursive: true })
@@ -133,13 +133,29 @@ function isIncidentalFile(name: string): boolean {
   return false
 }
 
-async function mergePackageJson(path: string, scaffold: string): Promise<void> {
+async function mergePackageJson(path: string, scaffold: string, io: InitCommandIO): Promise<void> {
   const fs = await import('node:fs/promises')
   const existing = JSON.parse(await fs.readFile(path, 'utf8'))
   const fresh = JSON.parse(scaffold)
+  // F132: skelm pipeline files are authored as ESM (top-level await on
+  // dynamic imports + ESM-style exports). When the merge path inherits
+  // the `type: "commonjs"` that `npm init -y` writes by default, tsx's
+  // CJS register path appends a `?namespace=<timestamp>` cache-bust query
+  // to imports — which Node ≥25's stricter ESM resolver rejects with
+  // ERR_MODULE_NOT_FOUND, and which behaves unpredictably on earlier
+  // Node versions too. Override commonjs → module and tell the user;
+  // leave an explicit `module` setting alone (the user knows what they
+  // want).
+  let nextType: string = existing.type ?? fresh.type
+  if (existing.type === 'commonjs') {
+    io.stderr.write(
+      `skelm init: overriding existing package.json "type": "commonjs" with "module" — skelm workflow files are ESM and cannot run under a CommonJS package type.\n`,
+    )
+    nextType = 'module'
+  }
   const merged = {
     ...existing,
-    type: existing.type ?? fresh.type,
+    type: nextType,
     scripts: { ...fresh.scripts, ...(existing.scripts ?? {}) },
     dependencies: { ...(existing.dependencies ?? {}), ...fresh.dependencies },
   }

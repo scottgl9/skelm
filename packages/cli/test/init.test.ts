@@ -42,6 +42,52 @@ describe('skelm init', () => {
     expect(exitCode).toBe(EXIT.OK)
     expect(readFileSync(join(dir, 'package.json'), 'utf8')).toContain('skelm-project')
   })
+
+  it('merge mode overrides existing "type":"commonjs" with "module" (F132)', async () => {
+    // Reproduces the npm-init quickstart sequence:
+    //   mkdir foo && cd foo && npm init -y && npm i skelm && skelm init .
+    // npm-init writes "type":"commonjs", which under tsx's CJS resolver
+    // appends a ?namespace= query that Node 25's ESM resolver rejects.
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-init-'))
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({ name: 'foo', version: '1.0.0', type: 'commonjs' }, null, 2),
+    )
+
+    const { exitCode, stderr } = await invoke(['init', dir])
+    expect(exitCode).toBe(EXIT.OK)
+    const merged = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+    expect(merged.type).toBe('module')
+    expect(stderr).toMatch(/overriding existing package\.json "type": "commonjs"/)
+  })
+
+  it('merge mode leaves existing "type":"module" alone', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-init-'))
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({ name: 'foo', version: '1.0.0', type: 'module' }, null, 2),
+    )
+
+    const { exitCode, stderr } = await invoke(['init', dir])
+    expect(exitCode).toBe(EXIT.OK)
+    const merged = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+    expect(merged.type).toBe('module')
+    expect(stderr).not.toMatch(/overriding/)
+  })
+
+  it('merge mode fills in missing "type" with "module"', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-init-'))
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({ name: 'foo', version: '1.0.0' }, null, 2),
+    )
+
+    const { exitCode, stderr } = await invoke(['init', dir])
+    expect(exitCode).toBe(EXIT.OK)
+    const merged = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+    expect(merged.type).toBe('module')
+    expect(stderr).not.toMatch(/overriding/)
+  })
 })
 
 interface InvocationResult {
