@@ -350,4 +350,24 @@ describe('createVercelAiBackend — per-call model override guard (F133)', () =>
       ),
     ).rejects.toThrow(/bound to model "mock-provider:mock-model-id".*requested "qwen3-8b"/)
   })
+
+  it('thrown BackendCapabilityError carries capability="modelSelection" (review fix)', async () => {
+    // A model-routing mismatch is NOT a vision-capability failure —
+    // callers branching on .capability='vision' would misclassify this.
+    // vercel-ai declares modelSelection:false in its BackendCapabilities,
+    // which is exactly the contract this guard enforces.
+    const backend = createVercelAiBackend({ model: mockModel('bound-reply') })
+    try {
+      await backend.infer?.(
+        { messages: [{ role: 'user', content: 'hi' }], model: 'qwen3-8b' },
+        makeCtx(),
+      )
+      expect.fail('expected BackendCapabilityError to be thrown')
+    } catch (err) {
+      const e = err as { name?: string; capability?: string; backendId?: string }
+      expect(e.name).toBe('BackendCapabilityError')
+      expect(e.capability).toBe('modelSelection')
+      expect(e.backendId).toBe('vercel-ai')
+    }
+  })
 })
