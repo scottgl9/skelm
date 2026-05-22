@@ -21,7 +21,7 @@ skelm is a TypeScript framework for authoring and running **workflows** — type
 
 **Key capabilities:**
 
-- **TypeScript-native** — Real `.ts` modules, no DSL or JSON config
+- **TypeScript-native** — Real `.mts` modules, no DSL or JSON config
 - **Default-deny security** — Every permission must be explicitly declared
 - **Multi-backend agents** — First-party agent, Pi, Opencode (native or ACP), Codex, Vercel AI, ACP (Copilot, Claude Code, Gemini), Anthropic, OpenAI
 - **Multimodal prompts** — `llm()` and `agent()` accept image content parts; vision routed through vision-capable backends, denied at step start for the rest. Pair with `ctx.artifacts` to persist screenshots and other binary evidence on the run record

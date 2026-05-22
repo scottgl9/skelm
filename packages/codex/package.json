@@ -1,6 +1,6 @@
 {
   "name": "@skelm/codex",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "OpenAI Codex backend for skelm via the official @openai/codex-sdk",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
