@@ -42,6 +42,13 @@ exported pipeline, and executes it with the runner.
 | `--input-stdin`  | Read input JSON from stdin                          |
 | `--events <fmt>` | `human` (default), `json`, or `none`                |
 
+### `skelm mcp serve`
+
+Expose one or more skelm workflows as MCP tools over stdio.
+
+    skelm mcp serve [workflow.mts...] [flags]
+      --port <n>    (reserved; stdio only in this release)
+
 ### `skelm list [--json]`
 
 Discover and print pipelines reachable from the current directory.

@@ -55,6 +55,10 @@ skelm gateway start                                                # long-runnin
 
 📖 **Next:** [Quickstart guide](./docs/quickstart/README.md)
 
+## MCP
+
+Use `skelm mcp serve` to expose local workflows as MCP tools over stdio for Claude Code, Cursor, Copilot, and other MCP clients. See the [MCP serve guide](./docs/guides/mcp-serve.md) for configuration examples and the permission model.
+
 ---
 
 ## Backend support
@@ -122,6 +126,7 @@ See [Backend documentation](./docs/backends/README.md) for setup guides, and [Co
 | `skelm` | Meta-package — install this, re-exports `@skelm/core` + CLI |
 | `@skelm/core` | Runtime, types, builders, permission model, event bus |
 | `@skelm/cli` | CLI commands — `run`, `schedule`, `gateway`, `audit` |
+| `@skelm/mcp-server` | stdio MCP server that exposes workflows as tools |
 | `@skelm/gateway` | Long-running orchestrator: HTTP, scheduler, agent lifecycle |
 | `@skelm/scheduler` | Cron, interval, and webhook triggers (poll, queue, file-watch, event-source live in `@skelm/gateway`) |
 | `@skelm/integrations` | Typed connectors for GitHub, Slack, Telegram |

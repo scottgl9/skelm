@@ -4,3 +4,4 @@
 // browser/serverless friendliness of the core surface is preserved.
 
 export * from '@skelm/core'
+export * from '@skelm/mcp-server'

@@ -7,6 +7,7 @@
 export interface ParsedArgv {
   command:
     | 'run'
+    | 'mcp'
     | 'init'
     | 'list'
     | 'describe'
@@ -45,6 +46,9 @@ export function parseArgv(argv: readonly string[]): ParsedArgv {
   }
   if (first === 'run') {
     return parseSubcommand('run', argv.slice(1))
+  }
+  if (first === 'mcp') {
+    return parseSubcommand('mcp', argv.slice(1))
   }
   if (first === 'init') {
     return parseSubcommand('init', argv.slice(1))
@@ -97,6 +101,7 @@ export function parseArgv(argv: readonly string[]): ParsedArgv {
 function parseSubcommand(
   command:
     | 'run'
+    | 'mcp'
     | 'init'
     | 'list'
     | 'describe'

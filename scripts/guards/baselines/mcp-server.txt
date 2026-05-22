@@ -1,0 +1,5 @@
+value:MCP_SERVER_NAME
+value:MCP_SERVER_VERSION
+value:McpServer
+value:exportInputSchema
+type:McpServeOptions

@@ -54,6 +54,11 @@ describe('parseArgv', () => {
       positional: ['show', 'alpha-workflow', 'main'],
       flags: { json: true },
     })
+    expect(parseArgv(['mcp', 'serve', 'pr-review.workflow.mts'])).toEqual({
+      command: 'mcp',
+      positional: ['serve', 'pr-review.workflow.mts'],
+      flags: {},
+    })
   })
 })
 
