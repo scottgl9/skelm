@@ -1,7 +1,8 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { DEFAULT_CONFIG, type SkelmConfig, pickExport } from '@skelm/core'
+import { parse as parseDotEnv } from 'dotenv'
 
 export interface ResolvedConfig {
   /** The merged config (DEFAULT_CONFIG + user config + overrides). */
@@ -26,15 +27,59 @@ export async function loadSkelmConfig(opts?: {
       throw new Error(`config file not found: ${absolute}`)
     }
     const config = await importConfigModule(absolute)
-    return { config: mergeWithDefaults(config), source: absolute, projectRoot: dirname(absolute) }
+    const projectRoot = dirname(absolute)
+    return {
+      config: applyEnvLayers(mergeWithDefaults(config), projectRoot),
+      source: absolute,
+      projectRoot,
+    }
   }
 
   const found = walkUpForConfig(opts?.fromDir ?? process.cwd())
   if (found === null) {
-    return { config: DEFAULT_CONFIG, source: null, projectRoot: opts?.fromDir ?? process.cwd() }
+    const projectRoot = opts?.fromDir ?? process.cwd()
+    return {
+      config: applyEnvLayers(DEFAULT_CONFIG, projectRoot),
+      source: null,
+      projectRoot,
+    }
   }
   const config = await importConfigModule(found)
-  return { config: mergeWithDefaults(config), source: found, projectRoot: dirname(found) }
+  const projectRoot = dirname(found)
+  return {
+    config: applyEnvLayers(mergeWithDefaults(config), projectRoot),
+    source: found,
+    projectRoot,
+  }
+}
+
+/**
+ * Merge a `.env` file at `projectRoot` and `config.env` into `process.env`
+ * with precedence `process.env > .env > config.env`. The returned config has
+ * its `env` field replaced with the fully-merged view so callers can inspect
+ * exactly what was applied. Values already present in `process.env` are never
+ * overwritten — running with `FOO=x skelm run` keeps the explicit override.
+ *
+ * Exported for tests.
+ */
+export function applyEnvLayers(config: SkelmConfig, projectRoot: string): SkelmConfig {
+  const dotEnvPath = join(projectRoot, '.env')
+  const dotEnv: Record<string, string> = existsSync(dotEnvPath)
+    ? (parseDotEnv(readFileSync(dotEnvPath)) as Record<string, string>)
+    : {}
+
+  const merged: Record<string, string> = {
+    ...(config.env ?? {}),
+    ...dotEnv,
+  }
+
+  for (const [key, value] of Object.entries(merged)) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value
+    }
+  }
+
+  return { ...config, env: Object.freeze({ ...merged }) }
 }
 
 const CONFIG_FILENAMES = [

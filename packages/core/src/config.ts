@@ -142,6 +142,18 @@ export interface SkelmConfig {
    * these with the trigger coordinator at startup.
    */
   triggerSources?: readonly SkelmConfigTriggerSourceEntry[]
+  /**
+   * Static environment variables applied at CLI / gateway startup. Merged
+   * into `process.env` so subprocess steps (`ctx.exec`, coding agents, MCP
+   * servers) inherit them. Precedence is `process.env > .env file > config.env`
+   * — values already set in the parent process are never overwritten.
+   *
+   * Use this for non-secret defaults like LLM model names and base URLs.
+   * For secrets, prefer a `secrets.driver` or a `.env` file under
+   * `.gitignore`. The CLI loads `<projectRoot>/.env` automatically before
+   * applying this map.
+   */
+  env?: Readonly<Record<string, string>>
 }
 
 /**
