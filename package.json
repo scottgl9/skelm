@@ -7,7 +7,7 @@
   "author": "Scott Glover <scottgl@gmail.com>",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.18"
   },
   "packageManager": "pnpm@8.15.0",
   "scripts": {
