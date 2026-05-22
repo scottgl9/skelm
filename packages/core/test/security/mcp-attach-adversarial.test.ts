@@ -51,7 +51,7 @@ describe('permission enforcement — MCP attach adversarial', () => {
               id: 'shell',
               transport: 'stdio',
               command: 'node',
-              args: ['--import', 'tsx/esm', MOCK_SHELL_MCP],
+              args: [MOCK_SHELL_MCP],
             },
           ],
           permissions: {

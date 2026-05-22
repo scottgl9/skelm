@@ -53,7 +53,7 @@ export interface GatewayOptions {
   /**
    * Optional loader the HTTP /pipelines/:id route uses to import a workflow
    * module from its registered path so its graph can be serialized.
-   * Production wires this to tsImport(); tests can supply a fake.
+   * Production wires this to native dynamic import(); tests can supply a fake.
    */
   loadWorkflow?: (registryId: string, absolutePath: string) => Promise<unknown>
   /**

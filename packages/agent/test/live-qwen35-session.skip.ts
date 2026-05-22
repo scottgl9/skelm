@@ -3,7 +3,7 @@
  *
  *   OPENAI_BASE_URL=http://localhost:8000/v1 \
  *   OPENAI_API_KEY=dummy OPENAI_MODEL=qwen35 \
- *   pnpm exec tsx packages/agent/test/live-qwen35-session.skip.ts
+ *   node packages/agent/test/live-qwen35-session.skip.ts
  *
  * Verifies the three pillars added on this branch end-to-end:
  *   1. ModelRegistry routes a request to the configured provider

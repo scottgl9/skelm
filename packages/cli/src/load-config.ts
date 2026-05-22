@@ -2,7 +2,6 @@ import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { DEFAULT_CONFIG, type SkelmConfig, pickExport } from '@skelm/core'
-import { tsImport } from 'tsx/esm/api'
 
 export interface ResolvedConfig {
   /** The merged config (DEFAULT_CONFIG + user config + overrides). */
@@ -56,9 +55,9 @@ function walkUpForConfig(start: string): string | null {
 
 async function importConfigModule(absolutePath: string): Promise<SkelmConfig> {
   const url = pathToFileURL(absolutePath).href
-  const mod = (await tsImport(url, import.meta.url)) as Record<string, unknown>
+  const mod = (await import(url)) as Record<string, unknown>
   // pickExport handles the require(esm) `{ default: { default: <value> } }`
-  // shape Node 22+ produces under tsx's CJS loader path.
+  // shape Node 22+ produces under CJS interop.
   const candidate = pickExport(mod, 'default') ?? mod.config
   if (candidate === undefined || candidate === null || typeof candidate !== 'object') {
     throw new Error(`config file must export a default config object: ${absolutePath}`)

@@ -19,7 +19,7 @@ describe('MCP host', () => {
         id: 'echo',
         transport: 'stdio',
         command: 'node',
-        args: ['--import', 'tsx/esm', MOCK_MCP],
+        args: [MOCK_MCP],
       },
     ])
     try {
@@ -99,7 +99,7 @@ describe('MCP host', () => {
               id: 'echo',
               transport: 'stdio',
               command: 'node',
-              args: ['--import', 'tsx/esm', MOCK_MCP],
+              args: [MOCK_MCP],
             },
           ],
           permissions: { allowedTools: ['echo.echo'], allowedMcpServers: ['echo'] },
@@ -142,7 +142,7 @@ describe('MCP host', () => {
               id: 'echo',
               transport: 'stdio',
               command: 'node',
-              args: ['--import', 'tsx/esm', MOCK_MCP],
+              args: [MOCK_MCP],
             },
           ],
           permissions: { allowedMcpServers: ['echo'] },

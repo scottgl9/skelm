@@ -5,7 +5,7 @@ import type { FireContext, RunCallback } from './types.js'
 
 /**
  * Loader that turns a workflow registry id (the path relative to the project
- * root) into a runnable pipeline. The CLI wires this to `tsImport()`; tests
+ * root) into a runnable pipeline. The CLI wires this to native `import()`; tests
  * supply a fake loader so they don't need a real workspace.
  */
 export type WorkflowLoader = (registryId: string, absolutePath: string) => Promise<unknown>
@@ -36,7 +36,7 @@ export interface CreateDispatcherOptions {
  * ```ts
  * const dispatcher = createTriggerDispatcher({
  *   gateway,
- *   loadWorkflow: async (_id, abs) => (await tsImport(abs, ...)).default,
+ *   loadWorkflow: async (_id, abs) => (await import(pathToFileURL(abs).href)).default,
  * })
  * gateway.managers.triggers.register({...})  // onFire was wired to dispatcher
  * ```

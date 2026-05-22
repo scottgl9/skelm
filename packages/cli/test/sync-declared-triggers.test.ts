@@ -17,10 +17,10 @@ import type { MainIO } from '../src/main.js'
 //     silently destroyed `nightly#backup`)
 //
 // Note on the test pattern: Node's ESM resolver caches modules by URL, so
-// editing the same workflow file in-place and re-calling tsImport returns
+// editing the same workflow file in-place and re-calling import() returns
 // the stale module. To exercise the "spec drift" branch deterministically,
 // we seed the stale registration directly via `coordinator.register` and
-// then call `syncDeclaredTriggers`, which performs the *first* tsImport of
+// then call `syncDeclaredTriggers`, which performs the *first* import() of
 // the file on disk (no cache hit). This pins the reconcile semantics
 // without depending on FS cache invalidation.
 

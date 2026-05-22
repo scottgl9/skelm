@@ -1,15 +1,15 @@
-// Shared loader for `.ts` / `.js` modules referenced from pipeline files.
+// Shared loader for `.ts` / `.mts` / `.js` modules referenced from pipeline
+// files.
 //
-// Built on tsx's programmatic API so customers can author helper modules in
-// TypeScript without a build step. The CLI's workflow loader and `code()`
-// steps that use `module:` both route through this helper so behavior stays
-// consistent — including the require(esm) double-default unwrap that Node
-// 22+ produces under tsx's CJS path.
+// Uses Node's native dynamic import(), which on Node 22.18+ ships unflagged
+// stable TypeScript type stripping for `.ts` / `.mts` files. The CLI's
+// workflow loader and `code()` steps that use `module:` both route through
+// this helper so behavior stays consistent — including the require(esm)
+// double-default unwrap that Node 22+ produces for CJS-interop modules.
 
 import { existsSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { tsImport } from 'tsx/esm/api'
 
 export interface LoadTsModuleOptions {
   /**
@@ -33,7 +33,7 @@ const moduleCache = new Map<string, Promise<Record<string, unknown>>>()
  * being served until restart. Tests can call `clearTsModuleCache()` to
  * force a fresh import.
  *
- * The returned object is the raw namespace as resolved by tsx; callers that
+ * The returned object is the raw namespace from `import()`; callers that
  * need a specific export should reach for `pickExport()`.
  */
 export function loadTsModule(
@@ -48,7 +48,7 @@ export function loadTsModule(
   }
   let inflight = moduleCache.get(url)
   if (inflight === undefined) {
-    inflight = tsImport(url, import.meta.url) as Promise<Record<string, unknown>>
+    inflight = import(url) as Promise<Record<string, unknown>>
     moduleCache.set(url, inflight)
   }
   return inflight
@@ -58,7 +58,7 @@ export function loadTsModule(
  * Pick a named export from a module loaded by `loadTsModule`. When
  * `exportName` is `'default'`, transparently unwraps the require(esm) shape
  * (`{ default: { default: <value> } }`) that Node 22+'s CJS interop produces
- * for ESM modules.
+ * when loading an ESM module from a CJS host.
  */
 export function pickExport(mod: Record<string, unknown>, exportName: string): unknown {
   if (exportName !== 'default') return mod[exportName]

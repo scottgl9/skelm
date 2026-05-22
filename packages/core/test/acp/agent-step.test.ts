@@ -15,7 +15,7 @@ describe('agent() step + ACP backend', () => {
       createAcpBackend({
         id: 'acp-mock',
         command: 'node',
-        args: ['--import', 'tsx/esm', MOCK_AGENT],
+        args: [MOCK_AGENT],
       }),
     )
 
@@ -37,7 +37,7 @@ describe('agent() step + ACP backend', () => {
       createAcpBackend({
         id: 'acp-mock',
         command: 'node',
-        args: ['--import', 'tsx/esm', MOCK_AGENT],
+        args: [MOCK_AGENT],
       }),
     )
 
@@ -67,7 +67,7 @@ describe('agent() step + ACP backend', () => {
       createAcpBackend({
         id: 'acp-mock',
         command: 'node',
-        args: ['--import', 'tsx/esm', MOCK_AGENT],
+        args: [MOCK_AGENT],
       }),
     )
 
@@ -94,7 +94,7 @@ describe('agent() step + ACP backend', () => {
       createAcpBackend({
         id: 'acp-mock',
         command: 'node',
-        args: ['--import', 'tsx/esm', MOCK_AGENT],
+        args: [MOCK_AGENT],
       }),
     )
 
@@ -122,7 +122,7 @@ describe('agent() step + ACP backend', () => {
       createAcpBackend({
         id: 'acp-mock',
         command: 'node',
-        args: ['--import', 'tsx/esm', MOCK_AGENT],
+        args: [MOCK_AGENT],
       }),
     )
 

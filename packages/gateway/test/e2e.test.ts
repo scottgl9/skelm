@@ -51,7 +51,7 @@ describe('Gateway end-to-end', () => {
     const base = `http://127.0.0.1:${port}`
 
     try {
-      // 3. Wire the dispatcher with a fake loader (avoids tsx in tests).
+      // 3. Wire the dispatcher with a fake loader (avoids touching disk in tests).
       const ran: string[] = []
       const wf = pipeline({
         id: 'hello',

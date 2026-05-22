@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url'
 import { pathToFileURL } from 'node:url'
 import { BackendRegistry, code, pipeline, wait } from '@skelm/core'
 import { Gateway, createTriggerDispatcher } from '@skelm/gateway'
-import { tsImport } from 'tsx/esm/api'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
