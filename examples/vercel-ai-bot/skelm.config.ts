@@ -14,7 +14,7 @@ const modelId = process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
 
 export default defineConfig({
   registries: {
-    workflows: { glob: '*.pipeline.ts' },
+    workflows: { glob: '*.pipeline.{mts,ts}' },
   },
   backends: { agent: 'vercel-ai' },
   instances: [

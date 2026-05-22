@@ -8,19 +8,19 @@ const FIX = join(import.meta.dirname, 'fixtures')
 
 describe('skelm validate', () => {
   it('exits 0 on a clean pipeline file', async () => {
-    const r = await invoke(['validate', join(FIX, 'hello.workflow.ts')])
+    const r = await invoke(['validate', join(FIX, 'hello.workflow.mts')])
     expect(r.exitCode).toBe(EXIT.OK)
     expect(r.stdout).toMatch(/ok:/)
   })
 
   it('flags an agent step that omits permissions{}', async () => {
-    const r = await invoke(['validate', join(FIX, 'agent-no-permissions.workflow.ts')])
+    const r = await invoke(['validate', join(FIX, 'agent-no-permissions.workflow.mts')])
     expect(r.exitCode).toBe(EXIT.SCHEMA_VALIDATION)
     expect(r.stderr).toMatch(/agent-missing-permissions/)
   })
 
   it('flags a non-identifier secret name', async () => {
-    const r = await invoke(['validate', join(FIX, 'agent-bad-secret-name.workflow.ts')])
+    const r = await invoke(['validate', join(FIX, 'agent-bad-secret-name.workflow.mts')])
     expect(r.exitCode).toBe(EXIT.SCHEMA_VALIDATION)
     expect(r.stderr).toMatch(/agent-secret-name-shape/)
   })
@@ -32,7 +32,7 @@ describe('skelm validate', () => {
   })
 
   it('--json emits a structured report and stays exit 1 on issues', async () => {
-    const r = await invoke(['validate', join(FIX, 'agent-no-permissions.workflow.ts'), '--json'])
+    const r = await invoke(['validate', join(FIX, 'agent-no-permissions.workflow.mts'), '--json'])
     expect(r.exitCode).toBe(EXIT.SCHEMA_VALIDATION)
     const parsed = JSON.parse(r.stdout)
     expect(parsed.ok).toBe(false)

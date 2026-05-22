@@ -18,7 +18,7 @@ describe('walkGlob — bounded by static prefix', () => {
     await mkdir(join(root, 'workflows'), { recursive: true })
     await writeFile(join(root, 'workflows', 'a.workflow.ts'), '')
     await writeFile(join(root, 'workflows', 'b.workflow.ts'), '')
-    const got = await walkGlob(root, 'workflows/**/*.workflow.ts')
+    const got = await walkGlob(root, 'workflows/**/*.workflow.{mts,ts}')
     expect(got).toHaveLength(2)
   })
 
@@ -31,7 +31,7 @@ describe('walkGlob — bounded by static prefix', () => {
     await mkdir(join(root, 'huge-irrelevant-tree', 'deep', 'nested'), { recursive: true })
     await writeFile(join(root, 'huge-irrelevant-tree', 'deep', 'nested', 'bait.workflow.ts'), '')
 
-    const got = await walkGlob(root, 'workflows/**/*.workflow.ts')
+    const got = await walkGlob(root, 'workflows/**/*.workflow.{mts,ts}')
     expect(got).toHaveLength(1)
     expect(got[0]).toMatch(/workflows\/a\.workflow\.ts$/)
   })
@@ -42,7 +42,7 @@ describe('walkGlob — bounded by static prefix', () => {
     await mkdir(join(root, 'unrelated', 'deep'), { recursive: true })
     await writeFile(join(root, 'unrelated', 'deep', 'x.workflow.ts'), '')
 
-    const got = await walkGlob(root, 'workflows/**/*.workflow.ts')
+    const got = await walkGlob(root, 'workflows/**/*.workflow.{mts,ts}')
     expect(got).toEqual([])
   })
 

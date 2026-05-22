@@ -17,7 +17,7 @@ describe('skelm describe --format mermaid', () => {
   it('renders parallel, forEach, branch, and loop steps', async () => {
     const { stdout, exitCode } = await invoke([
       'describe',
-      join(FIXTURES, 'control-flow.workflow.ts'),
+      join(FIXTURES, 'control-flow.workflow.mts'),
       '--format',
       'mermaid',
     ])
@@ -52,7 +52,7 @@ describe('skelm describe --format mermaid', () => {
   it('exits 0 for human format', async () => {
     const { stdout, exitCode } = await invoke([
       'describe',
-      join(FIXTURES, 'control-flow.workflow.ts'),
+      join(FIXTURES, 'control-flow.workflow.mts'),
     ])
     expect(exitCode).toBe(EXIT.OK)
     expect(stdout).toContain('workflow: control-flow')

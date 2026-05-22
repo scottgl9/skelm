@@ -18,7 +18,7 @@ beforeEach(async () => {
   projectRoot = await mkdtemp(join(tmpdir(), 'skelm-disp-'))
   stateDir = await mkdtemp(join(tmpdir(), 'skelm-disp-state-'))
   await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
-  await fs.writeFile(join(projectRoot, 'workflows/hello.workflow.ts'), 'export default {}')
+  await fs.writeFile(join(projectRoot, 'workflows/hello.workflow.mts'), 'export default {}')
 })
 
 afterEach(async () => {
@@ -32,7 +32,7 @@ describe('createTriggerDispatcher', () => {
       stateDir,
       projectRoot,
       watchRegistries: false,
-      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     })
     await gw.start()
 
@@ -53,7 +53,7 @@ describe('createTriggerDispatcher', () => {
     const dispatcher = createTriggerDispatcher({
       gateway: gw,
       loadWorkflow: async (id) => {
-        expect(id).toBe('workflows/hello.workflow.ts')
+        expect(id).toBe('workflows/hello.workflow.mts')
         return { default: fakePipeline }
       },
     })
@@ -62,7 +62,7 @@ describe('createTriggerDispatcher', () => {
     coordinator.register({
       kind: 'manual',
       id: 'm',
-      workflowId: 'workflows/hello.workflow.ts',
+      workflowId: 'workflows/hello.workflow.mts',
     })
     await coordinator.fire('m')
 
@@ -76,7 +76,7 @@ describe('createTriggerDispatcher', () => {
       stateDir,
       projectRoot,
       watchRegistries: false,
-      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     })
     await gw.start()
 
@@ -111,7 +111,7 @@ describe('createTriggerDispatcher', () => {
     gw.managers.triggers.register({
       kind: 'queue',
       id: 'q',
-      workflowId: 'workflows/hello.workflow.ts',
+      workflowId: 'workflows/hello.workflow.mts',
       driver: 'memq',
     })
 
@@ -145,7 +145,7 @@ describe('createTriggerDispatcher', () => {
       stateDir,
       projectRoot,
       watchRegistries: false,
-      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     })
     await gw.start()
     const dispatcher = createTriggerDispatcher({
@@ -156,7 +156,7 @@ describe('createTriggerDispatcher', () => {
     coordinator.register({
       kind: 'manual',
       id: 'm',
-      workflowId: 'workflows/hello.workflow.ts',
+      workflowId: 'workflows/hello.workflow.mts',
     })
     await coordinator.fire('m')
     expect(coordinator.get('m')?.lastError).toMatch(/did not export a default pipeline/)
@@ -185,9 +185,9 @@ describe('Gateway — auto-wires the dispatcher when loadWorkflow is supplied', 
       stateDir,
       projectRoot,
       watchRegistries: false,
-      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
       loadWorkflow: async (id) => {
-        expect(id).toBe('workflows/hello.workflow.ts')
+        expect(id).toBe('workflows/hello.workflow.mts')
         return { default: fakePipeline }
       },
     })
@@ -196,7 +196,7 @@ describe('Gateway — auto-wires the dispatcher when loadWorkflow is supplied', 
     gw.managers.triggers.register({
       kind: 'manual',
       id: 'wired',
-      workflowId: 'workflows/hello.workflow.ts',
+      workflowId: 'workflows/hello.workflow.mts',
     })
     await gw.managers.triggers.fire('wired')
 
@@ -211,7 +211,7 @@ describe('Gateway — auto-wires the dispatcher when loadWorkflow is supplied', 
     gw.managers.triggers.register({
       kind: 'manual',
       id: 'unwired',
-      workflowId: 'workflows/hello.workflow.ts',
+      workflowId: 'workflows/hello.workflow.mts',
     })
     await gw.managers.triggers.fire('unwired')
 

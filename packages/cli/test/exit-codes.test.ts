@@ -35,25 +35,25 @@ async function runWorkflow(file: string): Promise<{ exitCode: number; stderr: st
 
 describe('skelm run — documented exit codes', () => {
   it('EXIT.RUN_FAILED (3) on an uncaught step error', async () => {
-    const r = await runWorkflow('run-failed.workflow.ts')
+    const r = await runWorkflow('run-failed.workflow.mts')
     expect(r.exitCode).toBe(EXIT.RUN_FAILED)
     expect(r.stderr).toMatch(/intentional failure/)
   })
 
   it('EXIT.PERMISSION_DENIED (6) when ctx.exec is called without an allowlist', async () => {
-    const r = await runWorkflow('permission-denied.workflow.ts')
+    const r = await runWorkflow('permission-denied.workflow.mts')
     expect(r.exitCode).toBe(EXIT.PERMISSION_DENIED)
     expect(r.stderr).toMatch(/allowedExecutables|PermissionDenied/i)
   })
 
   it('EXIT.STEP_TIMEOUT (7) when a step outlives its timeoutMs budget', async () => {
-    const r = await runWorkflow('step-timeout.workflow.ts')
+    const r = await runWorkflow('step-timeout.workflow.mts')
     expect(r.exitCode).toBe(EXIT.STEP_TIMEOUT)
     expect(r.stderr).toMatch(/timeout|StepTimeout/i)
   })
 
   it('EXIT.WAIT_TIMEOUT (5) when a wait step times out before resume', async () => {
-    const r = await runWorkflow('wait-timeout.workflow.ts')
+    const r = await runWorkflow('wait-timeout.workflow.mts')
     expect(r.exitCode).toBe(EXIT.WAIT_TIMEOUT)
     expect(r.stderr).toMatch(/wait|timeout/i)
   })

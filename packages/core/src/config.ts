@@ -159,9 +159,9 @@ export const DEFAULT_CONFIG: SkelmConfig = Object.freeze({
     llm: 'openai' as const,
     openai: {},
   },
-  pipelines: { discovery: 'auto' as const, glob: 'workflows/**/*.workflow.ts' },
+  pipelines: { discovery: 'auto' as const, glob: 'workflows/**/*.workflow.{mts,ts}' },
   registries: {
-    workflows: { glob: 'workflows/**/*.workflow.ts' },
+    workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' },
     skills: { glob: 'skills/**/SKILL.md' },
     mcpServers: [],
     agents: [],

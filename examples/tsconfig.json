@@ -5,6 +5,6 @@
     "outDir": "dist",
     "noEmit": true
   },
-  "include": ["**/*.workflow.ts", "**/*.pipeline.ts"],
+  "include": ["**/*.workflow.mts", "**/*.workflow.ts", "**/*.pipeline.mts", "**/*.pipeline.ts"],
   "exclude": ["node_modules", "dist"]
 }
