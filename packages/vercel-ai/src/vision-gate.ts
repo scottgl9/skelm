@@ -91,6 +91,38 @@ export interface AssertVisionArgs {
 }
 
 /**
+ * Throws `BackendCapabilityError` when a per-call `req.model` override is
+ * supplied but does not match the backend's pre-bound `LanguageModel`
+ * instance. Unlike OpenAI / Anthropic / @skelm/agent — which accept a
+ * model id per request — vercel-ai is constructed against a specific
+ * `LanguageModel` (e.g. `openai.chat('qwen35')`) and cannot route a
+ * different id to a different upstream without a provider factory.
+ *
+ * Silently honoring the backend's bound model when callers ask for a
+ * different one masks vision-routing mistakes: an operator pinning
+ * `llm({ model: 'qwen3-text-only' })` against a vision-bound backend
+ * would silently get the vision model's reply (finding-133). Fail loud.
+ *
+ * `requestedModel` is `undefined` when the step did not set `model`; in
+ * that case the check is a no-op (the bound model wins, as before).
+ */
+export function assertModelMatchesBound(
+  backendId: string,
+  boundModel: LanguageModel,
+  requestedModel: string | undefined,
+): void {
+  if (requestedModel === undefined) return
+  const boundId = extractModelId(boundModel)
+  const boundQualified = extractQualifiedModelId(boundModel)
+  if (requestedModel === boundId || requestedModel === boundQualified) return
+  throw new BackendCapabilityError(
+    `backend "${backendId}" is bound to model "${boundQualified}" but the step requested "${requestedModel}". vercel-ai backends route through a pre-constructed LanguageModel instance and cannot honour per-call model overrides. Register a second backend instance with the desired model, or remove the step's "model" field to use the bound one.`,
+    backendId,
+    'vision',
+  )
+}
+
+/**
  * Throws `BackendCapabilityError` if image content is present and the
  * resolved model id is not in `visionModels`. No-op when `visionModels`
  * is unset.
