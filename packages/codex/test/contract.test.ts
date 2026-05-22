@@ -15,7 +15,7 @@
  */
 
 import type { ThreadEvent } from '@openai/codex-sdk'
-import { runBackendContract } from '@skelm/core/testing'
+import { runBackendContract } from '@skelm/core/testing/contract'
 import { vi } from 'vitest'
 
 const startThread = vi.fn()
