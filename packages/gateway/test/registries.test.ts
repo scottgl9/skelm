@@ -61,7 +61,10 @@ describe('WorkflowRegistry', () => {
     })
     await reg.start()
     expect(reg.list()).toEqual([
-      { id: 'workflows/hello.workflow.mts', path: join(projectRoot, 'workflows/hello.workflow.mts') },
+      {
+        id: 'workflows/hello.workflow.mts',
+        path: join(projectRoot, 'workflows/hello.workflow.mts'),
+      },
     ])
     await reg.close()
   })

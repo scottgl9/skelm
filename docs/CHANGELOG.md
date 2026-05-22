@@ -6,7 +6,45 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-## [0.4.3] - 2026-05-21
+## [0.4.3] - 2026-05-22
+
+### Breaking Changes
+
+- **Minimum Node version is now 22.18** (was 20). Node 22.18+ ships unflagged-stable native TypeScript type stripping, which skelm now relies on instead of the `tsx` runtime register hook.
+- **`tsx` removed.** Workflow and config modules now load via Node's native dynamic `import()`. No `--import tsx/esm`, no `tsImport`, no `?namespace=` query-string fingerprint.
+- **Pipeline files are canonicalized to `.mts`.** The `skelm init` scaffold now writes `workflows/hello.workflow.mts`; default globs accept `workflows/**/*.workflow.{mts,ts}` and `workflows/**/*.pipeline.{mts,ts}`. Existing `.workflow.ts` / `.pipeline.ts` files continue to work in v0.4.3 — the `.ts` extension will be removed in v1.0 once `.mts` is muscle-memory.
+
+Why: a fresh `npm init -y` defaults `package.json` to `"type":"commonjs"`. Combined with tsx's CJS register path appending `?namespace=<timestamp>` to `file://` URLs, this hit the Node 25 ESM resolver tightening and crashed the documented quickstart (`ERR_MODULE_NOT_FOUND`, [#175], [#176], [finding-132]). Canonicalizing to `.mts` makes the user's `package.json` `"type"` field irrelevant for skelm — `.mts` is always ESM.
+
+Migration:
+
+```bash
+# Inside your project, after upgrading skelm to 0.4.3:
+find workflows -name '*.workflow.ts' -exec sh -c 'mv "$1" "${1%.ts}.mts"' _ {} \;
+find workflows -name '*.pipeline.ts' -exec sh -c 'mv "$1" "${1%.ts}.mts"' _ {} \;
+```
+
+If you prefer to keep `.ts`, add `"type": "module"` to your `package.json`.
+
+**Two import-specifier gotchas in pipeline source.** Node's native ESM resolver is strict about relative-import specifiers — tsx was lenient about both:
+
+1. **Extensionless imports** — `import { x } from './helpers'` no longer resolves. Add the extension: `./helpers.ts` (or `.mts`). Catch them with:
+
+   ```bash
+   grep -rnE "from '(\.\.?/[^']+)'$" workflows | grep -vE "\.(mts|ts|mjs|js|json)'"
+   ```
+
+2. **NodeNext `.js`-from-TS imports in uncompiled source** — `import { x } from './helpers.js'` (the conventional NodeNext spelling that TypeScript rewrites at compile time) breaks under native strip because pipeline files are loaded as `.ts` source, not compiled. The `.js` file doesn't exist on disk. Rewrite to the actual on-disk extension: `./helpers.ts`. Catch them with:
+
+   ```bash
+   grep -rnE "from '\.\.?/[^']+\.js'" workflows
+   ```
+
+   This only matters for files loaded directly by skelm (your `*.workflow.mts`, `*.pipeline.mts`, and helpers they pull in). Code you ship through `tsc → dist/*.js` is unaffected.
+
+[#175]: https://github.com/scottgl9/skelm/issues/175
+[#176]: https://github.com/scottgl9/skelm/issues/176
+[finding-132]: https://github.com/scottgl9/skelm-test-plan/blob/main/results/finding-132-fresh-install-namespace-query-breaks-esm-on-node25.md
 
 ### Added
 
@@ -61,6 +99,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **File-watch single-file path** — the trigger no longer doubled the basename when a plain file path (not a glob) was provided.
 - **`skelm gateway start` crash handlers** — uncaught-exception and unhandled-rejection handlers installed before startup; gateway crash no longer leaves a stale lockfile.
 - **`better-sqlite3` postinstall allowlisted** — `chore(deps)!` pins an exact version and adds the native-build postinstall to the allowed-scripts list, unblocking CI on clean installs.
+- **`@skelm/vercel-ai` rejects per-call `model` override against the bound `LanguageModel`** ([finding-133]). vercel-ai binds a `LanguageModel` at backend construction (e.g. `openai.chat('qwen35')`) and previously discarded any per-call `req.model`, silently running the bound model instead. `assertModelMatchesBound` now throws `BackendCapabilityError` with `capability='modelSelection'` when the step requests a model the backend cannot route to; the error message names both the bound id and the requested id and points operators to either registering a second backend instance or dropping the step's `model` field.
+
+[finding-133]: https://github.com/scottgl9/skelm-test-plan/blob/main/results/finding-133-vision-model-mismatch-silent-text-completion.md
 
 ### Security
 
