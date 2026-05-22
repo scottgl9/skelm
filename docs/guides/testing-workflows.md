@@ -20,7 +20,7 @@ The simpler one — `runPipeline` — is best for end-to-end assertions:
 
 ```ts
 import { BackendRegistry, runPipeline } from '@skelm/core'
-import workflow from './my.workflow.ts'
+import workflow from './my.workflow.mts'
 // import fixture backends as needed (see below)
 
 const backends = new BackendRegistry()
@@ -200,7 +200,7 @@ Two suites: regular tests and a dedicated permission-test suite. CI runs both. P
 ```
 my-skelm-project/
 ├── workflows/
-│   └── triage.workflow.ts
+│   └── triage.workflow.mts
 ├── tests/
 │   ├── triage.test.ts             # workflow logic
 │   ├── permissions/

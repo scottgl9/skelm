@@ -17,7 +17,7 @@ The `code` steps use simulated data. Swap them for real SDK calls (`@slack/web-a
 
 ```bash
 OPENAI_BASE_URL=http://localhost:8000/v1 OPENAI_API_KEY=unused OPENAI_MODEL=qwen35 \
-  skelm run incident-response.pipeline.ts \
+  skelm run incident-response.pipeline.mts \
   --input '{"incidentId":"INC-001","severity":"critical","service":"auth-service","description":"Users unable to login — 503 errors on /api/auth endpoint"}'
 ```
 
@@ -25,7 +25,7 @@ Low-severity example (skips the agent step):
 
 ```bash
 OPENAI_BASE_URL=http://localhost:8000/v1 OPENAI_API_KEY=unused OPENAI_MODEL=qwen35 \
-  skelm run incident-response.pipeline.ts \
+  skelm run incident-response.pipeline.mts \
   --input '{"incidentId":"INC-002","severity":"low","service":"reporting","description":"Slow dashboard loads"}'
 ```
 

@@ -58,7 +58,7 @@ export default defineConfig({
 ```
 
 ```ts
-// codex-smoke.pipeline.ts
+// codex-smoke.pipeline.mts
 import { agent, pipeline } from 'skelm'
 import { z } from 'zod'
 
@@ -84,7 +84,7 @@ export default pipeline({
 ```
 
 ```bash
-skelm run codex-smoke.pipeline.ts --input '{"task":"say ok"}'
+skelm run codex-smoke.pipeline.mts --input '{"task":"say ok"}'
 ```
 
 ## Permission mapping

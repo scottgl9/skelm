@@ -16,7 +16,7 @@ Demonstrates: cron trigger, `agent()` with structured output schema, data flowin
 
 ```bash
 OPENAI_BASE_URL=http://localhost:8000/v1 OPENAI_API_KEY=unused OPENAI_MODEL=qwen35 \
-  skelm run sprint-planning.pipeline.ts \
+  skelm run sprint-planning.pipeline.mts \
   --input '{"projectKey":"ENG","teamSize":5,"sprintDuration":14}'
 ```
 
@@ -24,7 +24,7 @@ With a custom point target:
 
 ```bash
 OPENAI_BASE_URL=http://localhost:8000/v1 OPENAI_API_KEY=unused OPENAI_MODEL=qwen35 \
-  skelm run sprint-planning.pipeline.ts \
+  skelm run sprint-planning.pipeline.mts \
   --input '{"projectKey":"ENG","teamSize":4,"sprintDuration":14,"targetPoints":35}'
 ```
 

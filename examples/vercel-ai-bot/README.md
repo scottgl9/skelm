@@ -7,7 +7,7 @@ Minimal `agent()` pipeline that runs against any Vercel AI SDK model
 
 ```bash
 export OPENAI_API_KEY=sk-...
-pnpm skelm run examples/vercel-ai-bot/greet.pipeline.ts -i '{"name":"world"}'
+pnpm skelm run examples/vercel-ai-bot/greet.pipeline.mts -i '{"name":"world"}'
 ```
 
 ## Run against a local OpenAI-compatible server (vLLM, llama.cpp, sglang, ollama, …)
@@ -16,7 +16,7 @@ pnpm skelm run examples/vercel-ai-bot/greet.pipeline.ts -i '{"name":"world"}'
 export OPENAI_BASE_URL=http://localhost:8000/v1
 export OPENAI_API_KEY=unused
 export OPENAI_MODEL=qwen36
-pnpm skelm run examples/vercel-ai-bot/greet.pipeline.ts -i '{"name":"world"}'
+pnpm skelm run examples/vercel-ai-bot/greet.pipeline.mts -i '{"name":"world"}'
 ```
 
 ## Notes

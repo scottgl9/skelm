@@ -4,7 +4,7 @@ The gateway holds four registries that together describe everything it can run, 
 
 | Registry | Source | Watched? | Notes |
 |----------|--------|----------|-------|
-| `workflows` | FS scan of `registries.workflows.glob` | yes | Tracks `*.workflow.ts` paths; modules import lazily on first use. |
+| `workflows` | FS scan of `registries.workflows.glob` | yes | Tracks `*.workflow.{mts,ts}` paths; modules import lazily on first use. |
 | `skills` | FS scan of `registries.skills.glob` | yes | Parses `SKILL.md` frontmatter into `Skill` objects. Malformed files are skipped (visible via `getErrors()`). |
 | `agents` | `registries.agents` in config | reload-only | Coding agents and ACP agents. Each entry declares `lifecycle: 'resident' \| 'ephemeral'` (see `docs/concepts/coding-agents.md`). |
 | `mcpServers` | `registries.mcpServers` in config | reload-only | Static MCP server declarations consumed by the MCP supervisor (Phase 7). |
@@ -26,7 +26,7 @@ interface Registry<T> {
 ```ts
 {
   registries: {
-    workflows: { glob: 'workflows/**/*.workflow.ts' },
+    workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' },
     skills:    { glob: 'skills/**/SKILL.md' },
     agents:    [],
     mcpServers: [],
@@ -73,7 +73,7 @@ export default pipeline({
 The runner resolves `pipelineId` through a `pipelineRegistry` callback:
 
 - **In-process** (`runPipeline(..., { pipelineRegistry })`) — you supply the callback; the unit tests in `packages/core/test/invoke.test.ts` show the shape.
-- **Gateway-hosted** — the gateway wires `pipelineRegistry` automatically from its workflows registry. The lookup tries the registry id (the file path, e.g. `fixtures/child.workflow.ts`) first, then falls back to scanning all registered workflows and matching on `pipeline.id` so callers can pass either form. Missing pipelines raise `InvokePipelineNotFoundError`.
+- **Gateway-hosted** — the gateway wires `pipelineRegistry` automatically from its workflows registry. The lookup tries the registry id (the file path, e.g. `fixtures/child.workflow.mts`) first, then falls back to scanning all registered workflows and matching on `pipeline.id` so callers can pass either form. Missing pipelines raise `InvokePipelineNotFoundError`.
 
 The full parent runtime (store, stateStore, permissions, secret resolver, audit writer, egress proxy, `pipelineRegistry` itself) is forwarded to the child run so nested invocations behave identically to top-level ones.
 

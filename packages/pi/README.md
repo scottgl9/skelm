@@ -63,7 +63,7 @@ export default defineConfig({
 A workflow that reviews a PR using a **skill** that encodes your team's style guide:
 
 ```ts
-// workflows/review-pr.workflow.ts
+// workflows/review-pr.workflow.mts
 import { agent, pipeline } from 'skelm'
 import { z } from 'zod'
 

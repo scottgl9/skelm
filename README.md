@@ -43,13 +43,13 @@ npm install -g skelm
 skelm init my-bot && cd my-bot && npm install
 
 # Run your first workflow
-skelm run workflows/hello.workflow.ts --input '{"name":"world"}'
+skelm run workflows/hello.workflow.mts --input '{"name":"world"}'
 ```
 
 That's it. From here you can edit workflows, add agent steps, schedule them, or stand up the gateway:
 
 ```bash
-skelm schedule add workflows/hello.workflow.ts --cron '0 * * * *'  # cron job
+skelm schedule add workflows/hello.workflow.mts --cron '0 * * * *'  # cron job
 skelm gateway start                                                # long-running service
 ```
 

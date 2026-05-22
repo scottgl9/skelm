@@ -127,7 +127,7 @@ Default port: `14738`, default host: `127.0.0.1`. Configure via `server.port` an
 
 - `archive` — the `.zip` file (required)
 - `id` — workflow id (required on POST when no path param; PUT takes it from the URL)
-- `entry` — relative path inside the archive that points at the pipeline file (optional; the gateway auto-detects a single root-level `*.workflow.ts` or `*.pipeline.ts` when omitted)
+- `entry` — relative path inside the archive that points at the pipeline file (optional; the gateway auto-detects a single root-level `*.workflow.mts` or `*.pipeline.mts` when omitted)
 - `description`, `version` — optional metadata
 
 The archive is validated by magic bytes, capped at `GatewayOptions.workflows.maxArchiveBytes` (default 5 MiB, applied to both the compressed and total uncompressed sizes), and extracted into `${stateDir}/uploaded-workflows/${encodeURIComponent(id)}/`. Archive entries with `..`, absolute paths, or non-allowlisted extensions (anything outside `.ts`, `.js`, `.mjs`, `.cjs`, `.json`, `.md`, `.txt`, `.yaml`, `.yml`) are rejected. `POST` refuses to register if the extraction dir already has contents — use `PUT` to replace. `DELETE /v1/workflows/:id` also wipes the extraction dir for archive-sourced workflows.

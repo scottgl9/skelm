@@ -13,7 +13,7 @@ allowed-tools: Read Edit Write Bash(pnpm:*) Bash(skelm:*) Bash(node:*) Bash(git:
 
 ## When to activate
 
-Activate when the user is working in a skelm project, wants to author or modify a `*.pipeline.ts` / `*.workflow.ts` file, asks about `AgentPermissions`, `skelm.config.ts`, MCP server wiring, or wants to run, inspect, or operate a pipeline.
+Activate when the user is working in a skelm project, wants to author or modify a `*.pipeline.mts` / `*.workflow.mts` file, asks about `AgentPermissions`, `skelm.config.ts`, MCP server wiring, or wants to run, inspect, or operate a pipeline.
 
 ---
 
@@ -189,12 +189,12 @@ See [references/permissions.md](references/permissions.md) for the full enforcem
 my-project/
 ├── skelm.config.ts          # Required for gateway and agent steps
 ├── workflows/
-│   └── hello.workflow.ts    # One pipeline per file
+│   └── hello.workflow.mts    # One pipeline per file
 ├── package.json             # { "dependencies": { "skelm": "^0.3.7", "zod": "^4" } }
 └── tsconfig.json
 ```
 
-Pipeline files may be named `*.workflow.ts` or `*.pipeline.ts` — the discovery glob in `skelm.config.ts` decides what gets registered.
+Pipeline files may be named `*.workflow.{mts,ts}` or `*.pipeline.{mts,ts}` — the discovery glob in `skelm.config.ts` decides what gets registered.
 
 For `skelm.config.ts` shape and all config options, see [references/config.md](references/config.md).
 
@@ -204,10 +204,10 @@ For `skelm.config.ts` shape and all config options, see [references/config.md](r
 
 ```bash
 # Run once, pass input as JSON
-skelm run ./workflows/ticket-to-pr.workflow.ts --input '{"ticketId":"PROJ-42"}'
+skelm run ./workflows/ticket-to-pr.workflow.mts --input '{"ticketId":"PROJ-42"}'
 
 # Run with input from file
-skelm run ./workflows/ticket-to-pr.workflow.ts --input-file input.json
+skelm run ./workflows/ticket-to-pr.workflow.mts --input-file input.json
 
 # List discovered pipelines
 skelm list
@@ -271,4 +271,4 @@ Never claim a task done until `pnpm check` is green.
 bash skill/skelm/scripts/new-pipeline.sh my-pipeline "What this pipeline does"
 ```
 
-This copies `assets/pipeline.template.ts` to `./my-pipeline.pipeline.ts` and substitutes the id and description. Use `assets/agent-pipeline.template.ts` for pipelines that include an agent step.
+This copies `assets/pipeline.template.ts` to `./my-pipeline.pipeline.mts` and substitutes the id and description. Use `assets/agent-pipeline.template.ts` for pipelines that include an agent step.

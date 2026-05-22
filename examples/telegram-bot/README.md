@@ -10,7 +10,7 @@ chat. There is no script to run — just `skelm gateway start`.
 
 ## How it fits together
 
-- `telegram-bot.pipeline.ts` declares
+- `telegram-bot.pipeline.mts` declares
   `triggers: [{ kind: 'queue', sourceId: 'telegram' }]`. That binds the
   pipeline to the trigger source named `telegram` in the config.
 - `skelm.config.ts` builds a `TelegramIntegration` with the bot token and
@@ -61,7 +61,7 @@ should reply within a few seconds.
 
 ## Files
 
-- `telegram-bot.pipeline.ts` — pure pipeline (input → agent → reply text),
+- `telegram-bot.pipeline.mts` — pure pipeline (input → agent → reply text),
   with a queue trigger declaration bound to the `telegram` source.
 - `skelm.config.ts` — registers the pi backend instance and the Telegram
   trigger source, points the workflows glob at the pipeline file.

@@ -12,7 +12,7 @@ A workflow that mixes deterministic, LLM, and (placeholder) agentic steps to sho
 ## Run
 
 ```bash
-skelm run examples/multi-step-pipeline/multi-step.workflow.ts \
+skelm run examples/multi-step-pipeline/multi-step.workflow.mts \
   --input '{"task":"investigate the login bug"}'
 ```
 

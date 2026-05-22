@@ -23,10 +23,10 @@ export default defineConfig({
   ],
 
   // Workflow discovery.
-  pipelines: { discovery: 'auto', glob: 'workflows/**/*.workflow.ts' },
+  pipelines: { discovery: 'auto', glob: 'workflows/**/*.workflow.{mts,ts}' },
 
   registries: {
-    workflows: { glob: 'workflows/**/*.workflow.ts' },
+    workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' },
     skills: { glob: 'skills/**/SKILL.md' },
 
     // MCP servers the gateway hosts; steps reference them by id.

@@ -17,7 +17,7 @@ This recipe exercises:
 coding-agent-on-chat/
 ├── skelm.config.ts
 ├── workflows/
-│   └── coding.workflow.ts
+│   └── coding.workflow.mts
 ├── agents/
 │   └── coder/
 │       ├── AGENTS.md
@@ -161,7 +161,7 @@ metadata:
 Use `chat.send_message` to reply to the chat that triggered this workflow.
 ```
 
-## `workflows/coding.workflow.ts`
+## `workflows/coding.workflow.mts`
 
 ```ts
 import { pipeline, code, agent } from 'skelm'
@@ -254,7 +254,7 @@ export default pipeline({
 
 ```sh
 # Register a webhook schedule
-skelm schedule add workflows/coding.workflow.ts \
+skelm schedule add workflows/coding.workflow.mts \
   --webhook /webhooks/chat \
   --id coding-chat-bridge \
   --overlap skip

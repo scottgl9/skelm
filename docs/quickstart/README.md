@@ -7,7 +7,7 @@ Build, run, and schedule your first skelm workflow in five minutes.
 ```sh
 npm i -g skelm
 skelm init my-bot && cd my-bot && npm install
-skelm run workflows/hello.workflow.ts --input '{"name":"world"}'
+skelm run workflows/hello.workflow.mts --input '{"name":"world"}'
 ```
 
 That's a code-only workflow. To add an agent step, see [Add an agent step](./add-agent.md) once the basics are working.
@@ -40,7 +40,7 @@ This scaffolds:
 my-bot/
 ├── skelm.config.ts          # default-deny permissions, env-driven secrets
 ├── workflows/
-│   └── hello.workflow.ts    # example: prints a greeting
+│   └── hello.workflow.mts    # example: prints a greeting
 ├── package.json
 ├── tsconfig.json
 ├── .gitignore
@@ -50,7 +50,7 @@ my-bot/
 ## 3. Look at the example workflow
 
 ```ts
-// workflows/hello.workflow.ts
+// workflows/hello.workflow.mts
 import { code, pipeline } from 'skelm'
 import { z } from 'zod'
 
@@ -71,7 +71,7 @@ export default pipeline({
 ## 4. Run it
 
 ```sh
-skelm run workflows/hello.workflow.ts --input '{"name":"world"}'
+skelm run workflows/hello.workflow.mts --input '{"name":"world"}'
 ```
 
 Output:
@@ -87,7 +87,7 @@ It does not leave a cron, webhook, interval, poll, or queue trigger registered. 
 Want to see the run's events?
 
 ```sh
-skelm run workflows/hello.workflow.ts --input '{"name":"world"}' --events json 2> events.log
+skelm run workflows/hello.workflow.mts --input '{"name":"world"}' --events json 2> events.log
 cat events.log
 ```
 
@@ -96,7 +96,7 @@ cat events.log
 Run every five minutes:
 
 ```sh
-skelm schedule add workflows/hello.workflow.ts \
+skelm schedule add workflows/hello.workflow.mts \
   --cron '*/5 * * * *' \
   --input '{"name":"world"}' \
   --id hello-cron
@@ -105,7 +105,7 @@ skelm schedule add workflows/hello.workflow.ts \
 Or fire on a webhook (the gateway must be running):
 
 ```sh
-skelm schedule add workflows/hello.workflow.ts \
+skelm schedule add workflows/hello.workflow.mts \
   --webhook /hello \
   --id hello-webhook
 ```
@@ -177,13 +177,13 @@ curl http://127.0.0.1:14738/runs/<runId>
 Pass valid JSON as one shell argument:
 
 ```sh
-skelm run workflows/hello.workflow.ts --input '{"name":"world"}'
+skelm run workflows/hello.workflow.mts --input '{"name":"world"}'
 ```
 
 For larger inputs, use a file:
 
 ```sh
-skelm run workflows/hello.workflow.ts --input-file input.json
+skelm run workflows/hello.workflow.mts --input-file input.json
 ```
 
 ### `Schema validation failed`

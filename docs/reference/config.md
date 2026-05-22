@@ -26,13 +26,13 @@ export default defineConfig({
   // ── Workflow discovery ──────────────────────────────────────────────
   pipelines?: {
     discovery?: 'auto' | 'explicit',
-    glob?:      string,                      // e.g. 'workflows/**/*.workflow.ts'
+    glob?:      string,                      // e.g. 'workflows/**/*.workflow.{mts,ts}'
     explicit?:  readonly string[],
   },
 
   // ── Gateway-managed registries ──────────────────────────────────────
   registries?: {
-    workflows?:  { glob?: string },          // file-system discovery for *.workflow.ts / *.pipeline.ts
+    workflows?:  { glob?: string },          // file-system discovery for *.workflow.{mts,ts} / *.pipeline.{mts,ts}
     skills?:     { glob?: string },          // skill SKILL.md directories
     mcpServers?: readonly SkelmConfigMcpServerEntry[],
     agents?:     readonly SkelmConfigAgentEntry[],   // gateway-supervised agent runtimes
@@ -152,10 +152,10 @@ export default defineConfig({
   },
   instances: [createPiSdkBackend({ id: 'pi' })],
 
-  pipelines: { discovery: 'auto', glob: 'workflows/**/*.workflow.ts' },
+  pipelines: { discovery: 'auto', glob: 'workflows/**/*.workflow.{mts,ts}' },
 
   registries: {
-    workflows:  { glob: 'workflows/**/*.workflow.ts' },
+    workflows:  { glob: 'workflows/**/*.workflow.{mts,ts}' },
     skills:     { glob: 'skills/**/SKILL.md' },
     mcpServers: [
       { id: 'github',     transport: 'http',  url: 'http://127.0.0.1:9100' },
@@ -204,5 +204,5 @@ export default defineConfig({
 
 - Config is hot-reloaded when the gateway receives `SIGHUP` or `skelm gateway reload`.
 - `permissionProfiles` entries narrow `defaults.permissions`; profiles cannot widen the project baseline.
-- When `registries.workflows.glob` is omitted, the gateway uses the value from `pipelines.glob` (or the default `workflows/**/*.workflow.ts`).
+- When `registries.workflows.glob` is omitted, the gateway uses the value from `pipelines.glob` (or the default `workflows/**/*.workflow.{mts,ts}`).
 - `secrets.driver: 'file'` reads JSON from `secrets.file`; the gateway never logs secret values.

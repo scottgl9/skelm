@@ -83,7 +83,7 @@ const telegram = new TelegramIntegration({
 await telegram.init()
 
 export default defineConfig({
-  registries: { workflows: { glob: 'workflows/**/*.pipeline.ts' } },
+  registries: { workflows: { glob: 'workflows/**/*.pipeline.mts' } },
   triggerSources: [
     { id: 'telegram', driver: telegram.createTriggerSource({ dropPending: true }) },
   ],
@@ -327,7 +327,7 @@ gateway.managers.triggers.registerQueueDriver('memq', driver)
 gateway.managers.triggers.register({
   kind: 'queue',
   id: 't',
-  workflowId: 'workflows/echo.pipeline.ts',
+  workflowId: 'workflows/echo.pipeline.mts',
   driver: 'memq',
 })
 

@@ -78,7 +78,7 @@ stdout receives the workflow's final output as JSON. Everything else (progress, 
 ```ts
 import { main, EXIT } from '@skelm/cli'
 
-const result = await main(['run', './my.workflow.ts'], {
+const result = await main(['run', './my.workflow.mts'], {
   stdout: process.stdout,
   stderr: process.stderr,
   stdin:  process.stdin,

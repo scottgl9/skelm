@@ -17,7 +17,7 @@ This recipe exercises:
 ticket-to-pr/
 ├── skelm.config.ts
 ├── workflows/
-│   └── ticket-to-pr.workflow.ts
+│   └── ticket-to-pr.workflow.mts
 ├── agents/
 │   └── ticket-coder/
 │       ├── AGENTS.md
@@ -80,7 +80,7 @@ export default defineConfig({
 })
 ```
 
-## `workflows/ticket-to-pr.workflow.ts`
+## `workflows/ticket-to-pr.workflow.mts`
 
 ```ts
 import { pipeline, code, forEach, agent } from 'skelm'
@@ -192,7 +192,7 @@ Always return JSON matching `{ attempted: boolean, prUrl?: string, reason?: stri
 ## Schedule it
 
 ```sh
-skelm schedule add workflows/ticket-to-pr.workflow.ts \
+skelm schedule add workflows/ticket-to-pr.workflow.mts \
   --poll jira-tickets \
   --id ticket-to-pr \
   --overlap skip

@@ -27,7 +27,7 @@ export default defineConfig({
 ```
 
 ```ts
-// greet.pipeline.ts
+// greet.pipeline.mts
 import { agent, pipeline } from '@skelm/core'
 import { z } from 'zod'
 

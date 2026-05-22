@@ -171,7 +171,7 @@ skelm schedule fire <id> [--json]
 
 Scaffold a new skelm project under `<dir>` (defaults to `.`). Creates
 `package.json`, `tsconfig.json`, `skelm.config.ts`,
-`workflows/hello.workflow.ts`, `.gitignore`, and `README.md`. `--force` allows
+`workflows/hello.workflow.mts`, `.gitignore`, and `README.md`. `--force` allows
 scaffolding into a non-empty directory.
 
 ### `skelm validate <pipeline.ts>`

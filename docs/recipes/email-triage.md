@@ -16,8 +16,8 @@ This recipe exercises:
 email-triage/
 ├── skelm.config.ts
 ├── workflows/
-│   ├── triage.workflow.ts
-│   └── digest.workflow.ts
+│   ├── triage.workflow.mts
+│   └── digest.workflow.mts
 ├── sources/
 │   └── inbox-poll.ts
 ├── secrets/
@@ -45,7 +45,7 @@ export const inboxPoll: PollSource<{ id: string; from: string; subject: string; 
 }
 ```
 
-## `workflows/triage.workflow.ts`
+## `workflows/triage.workflow.mts`
 
 ```ts
 import { pipeline, code, llm, branch, forEach } from 'skelm'
@@ -137,7 +137,7 @@ export default pipeline({
 })
 ```
 
-## `workflows/digest.workflow.ts`
+## `workflows/digest.workflow.mts`
 
 A second workflow runs daily to compose the digest from the journal:
 
@@ -191,8 +191,8 @@ export default pipeline({
 ## Schedule both
 
 ```sh
-skelm schedule add workflows/triage.workflow.ts --poll inbox --id triage --overlap skip
-skelm schedule add workflows/digest.workflow.ts  --cron '0 8 * * *' --id daily-digest
+skelm schedule add workflows/triage.workflow.mts --poll inbox --id triage --overlap skip
+skelm schedule add workflows/digest.workflow.mts  --cron '0 8 * * *' --id daily-digest
 
 skelm gateway start
 ```

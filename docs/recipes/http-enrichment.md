@@ -18,7 +18,7 @@ This recipe exercises:
 http-enrichment/
 ├── skelm.config.ts
 ├── workflows/
-│   └── enrich-and-post.workflow.ts
+│   └── enrich-and-post.workflow.mts
 ├── secrets/
 └── package.json
 ```
@@ -61,7 +61,7 @@ export default defineConfig({
 })
 ```
 
-## `workflows/enrich-and-post.workflow.ts`
+## `workflows/enrich-and-post.workflow.mts`
 
 ```ts
 import { pipeline, code, llm } from 'skelm'

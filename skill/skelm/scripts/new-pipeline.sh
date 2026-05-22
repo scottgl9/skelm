@@ -6,7 +6,7 @@
 #   bash skill/skelm/scripts/new-pipeline.sh <pipeline-id> "<description>" --agent
 #
 # Arguments:
-#   pipeline-id    kebab-case id; output file is <pipeline-id>.pipeline.ts
+#   pipeline-id    kebab-case id; output file is <pipeline-id>.pipeline.mts
 #   description    one-line description of what the pipeline does
 #   --agent        use the agent-step template instead of the basic code-step template
 #
@@ -30,7 +30,7 @@ if ! echo "$PIPELINE_ID" | grep -qE '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$'; then
   exit 1
 fi
 
-OUTPUT_FILE="${PIPELINE_ID}.pipeline.ts"
+OUTPUT_FILE="${PIPELINE_ID}.pipeline.mts"
 
 if [[ -f "$OUTPUT_FILE" ]]; then
   echo "Error: ${OUTPUT_FILE} already exists. Remove it first or choose a different id." >&2

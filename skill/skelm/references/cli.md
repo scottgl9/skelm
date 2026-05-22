@@ -148,7 +148,7 @@ skelm approvals deny    <id> [--reason <text>] [--approver <name>] [--json]
 skelm init [<dir>] [--force]
 ```
 
-Scaffolds a new project under `<dir>` (defaults to `.`). Creates `package.json`, `tsconfig.json`, `skelm.config.ts`, `workflows/hello.workflow.ts`, `.gitignore`, and `README.md`. `--force` allows init into a non-empty directory.
+Scaffolds a new project under `<dir>` (defaults to `.`). Creates `package.json`, `tsconfig.json`, `skelm.config.ts`, `workflows/hello.workflow.mts`, `.gitignore`, and `README.md`. `--force` allows init into a non-empty directory.
 
 ## `skelm validate`
 

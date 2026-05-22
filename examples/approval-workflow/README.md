@@ -14,7 +14,7 @@ Demonstrates: `wait()`, `branch()`, auto-approve fast path, gateway resume via H
 ## Auto-approve path (no gateway needed)
 
 ```bash
-skelm run approval-workflow.pipeline.ts \
+skelm run approval-workflow.pipeline.mts \
   --input '{"employeeName":"Bob","amount":45,"category":"Meals","description":"Team lunch"}'
 # → { "status": "approved", "autoApproved": true, "finalAmount": 45 }
 ```
@@ -26,7 +26,7 @@ skelm run approval-workflow.pipeline.ts \
 skelm gateway start
 
 # 2. Start the run asynchronously — copy the runId from the response
-curl -s http://127.0.0.1:14738/pipelines/approval-workflow.pipeline.ts/start \
+curl -s http://127.0.0.1:14738/pipelines/approval-workflow.pipeline.mts/start \
   -H 'Content-Type: application/json' \
   -d '{"input":{"employeeName":"Alice","amount":350,"category":"Travel","description":"Flight to customer site"}}' | jq .
 

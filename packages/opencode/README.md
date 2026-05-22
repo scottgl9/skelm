@@ -40,7 +40,7 @@ export default defineConfig({
 A workflow that applies a fix to a codebase:
 
 ```ts
-// workflows/fix-bug.workflow.ts
+// workflows/fix-bug.workflow.mts
 import { agent, pipeline } from 'skelm'
 import { z } from 'zod'
 

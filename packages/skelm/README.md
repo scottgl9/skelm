@@ -23,7 +23,7 @@ For the long-running orchestrator (HTTP, registries, audit, agent lifecycle), in
 ```bash
 npm install -g skelm
 skelm init my-bot && cd my-bot
-skelm run workflows/hello.workflow.ts
+skelm run workflows/hello.workflow.mts
 ```
 
 For project-local use:
@@ -35,7 +35,7 @@ npm install skelm zod
 ## Quickstart
 
 ```ts
-// my.workflow.ts
+// my.workflow.mts
 import { code, pipeline } from 'skelm'
 import { z } from 'zod'
 
@@ -53,7 +53,7 @@ export default pipeline({
 ```
 
 ```bash
-skelm run my.workflow.ts --input '{"name":"world"}'
+skelm run my.workflow.mts --input '{"name":"world"}'
 # → {"greeting":"hello, world"}
 ```
 

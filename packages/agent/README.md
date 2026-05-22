@@ -58,7 +58,7 @@ export default defineConfig({
 ```
 
 ```ts
-// greet.pipeline.ts
+// greet.pipeline.mts
 import { agent, pipeline } from '@skelm/core'
 import { z } from 'zod'
 
@@ -80,7 +80,7 @@ export default pipeline({
 ```
 
 ```bash
-skelm run greet.pipeline.ts --input '{"name":"world"}'
+skelm run greet.pipeline.mts --input '{"name":"world"}'
 ```
 
 ## Options

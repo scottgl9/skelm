@@ -22,7 +22,7 @@ import { createPiSdkBackend } from '@skelm/pi'
 export default defineConfig({
   backends: { agent: 'pi' },
   instances: [createPiSdkBackend({ id: 'pi' })],
-  pipelines: { discovery: 'auto', glob: 'workflows/**/*.workflow.ts' },
+  pipelines: { discovery: 'auto', glob: 'workflows/**/*.workflow.{mts,ts}' },
   secrets: { driver: 'env' },
 })
 ```
@@ -30,7 +30,7 @@ export default defineConfig({
 ## 3. Convert `hello` to use an agent step
 
 ```ts
-// workflows/hello.workflow.ts
+// workflows/hello.workflow.mts
 import { agent, pipeline } from 'skelm'
 import { z } from 'zod'
 
@@ -64,7 +64,7 @@ export default pipeline({
 ## 4. Run it
 
 ```sh
-skelm run workflows/hello.workflow.ts --input '{"name":"world"}'
+skelm run workflows/hello.workflow.mts --input '{"name":"world"}'
 ```
 
 `permissions` is **explicit and default-deny**. The agent has no tools, no executables, no filesystem access, no network outside the backend's own. If the agent tries to do anything privileged, the run fails with a permission denial — by design.
