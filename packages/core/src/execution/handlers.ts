@@ -165,71 +165,112 @@ async function runCodeStep(
   events: EventBus | undefined,
   runtime?: ExecutionRuntime,
 ): Promise<unknown> {
-  const resolvedSecrets = await resolveDeclaredSecrets(
-    step,
-    undefined,
-    runtime?.secretResolver,
-    undefined,
-    ctx.run.runId,
-  )
-  const secretsAccessor = createSecretsAccessor(resolvedSecrets)
-
-  const policy = resolvePermissions(
-    runtime?.defaultPermissions,
-    step.permissions,
-    runtime?.permissionProfiles ?? {},
-  )
-  const enforcer = new TrustEnforcer(policy)
-
-  // Same per-step timeout pattern used by runAgentStep: chain a fresh
-  // AbortController to ctx.signal so a runaway code step's budget aborts
-  // ctx.signal and the wrapping promise rejects with StepTimeoutError.
-  // Authors that ignore ctx.signal still lose the race; the run will not
-  // block the gateway indefinitely.
-  const stepController = step.timeoutMs !== undefined ? new AbortController() : undefined
-  const stepSignal = stepController?.signal ?? ctx.signal
-  const onParentAbort =
-    stepController !== undefined ? () => stepController.abort(ctx.signal.reason) : undefined
-  if (stepController !== undefined && onParentAbort !== undefined) {
-    if (ctx.signal.aborted) stepController.abort(ctx.signal.reason)
-    else ctx.signal.addEventListener('abort', onParentAbort, { once: true })
-  }
-  const timeoutMs = step.timeoutMs
-  const timeoutHandle =
-    timeoutMs !== undefined && stepController !== undefined
-      ? setTimeout(() => stepController.abort(new StepTimeoutError(step.id, timeoutMs)), timeoutMs)
-      : undefined
-
-  const exec = createExec(enforcer, stepSignal, {
-    ...(events !== undefined && { events }),
-    runId: ctx.run.runId,
-    stepId: step.id,
-  })
-  const stepCtx = freezeContext({
-    ...ctx,
-    signal: stepSignal,
-    ...(secretsAccessor !== undefined && { secrets: secretsAccessor }),
-    exec,
-  })
-
-  const runFn = await resolveCodeRun(step, runtime?.pipelineBaseDir)
+  let preparedWorkspace: Awaited<ReturnType<WorkspaceManager['prepare']>> | undefined
+  let finishedWorkspace = false
   try {
-    if (timeoutMs === undefined) return await runFn(stepCtx)
-    return await Promise.race([
-      Promise.resolve().then(() => runFn(stepCtx)),
-      new Promise<never>((_resolve, reject) => {
-        stepSignal.addEventListener(
-          'abort',
-          () => {
-            if (stepSignal.reason instanceof StepTimeoutError) reject(stepSignal.reason)
-          },
-          { once: true },
-        )
-      }),
-    ])
-  } finally {
-    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle)
-    if (onParentAbort !== undefined) ctx.signal.removeEventListener('abort', onParentAbort)
+    const workspaceConfig =
+      step.workspace === undefined ? undefined : resolveValueOrFn(step.workspace, ctx)
+    preparedWorkspace =
+      workspaceConfig === undefined
+        ? undefined
+        : await runtime?.workspaceManager.prepare({
+            pipelineId: ctx.run.pipelineId,
+            runId: ctx.run.runId,
+            workspace: workspaceConfig,
+          })
+    const workspaceCtx =
+      preparedWorkspace === undefined
+        ? ctx
+        : freezeContext({ ...ctx, workspace: preparedWorkspace.handle })
+
+    const resolvedSecrets = await resolveDeclaredSecrets(
+      step,
+      undefined,
+      runtime?.secretResolver,
+      undefined,
+      ctx.run.runId,
+    )
+    const secretsAccessor = createSecretsAccessor(resolvedSecrets)
+
+    const policy = resolvePermissions(
+      runtime?.defaultPermissions,
+      applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
+      runtime?.permissionProfiles ?? {},
+    )
+    const enforcer = new TrustEnforcer(policy)
+
+    // Same per-step timeout pattern used by runAgentStep: chain a fresh
+    // AbortController to ctx.signal so a runaway code step's budget aborts
+    // ctx.signal and the wrapping promise rejects with StepTimeoutError.
+    // Authors that ignore ctx.signal still lose the race; the run will not
+    // block the gateway indefinitely.
+    const stepController = step.timeoutMs !== undefined ? new AbortController() : undefined
+    const stepSignal = stepController?.signal ?? ctx.signal
+    const onParentAbort =
+      stepController !== undefined ? () => stepController.abort(ctx.signal.reason) : undefined
+    if (stepController !== undefined && onParentAbort !== undefined) {
+      if (ctx.signal.aborted) stepController.abort(ctx.signal.reason)
+      else ctx.signal.addEventListener('abort', onParentAbort, { once: true })
+    }
+    const timeoutMs = step.timeoutMs
+    const timeoutHandle =
+      timeoutMs !== undefined && stepController !== undefined
+        ? setTimeout(
+            () => stepController.abort(new StepTimeoutError(step.id, timeoutMs)),
+            timeoutMs,
+          )
+        : undefined
+
+    const exec = createExec(enforcer, stepSignal, {
+      ...(events !== undefined && { events }),
+      runId: ctx.run.runId,
+      stepId: step.id,
+    })
+    const stepCtx = freezeContext({
+      ...workspaceCtx,
+      signal: stepSignal,
+      ...(secretsAccessor !== undefined && { secrets: secretsAccessor }),
+      exec,
+    })
+
+    const runFn = await resolveCodeRun(step, runtime?.pipelineBaseDir)
+    let result: unknown
+    try {
+      if (timeoutMs === undefined) {
+        result = await runFn(stepCtx)
+      } else {
+        result = await Promise.race([
+          Promise.resolve().then(() => runFn(stepCtx)),
+          new Promise<never>((_resolve, reject) => {
+            stepSignal.addEventListener(
+              'abort',
+              () => {
+                if (stepSignal.reason instanceof StepTimeoutError) reject(stepSignal.reason)
+              },
+              { once: true },
+            )
+          }),
+        ])
+      }
+    } finally {
+      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle)
+      if (onParentAbort !== undefined) ctx.signal.removeEventListener('abort', onParentAbort)
+    }
+    await preparedWorkspace?.finishStep('completed')
+    finishedWorkspace = true
+    if (preparedWorkspace !== undefined) {
+      const finalizedWorkspace = preparedWorkspace
+      runtime?.setCurrentWorkspace(
+        finalizedWorkspace.exposeAfterStep ? finalizedWorkspace.handle : undefined,
+      )
+      runtime?.deferRunWorkspaceFinalizer((status) => finalizedWorkspace.finishRun(status))
+    }
+    return result
+  } catch (error) {
+    if (!finishedWorkspace) {
+      await preparedWorkspace?.finishStep('failed')
+    }
+    throw error
   }
 }
 
