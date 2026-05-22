@@ -210,7 +210,73 @@ my-skelm-project/
 └── package.json
 ```
 
+## Live tests — `check()` and the self-test primitives
+
+Some test suites need to drive the real skelm CLI, a real gateway, and real external processes — for example, the `skelm-self-test` harness that runs skelm against itself on every push. `@skelm/core/testing` exposes a small set of authoring primitives for that case. They are designed for **`skelm run`** workflows, not vitest tests, but they pair naturally with the rest of the testing tooling.
+
+```ts
+import { check, pipeline } from 'skelm'
+import {
+  gatewayFixture,
+  probeHttp,
+  summarizeChecks,
+  testExecPermissions,
+  type SectionResult,
+} from '@skelm/core/testing'
+
+const gw = gatewayFixture({ port: 4099 })
+const CHECK_IDS = ['healthz', 'list-pipelines'] as const
+
+export default pipeline<unknown, SectionResult>({
+  id: 's05-gateway-http',
+  steps: [
+    gw.start(),
+    check({
+      id: 'healthz',
+      permissions: testExecPermissions,
+      run: async (ctx) => {
+        const r = await ctx.exec!({
+          command: 'curl',
+          args: ['-sf', `http://localhost:${gw.port}/healthz`],
+          throwOnNonZero: true,
+        })
+        return JSON.parse(r.stdout)
+      },
+    }),
+    check({
+      id: 'list-pipelines',
+      permissions: testExecPermissions,
+      run: async (ctx) => {
+        const r = await ctx.exec!({
+          command: 'curl',
+          args: ['-sf', `http://localhost:${gw.port}/v1/pipelines`],
+          throwOnNonZero: true,
+        })
+        const body = JSON.parse(r.stdout)
+        if (!Array.isArray(body)) throw new Error('expected array')
+        return { count: body.length }
+      },
+    }),
+    gw.stop(),
+  ],
+  finalize: (ctx) => summarizeChecks('s05-gateway-http', [...CHECK_IDS], ctx, Date.now()),
+})
+```
+
+The pieces:
+
+- **`check({ id, run, ... })`** — wraps `code()` with implicit `continueOnError: true`. A throwing `run` produces a `TestResult { status: 'fail', message }` and the pipeline keeps running. Returns are recorded as `TestResult { status: 'pass', actual, durationMs }`.
+- **`TestResult` / `SectionResult` / `SummaryReport`** — typed shapes for the per-check, per-section, and full-run rollups.
+- **`summarizeChecks(sectionId, checkIds, ctx, startedAt)`** — call from a section's `finalize`. Missing step ids count as `skip`.
+- **`summarizeSections(sectionIds, ctx, startedAt)`** — call from an orchestrator's `finalize` over `invoke()` outputs.
+- **`testExecPermissions`** — preset `AgentPermissions` covering `skelm`, `node`, `npx`, `curl`, `gh`, `pnpm`, `git`, `bash`, `sh`, `jq` with `networkEgress: 'allow'`. Test-only — don't ship in production pipelines.
+- **`probeHttp({ id, url, timeoutMs, pollMs })`** — a `code()` step that polls a URL until it returns the expected status (default 200), or throws on timeout. Use after starting a long-running fixture.
+- **`gatewayFixture({ port, dataDir?, configFile? })`** — returns `start()` and `stop()` `code()` steps. `stop()` is `continueOnError: true` so cleanup always runs.
+
+Pair these with `continueOnError` on non-`check` setup steps when you want a section to keep going past a failing setup. See [Pipeline authoring → `continueOnError`](../reference/pipeline-authoring.md) for the field's semantics.
+
 ## Cross-references
 
 - [API → testing](../reference/api.md) — `runPipeline`, `Runner`, `BackendRegistry`, `fixtureBackend`.
 - [Concepts → permissions](../concepts/permissions.md) — what default-deny means in practice.
+- [Pipeline authoring](../reference/pipeline-authoring.md) — `continueOnError`, `workspace` on `code()`, and the full step reference.

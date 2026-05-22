@@ -79,6 +79,7 @@ value:assertEgressEnforceable
 value:branch
 value:buildSystemPrompt
 value:buildSystemPromptFromRequest
+value:check
 value:clearTsModuleCache
 value:code
 value:combineSignals
@@ -291,6 +292,7 @@ type:StepStatus
 type:StopReason
 type:SystemPromptInput
 type:TaskRequirements
+type:TestResult
 type:Thread
 type:ThreadHost
 type:ThreadRef

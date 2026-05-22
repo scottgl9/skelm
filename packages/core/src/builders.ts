@@ -278,6 +278,79 @@ export function agent<TOutput>(def: {
   })
 }
 
+/**
+ * Result of a single `check()` step. Recorded as the step's output value so
+ * `finalize()` can aggregate it into a `SectionResult` without inspecting the
+ * raw `StepResult`. See `@skelm/core/testing` for the aggregation helpers.
+ */
+export interface TestResult {
+  readonly id: string
+  readonly status: 'pass' | 'fail' | 'skip'
+  readonly message?: string
+  /** The value the assertion was expected to observe (for display). */
+  readonly expected?: unknown
+  /** The value the assertion actually observed. */
+  readonly actual?: unknown
+  readonly durationMs: number
+}
+
+/**
+ * Author a test assertion step. `run` should return the observed value (which
+ * is recorded as `TestResult.actual`) or throw to signal failure. The step
+ * always sets `continueOnError: true` — a failing check records
+ * `TestResult { status: 'fail' }` and the pipeline continues to the next
+ * check. Use together with `summarizeChecks()` from `@skelm/core/testing` in
+ * `finalize`.
+ *
+ * ```ts
+ * check({
+ *   id: 'greeting',
+ *   permissions: testExecPermissions,
+ *   run: async (ctx) => {
+ *     const r = await ctx.exec!({ command: 'skelm', args: ['run', 'hello.workflow.mts'] })
+ *     const out = JSON.parse(r.stdout)
+ *     if (out.greeting !== 'hello, World') throw new Error(`got ${out.greeting}`)
+ *     return out
+ *   },
+ * })
+ * ```
+ */
+export function check(def: {
+  id: StepId
+  description?: string
+  run: (ctx: Context) => unknown | Promise<unknown>
+  when?: WhenPredicate
+  timeoutMs?: number
+  permissions?: AgentPermissions
+}): CodeStep<TestResult> {
+  if (!def.id) throw new Error('check(): id is required')
+  if (typeof def.run !== 'function') {
+    throw new Error(`check(${def.id}): run must be a function`)
+  }
+  const wrapped = async (ctx: Context): Promise<TestResult> => {
+    const start = Date.now()
+    try {
+      const actual = await def.run(ctx)
+      return { id: def.id, status: 'pass', actual, durationMs: Date.now() - start }
+    } catch (err) {
+      return {
+        id: def.id,
+        status: 'fail',
+        message: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - start,
+      }
+    }
+  }
+  return code<TestResult>({
+    id: def.id,
+    run: wrapped,
+    continueOnError: true,
+    ...(def.timeoutMs !== undefined && { timeoutMs: def.timeoutMs }),
+    ...(def.permissions !== undefined && { permissions: def.permissions }),
+    ...(def.when !== undefined && { when: def.when }),
+  })
+}
+
 /** Run a set of named child steps concurrently. The result is keyed by child id. */
 export function parallel(def: {
   id: StepId
