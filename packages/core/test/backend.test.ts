@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { BackendCapabilityError, BackendNotFoundError, BackendRegistry } from '../src/backend.js'
 import { code, llm, pipeline } from '../src/builders.js'
 import { runPipeline } from '../src/runner.js'
-import { fixtureBackend } from '../src/testing.js'
+import { fixtureBackend } from '../src/testing/contract.js'
 
 describe('BackendRegistry', () => {
   it('rejects duplicate registration of the same id', () => {

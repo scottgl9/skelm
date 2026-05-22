@@ -61,6 +61,10 @@
     "./testing": {
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
+    },
+    "./testing/contract": {
+      "types": "./dist/testing/contract.d.ts",
+      "default": "./dist/testing/contract.js"
     }
   },
   "files": ["dist", "README.md", "LICENSE"],
