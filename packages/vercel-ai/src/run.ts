@@ -21,6 +21,9 @@ export async function vercelAiRun(
   // Per-model vision check (F123 / #177): when the backend declares a
   // visionModels allowlist, fail loudly *before* dispatch instead of letting
   // the upstream silently strip images and hallucinate.
+  // (The agent() path has no `model` field on AgentRequest today, so the
+  // F133 per-call override guard only fires on the llm()/infer() path —
+  // see infer.ts.)
   assertModelSupportsImages({
     backendId: 'vercel-ai',
     model: options.model,
