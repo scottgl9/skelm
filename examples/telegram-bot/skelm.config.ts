@@ -22,7 +22,7 @@ await telegram.init()
 
 export default defineConfig({
   registries: {
-    workflows: { glob: '*.pipeline.ts' },
+    workflows: { glob: '*.pipeline.{mts,ts}' },
   },
   instances: [
     createPiBackend({

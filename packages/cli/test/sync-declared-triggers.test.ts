@@ -44,7 +44,7 @@ beforeEach(async () => {
     stateDir,
     projectRoot,
     watchRegistries: false,
-    config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+    config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
   })
   await gw.start()
 })
@@ -80,26 +80,26 @@ describe('syncDeclaredTriggers — reconcile and sweep (PR #165 follow-up)', () 
     gw.managers.triggers.register(
       {
         kind: 'cron',
-        id: 'workflows/drift.workflow.ts#cron',
-        workflowId: 'workflows/drift.workflow.ts',
+        id: 'workflows/drift.workflow.mts#cron',
+        workflowId: 'workflows/drift.workflow.mts',
         cron: '0 9 * * *',
         tz: 'UTC',
       },
       undefined,
       { declared: true },
     )
-    const before = gw.managers.triggers.get('workflows/drift.workflow.ts#cron')
+    const before = gw.managers.triggers.get('workflows/drift.workflow.mts#cron')
     expect(before?.declared).toBe(true)
     if (before?.spec.kind === 'cron') expect(before.spec.tz).toBe('UTC')
 
-    await writeWorkflow('drift.workflow.ts', 'drift', [
+    await writeWorkflow('drift.workflow.mts', 'drift', [
       { kind: 'cron', cron: '0 9 * * *', tz: 'America/Chicago' },
     ])
     await gw.registries.workflows.refresh()
     const armed = await syncDeclaredTriggers(gw, ioStub)
     expect(armed).toBe(1)
 
-    const after = gw.managers.triggers.get('workflows/drift.workflow.ts#cron')
+    const after = gw.managers.triggers.get('workflows/drift.workflow.mts#cron')
     expect(after).toBeDefined()
     expect(after?.declared).toBe(true)
     if (after?.spec.kind === 'cron') expect(after.spec.tz).toBe('America/Chicago')
@@ -112,8 +112,8 @@ describe('syncDeclaredTriggers — reconcile and sweep (PR #165 follow-up)', () 
     gw.managers.triggers.register(
       {
         kind: 'cron',
-        id: 'workflows/shrunk.workflow.ts#cron',
-        workflowId: 'workflows/shrunk.workflow.ts',
+        id: 'workflows/shrunk.workflow.mts#cron',
+        workflowId: 'workflows/shrunk.workflow.mts',
         cron: '0 1 * * *',
       },
       undefined,
@@ -122,28 +122,28 @@ describe('syncDeclaredTriggers — reconcile and sweep (PR #165 follow-up)', () 
     gw.managers.triggers.register(
       {
         kind: 'cron',
-        id: 'workflows/shrunk.workflow.ts#cron-1',
-        workflowId: 'workflows/shrunk.workflow.ts',
+        id: 'workflows/shrunk.workflow.mts#cron-1',
+        workflowId: 'workflows/shrunk.workflow.mts',
         cron: '0 2 * * *',
       },
       undefined,
       { declared: true },
     )
-    await writeWorkflow('shrunk.workflow.ts', 'shrunk', [{ kind: 'cron', cron: '0 1 * * *' }])
+    await writeWorkflow('shrunk.workflow.mts', 'shrunk', [{ kind: 'cron', cron: '0 1 * * *' }])
     await gw.registries.workflows.refresh()
     await syncDeclaredTriggers(gw, ioStub)
 
-    expect(gw.managers.triggers.get('workflows/shrunk.workflow.ts#cron')).toBeDefined()
+    expect(gw.managers.triggers.get('workflows/shrunk.workflow.mts#cron')).toBeDefined()
     // The trigger removed from the live workflow's array is gone.
-    expect(gw.managers.triggers.get('workflows/shrunk.workflow.ts#cron-1')).toBeUndefined()
+    expect(gw.managers.triggers.get('workflows/shrunk.workflow.mts#cron-1')).toBeUndefined()
   })
 
   it('sweeps declared triggers whose backing workflow file disappeared', async () => {
     gw.managers.triggers.register(
       {
         kind: 'cron',
-        id: 'workflows/gone.workflow.ts#cron',
-        workflowId: 'workflows/gone.workflow.ts',
+        id: 'workflows/gone.workflow.mts#cron',
+        workflowId: 'workflows/gone.workflow.mts',
         cron: '0 1 * * *',
       },
       undefined,
@@ -153,7 +153,7 @@ describe('syncDeclaredTriggers — reconcile and sweep (PR #165 follow-up)', () 
     // the orphan trigger.
     await gw.registries.workflows.refresh()
     await syncDeclaredTriggers(gw, ioStub)
-    expect(gw.managers.triggers.get('workflows/gone.workflow.ts#cron')).toBeUndefined()
+    expect(gw.managers.triggers.get('workflows/gone.workflow.mts#cron')).toBeUndefined()
   })
 
   it('preserves operator-managed schedules with # in id when their workflow is absent', async () => {
@@ -183,8 +183,8 @@ describe('syncDeclaredTriggers — reconcile and sweep (PR #165 follow-up)', () 
     gw.managers.triggers.register(
       {
         kind: 'cron',
-        id: 'workflows/mixed.workflow.ts#cron',
-        workflowId: 'workflows/mixed.workflow.ts',
+        id: 'workflows/mixed.workflow.mts#cron',
+        workflowId: 'workflows/mixed.workflow.mts',
         cron: '0 9 * * *',
         tz: 'UTC',
       },
@@ -194,17 +194,17 @@ describe('syncDeclaredTriggers — reconcile and sweep (PR #165 follow-up)', () 
     gw.managers.triggers.register({
       kind: 'cron',
       id: 'mixed-operator',
-      workflowId: 'workflows/mixed.workflow.ts',
+      workflowId: 'workflows/mixed.workflow.mts',
       cron: '*/15 * * * *',
     })
 
-    await writeWorkflow('mixed.workflow.ts', 'mixed', [
+    await writeWorkflow('mixed.workflow.mts', 'mixed', [
       { kind: 'cron', cron: '0 9 * * *', tz: 'America/Chicago' },
     ])
     await gw.registries.workflows.refresh()
     await syncDeclaredTriggers(gw, ioStub)
 
-    const declared = gw.managers.triggers.get('workflows/mixed.workflow.ts#cron')
+    const declared = gw.managers.triggers.get('workflows/mixed.workflow.mts#cron')
     const operator = gw.managers.triggers.get('mixed-operator')
     expect(declared).toBeDefined()
     if (declared?.spec.kind === 'cron') expect(declared.spec.tz).toBe('America/Chicago')

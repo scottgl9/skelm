@@ -79,6 +79,22 @@ function compilePattern(pattern: string): RegExp {
     } else if (c === '?') {
       re += '[^/]'
       i++
+    } else if (c === '{') {
+      // Brace expansion: `{mts,ts}` → `(?:mts|ts)`. Used for the canonical
+      // workflow extension glob `*.workflow.{mts,ts}`. No nesting, no
+      // ranges — just comma-separated literal alternatives.
+      const end = pattern.indexOf('}', i + 1)
+      if (end === -1) {
+        re += '\\{'
+        i++
+        continue
+      }
+      const alts = pattern
+        .slice(i + 1, end)
+        .split(',')
+        .map((alt) => alt.replace(/[.+^${}()|\[\]\\]/g, (m) => `\\${m}`))
+      re += `(?:${alts.join('|')})`
+      i = end + 1
     } else if (c !== undefined && /[.+^${}()|\[\]\\]/.test(c)) {
       re += `\\${c}`
       i++

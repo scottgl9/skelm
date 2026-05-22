@@ -35,7 +35,7 @@ export interface ExtractInput {
   id: string
   /** Raw .zip bytes. */
   archive: Uint8Array
-  /** Optional relative entry path inside the archive (e.g. `foo.workflow.ts`). */
+  /** Optional relative entry path inside the archive (e.g. `foo.workflow.mts`). */
   entry?: string
   /** When 'register', refuse non-empty destination; when 'replace', atomically swap. */
   mode: 'register' | 'replace'
@@ -131,7 +131,7 @@ export class WorkflowArchiveService {
     if (entryRelative === undefined) {
       throw new WorkflowRegistrationError(
         400,
-        'archive contains no *.workflow.ts or *.pipeline.ts at the root; pass `entry` to override',
+        'archive contains no *.workflow.{mts,ts} or *.pipeline.{mts,ts} at the root; pass `entry` to override',
       )
     }
 
@@ -222,7 +222,12 @@ function chooseEntry(entries: SanitizedEntry[], requested: string | undefined): 
   }
   const rootCandidates = entries.filter((e) => {
     if (e.relativePath.includes(sep) || e.relativePath.includes('/')) return false
-    return e.relativePath.endsWith('.workflow.ts') || e.relativePath.endsWith('.pipeline.ts')
+    return (
+      e.relativePath.endsWith('.workflow.mts') ||
+      e.relativePath.endsWith('.workflow.ts') ||
+      e.relativePath.endsWith('.pipeline.mts') ||
+      e.relativePath.endsWith('.pipeline.ts')
+    )
   })
   if (rootCandidates.length === 1) {
     return rootCandidates[0]?.relativePath

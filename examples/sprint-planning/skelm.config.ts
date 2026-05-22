@@ -10,7 +10,7 @@ const openai = createOpenAI({
 const modelId = process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
 
 export default defineConfig({
-  registries: { workflows: { glob: '*.pipeline.ts' } },
+  registries: { workflows: { glob: '*.pipeline.{mts,ts}' } },
   backends: { agent: 'vercel-ai' },
   defaults: {
     // vercel-ai is in-process; the gateway egress proxy can't intercept it,

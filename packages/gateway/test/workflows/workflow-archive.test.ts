@@ -39,7 +39,7 @@ async function bootGateway(
     runStore: new MemoryRunStore(),
     loadWorkflow: async () => goodPipeline,
     ...(overrides.workflows !== undefined && { workflows: overrides.workflows }),
-    config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+    config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
   })
   await gw.start()
   return { gw, base: `http://127.0.0.1:${port}` }

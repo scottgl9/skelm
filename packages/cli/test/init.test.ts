@@ -18,7 +18,7 @@ describe('skelm init', () => {
     expect(readFileSync(join(target, 'package.json'), 'utf8')).toContain('"name": "skelm-project"')
     expect(readFileSync(join(target, 'tsconfig.json'), 'utf8')).toContain('"strict": true')
     expect(readFileSync(join(target, 'skelm.config.ts'), 'utf8')).toContain("networkEgress: 'deny'")
-    const wf = readFileSync(join(target, 'workflows/hello.workflow.ts'), 'utf8')
+    const wf = readFileSync(join(target, 'workflows/hello.workflow.mts'), 'utf8')
     expect(wf).toContain("id: 'hello'")
     expect(wf).toContain("from 'skelm'")
     expect(readFileSync(join(target, '.gitignore'), 'utf8')).toContain('node_modules/')

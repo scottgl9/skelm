@@ -40,7 +40,7 @@ async function bootGateway(
     httpPort: port,
     runStore: new MemoryRunStore(),
     loadWorkflow: async () => wf,
-    config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+    config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     ...(overrides.batch !== undefined && { batch: overrides.batch }),
   })
   await gw.start()
