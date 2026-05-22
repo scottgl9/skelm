@@ -760,7 +760,7 @@ export class Gateway {
     const watch = this.options.watchRegistries ?? true
     const workflows = new WorkflowRegistry({
       projectRoot: this.projectRoot,
-      glob: this.config.registries?.workflows?.glob ?? 'workflows/**/*.workflow.ts',
+      glob: this.config.registries?.workflows?.glob ?? 'workflows/**/*.workflow.{mts,ts}',
       watch,
     })
     const skills = new SkillRegistry({

@@ -20,7 +20,7 @@ import {
   type TelegramInput,
   TelegramInputSchema,
   telegramCodingAgent,
-} from './telegram-coding-agent.pipeline.js'
+} from './telegram-coding-agent.pipeline.mjs'
 
 describe('Telegram Coding Agent (UC1)', () => {
   describe('idempotent message handling', () => {

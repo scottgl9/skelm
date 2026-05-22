@@ -69,7 +69,7 @@ export async function initCommand(
   io.stdout.write('\nnext steps:\n')
   io.stdout.write(`  cd ${args.dir}\n`)
   io.stdout.write('  npm install\n')
-  io.stdout.write('  skelm run workflows/hello.workflow.ts --input \'{"name":"world"}\'\n')
+  io.stdout.write('  skelm run workflows/hello.workflow.mts --input \'{"name":"world"}\'\n')
   return { exitCode: EXIT.OK }
 }
 
@@ -162,7 +162,7 @@ function scaffoldFiles(): ReadonlyArray<readonly [string, string]> {
     ['package.json', makePackageJson(skelmVersion)],
     ['tsconfig.json', TSCONFIG],
     ['skelm.config.ts', SKELM_CONFIG],
-    ['workflows/hello.workflow.ts', HELLO_WORKFLOW],
+    ['workflows/hello.workflow.mts', HELLO_WORKFLOW],
     ['.gitignore', GITIGNORE],
     ['README.md', PROJECT_README],
   ]
@@ -175,7 +175,7 @@ function makePackageJson(skelmVersion: string): string {
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "skelm run workflows/hello.workflow.ts --input '{\\"name\\":\\"world\\"}'"
+    "start": "skelm run workflows/hello.workflow.mts --input '{\\"name\\":\\"world\\"}'"
   },
   "dependencies": {
     "skelm": "^${skelmVersion}",
@@ -196,7 +196,7 @@ const TSCONFIG = `{
     "skipLibCheck": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["workflows/**/*.ts", "skelm.config.ts"]
+  "include": ["workflows/**/*.mts", "workflows/**/*.ts", "skelm.config.ts"]
 }
 `
 
@@ -217,7 +217,7 @@ export default defineConfig({
   },
   pipelines: {
     discovery: 'auto',
-    glob: 'workflows/**/*.workflow.ts',
+    glob: 'workflows/**/*.workflow.{mts,ts}',
   },
   secrets: { driver: 'env' },
 })
@@ -257,7 +257,7 @@ A skelm project scaffolded by \`skelm init\`.
 
 \`\`\`sh
 npm install
-skelm run workflows/hello.workflow.ts --input '{"name":"world"}'
+skelm run workflows/hello.workflow.mts --input '{"name":"world"}'
 \`\`\`
 
 See [the skelm docs](https://github.com/scottgl9/skelm/tree/main/docs) for more.

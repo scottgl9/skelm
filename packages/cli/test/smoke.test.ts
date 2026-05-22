@@ -14,10 +14,10 @@ const EXAMPLES_DIR = join(REPO_ROOT, 'examples')
  * break, the readme/quickstart instructions break.
  */
 describe('skelm run examples/* — smoke', () => {
-  it('hello.workflow.ts greets the input name', async () => {
+  it('hello.workflow.mts greets the input name', async () => {
     const { stdout, exitCode } = await invoke([
       'run',
-      join(EXAMPLES_DIR, 'hello/hello.workflow.ts'),
+      join(EXAMPLES_DIR, 'hello/hello.workflow.mts'),
       '--input',
       '{"name":"world"}',
     ])
@@ -25,10 +25,10 @@ describe('skelm run examples/* — smoke', () => {
     expect(JSON.parse(stdout.trim())).toEqual({ greeting: 'hello, world' })
   })
 
-  it('sum.workflow.ts sums two numbers across three code steps', async () => {
+  it('sum.workflow.mts sums two numbers across three code steps', async () => {
     const { stdout, exitCode } = await invoke([
       'run',
-      join(EXAMPLES_DIR, 'sum/sum.workflow.ts'),
+      join(EXAMPLES_DIR, 'sum/sum.workflow.mts'),
       '--input',
       '{"a":2,"b":3}',
     ])
@@ -36,10 +36,10 @@ describe('skelm run examples/* — smoke', () => {
     expect(JSON.parse(stdout.trim())).toEqual({ sum: 5 })
   })
 
-  it('permissions-demo.workflow.ts denies every privileged action under default-deny', async () => {
+  it('permissions-demo.workflow.mts denies every privileged action under default-deny', async () => {
     const { stdout, exitCode } = await invoke([
       'run',
-      join(EXAMPLES_DIR, 'permissions-demo/demo.workflow.ts'),
+      join(EXAMPLES_DIR, 'permissions-demo/demo.workflow.mts'),
       '--input',
       '{}',
     ])
@@ -52,7 +52,7 @@ describe('skelm run examples/* — smoke', () => {
   it('schema validation failure exits 2 (SCHEMA_VALIDATION)', async () => {
     const { exitCode } = await invoke([
       'run',
-      join(EXAMPLES_DIR, 'hello/hello.workflow.ts'),
+      join(EXAMPLES_DIR, 'hello/hello.workflow.mts'),
       '--input',
       '{"name":""}', // fails min(1)
     ])

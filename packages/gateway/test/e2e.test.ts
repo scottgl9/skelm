@@ -30,7 +30,7 @@ describe('Gateway end-to-end', () => {
     // 1. Project layout: a workflow file the registry will discover.
     await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
     await fs.writeFile(
-      join(projectRoot, 'workflows/hello.workflow.ts'),
+      join(projectRoot, 'workflows/hello.workflow.mts'),
       'export default {}', // never imported — we inject a fake loader
     )
 
@@ -44,7 +44,7 @@ describe('Gateway end-to-end', () => {
       enableHttp: true,
       httpPort: port,
       config: {
-        registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } },
+        registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
       },
     })
     await gw.start()
@@ -76,12 +76,12 @@ describe('Gateway end-to-end', () => {
       gw.managers.triggers.register({
         kind: 'manual',
         id: 'wake',
-        workflowId: 'workflows/hello.workflow.ts',
+        workflowId: 'workflows/hello.workflow.mts',
       })
 
       // Pre-fire: registry sees the workflow, runStore is empty, audit empty.
       expect(gw.registries.workflows.list().map((w) => w.id)).toEqual([
-        'workflows/hello.workflow.ts',
+        'workflows/hello.workflow.mts',
       ])
       const triggersBefore = (await fetch(`${base}/triggers`).then((r) => r.json())) as Array<{
         spec: { id: string }

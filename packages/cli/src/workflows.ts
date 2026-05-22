@@ -70,7 +70,7 @@ export async function resolveWorkflowReference(
 async function discoverWorkflowFiles(projectRoot: string, globPattern?: string): Promise<string[]> {
   const root = resolve(
     projectRoot,
-    prefixBeforeWildcard(globPattern ?? 'workflows/**/*.workflow.ts'),
+    prefixBeforeWildcard(globPattern ?? 'workflows/**/*.workflow.{mts,ts}'),
   )
   const suffixes = suffixesForPattern(globPattern)
   const files: string[] = []
@@ -108,10 +108,11 @@ function prefixBeforeWildcard(pattern: string): string {
 }
 
 function suffixesForPattern(pattern: string | undefined): readonly string[] {
-  if (pattern === undefined) return ['.workflow.ts', '.pipeline.ts']
-  if (pattern.includes('.workflow.ts')) return ['.workflow.ts']
-  if (pattern.includes('.pipeline.ts')) return ['.pipeline.ts']
-  return ['.workflow.ts', '.pipeline.ts']
+  const allSuffixes = ['.workflow.mts', '.workflow.ts', '.pipeline.mts', '.pipeline.ts']
+  if (pattern === undefined) return allSuffixes
+  if (pattern.includes('.workflow.')) return ['.workflow.mts', '.workflow.ts']
+  if (pattern.includes('.pipeline.')) return ['.pipeline.mts', '.pipeline.ts']
+  return allSuffixes
 }
 
 function isMissing(error: unknown): boolean {

@@ -40,7 +40,7 @@ async function bootGateway(opts: { allowedDirs?: string[] } = {}): Promise<{
     loadWorkflow: async () => goodPipeline,
     ...(opts.allowedDirs !== undefined && { allowedRegistrationDirs: opts.allowedDirs }),
     config: {
-      registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } },
+      registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
     },
   })
   await gw.start()

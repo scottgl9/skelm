@@ -8,7 +8,7 @@ import { createPiSdkBackend } from '@skelm/pi'
 // how to configure it.
 export default defineConfig({
   registries: {
-    workflows: { glob: '*.pipeline.ts' },
+    workflows: { glob: '*.pipeline.{mts,ts}' },
   },
   instances: [
     createPiSdkBackend({

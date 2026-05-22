@@ -36,7 +36,7 @@ describe('walkGlob', () => {
     await writeFile('workflows/a.workflow.ts', '')
     await writeFile('workflows/sub/b.workflow.ts', '')
     await writeFile('workflows/skip.txt', '')
-    const matches = await walkGlob(projectRoot, 'workflows/**/*.workflow.ts')
+    const matches = await walkGlob(projectRoot, 'workflows/**/*.workflow.{mts,ts}')
     expect(matches).toEqual([
       join(projectRoot, 'workflows/a.workflow.ts'),
       join(projectRoot, 'workflows/sub/b.workflow.ts'),
@@ -54,14 +54,14 @@ describe('walkGlob', () => {
 
 describe('WorkflowRegistry', () => {
   it('lists discovered workflow files keyed by relative path', async () => {
-    await writeFile('workflows/hello.workflow.ts', 'export default {}')
+    await writeFile('workflows/hello.workflow.mts', 'export default {}')
     const reg = new WorkflowRegistry({
       projectRoot,
-      glob: 'workflows/**/*.workflow.ts',
+      glob: 'workflows/**/*.workflow.{mts,ts}',
     })
     await reg.start()
     expect(reg.list()).toEqual([
-      { id: 'workflows/hello.workflow.ts', path: join(projectRoot, 'workflows/hello.workflow.ts') },
+      { id: 'workflows/hello.workflow.mts', path: join(projectRoot, 'workflows/hello.workflow.mts') },
     ])
     await reg.close()
   })
@@ -70,7 +70,7 @@ describe('WorkflowRegistry', () => {
     await writeFile('workflows/a.workflow.ts', 'v1')
     const reg = new WorkflowRegistry({
       projectRoot,
-      glob: 'workflows/**/*.workflow.ts',
+      glob: 'workflows/**/*.workflow.{mts,ts}',
     })
     await reg.start()
     const events: { added: number; removed: number; modified: number }[] = []
@@ -152,7 +152,7 @@ describe('Gateway with registries', () => {
       watchRegistries: false,
       config: {
         registries: {
-          workflows: { glob: 'workflows/**/*.workflow.ts' },
+          workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' },
           skills: { glob: 'skills/**/SKILL.md' },
           agents: [
             { id: 'a', runtime: 'opencode', lifecycle: 'resident', url: 'http://127.0.0.1:1' },

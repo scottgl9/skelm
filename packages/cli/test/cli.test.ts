@@ -84,7 +84,7 @@ describe('main — integration', () => {
   })
 
   it('runs a fixture workflow and prints its output to stdout', async () => {
-    const filePath = join(FIXTURES_DIR, 'hello.workflow.ts')
+    const filePath = join(FIXTURES_DIR, 'hello.workflow.mts')
 
     const { stdout, stderr, exitCode } = await invoke([
       'run',
@@ -100,7 +100,7 @@ describe('main — integration', () => {
   })
 
   it('writes JSON events to stderr while leaving stdout as final JSON', async () => {
-    const filePath = join(FIXTURES_DIR, 'hello.workflow.ts')
+    const filePath = join(FIXTURES_DIR, 'hello.workflow.mts')
 
     const { stdout, stderr, exitCode } = await invoke([
       'run',
@@ -134,7 +134,7 @@ describe('main — integration', () => {
   })
 
   it('prompts for wait() input and resumes interactively', async () => {
-    const filePath = join(FIXTURES_DIR, 'wait.workflow.ts')
+    const filePath = join(FIXTURES_DIR, 'wait.workflow.mts')
 
     const { stdout, stderr, exitCode } = await invoke(['run', filePath], '{"approved":true}\n')
 
@@ -145,7 +145,7 @@ describe('main — integration', () => {
   })
 
   it('loads the default OpenAI backend for llm() workflows without a config file', async () => {
-    const filePath = join(FIXTURES_DIR, 'openai-default.workflow.ts')
+    const filePath = join(FIXTURES_DIR, 'openai-default.workflow.mts')
 
     const seenAuth: string[] = []
     const server = await startOpenAIServer(async (req, headers) => {
@@ -188,7 +188,7 @@ describe('main — integration', () => {
   })
 
   it('loads AGENTS.md content into agent() system prompts', async () => {
-    const filePath = join(FIXTURES_DIR, 'agentdef.workflow.ts')
+    const filePath = join(FIXTURES_DIR, 'agentdef.workflow.mts')
 
     const seenSystems: string[] = []
     const server = await startAnthropicServer(async (req) => {
@@ -267,7 +267,7 @@ describe('main — integration', () => {
 
   it('shows run history and persisted events from the local store', async () => {
     await withProjectDir(async (dir) => {
-      const runFile = join(dir, 'workflows/alpha.workflow.ts')
+      const runFile = join(dir, 'workflows/alpha.workflow.mts')
       const run = await invokeInDir(['run', runFile], dir)
       expect(run.exitCode).toBe(EXIT.OK)
       const runId = run.stderr.match(/runId=([^)]+)/)?.[1]

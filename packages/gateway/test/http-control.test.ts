@@ -831,7 +831,7 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
       httpProxyPort: proxyPort,
       loadWorkflow: async () => wf,
       config: {
-        registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } },
+        registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
       },
     })
     await gw.start()
@@ -884,7 +884,7 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
       httpPort: port,
       httpProxyPort: proxyPort,
       loadWorkflow: async () => wf,
-      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     })
     await gw.start()
     try {
@@ -943,7 +943,7 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
       httpPort: port,
       httpProxyPort: proxyPort,
       loadWorkflow: async () => wf,
-      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     })
     await gw.start()
     try {
@@ -997,7 +997,7 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
       httpPort: port,
       httpProxyPort: proxyPort,
       loadWorkflow: async () => wf,
-      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     })
     await gw.start()
     try {
@@ -1071,7 +1071,7 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
       enableHttp: true,
       httpPort: port,
       httpProxyPort: proxyPort,
-      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     })
     await gw.start()
     try {
@@ -1117,7 +1117,7 @@ describe('Gateway HTTP OpenAI-compat surface', () => {
       httpPort: port,
       httpProxyPort: proxyPort,
       loadWorkflow: async () => wf,
-      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     })
     await gw.start()
     try {
@@ -1196,7 +1196,7 @@ describe('Gateway HTTP OpenAI-compat surface', () => {
       httpPort: port,
       httpProxyPort: proxyPort,
       loadWorkflow: async () => wf,
-      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } } },
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     })
     await gw.start()
     try {
@@ -1227,7 +1227,7 @@ describe('Gateway HTTP /pipelines', () => {
     const projectRoot = await mkdtemp(join(tmpdir(), 'skelm-pl-proj-'))
     await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
     await fs.writeFile(
-      join(projectRoot, 'workflows/hello.workflow.ts'),
+      join(projectRoot, 'workflows/hello.workflow.mts'),
       'export default { id: "hello", steps: [] }',
     )
 
@@ -1241,7 +1241,7 @@ describe('Gateway HTTP /pipelines', () => {
       httpPort: port,
       httpProxyPort: proxyPort,
       config: {
-        registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } },
+        registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
       },
     })
     await gw.start()
@@ -1251,7 +1251,7 @@ describe('Gateway HTTP /pipelines', () => {
       )) as Array<{
         id: string
       }>
-      expect(list.map((p) => p.id)).toEqual(['workflows/hello.workflow.ts'])
+      expect(list.map((p) => p.id)).toEqual(['workflows/hello.workflow.mts'])
     } finally {
       await gw.stop()
       await rm(projectRoot, { recursive: true, force: true })
@@ -1288,7 +1288,7 @@ describe('Gateway HTTP /pipelines', () => {
       httpProxyPort: proxyPort,
       loadWorkflow: async () => wf,
       config: {
-        registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } },
+        registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
       },
     })
     await gw.start()
@@ -1340,7 +1340,7 @@ describe('Gateway HTTP /pipelines', () => {
       httpProxyPort: proxyPort,
       // no loadWorkflow
       config: {
-        registries: { workflows: { glob: 'workflows/**/*.workflow.ts' } },
+        registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
       },
     })
     await gw.start()
