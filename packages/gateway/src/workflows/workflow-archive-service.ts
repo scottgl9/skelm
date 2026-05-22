@@ -12,6 +12,8 @@ import { WorkflowRegistrationError } from './workflow-registration-service.js'
  */
 const ALLOWED_EXTENSIONS = new Set<string>([
   '.ts',
+  '.mts',
+  '.cts',
   '.js',
   '.mjs',
   '.cjs',
