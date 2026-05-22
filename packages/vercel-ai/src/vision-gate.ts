@@ -115,10 +115,15 @@ export function assertModelMatchesBound(
   const boundId = extractModelId(boundModel)
   const boundQualified = extractQualifiedModelId(boundModel)
   if (requestedModel === boundId || requestedModel === boundQualified) return
+  // capability='modelSelection' — vercel-ai's BackendCapabilities already
+  // declares `modelSelection: false`, which is exactly the contract this
+  // mismatch violates. Using 'vision' here would misclassify a routing
+  // failure as a vision-capability failure for any caller catching
+  // BackendCapabilityError and branching on .capability.
   throw new BackendCapabilityError(
     `backend "${backendId}" is bound to model "${boundQualified}" but the step requested "${requestedModel}". vercel-ai backends route through a pre-constructed LanguageModel instance and cannot honour per-call model overrides. Register a second backend instance with the desired model, or remove the step's "model" field to use the bound one.`,
     backendId,
-    'vision',
+    'modelSelection',
   )
 }
 
