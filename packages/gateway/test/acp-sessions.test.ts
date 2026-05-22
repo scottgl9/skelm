@@ -56,11 +56,16 @@ describe('AcpSessionManager', () => {
   })
 
   it('prune({ olderThanMs }) removes sessions whose lastSeenAt is too old', async () => {
+    // Margins are deliberately wide — the original 5ms / 15ms shape flaked
+    // on slow CI runners where scheduling jitter between `fresh` creation
+    // and the prune call would push `fresh.lastSeenAt` past the 5ms cutoff
+    // and sweep it up alongside `s`. 100ms cutoff + 200ms gap gives a
+    // 100ms tolerance window that no plausible runner should breach.
     const a = new AcpSessionManager({ storePath: defaultAcpSessionStorePath(dir) })
     const s = await a.create({ agentId: 'old' })
-    await new Promise((r) => setTimeout(r, 15))
+    await new Promise((r) => setTimeout(r, 200))
     const fresh = await a.create({ agentId: 'fresh' })
-    const removed = await a.prune({ olderThanMs: 5 })
+    const removed = await a.prune({ olderThanMs: 100 })
     expect(removed).toContain(s.id)
     expect(removed).not.toContain(fresh.id)
     expect(a.get(s.id)).toBeUndefined()
