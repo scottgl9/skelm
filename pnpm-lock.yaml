@@ -147,10 +147,6 @@ importers:
       vitest:
         specifier: ^2.1.5
         version: 2.1.9(@types/node@22.19.17)
-    optionalDependencies:
-      '@skelm/integration-sdk':
-        specifier: workspace:*
-        version: link:../integration-sdk
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.13

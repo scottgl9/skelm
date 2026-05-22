@@ -90,8 +90,5 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "typescript": "^5.6.3"
-  },
-  "optionalDependencies": {
-    "@skelm/integration-sdk": "workspace:*"
   }
 }
