@@ -158,6 +158,7 @@ export type {
 export {
   agent,
   branch,
+  check,
   code,
   forEach,
   idempotent,
@@ -169,6 +170,7 @@ export {
   pipelineStep,
   wait,
 } from './builders.js'
+export type { TestResult } from './builders.js'
 export {
   ExecConfigError,
   InvokePipelineNotFoundError,
