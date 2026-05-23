@@ -55,6 +55,19 @@ describe('parseArgv', () => {
       flags: { json: true },
     })
   })
+
+  it('maps subcommand help to the top-level help command', () => {
+    expect(parseArgv(['run', '--help'])).toEqual({
+      command: 'help',
+      positional: ['run'],
+      flags: {},
+    })
+    expect(parseArgv(['gateway', '-h'])).toEqual({
+      command: 'help',
+      positional: ['gateway'],
+      flags: {},
+    })
+  })
 })
 
 describe('main — integration', () => {
@@ -75,6 +88,14 @@ describe('main — integration', () => {
     const { stderr, exitCode } = await invoke(['run'])
     expect(exitCode).toBe(EXIT.CLI_ERROR)
     expect(stderr).toMatch(/requires a workflow file path/)
+  })
+
+  it('prints subcommand help and exits OK', async () => {
+    const { stdout, stderr, exitCode } = await invoke(['run', '--help'])
+    expect(exitCode).toBe(EXIT.OK)
+    expect(stdout).toContain('skelm run <workflow.ts> [flags]')
+    expect(stdout).toContain('--input <json>')
+    expect(stderr).toBe('')
   })
 
   it('returns CLI_ERROR when the workflow file does not exist', async () => {
