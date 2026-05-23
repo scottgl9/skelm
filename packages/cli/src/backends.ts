@@ -2,6 +2,7 @@ import { type CodexBackendOptions, createCodexBackend } from '@skelm/codex'
 import {
   BackendRegistry,
   type Pipeline,
+  type SecretResolver,
   type SkelmConfig,
   type Step,
   createAcpBackend,
@@ -25,6 +26,7 @@ export function applyConfiguredBackends<TInput, TOutput>(
 export async function buildBackendRegistry(
   config: SkelmConfig,
   pipeline?: Pipeline<unknown, unknown>,
+  secretResolver?: SecretResolver,
 ): Promise<BackendRegistry | undefined> {
   const backendIds = configuredBackendIds(config)
 
@@ -47,7 +49,7 @@ export async function buildBackendRegistry(
   if (backendIds.size === 0) return registry
 
   for (const backendId of backendIds) {
-    const backend = await Promise.resolve(createBackend(backendId, config))
+    const backend = await Promise.resolve(createBackend(backendId, config, secretResolver))
     registry.register(backend)
   }
   return registry
@@ -130,7 +132,7 @@ function patchStep(
   }
 }
 
-function createBackend(backendId: string, config: SkelmConfig) {
+function createBackend(backendId: string, config: SkelmConfig, secretResolver?: SecretResolver) {
   const entry = readBackendEntry(config, backendId)
   switch (backendId) {
     case 'openai': {
@@ -142,6 +144,7 @@ function createBackend(backendId: string, config: SkelmConfig) {
         ...(resolvedApiKey !== undefined && { apiKey: resolvedApiKey }),
         ...(baseUrl !== undefined && { baseUrl }),
         ...(model !== undefined && { model }),
+        ...(secretResolver !== undefined && { secretResolver }),
       })
     }
     case 'copilot-acp': {
@@ -175,6 +178,7 @@ function createBackend(backendId: string, config: SkelmConfig) {
         ...(resolvedApiKey !== undefined && { apiKey: resolvedApiKey }),
         ...(baseUrl !== undefined && { baseUrl }),
         ...(model !== undefined && { model }),
+        ...(secretResolver !== undefined && { secretResolver }),
       })
     }
     case 'opencode': {
