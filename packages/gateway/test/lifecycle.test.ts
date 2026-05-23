@@ -127,6 +127,25 @@ describe('Gateway lifecycle', () => {
     await gw.stop()
   })
 
+  it('options.httpPort drives the egress proxy port (proxyPort = httpPort + 1)', async () => {
+    // Regression: when --http-port overrides server.port via options.httpPort,
+    // the egress proxy used to keep deriving its port from config.server.port
+    // (defaulting to 14738+1=14739), so concurrent gateways with distinct
+    // --http-port flags still collided on the proxy port.
+    const gw = new Gateway({
+      stateDir,
+      httpPort: 4042,
+      config: {
+        server: { port: 4099, host: '127.0.0.1', auth: { mode: 'none' } },
+      },
+    })
+    await gw.start()
+    const proxyEnv = gw.getProxyEnvVars()
+    expect(proxyEnv).toBeDefined()
+    expect(proxyEnv?.HTTP_PROXY).toBe('http://127.0.0.1:4043')
+    await gw.stop()
+  })
+
   it('explicit options.url still wins over config.server.port', async () => {
     const gw = new Gateway({
       stateDir,
