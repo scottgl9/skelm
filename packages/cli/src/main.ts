@@ -9,7 +9,7 @@ import { debugCommand } from './debug.js'
 import { describeCommand } from './describe.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { gatewayCommand } from './gateway.js'
-import { HELP_TEXT } from './help.js'
+import { HELP_TEXT, getHelpText } from './help.js'
 import { historyCommand } from './history.js'
 import { initCommand } from './init.js'
 import { listCommand } from './list.js'
@@ -35,7 +35,7 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
   try {
     switch (parsed.command) {
       case 'help':
-        io.stdout.write(HELP_TEXT)
+        io.stdout.write(getHelpText(parsed.positional[0]))
         return { exitCode: EXIT.OK }
       case 'version':
         io.stdout.write(`${getVersion()}\n`)
