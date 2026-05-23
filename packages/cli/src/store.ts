@@ -4,8 +4,10 @@ import { MemoryRunStore, type SkelmConfig, SqliteRunStore, WorkspaceManager } fr
 
 export type CliRunStore = MemoryRunStore | SqliteRunStore
 
-/** Default SQLite path — shared with the gateway so CLI runs appear in history. */
-const DEFAULT_DB_PATH = join(homedir(), '.skelm', 'runs.db')
+/** Default SQLite path — shared with the gateway so CLI runs appear in history.
+ * Respects SKELM_STATE_DIR env override (same as the gateway).
+ */
+const DEFAULT_DB_PATH = join(process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm'), 'runs.db')
 
 export function createRunStore(config: SkelmConfig): CliRunStore {
   const storage = config.storage

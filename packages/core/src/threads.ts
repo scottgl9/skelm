@@ -78,6 +78,14 @@ export function createThreadHost(store: StateStore): ThreadHost {
           await store.setState(namespace, 'lastSeen', commentId)
         },
         async appendComment(commentId: string, comment: unknown): Promise<void> {
+          // Deduplicate: skip if this commentId already exists in the stream.
+          // Prevents duplicate entries when a pipeline runs multiple times
+          // against the same persistent StateStore (e.g. cross-run scenarios
+          // where the same fixture appends the same comment ids on each pass).
+          for await (const entry of store.readState(namespace, 'comments')) {
+            const e = entry as { commentId: string; comment: unknown }
+            if (e.commentId === commentId) return
+          }
           await store.appendState(namespace, 'comments', { commentId, comment })
         },
         async *unseenSince(

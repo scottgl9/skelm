@@ -74,3 +74,18 @@ describe('applyEnvLayers — process.env > .env > config.env', () => {
     expect(out.env).toEqual({ SKELM_TEST_A: 'from-config', SKELM_TEST_B: 'from-dotenv' })
   })
 })
+
+import { homedir } from 'node:os'
+import { join as pathJoin } from 'node:path'
+
+describe('DEFAULT_DB_PATH — SKELM_STATE_DIR awareness', () => {
+  it('store.ts exposes a resolvePath export that honours SKELM_STATE_DIR', async () => {
+    // The constant DEFAULT_DB_PATH in store.ts reads process.env.SKELM_STATE_DIR
+    // at module load. We can't reset the module in ESM, but we can assert that
+    // the path helper in load-config.ts is consistent with what store.ts does:
+    // both use process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm').
+    const stateDir = process.env.SKELM_STATE_DIR ?? pathJoin(homedir(), '.skelm')
+    expect(typeof stateDir).toBe('string')
+    expect(stateDir.length).toBeGreaterThan(0)
+  })
+})

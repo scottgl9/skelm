@@ -111,4 +111,44 @@ describe('ctx.threads — conversation thread helper', () => {
     for await (const c of t.unseenSince()) got.push(c.commentId)
     expect(got).toEqual(['x', 'y'])
   })
+
+  it('appendComment deduplicates by commentId — re-appending the same id is a no-op', async () => {
+    const store = new MemoryRunStore()
+    const host = createThreadHost(store)
+    const t = host.get({ kind: 'github-pr', key: 'octo/demo#dedup' })
+
+    // First append — stored.
+    await t.appendComment('c1', { body: 'first' })
+    await t.appendComment('c2', { body: 'second' })
+
+    // Re-append the same ids (simulates a second CLI run hitting the same store).
+    await t.appendComment('c1', { body: 'first again' })
+    await t.appendComment('c2', { body: 'second again' })
+    await t.appendComment('c3', { body: 'third' })
+
+    const all: string[] = []
+    for await (const c of t.unseenSince()) all.push(c.commentId)
+    // Duplicates must not appear — stream should be c1, c2, c3 in insertion order.
+    expect(all).toEqual(['c1', 'c2', 'c3'])
+  })
+
+  it('unseenSince after dedup yields correct results', async () => {
+    const store = new MemoryRunStore()
+    const host = createThreadHost(store)
+    const t = host.get({ kind: 'github-pr', key: 'octo/demo#dedup2' })
+
+    await t.appendComment('c1', { body: 'a' })
+    await t.appendComment('c2', { body: 'b' })
+    await t.markSeen('c1')
+
+    // Simulate second run: re-append c1+c2, add c3.
+    await t.appendComment('c1', { body: 'a again' }) // deduped
+    await t.appendComment('c2', { body: 'b again' }) // deduped
+    await t.appendComment('c3', { body: 'c' })
+
+    const unseen: string[] = []
+    for await (const c of t.unseenSince('c1')) unseen.push(c.commentId)
+    // unseenSince('c1') should yield c2 and c3, not duplicates.
+    expect(unseen).toEqual(['c2', 'c3'])
+  })
 })
