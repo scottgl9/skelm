@@ -652,7 +652,12 @@ export class Gateway {
     // bind to an OS-assigned port (0). Concurrent gateway instances (typically
     // tests) need port isolation; production users always set server.port via
     // defineConfig() so production behavior is unchanged.
-    const serverPort = this.config.server?.port
+    //
+    // The CLI `--http-port` override (this.options.httpPort) participates in
+    // the same precedence as startHttp() — without it, two gateways launched
+    // with distinct `--http-port` flags would still both derive proxyPort from
+    // the default config (14738) and collide on 14739.
+    const serverPort = this.options.httpPort ?? this.config.server?.port
     const explicitProxyPort = proxyConfig?.port
     const proxyPort =
       explicitProxyPort !== undefined
