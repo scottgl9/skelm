@@ -114,6 +114,9 @@ function parseSubcommand(
     | 'logs',
   rest: readonly string[],
 ): ParsedArgv {
+  if (rest.includes('--help') || rest.includes('-h')) {
+    return { command: 'help', positional: [command], flags: {} }
+  }
   const positional: string[] = []
   const flags: Record<string, string | boolean> = {}
   for (let i = 0; i < rest.length; i++) {
