@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MemoryRunStore, code, pipeline } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Gateway } from '../../src/index.js'
-import { pickFreePort } from '../utils/pick-free-port.js'
+import type { Gateway } from '../../src/index.js'
+import { bootGatewayWithRetry } from '../utils/boot-gateway.js'
 
 let stateDir: string
 let projectRoot: string
@@ -31,8 +31,7 @@ async function bootGateway(
   await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
   await fs.writeFile(join(projectRoot, 'workflows/a.workflow.ts'), 'export default {}')
   await fs.writeFile(join(projectRoot, 'workflows/b.workflow.ts'), 'export default {}')
-  const port = await pickFreePort()
-  const gw = new Gateway({
+  return bootGatewayWithRetry((port) => ({
     stateDir,
     projectRoot,
     watchRegistries: false,
@@ -42,9 +41,7 @@ async function bootGateway(
     loadWorkflow: async () => wf,
     config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     ...(overrides.batch !== undefined && { batch: overrides.batch }),
-  })
-  await gw.start()
-  return { gw, base: `http://127.0.0.1:${port}` }
+  }))
 }
 
 describe('/v1/batch/*', () => {
