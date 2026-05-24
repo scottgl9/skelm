@@ -2,6 +2,10 @@
 
 The skelm gateway is the long-running process that hosts your workflows. It is the canonical trust boundary — every permission decision, secret resolution, audit entry, and approval prompt flows through it — and the home of every persistent concern (config, registries, agent process supervision, ACP sessions, scheduler, HTTP/SSE).
 
+**It is also the only execution surface.** Since the CLI-as-gateway-interface refactor, every non-exempt CLI command (`run`, `list`, `describe`, `history`, `audit`, `workspace`, `secrets`) dispatches to the gateway over HTTP. The CLI does not import `runPipeline`, `Runner`, `EventBus`, `SqliteRunStore`, `ChainAuditWriter`, or any other runtime piece — a structural guard (`scripts/guards/cli-no-core-runtime.ts`) enforces that. When you `skelm run` without a gateway running, the CLI auto-spawns one in the background (or delegates to systemd/launchd when the unit is installed), then dispatches.
+
+Exempt commands that work with no gateway: `help`, `version`, all `gateway *` subcommands, `init`, `validate`.
+
 There is **one** entry point: the `skelm` CLI. The gateway runs as a subcommand:
 
 ```bash
@@ -165,7 +169,21 @@ Routes:
 | `/triggers` | GET | List registered triggers. |
 | `/triggers/:id/fire` | POST | Manually fire one trigger. |
 
-Plus the existing pre-gateway routes (`/pipelines`, `/runs`, `/runs/:id/stream`, etc).
+Plus the routes the CLI dispatches to, which the refactor added:
+
+| Route | Method | Notes |
+|-------|--------|-------|
+| `/pipelines/run-file` | POST | Sync ad-hoc execution by absolute workflow path. Body: `{ file, input? }`. |
+| `/pipelines/start-file` | POST | Async ad-hoc start; returns `{ runId, pipelineId }` immediately. |
+| `/pipelines/describe-file` | POST | Compile + describe a workflow file (no run). |
+| `/runs/:runId` | GET | Run state. Includes `waiting` while parked at a `wait()` step. |
+| `/runs/:runId/events` | GET | Persisted event log. Clamped to `?limit=1000` (hard cap 5000); use `?since=` for incremental tailing. |
+| `/runs/:runId/stream` | GET | Live SSE stream (replay-then-tail, explicit `flushHeaders`, 15s heartbeat). |
+| `/runs/:runId/resume` | POST | Body: `{ output }`. Resumes a `wait()` step. |
+| `/audit`, `/audit/verify` | GET | Chain reader and verifier. |
+| `/workspaces`, `/workspaces/:wf/:name` | GET, DELETE | Persistent workspace inventory. |
+| `/secrets` | GET | Names only (no values). |
+| `/secrets/:name` | GET, PUT, DELETE | Existence check / write / unset. Plaintext never leaves the gateway over HTTP. |
 
 ## Triggers
 

@@ -18,11 +18,12 @@ Vault and cloud secret drivers land in M4+. The `VaultSecretResolver` shape is e
 
 ```bash
 skelm secrets list                          # names only
-skelm secrets get OPENAI_KEY                # value to stdout
-skelm secrets set OPENAI_KEY --value sk-... # writes ~/.skelm/secrets.json (0600)
+skelm secrets get OPENAI_KEY                # 'OPENAI_KEY: set' / 'OPENAI_KEY: not set' (no value)
+skelm secrets set OPENAI_KEY --value sk-... # writes via the gateway; resolver-side
+skelm secrets unset OPENAI_KEY              # removes
 ```
 
-The CLI uses the file driver directly, bypassing the running gateway. That keeps secret rotation possible without restarting the gateway and works even when the gateway isn't running.
+`skelm secrets` is gateway-mediated since the CLI-as-gateway-interface refactor. The plaintext value **never leaves the gateway process** over HTTP — `GET /secrets/:name` reports `{ name, set: true|false }`, not the value. Workflows resolve the actual value in-process through the gateway-side `SecretResolver`. The `skelm secrets get` command therefore reports existence (`set` / `not set`) rather than the raw plaintext; for the value itself, read the source of truth (e.g. `~/.skelm/secrets.json` with the file driver, which the gateway writes mode `0600`).
 
 ## Authoring guidance
 

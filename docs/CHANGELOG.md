@@ -27,7 +27,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
   A new structural guard (`pnpm guards` → `scripts/guards/cli-no-core-runtime.ts`) keeps the CLI from reintroducing in-process runtime work.
 
-  **Temporarily unavailable.** Interactive `wait()` resume from `skelm run` is not yet wired in this release. Workflows that call `wait()` now finish in `status: 'waiting'`; the CLI prints an explanatory message with the exact `POST /runs/:runId/resume` curl invocation needed to unblock them, and exits with the new `EXIT.RUN_PAUSED = 8` code. Pre-refactor, the CLI drove the resume prompt in-process via a `waitForInput` callback; restoring that on top of the dispatch model needs live SSE event consumption from the gateway (h3 `createEventStream` doesn't currently flush headers eagerly enough for undici `fetch` to begin yielding chunks — tracked as a follow-up).
+  **Interactive `wait()` resume restored.** `skelm run` now subscribes live to `/runs/:runId/stream` over SSE, prompts on `/dev/tty` (or stderr/stdin fallback) when the gateway emits a `run.waiting` event, and POSTs to `/runs/:runId/resume`. The gateway-side stream handler is replay-then-tail with explicit `res.flushHeaders()`, so even a sub-second run is delivered in full when the CLI subscribes after completion. Non-interactive invocations (CI, piped empty stdin) still surface `EXIT.RUN_PAUSED = 8` together with the `curl` recipe for out-of-band resume.
+
+- **`Run.waiting` snapshot on the Run record.** While a run is parked at a `wait()` step, the gateway persists a serializable `RunWaiting` snapshot (`stepId`, optional `message`, optional `timeoutMs`, `since`) on the Run. HTTP clients can detect pause from a single `GET /runs/:id`. Cleared on `run.resumed`.
+
+- **`sessionId?: string` promoted to `AgentRequest`.** The structural-typing cast inside the `@skelm/codex` backend is gone; backends can read the session id off the request directly.
 
 ## [0.4.3] - 2026-05-22
 
