@@ -1,6 +1,5 @@
 import { promises as fs } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { createServer as createNetServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { code, pipeline } from '@skelm/core'
@@ -11,6 +10,7 @@ import {
   TriggerCoordinator,
   createTriggerDispatcher,
 } from '../src/index.js'
+import { bootGatewayWithRetry } from './utils/boot-gateway.js'
 
 let stateDir: string
 let projectRoot: string
@@ -34,10 +34,8 @@ describe('Gateway end-to-end', () => {
       'export default {}', // never imported — we inject a fake loader
     )
 
-    const port = await pickFreePort()
-
     // 2. Start gateway with HTTP enabled, FS watch disabled.
-    const gw = new Gateway({
+    const { gw, base } = await bootGatewayWithRetry(async (port) => ({
       stateDir,
       projectRoot,
       watchRegistries: false,
@@ -46,9 +44,7 @@ describe('Gateway end-to-end', () => {
       config: {
         registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
       },
-    })
-    await gw.start()
-    const base = `http://127.0.0.1:${port}`
+    }))
 
     try {
       // 3. Wire the dispatcher with a fake loader (avoids touching disk in tests).
@@ -127,15 +123,12 @@ describe('Gateway end-to-end', () => {
   })
 
   it('persists ACP sessions across a gateway restart cycle', async () => {
-    const port1 = await pickFreePort()
-    const gw1 = new Gateway({
+    const { gw: gw1, base: base1 } = await bootGatewayWithRetry(async (port) => ({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
-      httpPort: port1,
-    })
-    await gw1.start()
-    const base1 = `http://127.0.0.1:${port1}`
+      httpPort: port,
+    }))
 
     // Create a session via the manager (no agent needed for the bookkeeping).
     const created = await gw1.managers.acpSessions.create({ agentId: 'opencode-1' })
@@ -147,15 +140,12 @@ describe('Gateway end-to-end', () => {
     await gw1.stop()
 
     // New gateway in the same stateDir reconciles the persisted session.
-    const port2 = await pickFreePort()
-    const gw2 = new Gateway({
+    const { gw: gw2, base: base2 } = await bootGatewayWithRetry(async (port) => ({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
-      httpPort: port2,
-    })
-    await gw2.start()
-    const base2 = `http://127.0.0.1:${port2}`
+      httpPort: port,
+    }))
     try {
       const after = (await fetch(`${base2}/sessions`).then((r) => r.json())) as Array<{
         id: string
@@ -194,24 +184,6 @@ describe('Gateway end-to-end', () => {
     }
   })
 })
-
-async function pickFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createNetServer()
-    srv.unref()
-    srv.once('error', reject)
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address()
-      if (addr === null || typeof addr === 'string') {
-        srv.close()
-        reject(new Error('port pick failed'))
-        return
-      }
-      const port = addr.port
-      srv.close(() => resolve(port))
-    })
-  })
-}
 
 // Silence the unused-import warning when this is built but not used elsewhere
 void TriggerCoordinator
