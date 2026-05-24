@@ -108,13 +108,7 @@ describe('skelm gateway — CLI smoke', () => {
   })
 
   it('secrets set fails cleanly when no gateway is running', async () => {
-    const { stderr, exitCode } = await invoke([
-      'secrets',
-      'set',
-      'TEST_KEY',
-      '--value',
-      's3cret',
-    ])
+    const { stderr, exitCode } = await invoke(['secrets', 'set', 'TEST_KEY', '--value', 's3cret'])
     expect(exitCode).toBe(EXIT.CLI_ERROR)
     expect(stderr).toMatch(/not running|SKELM_NO_AUTOSTART/)
   })

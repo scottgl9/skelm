@@ -1,5 +1,5 @@
-import { createServer as createNetServer } from 'node:net'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createServer as createNetServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -78,9 +78,7 @@ export interface BootOptions {
   config?: Record<string, unknown>
 }
 
-export async function bootInProcessGateway(
-  options: BootOptions = {},
-): Promise<InProcessGateway> {
+export async function bootInProcessGateway(options: BootOptions = {}): Promise<InProcessGateway> {
   const stateDir = await mkdtemp(join(tmpdir(), 'skelm-cli-gw-harness-'))
   process.env.SKELM_STATE_DIR = stateDir
   process.env.SKELM_NO_AUTOSTART = '1'
