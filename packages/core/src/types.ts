@@ -759,6 +759,23 @@ export interface Pipeline<TInput = unknown, TOutput = unknown> {
   readonly _output?: TOutput
 }
 
+/**
+ * Serializable snapshot of an in-flight wait() request. Persisted on the
+ * Run record while a step is parked so HTTP clients (the CLI's `run` poll
+ * loop, dashboards) can detect the pause condition from a single
+ * GET /runs/:id without also fetching the event log.
+ *
+ * Mirrors the subset of WaitRequest that survives JSON round-trip — i.e.
+ * everything except `signal` and `outputSchema`.
+ */
+export interface RunWaiting {
+  readonly stepId: StepId
+  readonly message?: string
+  readonly timeoutMs?: number
+  /** Wall-clock ms at which the wait() step began parking. */
+  readonly since: number
+}
+
 /** Final record of a completed (or failed / cancelled) run. */
 export interface Run<TInput = unknown, TOutput = unknown> {
   readonly runId: RunId
@@ -783,4 +800,9 @@ export interface Run<TInput = unknown, TOutput = unknown> {
   readonly error: SerializedError | undefined
   readonly startedAt: number
   readonly completedAt: number | undefined
+  /**
+   * Populated while the run is parked at a wait() step; cleared on resume.
+   * Absent for runs that never reach a wait() step.
+   */
+  readonly waiting?: RunWaiting
 }

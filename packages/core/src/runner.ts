@@ -492,6 +492,34 @@ export async function runPipeline<TInput, TOutput>(
             }),
           )
         })
+  // Mirror wait/resume into the persisted Run record so HTTP clients can
+  // detect pause from a single GET /runs/:id, without a second event-log
+  // fetch. The runner publishes run.waiting / run.resumed; the in-process
+  // ExecutionStore (if any) tracks the snapshot on the Run row. The Run
+  // object captured at finalize-time will reflect a final cleared state.
+  if (store !== undefined) {
+    events.subscribe((event) => {
+      if (event.type === 'run.waiting') {
+        storeWrites.push(
+          store
+            .updateRun(event.runId, {
+              waiting: {
+                stepId: event.stepId,
+                ...(event.message !== undefined && { message: event.message }),
+                ...(event.timeoutMs !== undefined && { timeoutMs: event.timeoutMs }),
+                since: event.at,
+              },
+            })
+            .catch(() => {}),
+        )
+      } else if (event.type === 'run.resumed') {
+        storeWrites.push(
+          store.updateRun(event.runId, { waiting: undefined }).catch(() => {}),
+        )
+      }
+    })
+  }
+
   // Bridge permission denials and MCP tool dispatch into the audit log.
   // Mirrors the same subscriptions installed by the Runner constructor, so
   // callers driving runPipeline directly (e.g. the one-shot `skelm run`

@@ -111,6 +111,53 @@ describe('wait() step — gateway HTTP integration', () => {
     expect(stored?.status).toBe('completed')
   })
 
+  it('Run.waiting snapshot is populated while parked and cleared on resume', async () => {
+    const { gw, stateDir, base } = await startGateway()
+    cleanups.push(async () => {
+      await gw.stop()
+      await rm(stateDir, { recursive: true, force: true })
+    })
+
+    const wf = pipeline<undefined, unknown>({
+      id: 'wait-snapshot',
+      steps: [wait({ id: 'gate', message: 'please approve' })],
+    })
+
+    const { Runner } = await import('@skelm/core')
+    const runner = new Runner({ store: gw.runStore })
+    // Subscribe BEFORE start: when wait() is the first step, run.waiting
+    // is published in the synchronous prefix of runPipeline before the
+    // first await, so a post-start subscribe misses it.
+    const waitingFired = new Promise<void>((res) => {
+      const unsub = runner.events.subscribe((e) => {
+        if (e.type === 'run.waiting') {
+          unsub()
+          res()
+        }
+      })
+    })
+    const handle = runner.start(wf, undefined)
+    gw.registerRun(handle.runId, new AbortController(), runner)
+    cleanups.push(async () => gw.unregisterRun(handle.runId))
+
+    await waitingFired
+    // Allow the run.waiting subscriber's storeWrites entry to flush.
+    await new Promise((r) => setTimeout(r, 25))
+
+    const parked = await gw.runStore.getRun(handle.runId)
+    expect(parked?.waiting).toBeDefined()
+    expect(parked?.waiting?.stepId).toBe('gate')
+    expect(parked?.waiting?.message).toBe('please approve')
+    expect(typeof parked?.waiting?.since).toBe('number')
+
+    await runner.resume(handle.runId, {})
+    await handle.wait()
+
+    const final = await gw.runStore.getRun(handle.runId)
+    expect(final?.status).toBe('completed')
+    expect(final?.waiting).toBeUndefined()
+  })
+
   it('wait() times out when no resume arrives', async () => {
     const { gw, stateDir } = await startGateway()
     cleanups.push(async () => {
