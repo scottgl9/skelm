@@ -101,25 +101,22 @@ describe('skelm gateway — CLI smoke', () => {
     expect(stderr).toMatch(/not running|SKELM_NO_AUTOSTART/)
   })
 
-  // Secrets commands still hit the local file via FileSecretResolver
-  // pending the Phase 6 secrets-over-HTTP work; these tests continue to
-  // verify local read/write round-trip until that lands.
-  it('secrets list returns empty on a clean state dir', async () => {
-    const { stdout, exitCode } = await invoke(['secrets', 'list'])
-    expect(exitCode).toBe(EXIT.OK)
-    expect(stdout).toContain('no secrets configured')
+  it('secrets list fails cleanly when no gateway is running', async () => {
+    const { stderr, exitCode } = await invoke(['secrets', 'list'])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+    expect(stderr).toMatch(/not running|SKELM_NO_AUTOSTART/)
   })
 
-  it('secrets set then get round-trips a value', async () => {
-    const setRes = await invoke(['secrets', 'set', 'TEST_KEY', '--value', 's3cret'])
-    expect(setRes.exitCode).toBe(EXIT.OK)
-
-    const getRes = await invoke(['secrets', 'get', 'TEST_KEY'])
-    expect(getRes.exitCode).toBe(EXIT.OK)
-    expect(getRes.stdout.trim()).toBe('s3cret')
-
-    const listRes = await invoke(['secrets', 'list'])
-    expect(listRes.stdout).toContain('TEST_KEY')
+  it('secrets set fails cleanly when no gateway is running', async () => {
+    const { stderr, exitCode } = await invoke([
+      'secrets',
+      'set',
+      'TEST_KEY',
+      '--value',
+      's3cret',
+    ])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+    expect(stderr).toMatch(/not running|SKELM_NO_AUTOSTART/)
   })
 })
 

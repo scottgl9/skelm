@@ -1,6 +1,3 @@
-import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { FileSecretResolver } from '@skelm/gateway'
 import { EXIT } from './exit-codes.js'
 import { fetchHttp, httpError, requireGateway } from './internal/gateway-client.js'
 import type { MainIO, MainResult } from './internal/io.js'
@@ -25,11 +22,8 @@ export interface SecretsArgs {
   name?: string | undefined
   value?: string | undefined
   json?: boolean | undefined
+  /** @deprecated Kept for source compatibility; secrets are now resolved by the gateway. */
   path?: string | undefined
-}
-
-function defaultStateDir(): string {
-  return process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm')
 }
 
 interface AuditEntry {
@@ -98,12 +92,19 @@ export async function auditCommand(args: AuditQueryArgs, io: MainIO): Promise<Ma
 }
 
 export async function secretsCommand(args: SecretsArgs, io: MainIO): Promise<MainResult> {
-  const path = args.path ?? join(defaultStateDir(), 'secrets.json')
-  const resolver = new FileSecretResolver(path)
+  const client = await requireGateway(io)
+  if (client === null) return { exitCode: EXIT.CLI_ERROR }
 
   switch (args.command) {
     case 'list': {
-      const names = await resolver.list()
+      const res = await fetchHttp(
+        `${client.discovery.url}/secrets`,
+        { headers: client.headers },
+        io,
+      )
+      if (res === null) return { exitCode: EXIT.CLI_ERROR }
+      if (!res.ok) return (await httpError(res, io)) as MainResult
+      const { names } = (await res.json()) as { names: string[] }
       if (args.json) {
         writeJsonOutput(io, names)
       } else if (names.length === 0) {
@@ -118,11 +119,18 @@ export async function secretsCommand(args: SecretsArgs, io: MainIO): Promise<Mai
         io.stderr.write('error: secrets get requires a name\n')
         return { exitCode: EXIT.CLI_ERROR }
       }
-      const value = await resolver.resolve(args.name)
-      if (value === undefined) {
+      const res = await fetchHttp(
+        `${client.discovery.url}/secrets/${encodeURIComponent(args.name)}`,
+        { headers: client.headers },
+        io,
+      )
+      if (res === null) return { exitCode: EXIT.CLI_ERROR }
+      if (res.status === 404) {
         io.stderr.write(`error: secret not found: ${args.name}\n`)
         return { exitCode: EXIT.CLI_ERROR }
       }
+      if (!res.ok) return (await httpError(res, io)) as MainResult
+      const { value } = (await res.json()) as { value: string }
       io.stdout.write(`${value}\n`)
       return { exitCode: EXIT.OK }
     }
@@ -135,8 +143,18 @@ export async function secretsCommand(args: SecretsArgs, io: MainIO): Promise<Mai
         io.stderr.write('error: secrets set requires --value <value>\n')
         return { exitCode: EXIT.CLI_ERROR }
       }
-      await resolver.set(args.name, args.value)
-      io.stdout.write(`secret stored: ${args.name} (${resolve(path)})\n`)
+      const res = await fetchHttp(
+        `${client.discovery.url}/secrets/${encodeURIComponent(args.name)}`,
+        {
+          method: 'PUT',
+          headers: client.headers,
+          body: JSON.stringify({ value: args.value }),
+        },
+        io,
+      )
+      if (res === null) return { exitCode: EXIT.CLI_ERROR }
+      if (!res.ok) return (await httpError(res, io)) as MainResult
+      io.stdout.write(`secret stored: ${args.name}\n`)
       return { exitCode: EXIT.OK }
     }
   }
