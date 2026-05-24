@@ -168,9 +168,7 @@ describe('webhook providers', () => {
         clientState: 'validation-token-test-state',
       })
 
-      const res = await fetch(
-        `${base}/hooks/graph?validationToken=plain-text-token`,
-      )
+      const res = await fetch(`${base}/hooks/graph?validationToken=plain-text-token`)
       expect(res.status).toBe(200)
       expect(res.headers.get('content-type')).toContain('text/plain')
       expect(await res.text()).toBe('plain-text-token')

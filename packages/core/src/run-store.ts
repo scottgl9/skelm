@@ -25,11 +25,11 @@ export interface RunSummary {
  */
 type OptionalKeys<T> = { [K in keyof T]-?: undefined extends T[K] ? K : never }[keyof T]
 type RequiredKeys<T> = Exclude<keyof T, OptionalKeys<T>>
-export type RunPatch =
-  // required Run fields stay strictly typed
-  & { [K in RequiredKeys<Run>]?: Run[K] }
-  // optional Run fields accept explicit `undefined` to mean "clear"
-  & { [K in OptionalKeys<Run>]?: Run[K] | undefined }
+// Required Run fields stay strictly typed; optional Run fields accept
+// explicit `undefined` to mean "clear".
+export type RunPatch = {
+  [K in RequiredKeys<Run>]?: Run[K]
+} & { [K in OptionalKeys<Run>]?: Run[K] | undefined }
 
 /**
  * Spread-equivalent that drops `undefined` values for required fields and

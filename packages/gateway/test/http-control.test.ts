@@ -1156,9 +1156,7 @@ describe('Gateway HTTP /pipelines', () => {
       },
     }))
     try {
-      const list = (await fetch(`${base}/pipelines`).then((r) =>
-        r.json(),
-      )) as Array<{
+      const list = (await fetch(`${base}/pipelines`).then((r) => r.json())) as Array<{
         id: string
       }>
       expect(list.map((p) => p.id)).toEqual(['workflows/hello.workflow.mts'])
@@ -1272,9 +1270,7 @@ describe('Gateway HTTP /pipelines', () => {
       config: {},
     }))
     try {
-      const res = await fetch(
-        `${base}/pipelines/${encodeURIComponent('does/not/exist.ts')}`,
-      )
+      const res = await fetch(`${base}/pipelines/${encodeURIComponent('does/not/exist.ts')}`)
       expect(res.status).toBe(404)
     } finally {
       await gw.stop()
