@@ -63,6 +63,27 @@ describe('/secrets', () => {
     expect(res.status).toBe(404)
   })
 
+  it('DELETE /secrets/:name actually removes the entry; subsequent list omits it', async () => {
+    await fetch(`${base}/secrets/TO_DELETE`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ value: 'temp' }),
+    })
+    expect((await (await fetch(`${base}/secrets`)).json()).names).toContain('TO_DELETE')
+
+    const del = await fetch(`${base}/secrets/TO_DELETE`, { method: 'DELETE' })
+    expect(del.status).toBe(200)
+    expect(await del.json()).toEqual({ deleted: 'TO_DELETE' })
+
+    // The whole point of the reviewer's bug report: the name must NOT
+    // show up afterwards. A second DELETE returns 404.
+    expect((await (await fetch(`${base}/secrets`)).json()).names).not.toContain('TO_DELETE')
+    expect((await fetch(`${base}/secrets/TO_DELETE`)).status).toBe(404)
+
+    const del2 = await fetch(`${base}/secrets/TO_DELETE`, { method: 'DELETE' })
+    expect(del2.status).toBe(404)
+  })
+
   it('plaintext never leaves the gateway: list returns names without values', async () => {
     await fetch(`${base}/secrets/SENSITIVE`, {
       method: 'PUT',

@@ -1020,7 +1020,16 @@ async function installLaunchd(io: MainIO): Promise<MainResult> {
 async function uninstallLaunchd(io: MainIO): Promise<MainResult> {
   const uid = process.getuid?.() ?? 0
   const domain = `gui/${uid}`
-  runSync('launchctl', ['bootout', `${domain}/${LAUNCHD_LABEL}`])
+  const bootout = runSync('launchctl', ['bootout', `${domain}/${LAUNCHD_LABEL}`])
+  // launchctl returns non-zero when the agent isn't loaded (exit code 3
+  // on macOS for "No such process"). That's fine — we still want to
+  // remove the plist — but surface the message so the operator knows
+  // what happened, matching the systemd path's logging style.
+  if (bootout.exitCode !== 0) {
+    const detail =
+      (bootout.stderr || bootout.stdout || '').trim() || `exit code ${bootout.exitCode}`
+    io.stderr.write(`warning: launchctl bootout ${domain}/${LAUNCHD_LABEL}: ${detail}\n`)
+  }
   try {
     await fs.rm(LAUNCHD_PLIST_PATH)
   } catch (err) {

@@ -1,3 +1,4 @@
+import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { type Router, createError, eventHandler, readBody } from 'h3'
 import type { Gateway } from '../../lifecycle/gateway.js'
@@ -71,12 +72,41 @@ export function registerSecretRoutes(router: Router, gateway: Gateway): void {
     eventHandler(async (event) => {
       const name = decodeMaybe(event.context.params?.name)
       if (name === undefined) throw createError({ statusCode: 400, message: 'name required' })
-      // FileSecretResolver doesn't ship a delete() today; for a clean v1
-      // we set the value to empty string. The next list() still shows it,
-      // matching the operator's mental model of "exists with empty value".
-      // Follow-up: add resolver.remove() and call it here.
-      await resolver.set(name, '')
+      const removed = await removeFromFile(path, name)
+      if (!removed) throw createError({ statusCode: 404, message: 'secret not found' })
       return { deleted: name }
     }),
   )
+}
+
+/**
+ * Remove a single key from the JSON-object secrets file. Returns true if
+ * the key existed and was removed, false if the file is missing or the
+ * key wasn't present.
+ *
+ * The CLI / FileSecretResolver writes secrets as a flat `{ NAME: value }`
+ * JSON object; we read, drop the key, write back with the same `0o600`
+ * mode the resolver uses. A write race against `resolver.set()` is
+ * possible in principle but acceptable for this use case — the
+ * gateway is single-process and the only writers are this route and
+ * PUT /secrets/:name, which the route handlers serialize per-request.
+ */
+async function removeFromFile(path: string, name: string): Promise<boolean> {
+  let raw: string
+  try {
+    raw = await fs.readFile(path, 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw err
+  }
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    return false
+  }
+  if (!Object.hasOwn(parsed, name)) return false
+  delete parsed[name]
+  await fs.writeFile(path, `${JSON.stringify(parsed, null, 2)}\n`, { mode: 0o600 })
+  return true
 }
