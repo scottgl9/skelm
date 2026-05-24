@@ -135,14 +135,7 @@ export class CliError extends Error {
   override readonly name = 'CliError'
   constructor(
     message: string,
-    readonly code:
-      | 'workflow-not-found'
-      | 'workflow-invalid'
-      | 'bad-input'
-      | 'argv'
-      | 'internal'
-      | 'wait-timeout'
-      | 'wait-cancelled',
+    readonly code: 'workflow-not-found' | 'workflow-invalid' | 'bad-input' | 'argv' | 'internal',
   ) {
     super(message)
   }
