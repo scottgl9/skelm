@@ -5,17 +5,18 @@ import { FileSecretResolver } from '../../secrets/file-driver.js'
 import { decodeMaybe } from './utils.js'
 
 /**
- * Secrets read/write API backed by the gateway's FileSecretResolver.
+ * Secrets management API backed by the gateway's FileSecretResolver.
+ * Deliberately write-only over HTTP — plaintext never leaves the gateway
+ * process:
  *
- *   GET    /secrets             -> { names: string[] }    (no values)
- *   GET    /secrets/:name       -> { name, value }        (loopback + bearer only)
- *   PUT    /secrets/:name       { value }                 -> { stored: name }
- *   DELETE /secrets/:name                                  -> { deleted: name }
+ *   GET    /secrets                  -> { names: string[] }   (names only)
+ *   GET    /secrets/:name            -> { name, set: boolean } (existence check)
+ *   PUT    /secrets/:name { value }  -> { stored: name }
+ *   DELETE /secrets/:name            -> { deleted: name }
  *
- * Operator trust model: the gateway listens on loopback by default, the
- * auth middleware enforces the bearer token (or open access when auth=
- * 'none' on 127.0.0.1). Plaintext only leaves the process on direct GET
- * by name — list returns names only.
+ * The CLI uses these to provision secrets and check what's configured.
+ * Workflows resolve secret values in-process via the gateway-side
+ * SecretResolver — the value is never serialized over the wire.
  *
  * Path: <stateDir>/secrets.json unless config.secrets.file overrides it.
  */
@@ -42,9 +43,10 @@ export function registerSecretRoutes(router: Router, gateway: Gateway): void {
     eventHandler(async (event) => {
       const name = decodeMaybe(event.context.params?.name)
       if (name === undefined) throw createError({ statusCode: 400, message: 'name required' })
-      const value = await resolver.resolve(name)
-      if (value === undefined) throw createError({ statusCode: 404, message: 'secret not found' })
-      return { name, value }
+      const names = await resolver.list()
+      const set = names.includes(name)
+      if (!set) throw createError({ statusCode: 404, message: 'secret not found' })
+      return { name, set: true as const }
     }),
   )
 
@@ -72,7 +74,7 @@ export function registerSecretRoutes(router: Router, gateway: Gateway): void {
       // FileSecretResolver doesn't ship a delete() today; for a clean v1
       // we set the value to empty string. The next list() still shows it,
       // matching the operator's mental model of "exists with empty value".
-      // Phase 6 follow-up: add resolver.remove() and call it here.
+      // Follow-up: add resolver.remove() and call it here.
       await resolver.set(name, '')
       return { deleted: name }
     }),

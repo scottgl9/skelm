@@ -119,6 +119,9 @@ export async function secretsCommand(args: SecretsArgs, io: MainIO): Promise<Mai
         io.stderr.write('error: secrets get requires a name\n')
         return { exitCode: EXIT.CLI_ERROR }
       }
+      // Existence check only — the gateway intentionally never returns
+      // plaintext over HTTP. Workflows resolve secret values gateway-side
+      // via the in-process SecretResolver. Use `secrets set` to overwrite.
       const res = await fetchHttp(
         `${client.discovery.url}/secrets/${encodeURIComponent(args.name)}`,
         { headers: client.headers },
@@ -126,12 +129,19 @@ export async function secretsCommand(args: SecretsArgs, io: MainIO): Promise<Mai
       )
       if (res === null) return { exitCode: EXIT.CLI_ERROR }
       if (res.status === 404) {
-        io.stderr.write(`error: secret not found: ${args.name}\n`)
+        if (args.json) {
+          writeJsonOutput(io, { name: args.name, set: false })
+        } else {
+          io.stdout.write(`${args.name}: not set\n`)
+        }
         return { exitCode: EXIT.CLI_ERROR }
       }
       if (!res.ok) return (await httpError(res, io)) as MainResult
-      const { value } = (await res.json()) as { value: string }
-      io.stdout.write(`${value}\n`)
+      if (args.json) {
+        writeJsonOutput(io, { name: args.name, set: true })
+      } else {
+        io.stdout.write(`${args.name}: set\n`)
+      }
       return { exitCode: EXIT.OK }
     }
     case 'set': {
