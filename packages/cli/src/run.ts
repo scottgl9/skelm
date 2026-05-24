@@ -1,7 +1,5 @@
-import { accessSync, createReadStream, createWriteStream, constants as fsConstants } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { createInterface } from 'node:readline/promises'
 import {
   PermissionDeniedError,
   SchemaValidationError,
@@ -10,13 +8,7 @@ import {
 } from '@skelm/core'
 import type { Run } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
-import {
-  type SseEvent,
-  fetchHttp,
-  httpError,
-  openSse,
-  requireGateway,
-} from './internal/gateway-client.js'
+import { type SseEvent, fetchHttp, httpError, requireGateway } from './internal/gateway-client.js'
 import type { MainIO } from './internal/io.js'
 import { safeForTty } from './internal/safe-text.js'
 import { CliError } from './load-workflow.js'
@@ -193,57 +185,6 @@ export async function runCommand(
 }
 
 /**
- * If the SSE event is a `run.waiting`, prompt the user for resume JSON
- * and POST it to /runs/:runId/resume. Returns true if the event was a
- * wait and was handled (so the caller skips default rendering).
- *
- * Schema-side validation is now gateway-side: we pass through whatever
- * the user typed and let the gateway's wait step surface a validation
- * failure as a step error if needed. This is a deliberate v1 simplification
- * — pre-refactor the CLI did schema validation client-side, which only
- * worked because the workflow ran in-process.
- */
-async function maybeHandleWait(
-  ev: SseEvent,
-  runId: string,
-  client: { discovery: { url: string }; headers: Record<string, string> },
-  io: RunCommandIO,
-): Promise<boolean> {
-  if (
-    ev.event !== 'run.waiting' &&
-    !(
-      typeof ev.data === 'object' &&
-      ev.data !== null &&
-      (ev.data as { type?: string }).type === 'run.waiting'
-    )
-  ) {
-    return false
-  }
-  const payload = (typeof ev.data === 'object' && ev.data !== null ? ev.data : {}) as {
-    stepId?: string
-    message?: string
-    timeoutMs?: number
-  }
-  const req: SimpleWaitRequest = { stepId: payload.stepId ?? '(wait)' }
-  if (payload.message !== undefined) req.message = payload.message
-  if (payload.timeoutMs !== undefined) req.timeoutMs = payload.timeoutMs
-  const value = await promptForWaitInput(req, io)
-  const res = await fetchHttp(
-    `${client.discovery.url}/runs/${runId}/resume`,
-    {
-      method: 'POST',
-      headers: { ...client.headers, 'content-type': 'application/json' },
-      body: JSON.stringify({ output: value }),
-    },
-    io as MainIO,
-  )
-  if (res !== null && !res.ok) {
-    await httpError(res, io as MainIO)
-  }
-  return true
-}
-
-/**
  * Render a single SSE event to stderr. Mirrors the human/json formats
  * the pre-refactor in-process bus produced so existing tests and operator
  * muscle memory survive the dispatch flip.
@@ -334,101 +275,4 @@ async function readStream(stream: NodeJS.ReadableStream): Promise<string> {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
   }
   return Buffer.concat(chunks).toString('utf8')
-}
-
-interface SimpleWaitRequest {
-  stepId: string
-  message?: string
-  timeoutMs?: number
-}
-
-async function promptForWaitInput(request: SimpleWaitRequest, io: RunCommandIO): Promise<unknown> {
-  const promptIo = openPromptIo(io)
-  const controller = new AbortController()
-  let timedOut = false
-  const timer =
-    request.timeoutMs === undefined
-      ? undefined
-      : setTimeout(() => {
-          timedOut = true
-          controller.abort()
-        }, request.timeoutMs)
-  timer?.unref?.()
-  const rl = createInterface({
-    input: promptIo.input,
-    output: promptIo.output,
-    terminal: isTtyStream(promptIo.input) && isTtyStream(promptIo.output),
-  })
-  try {
-    promptIo.output.write(
-      `> waiting at ${request.stepId}${request.message ? `: ${request.message}` : ''}${
-        request.timeoutMs !== undefined ? ` (timeout ${request.timeoutMs}ms)` : ''
-      }\n`,
-    )
-    promptIo.output.write('> enter resume JSON\n')
-    while (true) {
-      let raw: string
-      try {
-        raw = await rl.question('resume JSON> ', { signal: controller.signal })
-      } catch {
-        if (timedOut) {
-          throw new CliError(`wait(${request.stepId}) timed out`, 'wait-timeout')
-        }
-        throw new CliError(`wait(${request.stepId}) input cancelled`, 'wait-cancelled')
-      }
-      const trimmed = raw.trim()
-      if (trimmed.length === 0) {
-        promptIo.output.write('! enter JSON (use null for an empty value)\n')
-        continue
-      }
-      try {
-        return JSON.parse(trimmed)
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error)
-        promptIo.output.write(`! invalid JSON: ${detail}\n`)
-      }
-    }
-  } finally {
-    if (timer !== undefined) clearTimeout(timer)
-    rl.close()
-    promptIo.close()
-  }
-}
-
-function openPromptIo(io: RunCommandIO): {
-  input: NodeJS.ReadableStream
-  output: NodeJS.WritableStream
-  close: () => void
-} {
-  if (
-    process.platform !== 'win32' &&
-    io.stdin === process.stdin &&
-    io.stderr === process.stderr &&
-    process.stderr.isTTY
-  ) {
-    try {
-      accessSync('/dev/tty', fsConstants.R_OK | fsConstants.W_OK)
-      const input = createReadStream('/dev/tty')
-      const output = createWriteStream('/dev/tty')
-      return {
-        input,
-        output,
-        close: () => {
-          input.destroy()
-          output.end()
-        },
-      }
-    } catch {
-      // Fall back to the injected IO streams when /dev/tty is unavailable.
-    }
-  }
-  return {
-    input: io.stdin,
-    output: io.stderr,
-    close: () => {},
-  }
-}
-
-function isTtyStream(stream: NodeJS.ReadableStream | NodeJS.WritableStream): boolean {
-  return 'isTTY' in stream && stream.isTTY === true
 }
