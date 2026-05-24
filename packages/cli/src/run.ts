@@ -103,9 +103,14 @@ export async function runCommand(
   try {
     // Sync execution: gateway runs the workflow to completion and returns
     // the final state. We then fetch /runs/:id/events to render the event
-    // log in the user's chosen --events mode. Live streaming via SSE is a
-    // follow-up; per-request Runners don't currently fan events back through
-    // the gateway-wide event bus that GET /runs/:id/stream subscribes to.
+    // log in the user's chosen --events mode.
+    //
+    // Live SSE event streaming via GET /runs/:id/stream is supported on
+    // the gateway side (see the gateway.events shared bus added alongside
+    // this), but h3's createEventStream doesn't flush headers eagerly
+    // enough for undici fetch to begin yielding chunks from a sub-second
+    // run. Sync run-file + post-completion event pull is correct and
+    // simple here — the gateway is local so latency is sub-millisecond.
     const runRes = await fetchHttp(
       `${client.discovery.url}/pipelines/run-file`,
       {
@@ -114,7 +119,6 @@ export async function runCommand(
         body: JSON.stringify({ file: absPath, input: input ?? {} }),
       },
       io as MainIO,
-      // Match the gateway's 5-minute sync-run cap so we don't time out earlier.
       5 * 60_000,
     )
     if (runRes === null) return { exitCode: EXIT.CLI_ERROR }
@@ -134,7 +138,6 @@ export async function runCommand(
       io.stderr.write(`> running ${result.pipelineId ?? absPath} (runId=${result.runId})\n`)
     }
 
-    // Pull and render the event log produced during this run.
     if (eventMode !== 'none') {
       const evRes = await fetchHttp(
         `${client.discovery.url}/runs/${result.runId}/events?limit=5000`,
@@ -149,7 +152,6 @@ export async function runCommand(
       }
     }
 
-    // Fetch full run state for typed exit-code mapping.
     const stateRes = await fetchHttp(
       `${client.discovery.url}/runs/${result.runId}`,
       { headers: client.headers },
