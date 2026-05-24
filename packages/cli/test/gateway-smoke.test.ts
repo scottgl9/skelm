@@ -15,16 +15,24 @@ import { main } from '../src/main.js'
  */
 let stateDir: string
 let priorStateDir: string | undefined
+let priorNoAutostart: string | undefined
 
 beforeEach(async () => {
   stateDir = await mkdtemp(join(tmpdir(), 'skelm-cli-gw-'))
   priorStateDir = process.env.SKELM_STATE_DIR
+  priorNoAutostart = process.env.SKELM_NO_AUTOSTART
   process.env.SKELM_STATE_DIR = stateDir
+  // These tests deliberately exercise "no gateway running" behaviour for
+  // commands that now require the gateway. Disable auto-start so the CLI
+  // fails fast with a clean error instead of spawning a real gateway.
+  process.env.SKELM_NO_AUTOSTART = '1'
 })
 
 afterEach(async () => {
   if (priorStateDir === undefined) process.env.SKELM_STATE_DIR = undefined
   else process.env.SKELM_STATE_DIR = priorStateDir
+  if (priorNoAutostart === undefined) process.env.SKELM_NO_AUTOSTART = undefined
+  else process.env.SKELM_NO_AUTOSTART = priorNoAutostart
   await rm(stateDir, { recursive: true, force: true })
 })
 
@@ -87,12 +95,15 @@ describe('skelm gateway — CLI smoke', () => {
     expect(stderr).toContain('not running')
   })
 
-  it('audit query returns "no audit entries" on a clean state dir', async () => {
-    const { stdout, exitCode } = await invoke(['audit', 'query'])
-    expect(exitCode).toBe(EXIT.OK)
-    expect(stdout).toContain('no audit entries')
+  it('audit query fails cleanly when no gateway is running', async () => {
+    const { stderr, exitCode } = await invoke(['audit', 'query'])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+    expect(stderr).toMatch(/not running|SKELM_NO_AUTOSTART/)
   })
 
+  // Secrets commands still hit the local file via FileSecretResolver
+  // pending the Phase 6 secrets-over-HTTP work; these tests continue to
+  // verify local read/write round-trip until that lands.
   it('secrets list returns empty on a clean state dir', async () => {
     const { stdout, exitCode } = await invoke(['secrets', 'list'])
     expect(exitCode).toBe(EXIT.OK)
