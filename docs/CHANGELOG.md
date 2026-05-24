@@ -6,6 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **The CLI now requires a running gateway for every non-exempt command.** `skelm run`, `list`, `describe`, `history`, `audit`, `workspace`, and `secrets` dispatch to the gateway over HTTP instead of executing in-process. The CLI no longer constructs its own `Runner`, `EventBus`, `SqliteRunStore`, `WorkspaceManager`, `ChainAuditWriter`, `FileSecretResolver`, or skill registry; the gateway is the single execution surface and trust boundary.
+
+  **Exempt commands** that still work with no gateway running: `help`, `version`, all `gateway *` subcommands (start/stop/status/install/etc.), `init`, and `validate`.
+
+  **Auto-start.** When a non-exempt command runs with no gateway live, the CLI auto-starts one:
+    - If the platform's service manager has the unit/plist installed (systemd on linux, launchd on macOS) the CLI delegates to it (`systemctl --user start skelm-gateway` / `launchctl kickstart gui/<uid>/com.skelm.gateway`).
+    - Otherwise the CLI spawns `skelm gateway start` detached in the background and prints a one-time hint suggesting `skelm gateway install --systemd` (linux) or `skelm gateway install --launchd` (macOS) for a supervised service.
+    - Set `SKELM_NO_AUTOSTART=1` to opt out (the CLI then exits non-zero with an actionable message). In CI auto-spawn is refused unless `SKELM_AUTOSTART_IN_CI=1`.
+
+  **Migration.** Most users see no change beyond a one-time `skelm gateway install --systemd` (or `--launchd`) on first run. If you previously relied on `skelm run` writing audit entries to a per-cwd `audit.jsonl`, those now live under the gateway's `$SKELM_STATE_DIR/audit.jsonl` (default `~/.skelm/audit.jsonl`). Same for `secrets.json`. Run-history and workspaces likewise centralize under the gateway's state dir.
+
+  **New gateway HTTP endpoints powering the dispatch:**
+    - `POST /pipelines/run-file`, `POST /pipelines/start-file`, `POST /pipelines/describe-file` — ad-hoc execution / description of a workflow file by absolute path
+    - `GET /audit`, `GET /audit/verify` — chain reader
+    - `GET /workspaces`, `GET /workspaces/:wf/:name`, `DELETE /workspaces/:wf/:name`
+    - `GET /secrets`, `GET/PUT/DELETE /secrets/:name`
+
+  A new structural guard (`pnpm guards` → `scripts/guards/cli-no-core-runtime.ts`) keeps the CLI from reintroducing in-process runtime work.
+
 ## [0.4.3] - 2026-05-22
 
 ### Breaking Changes
