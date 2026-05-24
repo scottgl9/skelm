@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { MemoryRunStore, code, pipeline } from '@skelm/core'
 import { zipSync } from 'fflate'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Gateway } from '../../src/index.js'
-import { pickFreePort } from '../utils/pick-free-port.js'
+import type { Gateway } from '../../src/index.js'
+import { bootGatewayWithRetry } from '../utils/boot-gateway.js'
 
 let stateDir: string
 let projectRoot: string
@@ -29,8 +29,7 @@ const goodPipeline = pipeline({
 async function bootGateway(
   overrides: { workflows?: { maxArchiveBytes?: number } } = {},
 ): Promise<{ gw: Gateway; base: string }> {
-  const port = await pickFreePort()
-  const gw = new Gateway({
+  return await bootGatewayWithRetry(async (port) => ({
     stateDir,
     projectRoot,
     watchRegistries: false,
@@ -40,9 +39,7 @@ async function bootGateway(
     loadWorkflow: async () => goodPipeline,
     ...(overrides.workflows !== undefined && { workflows: overrides.workflows }),
     config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
-  })
-  await gw.start()
-  return { gw, base: `http://127.0.0.1:${port}` }
+  }))
 }
 
 const encoder = new TextEncoder()

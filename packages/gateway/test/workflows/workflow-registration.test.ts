@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MemoryRunStore, code, pipeline } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Gateway } from '../../src/index.js'
-import { pickFreePort } from '../utils/pick-free-port.js'
+import type { Gateway } from '../../src/index.js'
+import { bootGatewayWithRetry } from '../utils/boot-gateway.js'
 
 let stateDir: string
 let projectRoot: string
@@ -29,8 +29,7 @@ async function bootGateway(opts: { allowedDirs?: string[] } = {}): Promise<{
   gw: Gateway
   base: string
 }> {
-  const port = await pickFreePort()
-  const gw = new Gateway({
+  return await bootGatewayWithRetry(async (port) => ({
     stateDir,
     projectRoot,
     watchRegistries: false,
@@ -42,9 +41,7 @@ async function bootGateway(opts: { allowedDirs?: string[] } = {}): Promise<{
     config: {
       registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
     },
-  })
-  await gw.start()
-  return { gw, base: `http://127.0.0.1:${port}` }
+  }))
 }
 
 describe('/v1/workflows/*', () => {
