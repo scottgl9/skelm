@@ -87,9 +87,13 @@ The pre-commit hook formats staged files (Biome). An optional pre-push hook runs
 
 ## Repo-specific invariants
 
-### The gateway is the trust boundary
+### The gateway is the trust boundary AND the execution surface
 
 All security infrastructure — permission resolution, permission enforcement, secret resolution, approvals, audit-log writing — is owned by the gateway. The runtime does not enforce permissions; the gateway does. Backends do not write audit; the gateway does. Tools do not resolve secrets; the gateway does.
+
+The CLI is a thin client over the gateway HTTP surface. Non-exempt commands (`run`, `list`, `describe`, `history`, `audit`, `workspace`, `secrets`) dispatch to the gateway and do NOT execute pipelines in-process. The CLI must NOT import `runPipeline`, `Runner`, `EventBus`, `SqliteRunStore`, `SkillRegistry`, `ChainAuditWriter`, `FileSecretResolver`, `EnvSecretResolver`, or `WorkspaceManager` from anywhere except the gateway-bootstrap helpers under `packages/cli/src/gateway.ts` and `validate.ts`. The guard at `scripts/guards/cli-no-core-runtime.ts` enforces this as part of `pnpm guards`.
+
+Exempt CLI commands (run without a live gateway): `help`, `version`, all `gateway *` subcommands, `init`, `validate`.
 
 When you write code that takes a privileged action (exec, network, fs-write, tool dispatch), route it through the gateway's enforcement helper. The guard at `scripts/guards/gateway-only-enforcement.ts` runs as part of `pnpm guards` — it fails on new `node:child_process` imports outside the allowlist without a `// @subprocess-ok: <reason>` annotation. See `scripts/guards/README.md`.
 
