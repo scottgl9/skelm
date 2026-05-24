@@ -13,7 +13,9 @@ import { z } from 'zod'
 export default pipeline({
   id: 'permissions-demo',
   description: 'Shows TrustEnforcer denying every privileged action under default-deny.',
-  input: z.object({}),
+  // The demo takes no input — default to {} so `skelm run demo.workflow.mts`
+  // works with no --input rather than failing schema validation on undefined.
+  input: z.object({}).default({}),
   output: z.object({
     denials: z.array(z.string()),
     summary: z.string(),
