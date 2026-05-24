@@ -10,14 +10,7 @@ import type { Pipeline, Run, RunStatus, RunStore, RunSummary } from '@skelm/core
 import type { Runner } from '@skelm/core'
 import type { RunEvent } from '@skelm/core'
 import type { H3Event } from 'h3'
-import {
-  createApp,
-  createError,
-  createRouter,
-  eventHandler,
-  readBody,
-  toNodeListener,
-} from 'h3'
+import { createApp, createError, createRouter, eventHandler, readBody, toNodeListener } from 'h3'
 import type { AuthMode, ServerConfig } from './config.js'
 import { validateServerConfig } from './config.js'
 import { mountControlRoutes } from './control-routes.js'
@@ -417,7 +410,7 @@ export function createServer(
         heartbeat = setInterval(() => {
           if (isClosed) return
           try {
-            res.write(`event: ping\ndata: {}\n\n`)
+            res.write('event: ping\ndata: {}\n\n')
           } catch {
             close()
           }

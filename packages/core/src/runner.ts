@@ -513,9 +513,7 @@ export async function runPipeline<TInput, TOutput>(
             .catch(() => {}),
         )
       } else if (event.type === 'run.resumed') {
-        storeWrites.push(
-          store.updateRun(event.runId, { waiting: undefined }).catch(() => {}),
-        )
+        storeWrites.push(store.updateRun(event.runId, { waiting: undefined }).catch(() => {}))
       }
     })
   }
