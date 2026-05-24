@@ -17,6 +17,34 @@ export interface RunSummary {
   readonly completedAt?: number
 }
 
+/**
+ * Patch shape for `updateRun`. Mirrors `Partial<Run>` but allows explicit
+ * `undefined` to clear an optional field (the `waiting` snapshot is set
+ * while a run parks at wait() and cleared on resume). Plain `Partial<Run>`
+ * with `exactOptionalPropertyTypes: true` rejects `{ waiting: undefined }`.
+ */
+type OptionalKeys<T> = { [K in keyof T]-?: undefined extends T[K] ? K : never }[keyof T]
+type RequiredKeys<T> = Exclude<keyof T, OptionalKeys<T>>
+export type RunPatch =
+  // required Run fields stay strictly typed
+  & { [K in RequiredKeys<Run>]?: Run[K] }
+  // optional Run fields accept explicit `undefined` to mean "clear"
+  & { [K in OptionalKeys<Run>]?: Run[K] | undefined }
+
+/**
+ * Spread-equivalent that drops `undefined` values for required fields and
+ * deletes optional fields whose patch entry is explicit `undefined`. Keeps
+ * the result conformant with Run under `exactOptionalPropertyTypes: true`.
+ */
+function applyRunPatch(existing: Run, patch: RunPatch): Run {
+  const merged: Record<string, unknown> = { ...existing }
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) delete merged[k]
+    else merged[k] = v
+  }
+  return merged as unknown as Run
+}
+
 export interface RunFilter {
   readonly pipelineId?: string
   readonly status?: RunStatus
@@ -75,7 +103,7 @@ export interface ArtifactStore {
 /** Persistence of run lifecycle: run records, step events, and optional audit rows. */
 export interface ExecutionStore {
   putRun(run: Run): Promise<void>
-  updateRun(runId: RunId, patch: Partial<Run>): Promise<void>
+  updateRun(runId: RunId, patch: RunPatch): Promise<void>
   getRun(runId: RunId): Promise<Run | null>
   listRuns(filter?: RunFilter): AsyncIterable<RunSummary>
   appendEvent(event: RunEvent): Promise<void>
@@ -176,10 +204,10 @@ export class MemoryRunStore implements RunStore {
     }
   }
 
-  async updateRun(runId: RunId, patch: Partial<Run>): Promise<void> {
+  async updateRun(runId: RunId, patch: RunPatch): Promise<void> {
     const existing = this.runs.get(runId)
     if (!existing) return
-    this.runs.set(runId, { ...existing, ...patch })
+    this.runs.set(runId, applyRunPatch(existing, patch))
   }
 
   async getRun(runId: RunId): Promise<Run | null> {
@@ -410,8 +438,8 @@ export class SqliteRunStore implements RunStore {
     this.db
       .prepare(
         `INSERT INTO runs (
-          run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id) DO UPDATE SET
           pipeline_id = excluded.pipeline_id,
           workflow_path = excluded.workflow_path,
@@ -422,7 +450,8 @@ export class SqliteRunStore implements RunStore {
           output_json = excluded.output_json,
           error_json = excluded.error_json,
           started_at = excluded.started_at,
-          completed_at = excluded.completed_at`,
+          completed_at = excluded.completed_at,
+          waiting_json = excluded.waiting_json`,
       )
       .run(
         run.runId,
@@ -436,19 +465,20 @@ export class SqliteRunStore implements RunStore {
         encodeValue(run.error),
         run.startedAt,
         run.completedAt ?? null,
+        run.waiting !== undefined ? encodeValue(run.waiting) : null,
       )
   }
 
-  async updateRun(runId: RunId, patch: Partial<Run>): Promise<void> {
+  async updateRun(runId: RunId, patch: RunPatch): Promise<void> {
     const existing = await this.getRun(runId)
     if (!existing) return
-    await this.putRun({ ...existing, ...patch })
+    await this.putRun(applyRunPatch(existing, patch))
   }
 
   async getRun(runId: RunId): Promise<Run | null> {
     const row = this.db
       .prepare(
-        `SELECT run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at
+        `SELECT run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
          FROM runs WHERE run_id = ?`,
       )
       .get(runId) as
@@ -464,6 +494,7 @@ export class SqliteRunStore implements RunStore {
           error_json: string | null
           started_at: number
           completed_at: number | null
+          waiting_json: string | null
         }
       | undefined
     if (!row) return null
@@ -479,6 +510,7 @@ export class SqliteRunStore implements RunStore {
       error: decodeNullableValue(row.error_json),
       startedAt: row.started_at,
       completedAt: row.completed_at ?? undefined,
+      ...(row.waiting_json !== null && { waiting: decodeValue(row.waiting_json) }),
     }
   }
 
@@ -885,6 +917,9 @@ export class SqliteRunStore implements RunStore {
     }
     if (!cols.some((c) => c.name === 'trigger_id')) {
       this.db.exec('ALTER TABLE runs ADD COLUMN trigger_id TEXT')
+    }
+    if (!cols.some((c) => c.name === 'waiting_json')) {
+      this.db.exec('ALTER TABLE runs ADD COLUMN waiting_json TEXT')
     }
   }
 
