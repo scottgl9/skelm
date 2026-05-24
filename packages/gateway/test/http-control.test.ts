@@ -7,6 +7,7 @@ import { MemoryRunStore } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { Gateway, InMemoryQueueDriver, type SuspendApprovalGate } from '../src/index.js'
+import { bootGatewayWithRetry } from './utils/boot-gateway.js'
 import { pickFreePort } from './utils/pick-free-port.js'
 
 let stateDir: string
@@ -448,18 +449,14 @@ describe('Gateway HTTP /schedules', () => {
   })
 
   it('POST /schedules rejects unknown overlap values with 400 (#184)', async () => {
-    const port = await pickFreePort()
-    const proxyPort = await pickFreePort()
-    const gw = new Gateway({
+    const { gw, base } = await bootGatewayWithRetry(async (port) => ({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: proxyPort,
+      httpProxyPort: await pickFreePort(),
       config: {},
-    })
-    await gw.start()
-    const base = `http://127.0.0.1:${port}`
+    }))
     try {
       const res = await fetch(`${base}/schedules`, {
         method: 'POST',
