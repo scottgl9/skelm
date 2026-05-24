@@ -1,5 +1,7 @@
+import { accessSync, createReadStream, createWriteStream, constants as fsConstants } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { createInterface } from 'node:readline/promises'
 import {
   PermissionDeniedError,
   SchemaValidationError,
@@ -8,7 +10,13 @@ import {
 } from '@skelm/core'
 import type { Run } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
-import { type SseEvent, fetchHttp, httpError, requireGateway } from './internal/gateway-client.js'
+import {
+  type SseEvent,
+  fetchHttp,
+  httpError,
+  openSse,
+  requireGateway,
+} from './internal/gateway-client.js'
 import type { MainIO } from './internal/io.js'
 import { safeForTty } from './internal/safe-text.js'
 import { CliError } from './load-workflow.js'
@@ -36,16 +44,16 @@ export interface RunCommandResult {
 /**
  * Implementation of `skelm run <workflow>`.
  *
- * As of the CLI-as-gateway-interface refactor this command no longer
- * executes pipelines in-process. It:
+ * As of the CLI-as-gateway-interface refactor this command does not
+ * execute pipelines in-process. It:
  *   1. Resolves the input (--input / --input-file / --input-stdin)
  *   2. Requires a running gateway (auto-starts one when none is up)
  *   3. POSTs the absolute workflow path to /pipelines/start-file
  *   4. Subscribes to /runs/:runId/stream over SSE and renders events
  *      to stderr per the --events mode
  *   5. Drives the resume prompt when the gateway emits a run.waiting event
- *   6. Fetches the final run state, writes the output JSON to stdout,
- *      and exits with the appropriate code
+ *   6. On a terminal event, fetches the final Run state, writes the
+ *      output JSON to stdout, and exits with the appropriate code
  *
  * Permission enforcement, secret resolution, audit, MCP host setup, the
  * run store, and the workspace manager all live gateway-side; the CLI
@@ -80,7 +88,9 @@ export async function runCommand(
 
   // SIGINT cancels the remote run if we know its id.
   let activeRunId: string | undefined
+  const sseAbort = new AbortController()
   const onSig = () => {
+    sseAbort.abort()
     if (activeRunId === undefined) return
     void fetchHttp(
       `${client.discovery.url}/runs/${activeRunId}`,
@@ -93,18 +103,11 @@ export async function runCommand(
   process.once('SIGTERM', onSig)
 
   try {
-    // Async execution + polling: POST /pipelines/start-file fires the run
-    // and returns the runId immediately. We then poll GET /runs/:id until
-    // a terminal-or-waiting state is reached, so a workflow that parks on
-    // wait() doesn't hang the CLI forever (the sync /pipelines/run-file
-    // path awaits handle.wait() which never resolves for a paused run).
-    //
-    // Live SSE event streaming via GET /runs/:id/stream is supported on
-    // the gateway side (see the gateway.events shared bus), but h3's
-    // createEventStream doesn't flush headers eagerly enough for undici
-    // fetch to begin yielding chunks from a sub-second run. Polling is
-    // correct and simple here — the gateway is local so per-poll latency
-    // is sub-millisecond.
+    // /pipelines/start-file fires the run and returns the runId
+    // immediately. We then subscribe to /runs/:runId/stream over SSE.
+    // The gateway's stream handler is replay-then-tail: even if the run
+    // completes between start and subscribe (sub-second runs), the
+    // client receives every persisted event in order.
     const startRes = await fetchHttp(
       `${client.discovery.url}/pipelines/start-file`,
       {
@@ -125,76 +128,105 @@ export async function runCommand(
       io.stderr.write(`> running ${started.pipelineId ?? absPath} (runId=${started.runId})\n`)
     }
 
-    // Poll until terminal-or-paused. 150ms cadence is fast enough for
-    // sub-second runs to feel synchronous, slow enough not to overwhelm
-    // an in-process gateway. 5-minute hard cap matches the prior sync
-    // endpoint's behaviour.
-    //
-    // The runner keeps `Run.status` at 'running' while a wait() step is
-    // parked (it only flips to a terminal status on finalize), so we
-    // also scan the recent event log for an unmatched `run.waiting` to
-    // detect the paused condition.
-    //
-    // TODO(refactor/cli-gateway-dispatch follow-up): expose
-    // `Run.waiting?: WaitRequest` on the gateway's run state so the CLI
-    // can detect pause from a single GET /runs/:id instead of a second
-    // GET /runs/:id/events. Also re-enable interactive resume from the
-    // CLI once live SSE consumption lands (h3 createEventStream header
-    // flush is the current blocker — see comments above).
-    const deadline = Date.now() + 5 * 60_000
-    let run: Run<unknown, unknown> | null = null
-    let pausedAtWait = false
-    // Grace window so a wait() step with its own short timeoutMs gets a
-    // chance to time out naturally (-> WAIT_TIMEOUT) before we declare
-    // it stuck (-> RUN_PAUSED). The shortest fixture uses 50ms, so we
-    // wait at least one full second of "still parked at wait" before
-    // breaking out.
-    let waitingSinceMs: number | null = null
-    const PAUSE_GRACE_MS = 1_000
-    while (Date.now() < deadline) {
-      const stateRes = await fetchHttp(
-        `${client.discovery.url}/runs/${started.runId}`,
-        { headers: client.headers },
-        io as MainIO,
-      )
-      if (stateRes === null) return { exitCode: EXIT.CLI_ERROR }
-      if (!stateRes.ok) {
-        return (await httpError(stateRes, io as MainIO)) as { exitCode: ExitCode }
+    let terminalSeen = false
+    let watchdog: NodeJS.Timeout | undefined
+
+    try {
+      // 5-minute hard cap on the live tail. A run that streams nothing
+      // for longer than this is treated as stuck — the gateway-side
+      // heartbeat fires every 15s, so a healthy stream resets via the
+      // ping. We re-arm the watchdog on each chunk in the SSE loop.
+      let onWatchdog: () => void = () => {}
+      const armWatchdog = (): void => {
+        if (watchdog !== undefined) clearTimeout(watchdog)
+        watchdog = setTimeout(onWatchdog, 5 * 60_000)
+        watchdog.unref?.()
       }
-      run = (await stateRes.json()) as Run<unknown, unknown>
-      const s = run.status
-      if (s === 'completed' || s === 'failed' || s === 'cancelled') break
-      if (await isPausedAtWait(client, started.runId, io as MainIO)) {
-        if (waitingSinceMs === null) waitingSinceMs = Date.now()
-        if (Date.now() - waitingSinceMs >= PAUSE_GRACE_MS) {
-          pausedAtWait = true
-          break
+      onWatchdog = () => sseAbort.abort()
+      armWatchdog()
+
+      const stream = openSse(
+        `${client.discovery.url}/runs/${started.runId}/stream`,
+        client.headers,
+        sseAbort.signal,
+      )
+      // When the wait step has its own timeoutMs we want to give the
+      // gateway-side wait timer a chance to fire (-> run.failed +
+      // WAIT_TIMEOUT). Without a stated timeout we still allow a short
+      // grace before declaring the run paused so a fast-resuming flow
+      // doesn't race us. Tuned so the existing wait-timeout fixture
+      // (50ms) completes naturally.
+      let pauseGraceTimer: NodeJS.Timeout | undefined
+      let pausedNoInteractive = false
+      const armPauseGrace = (waitTimeoutMs: number | undefined): void => {
+        const window = (waitTimeoutMs ?? 0) + 1_000
+        if (pauseGraceTimer !== undefined) clearTimeout(pauseGraceTimer)
+        pauseGraceTimer = setTimeout(() => {
+          pausedNoInteractive = true
+          sseAbort.abort()
+        }, window)
+        pauseGraceTimer.unref?.()
+      }
+
+      try {
+        for await (const ev of stream) {
+          armWatchdog()
+          if (ev.event === 'ping') continue
+          renderEvent(ev, eventMode, io)
+          const waitResult = await maybeHandleWait(ev, started.runId, client, io)
+          if (waitResult === 'resumed') {
+            if (pauseGraceTimer !== undefined) clearTimeout(pauseGraceTimer)
+            pauseGraceTimer = undefined
+            continue
+          }
+          if (waitResult === 'cant-prompt') {
+            const payload =
+              typeof ev.data === 'object' && ev.data !== null
+                ? (ev.data as { timeoutMs?: number })
+                : undefined
+            armPauseGrace(payload?.timeoutMs)
+            continue
+          }
+          const type =
+            ev.event !== 'message'
+              ? ev.event
+              : ((ev.data as { type?: string } | undefined)?.type ?? 'message')
+          if (type === 'run.completed' || type === 'run.failed' || type === 'run.cancelled') {
+            terminalSeen = true
+            break
+          }
         }
-      } else {
-        waitingSinceMs = null
+      } finally {
+        if (pauseGraceTimer !== undefined) clearTimeout(pauseGraceTimer)
       }
-      await new Promise((r) => setTimeout(r, 150))
-    }
-    if (run === null) {
-      io.stderr.write(
-        `error: run ${started.runId} timed out after 5 minutes without terminal state\n`,
-      )
-      return { exitCode: EXIT.CLI_ERROR }
+      // If the grace timer fired and the stream aborted, fall through
+      // to the GET /runs/:id below where Run.waiting drives RUN_PAUSED.
+      if (pausedNoInteractive) {
+        // intentional: status check below handles the report.
+      }
+    } catch (err) {
+      // openSse throws on connection error; fall through to the
+      // GET /runs/:id below which can still report the final state.
+      if (eventMode === 'human') {
+        const detail = err instanceof Error ? err.message : String(err)
+        io.stderr.write(`> stream interrupted: ${safeForTty(detail)} — fetching final state\n`)
+      }
+    } finally {
+      if (watchdog !== undefined) clearTimeout(watchdog)
     }
 
-    if (eventMode !== 'none') {
-      const evRes = await fetchHttp(
-        `${client.discovery.url}/runs/${started.runId}/events?limit=5000`,
-        { headers: client.headers },
-        io as MainIO,
-      )
-      if (evRes?.ok) {
-        const { events } = (await evRes.json()) as { events: unknown[] }
-        for (const e of events) {
-          renderEvent({ event: 'message', id: undefined, data: e, raw: '' }, eventMode, io)
-        }
-      }
+    // Even when the stream delivered a terminal event, fetch the final
+    // Run record so we have authoritative output / error / status.
+    const stateRes = await fetchHttp(
+      `${client.discovery.url}/runs/${started.runId}`,
+      { headers: client.headers },
+      io as MainIO,
+    )
+    if (stateRes === null) return { exitCode: EXIT.CLI_ERROR }
+    if (!stateRes.ok) {
+      return (await httpError(stateRes, io as MainIO)) as { exitCode: ExitCode }
     }
+    const run = (await stateRes.json()) as Run<unknown, unknown>
 
     if (run.status === 'completed') {
       io.stdout.write(`${JSON.stringify(run.output)}\n`)
@@ -209,16 +241,22 @@ export async function runCommand(
       }
       return { exitCode: EXIT.CANCELLED, run }
     }
-    if (pausedAtWait) {
-      // wait() step is awaiting external input. Interactive resume from
-      // the CLI isn't wired yet (needs live SSE delivery — see
-      // packages/cli/src/run.ts:96-105). Surface this clearly instead of
-      // falling through to a misleading "> failed: unknown" line, and
-      // exit with the documented RUN_PAUSED code so scripts can branch.
+    if (run.status === 'failed') {
+      if (eventMode === 'human') {
+        const prefix = run.error?.name ? `${safeForTty(run.error.name)}: ` : ''
+        io.stderr.write(
+          `> failed (runId=${run.runId}): ${prefix}${safeForTty(run.error?.message ?? 'unknown')}\n`,
+        )
+      }
+      return { exitCode: mapRunErrorToExit(run.error?.name), run }
+    }
+    // Run.waiting set means the wait/resume prompt was never driven
+    // (e.g. --events=none or piped stdin without a TTY for input).
+    // Surface the curl recipe so scripts can still drive resume.
+    if (run.waiting !== undefined) {
       io.stderr.write(
         [
-          `> paused (runId=${run.runId}): workflow is awaiting input at a wait() step.`,
-          '  Interactive resume from the CLI is not yet available.',
+          `> paused (runId=${run.runId}): workflow is awaiting input at ${run.waiting.stepId}.`,
           '  Resume directly on the gateway:',
           `    curl -X POST ${client.discovery.url}/runs/${run.runId}/resume \\`,
           "      -H 'content-type: application/json' \\",
@@ -227,6 +265,9 @@ export async function runCommand(
         ].join('\n'),
       )
       return { exitCode: EXIT.RUN_PAUSED, run }
+    }
+    if (!terminalSeen && eventMode === 'human') {
+      io.stderr.write(`> stream ended without a terminal event (runId=${run.runId})\n`)
     }
     if (eventMode === 'human') {
       const prefix = run.error?.name ? `${safeForTty(run.error.name)}: ` : ''
@@ -242,45 +283,77 @@ export async function runCommand(
 }
 
 /**
- * Read the recent events for a run and return true if the run is parked
- * at a wait() step — i.e. the most recent `run.waiting` event is not
- * yet followed by a `run.resumed` or a terminal event. Used during the
- * poll loop because the runner keeps `Run.status === 'running'` while
- * waiting.
+ * If the SSE event is a `run.waiting`, prompt the user for resume JSON
+ * and POST it to /runs/:runId/resume. Returns true if the event was a
+ * wait and was handled (so the caller skips terminal-event detection).
+ *
+ * Schema-side validation is gateway-side: we pass through whatever the
+ * user typed and let the gateway's wait step surface a validation
+ * failure as a step error if needed.
  */
-async function isPausedAtWait(
-  client: { discovery: { url: string }; headers: Record<string, string> },
+type WaitOutcome = 'not-wait' | 'resumed' | 'cant-prompt'
+
+async function maybeHandleWait(
+  ev: SseEvent,
   runId: string,
-  io: MainIO,
-): Promise<boolean> {
-  const res = await fetchHttp(
-    `${client.discovery.url}/runs/${encodeURIComponent(runId)}/events?limit=200`,
-    { headers: client.headers },
-    io,
-  )
-  if (res === null || !res.ok) return false
-  const { events } = (await res.json()) as { events: Array<{ type?: string }> }
-  let waiting = false
-  for (const e of events) {
-    if (e.type === 'run.waiting') waiting = true
-    else if (
-      e.type === 'run.resumed' ||
-      e.type === 'run.completed' ||
-      e.type === 'run.failed' ||
-      e.type === 'run.cancelled'
-    )
-      waiting = false
+  client: { discovery: { url: string }; headers: Record<string, string> },
+  io: RunCommandIO,
+): Promise<WaitOutcome> {
+  const dataType =
+    typeof ev.data === 'object' && ev.data !== null
+      ? (ev.data as { type?: string }).type
+      : undefined
+  if (ev.event !== 'run.waiting' && dataType !== 'run.waiting') {
+    return 'not-wait'
   }
-  return waiting
+  const payload = (typeof ev.data === 'object' && ev.data !== null ? ev.data : {}) as {
+    stepId?: string
+    message?: string
+    timeoutMs?: number
+  }
+  const req: SimpleWaitRequest = { stepId: payload.stepId ?? '(wait)' }
+  if (payload.message !== undefined) req.message = payload.message
+  if (payload.timeoutMs !== undefined) req.timeoutMs = payload.timeoutMs
+
+  if (!hasInteractiveResumeInput(io)) {
+    return 'cant-prompt'
+  }
+
+  let value: unknown
+  try {
+    value = await promptForWaitInput(req, io)
+  } catch (err) {
+    if (err instanceof CliError && (err.code === 'wait-timeout' || err.code === 'wait-cancelled')) {
+      io.stderr.write(`error: ${err.message}\n`)
+      return 'cant-prompt'
+    }
+    throw err
+  }
+
+  const res = await fetchHttp(
+    `${client.discovery.url}/runs/${runId}/resume`,
+    {
+      method: 'POST',
+      headers: { ...client.headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ output: value }),
+    },
+    io as MainIO,
+  )
+  if (res !== null && !res.ok) {
+    await httpError(res, io as MainIO)
+  }
+  return 'resumed'
 }
 
 /**
  * Render a single SSE event to stderr. Mirrors the human/json formats
- * the pre-refactor in-process bus produced so existing tests and operator
- * muscle memory survive the dispatch flip.
+ * the pre-refactor in-process bus produced.
  */
 function renderEvent(ev: SseEvent, mode: 'human' | 'json' | 'none', io: RunCommandIO): void {
   if (mode === 'none') return
+  // The initial run.state frame from the gateway carries a Run snapshot,
+  // not a RunEvent — skip it in user-facing output.
+  if (ev.event === 'run.state') return
   const data = ev.data as Record<string, unknown> | undefined
   if (mode === 'json') {
     if (data !== undefined && typeof data === 'object') {
@@ -295,7 +368,6 @@ function renderEvent(ev: SseEvent, mode: 'human' | 'json' | 'none', io: RunComma
   const type = (data as { type?: string }).type
   switch (type) {
     case 'run.started':
-      // Already printed in runCommand body once we know the runId.
       break
     case 'step.start':
       io.stderr.write(`  - ${safeForTty(String(data.stepId))} (${String(data.kind)})\n`)
@@ -365,4 +437,126 @@ async function readStream(stream: NodeJS.ReadableStream): Promise<string> {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
   }
   return Buffer.concat(chunks).toString('utf8')
+}
+
+interface SimpleWaitRequest {
+  stepId: string
+  message?: string
+  timeoutMs?: number
+}
+
+async function promptForWaitInput(request: SimpleWaitRequest, io: RunCommandIO): Promise<unknown> {
+  const promptIo = openPromptIo(io)
+  const controller = new AbortController()
+  let timedOut = false
+  const timer =
+    request.timeoutMs === undefined
+      ? undefined
+      : setTimeout(() => {
+          timedOut = true
+          controller.abort()
+        }, request.timeoutMs)
+  timer?.unref?.()
+  const rl = createInterface({
+    input: promptIo.input,
+    output: promptIo.output,
+    terminal: isTtyStream(promptIo.input) && isTtyStream(promptIo.output),
+  })
+  try {
+    promptIo.output.write(
+      `> waiting at ${request.stepId}${request.message ? `: ${request.message}` : ''}${
+        request.timeoutMs !== undefined ? ` (timeout ${request.timeoutMs}ms)` : ''
+      }\n`,
+    )
+    promptIo.output.write('> enter resume JSON\n')
+    while (true) {
+      let raw: string
+      try {
+        raw = await rl.question('resume JSON> ', { signal: controller.signal })
+      } catch {
+        if (timedOut) {
+          throw new CliError(`wait(${request.stepId}) timed out`, 'wait-timeout')
+        }
+        throw new CliError(`wait(${request.stepId}) input cancelled`, 'wait-cancelled')
+      }
+      const trimmed = raw.trim()
+      if (trimmed.length === 0) {
+        promptIo.output.write('! enter JSON (use null for an empty value)\n')
+        continue
+      }
+      try {
+        return JSON.parse(trimmed)
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        promptIo.output.write(`! invalid JSON: ${detail}\n`)
+      }
+    }
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+    rl.close()
+    promptIo.close()
+  }
+}
+
+/**
+ * True if the CLI has a viable interactive input source for the wait
+ * prompt — a TTY (`/dev/tty` accessible) or an injected stdin that
+ * presents as a TTY in the test harness. Non-TTY non-piped invocations
+ * (CI, scripts piping empty stdin) skip the prompt and fall through to
+ * the EXIT.RUN_PAUSED + curl recipe path.
+ */
+function hasInteractiveResumeInput(io: RunCommandIO): boolean {
+  if (isTtyStream(io.stdin)) return true
+  if (
+    process.platform !== 'win32' &&
+    io.stdin === process.stdin &&
+    io.stderr === process.stderr &&
+    process.stderr.isTTY
+  ) {
+    try {
+      accessSync('/dev/tty', fsConstants.R_OK | fsConstants.W_OK)
+      return true
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
+function openPromptIo(io: RunCommandIO): {
+  input: NodeJS.ReadableStream
+  output: NodeJS.WritableStream
+  close: () => void
+} {
+  if (
+    process.platform !== 'win32' &&
+    io.stdin === process.stdin &&
+    io.stderr === process.stderr &&
+    process.stderr.isTTY
+  ) {
+    try {
+      accessSync('/dev/tty', fsConstants.R_OK | fsConstants.W_OK)
+      const input = createReadStream('/dev/tty')
+      const output = createWriteStream('/dev/tty')
+      return {
+        input,
+        output,
+        close: () => {
+          input.destroy()
+          output.end()
+        },
+      }
+    } catch {
+      // Fall back to the injected IO streams when /dev/tty is unavailable.
+    }
+  }
+  return {
+    input: io.stdin,
+    output: io.stderr,
+    close: () => {},
+  }
+}
+
+function isTtyStream(stream: NodeJS.ReadableStream | NodeJS.WritableStream): boolean {
+  return 'isTTY' in stream && stream.isTTY === true
 }

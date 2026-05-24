@@ -76,13 +76,14 @@ describe('skelm run — documented exit codes', () => {
   })
 
   it('EXIT.RUN_PAUSED (8) when a wait step parks indefinitely with no resume', async () => {
-    // Reviewer issue #2: previously the CLI fell through to "> failed:
-    // unknown" with no actionable signal. Now it surfaces RUN_PAUSED
-    // and prints the curl invocation needed to resume out-of-band.
+    // With no interactive input source (the test pipes an empty stdin
+    // and stderr isn't a TTY), the CLI cannot drive the resume prompt.
+    // It surfaces RUN_PAUSED, names the parked step, and prints the
+    // curl recipe needed to resume out-of-band.
     const r = await runWorkflow('wait-no-timeout.workflow.mts')
     expect(r.exitCode).toBe(EXIT.RUN_PAUSED)
     expect(r.stderr).toMatch(/paused/)
-    expect(r.stderr).toMatch(/Interactive resume from the CLI is not yet available/)
+    expect(r.stderr).toMatch(/awaiting input/)
     expect(r.stderr).toMatch(/POST .*\/runs\/.+\/resume/)
   })
 })
