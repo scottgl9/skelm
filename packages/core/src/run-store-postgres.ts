@@ -61,6 +61,11 @@ export class PostgresRunStore implements RunStore {
   async putRun(_run: Run): Promise<void> {
     throw new NotImplementedError('putRun')
   }
+  // When this lands, the schema must include a `waiting_json TEXT` column
+  // (parallel to SqliteRunStore's migration) so the `Run.waiting` snapshot
+  // round-trips. Without it, GET /runs/:id silently omits `waiting` for
+  // paused runs and CLI clients fall through to the catch-all failure
+  // path instead of EXIT.RUN_PAUSED — see packages/cli/src/run.ts:256.
   async updateRun(_runId: RunId, _patch: RunPatch): Promise<void> {
     throw new NotImplementedError('updateRun')
   }
