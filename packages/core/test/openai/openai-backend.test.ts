@@ -1,6 +1,7 @@
 import { createServer } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
+import { BackendConfigError } from '../../src/backend.js'
 import { createOpenAIBackend } from '../../src/openai/backend.js'
 
 describe('OpenAI backend', () => {
@@ -133,9 +134,45 @@ describe('OpenAI backend', () => {
         { signal: AbortSignal.timeout(5_000) },
       )
       expect(response.text).toBe('env works')
+      expect((backend as { effective?: string }).effective).toBe('env')
     } finally {
       await server.close()
     }
+  })
+
+  it('prefers explicit apiKey over the resolver and exposes the effective key', () => {
+    const calls: string[] = []
+    const backend = createOpenAIBackend({
+      apiKey: 'explicit',
+      secretResolver: {
+        async resolve(name) {
+          calls.push(name)
+          return 'from-resolver'
+        },
+      },
+    })
+    expect((backend as { apiKey?: string | null }).apiKey).toBe('explicit')
+    expect((backend as { effective?: string | null }).effective).toBe('explicit')
+    expect(calls).toEqual([])
+  })
+
+  it('uses the resolver when apiKey is omitted', () => {
+    const calls: string[] = []
+    const backend = createOpenAIBackend({
+      secretResolver: {
+        async resolve(name) {
+          calls.push(name)
+          return 'from-resolver'
+        },
+      },
+    })
+    expect((backend as { apiKey?: string | null }).apiKey).toBe('from-resolver')
+    expect((backend as { effective?: string | null }).effective).toBe('resolver')
+    expect(calls).toEqual(['OPENAI_API_KEY'])
+  })
+
+  it('throws BackendConfigError when neither explicit, resolver, nor env key is available', () => {
+    expect(() => createOpenAIBackend()).toThrow(BackendConfigError)
   })
 })
 

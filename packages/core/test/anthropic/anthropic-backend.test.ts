@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createAnthropicBackend } from '../../src/anthropic/backend.js'
+import { BackendConfigError } from '../../src/backend.js'
 
 describe('Anthropic backend', () => {
   afterEach(() => {
@@ -186,6 +187,41 @@ describe('Anthropic backend', () => {
     } finally {
       await server.close()
     }
+  })
+
+  it('prefers explicit apiKey over the resolver and exposes the effective key', () => {
+    const calls: string[] = []
+    const backend = createAnthropicBackend({
+      apiKey: 'explicit',
+      secretResolver: {
+        async resolve(name) {
+          calls.push(name)
+          return 'from-resolver'
+        },
+      },
+    })
+    expect((backend as { apiKey?: string | null }).apiKey).toBe('explicit')
+    expect((backend as { effective?: string | null }).effective).toBe('explicit')
+    expect(calls).toEqual([])
+  })
+
+  it('uses the resolver when apiKey is omitted', () => {
+    const calls: string[] = []
+    const backend = createAnthropicBackend({
+      secretResolver: {
+        async resolve(name) {
+          calls.push(name)
+          return 'from-resolver'
+        },
+      },
+    })
+    expect((backend as { apiKey?: string | null }).apiKey).toBe('from-resolver')
+    expect((backend as { effective?: string | null }).effective).toBe('resolver')
+    expect(calls).toEqual(['ANTHROPIC_API_KEY'])
+  })
+
+  it('throws BackendConfigError when neither explicit, resolver, nor env key is available', () => {
+    expect(() => createAnthropicBackend()).toThrow(BackendConfigError)
   })
 })
 

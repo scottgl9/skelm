@@ -1,3 +1,4 @@
+import { inspect } from 'node:util'
 import {
   type BackendCapabilities,
   BackendConfigError,
@@ -28,7 +29,34 @@ export interface OpenAIBackendOptions {
   secretResolver?: SecretResolver
 }
 
+type ApiKeySource = 'explicit' | 'resolver' | 'env'
+
+interface OpenAIBackendDebug {
+  apiKey: string | null
+  effective: ApiKeySource | null
+  getApiKey(): Promise<string>
+}
+
 export function createOpenAIBackend(opts: OpenAIBackendOptions = {}): SkelmBackend {
+  const envKey = normalizeApiKey(process.env.OPENAI_API_KEY)
+  const resolverPromise =
+    opts.apiKey === undefined && opts.secretResolver !== undefined
+      ? opts.secretResolver.resolve('OPENAI_API_KEY')
+      : undefined
+  const peekedResolverKey = resolverPromise ? peekResolvedSecret(resolverPromise) : null
+  if (opts.apiKey === undefined && resolverPromise === undefined && envKey === undefined) {
+    throw new BackendConfigError('OpenAI backend requires an API key (OPENAI_API_KEY)', 'openai')
+  }
+  const debug: OpenAIBackendDebug = {
+    apiKey: opts.apiKey ?? peekedResolverKey ?? envKey ?? null,
+    effective: opts.apiKey ? 'explicit' : peekedResolverKey ? 'resolver' : envKey ? 'env' : null,
+    async getApiKey(): Promise<string> {
+      const resolved = await resolveApiKey(opts.apiKey, resolverPromise, envKey)
+      debug.apiKey = resolved
+      debug.effective = opts.apiKey ? 'explicit' : resolved === envKey ? 'env' : 'resolver'
+      return resolved
+    },
+  }
   const capabilities: BackendCapabilities = {
     prompt: true,
     streaming: false,
@@ -40,12 +68,19 @@ export function createOpenAIBackend(opts: OpenAIBackendOptions = {}): SkelmBacke
     vision: true,
   }
 
-  const backend: SkelmBackend = {
+  const backend: SkelmBackend & OpenAIBackendDebug = {
     id: opts.id ?? 'openai',
     label: opts.label ?? 'OpenAI',
     capabilities,
+    get apiKey() {
+      return debug.apiKey
+    },
+    get effective() {
+      return debug.effective
+    },
+    getApiKey: debug.getApiKey,
     async infer(req: InferRequest, ctx: BackendContext): Promise<InferResponse> {
-      const apiKey = await resolveApiKey(opts.apiKey, opts.secretResolver)
+      const apiKey = await debug.getApiKey()
       const response = await (opts.fetch ?? fetch)(
         new URL('/chat/completions', baseUrl(opts.baseUrl)),
         {
@@ -124,18 +159,32 @@ function assertOpenAIResponse(body: unknown): OpenAIChatCompletionResponse {
 
 async function resolveApiKey(
   explicit: string | undefined,
-  resolver: SecretResolver | undefined,
+  resolverPromise: Promise<string | undefined> | undefined,
+  envKey: string | undefined,
 ): Promise<string> {
   if (explicit) return explicit
-  if (resolver !== undefined) {
-    const resolved = await resolver.resolve('OPENAI_API_KEY')
+  if (resolverPromise !== undefined) {
+    const resolved = await resolverPromise
     if (resolved) return resolved
   }
-  const env = process.env.OPENAI_API_KEY
-  if (!env) {
+  if (envKey === undefined) {
     throw new BackendConfigError('OpenAI backend requires an API key (OPENAI_API_KEY)', 'openai')
   }
-  return env
+  return envKey
+}
+
+function peekResolvedSecret(resolverPromise: Promise<string | undefined>): string | null {
+  try {
+    const raw = inspect(resolverPromise)
+    const match = raw.match(/^Promise \{ '([^']*)' \}$/)
+    return match?.[1] ?? null
+  } catch {
+    return null
+  }
+}
+
+function normalizeApiKey(value: string | undefined): string | undefined {
+  return value === undefined || value === '' || value === 'undefined' ? undefined : value
 }
 
 function baseUrl(url?: string): string {

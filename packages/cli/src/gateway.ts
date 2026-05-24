@@ -174,17 +174,13 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     loadWorkflow,
     onReload: syncDeclared,
   })
+  installCrashHandlers(gateway, io)
   try {
     await gateway.start()
   } catch (err) {
     io.stderr.write(`gateway start failed: ${(err as Error).message}\n`)
     return { exitCode: EXIT.CLI_ERROR }
   }
-
-  // AGENTS.md invariant: the gateway main loop must not produce an unhandled
-  // rejection or uncaught exception. These last-line handlers log, attempt a
-  // bounded drain, and exit non-zero so systemd/supervisors see the failure.
-  installCrashHandlers(gateway, io)
 
   // Build a backend registry covering BOTH `config.instances` (pre-built
   // backends like vercel-ai / opencode SDK / pi-sdk) AND `config.backends.<id>`

@@ -11,6 +11,10 @@ export interface ResolvedConfig {
   source: string | null
   /** Project root the config was discovered from. */
   projectRoot: string
+  /** True when the loaded user config explicitly declared default permissions. */
+  hasExplicitDefaultPermissions: boolean
+  /** True when the loaded user config explicitly declared permission profiles. */
+  hasExplicitPermissionProfiles: boolean
 }
 
 /**
@@ -32,6 +36,8 @@ export async function loadSkelmConfig(opts?: {
       config: applyEnvLayers(mergeWithDefaults(config), projectRoot),
       source: absolute,
       projectRoot,
+      hasExplicitDefaultPermissions: config.defaults?.permissions !== undefined,
+      hasExplicitPermissionProfiles: config.defaults?.permissionProfiles !== undefined,
     }
   }
 
@@ -42,6 +48,8 @@ export async function loadSkelmConfig(opts?: {
       config: applyEnvLayers(DEFAULT_CONFIG, projectRoot),
       source: null,
       projectRoot,
+      hasExplicitDefaultPermissions: false,
+      hasExplicitPermissionProfiles: false,
     }
   }
   const config = await importConfigModule(found)
@@ -50,6 +58,8 @@ export async function loadSkelmConfig(opts?: {
     config: applyEnvLayers(mergeWithDefaults(config), projectRoot),
     source: found,
     projectRoot,
+    hasExplicitDefaultPermissions: config.defaults?.permissions !== undefined,
+    hasExplicitPermissionProfiles: config.defaults?.permissionProfiles !== undefined,
   }
 }
 
