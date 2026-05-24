@@ -31,7 +31,8 @@ export function registerAuditRoutes(router: Router, gateway: Gateway): void {
       const since = stringOf(q.since)
       const until = stringOf(q.until)
       const limitRaw = stringOf(q.limit)
-      const limit = limitRaw === undefined ? undefined : Math.max(1, Math.min(5000, Number(limitRaw)))
+      const limit =
+        limitRaw === undefined ? undefined : Math.max(1, Math.min(5000, Number(limitRaw)))
       const sinceTs = since !== undefined ? Date.parse(since) : null
       const untilTs = until !== undefined ? Date.parse(until) : null
       if (since !== undefined && Number.isNaN(sinceTs)) {

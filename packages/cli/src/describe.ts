@@ -45,7 +45,8 @@ export async function describeCommand(
   // If the argument looks like a file path (has a slash or a known
   // workflow extension), POST to describe-file; otherwise treat it as a
   // workflow id and GET from the registry.
-  const looksLikePath = /[\\/]/.test(args.workflow) || /\.(?:m?[tj]s|c[tj]s|tsx?)$/.test(args.workflow)
+  const looksLikePath =
+    /[\\/]/.test(args.workflow) || /\.(?:m?[tj]s|c[tj]s|tsx?)$/.test(args.workflow)
   let res: Response | null
   if (looksLikePath) {
     const absPath = args.workflow.startsWith('/')
