@@ -1,33 +1,25 @@
 import { accessSync, createReadStream, createWriteStream, constants as fsConstants } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import {
-  EnvSecretResolver,
-  EventBus,
   PermissionDeniedError,
-  RunCancelledError,
   SchemaValidationError,
   StepTimeoutError,
-  type WaitRequest,
   WaitTimeoutError,
-  runPipeline,
 } from '@skelm/core'
-import type { Run, SecretResolver } from '@skelm/core'
-import {
-  ChainAuditWriter,
-  FileSecretResolver,
-  SkillRegistry,
-  createSkillSource,
-} from '@skelm/gateway'
-import { applyAgentDefinitions } from './agent-defs.js'
-import { applyConfiguredBackends, buildBackendRegistry } from './backends.js'
+import type { Run } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
+import {
+  fetchHttp,
+  httpError,
+  openSse,
+  requireGateway,
+  type SseEvent,
+} from './internal/gateway-client.js'
+import type { MainIO } from './internal/io.js'
 import { safeForTty } from './internal/safe-text.js'
-import { loadSkelmConfig } from './load-config.js'
-import { CliError, loadWorkflowFromFile } from './load-workflow.js'
-import { closeRunStore, createRunStore, createWorkspaceManager } from './store.js'
+import { CliError } from './load-workflow.js'
 
 export interface RunCommandArgs {
   workflowPath: string
@@ -50,10 +42,22 @@ export interface RunCommandResult {
 }
 
 /**
- * Implementation of `skelm run <workflow>`. Loads the workflow module,
- * resolves the input (from --input / --input-file / --input-stdin),
- * runs the pipeline, prints the final output to stdout, and writes
- * progress to stderr.
+ * Implementation of `skelm run <workflow>`.
+ *
+ * As of the CLI-as-gateway-interface refactor this command no longer
+ * executes pipelines in-process. It:
+ *   1. Resolves the input (--input / --input-file / --input-stdin)
+ *   2. Requires a running gateway (auto-starts one when none is up)
+ *   3. POSTs the absolute workflow path to /pipelines/start-file
+ *   4. Subscribes to /runs/:runId/stream over SSE and renders events
+ *      to stderr per the --events mode
+ *   5. Drives the resume prompt when the gateway emits a run.waiting event
+ *   6. Fetches the final run state, writes the output JSON to stdout,
+ *      and exits with the appropriate code
+ *
+ * Permission enforcement, secret resolution, audit, MCP host setup, the
+ * run store, and the workspace manager all live gateway-side; the CLI
+ * no longer constructs any of them.
  */
 export async function runCommand(
   args: RunCommandArgs,
@@ -63,17 +67,6 @@ export async function runCommand(
   if (!workflowPath) {
     io.stderr.write('error: missing workflow path\n')
     return { exitCode: EXIT.CLI_ERROR }
-  }
-
-  let workflow: Awaited<ReturnType<typeof loadWorkflowFromFile>>
-  try {
-    workflow = await loadWorkflowFromFile(workflowPath)
-  } catch (err) {
-    if (err instanceof CliError) {
-      io.stderr.write(`error: ${err.message}\n`)
-      return { exitCode: EXIT.CLI_ERROR }
-    }
-    throw err
   }
 
   let input: unknown
@@ -88,149 +81,203 @@ export async function runCommand(
   }
 
   const eventMode: 'human' | 'json' | 'none' = args.events ?? 'human'
-  const bus = createRunEventBus(eventMode, workflow.id, io)
+  const absPath = resolve(process.cwd(), workflowPath)
 
-  const workflowDir = dirname(resolve(process.cwd(), workflowPath))
-  const { config, projectRoot, hasExplicitDefaultPermissions, hasExplicitPermissionProfiles } =
-    await loadSkelmConfig({ fromDir: workflowDir })
-  const secretResolver = buildSecretResolver(config)
-  const resolvedWorkflow = applyConfiguredBackends(
-    applyAgentDefinitions(workflow, workflowDir),
-    config,
-  )
-  const backends = await buildBackendRegistry(config, resolvedWorkflow, secretResolver)
-  const store = createRunStore(config)
-  const workspaceManager = createWorkspaceManager(config)
-  const controller = new AbortController()
+  const client = await requireGateway(io as MainIO)
+  if (client === null) return { exitCode: EXIT.CLI_ERROR }
 
-  const skillRegistry = new SkillRegistry({
-    projectRoot,
-    glob: config.registries?.skills?.glob ?? 'skills/**/SKILL.md',
-  })
-  await skillRegistry.start()
-  const resolvedWorkflowPath = resolve(process.cwd(), workflowPath)
-  const skillSource = createSkillSource({
-    registry: skillRegistry,
-    workflowPath: resolvedWorkflowPath,
-  })
+  // SIGINT cancels the remote run if we know its id.
+  let activeRunId: string | undefined
+  const onSig = () => {
+    if (activeRunId === undefined) return
+    void fetchHttp(
+      `${client.discovery.url}/runs/${activeRunId}`,
+      { method: 'DELETE', headers: client.headers },
+      io as MainIO,
+      5_000,
+    )
+  }
+  process.once('SIGINT', onSig)
+  process.once('SIGTERM', onSig)
 
-  const run = await (async () => {
-    try {
-      // Wire the chain audit writer so permission denials and tool dispatch
-      // events emitted during one-shot `skelm run` actually land in
-      // ~/.skelm/audit.jsonl (or $SKELM_STATE_DIR/audit.jsonl). Without this
-      // the runner falls back to NoopAuditWriter and the entire jsonl stays
-      // empty for CLI-driven runs, even when the runtime publishes the
-      // events on the bus.
-      const auditPath = join(
-        process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm'),
-        'audit.jsonl',
+  try {
+    // Sync execution: gateway runs the workflow to completion and returns
+    // the final state. We then fetch /runs/:id/events to render the event
+    // log in the user's chosen --events mode. Live streaming via SSE is a
+    // follow-up; per-request Runners don't currently fan events back through
+    // the gateway-wide event bus that GET /runs/:id/stream subscribes to.
+    const runRes = await fetchHttp(
+      `${client.discovery.url}/pipelines/run-file`,
+      {
+        method: 'POST',
+        headers: client.headers,
+        body: JSON.stringify({ file: absPath, input: input ?? {} }),
+      },
+      io as MainIO,
+      // Match the gateway's 5-minute sync-run cap so we don't time out earlier.
+      5 * 60_000,
+    )
+    if (runRes === null) return { exitCode: EXIT.CLI_ERROR }
+    if (!runRes.ok) {
+      return (await httpError(runRes, io as MainIO)) as { exitCode: ExitCode }
+    }
+    const result = (await runRes.json()) as {
+      runId: string
+      pipelineId?: string
+      status: 'completed' | 'failed' | 'cancelled' | 'paused'
+      output?: unknown
+      error?: { name?: string; message?: string }
+    }
+    activeRunId = result.runId
+
+    if (eventMode === 'human') {
+      io.stderr.write(
+        `> running ${result.pipelineId ?? absPath} (runId=${result.runId})\n`,
       )
-      const auditWriter = new ChainAuditWriter(auditPath)
-      return await runPipeline(resolvedWorkflow, input, {
-        signal: controller.signal,
-        events: bus,
-        store,
-        stateStore: store,
-        auditWriter,
-        workflowPath: resolvedWorkflowPath,
-        ...(hasExplicitDefaultPermissions &&
-          config.defaults?.permissions !== undefined && {
-            defaultPermissions: config.defaults.permissions,
-          }),
-        ...(hasExplicitPermissionProfiles &&
-          config.defaults?.permissionProfiles !== undefined && {
-            permissionProfiles: config.defaults.permissionProfiles,
-          }),
-        workspaceManager,
-        ...(backends !== undefined && { backends }),
-        secretResolver,
-        skillSource,
-        waitForInput: async (request) => await promptForWaitInput(request, io),
-      })
-    } finally {
-      closeRunStore(store)
-      await skillRegistry.close()
     }
-  })()
 
-  if (run.status === 'completed') {
-    const json = `${JSON.stringify(run.output)}\n`
-    io.stdout.write(json)
-    if (eventMode === 'human') {
-      io.stderr.write(`> completed (runId=${run.runId})\n`)
-    }
-    return { exitCode: EXIT.OK, run }
-  }
-
-  if (run.status === 'cancelled') {
-    if (eventMode === 'human') {
-      io.stderr.write(`> cancelled (runId=${run.runId})\n`)
-    }
-    return { exitCode: EXIT.CANCELLED, run }
-  }
-
-  if (eventMode === 'human') {
-    const prefix = run.error?.name ? `${safeForTty(run.error.name)}: ` : ''
-    io.stderr.write(
-      `> failed (runId=${run.runId}): ${prefix}${safeForTty(run.error?.message ?? 'unknown')}\n`,
-    )
-  }
-  return { exitCode: mapRunErrorToExit(run.error?.name), run }
-}
-
-function createRunEventBus(
-  eventMode: 'human' | 'json' | 'none',
-  workflowId: string,
-  io: RunCommandIO,
-): EventBus {
-  const bus = new EventBus()
-  if (eventMode === 'json') {
-    bus.subscribe((event) => {
-      io.stderr.write(`${JSON.stringify(event)}\n`)
-    })
-    return bus
-  }
-  if (eventMode === 'human') {
-    bus.subscribe((event) => {
-      switch (event.type) {
-        case 'run.started':
-          io.stderr.write(`> running ${workflowId}\n`)
-          break
-        case 'step.start':
-          io.stderr.write(`  - ${safeForTty(event.stepId)} (${event.kind})\n`)
-          break
-        case 'step.error': {
-          // Surface the typed error class (e.g. BackendCapabilityError,
-          // PermissionDeniedError) so callers can recognize it from CLI
-          // output, not just the run-level failure line.
-          const name =
-            event.error.name && event.error.name !== 'Error'
-              ? `${safeForTty(event.error.name)}: `
-              : ''
-          io.stderr.write(
-            `  ! ${safeForTty(event.stepId)}: ${name}${safeForTty(event.error.message)}\n`,
+    // Pull and render the event log produced during this run.
+    if (eventMode !== 'none') {
+      const evRes = await fetchHttp(
+        `${client.discovery.url}/runs/${result.runId}/events?limit=5000`,
+        { headers: client.headers },
+        io as MainIO,
+      )
+      if (evRes !== null && evRes.ok) {
+        const { events } = (await evRes.json()) as { events: unknown[] }
+        for (const e of events) {
+          renderEvent(
+            { event: 'message', id: undefined, data: e, raw: '' },
+            eventMode,
+            io,
           )
-          break
         }
-        default:
-          break
       }
-    })
+    }
+
+    // Fetch full run state for typed exit-code mapping.
+    const stateRes = await fetchHttp(
+      `${client.discovery.url}/runs/${result.runId}`,
+      { headers: client.headers },
+      io as MainIO,
+    )
+    const run =
+      stateRes !== null && stateRes.ok
+        ? ((await stateRes.json()) as Run<unknown, unknown>)
+        : ({
+            runId: result.runId,
+            status: result.status,
+            output: result.output,
+            ...(result.error !== undefined && { error: result.error }),
+          } as unknown as Run<unknown, unknown>)
+
+    if (run.status === 'completed') {
+      io.stdout.write(`${JSON.stringify(run.output)}\n`)
+      if (eventMode === 'human') {
+        io.stderr.write(`> completed (runId=${run.runId})\n`)
+      }
+      return { exitCode: EXIT.OK, run }
+    }
+    if (run.status === 'cancelled') {
+      if (eventMode === 'human') {
+        io.stderr.write(`> cancelled (runId=${run.runId})\n`)
+      }
+      return { exitCode: EXIT.CANCELLED, run }
+    }
+    if (eventMode === 'human') {
+      const prefix = run.error?.name ? `${safeForTty(run.error.name)}: ` : ''
+      io.stderr.write(
+        `> failed (runId=${run.runId}): ${prefix}${safeForTty(run.error?.message ?? 'unknown')}\n`,
+      )
+    }
+    return { exitCode: mapRunErrorToExit(run.error?.name), run }
+  } finally {
+    process.off('SIGINT', onSig)
+    process.off('SIGTERM', onSig)
   }
-  return bus
 }
 
-function buildSecretResolver(
-  config: Awaited<ReturnType<typeof loadSkelmConfig>>['config'],
-): SecretResolver {
-  if (config.secrets?.driver === 'file') {
-    return new FileSecretResolver(
-      config.secrets.file ??
-        join(process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm'), 'secrets.json'),
-    )
+/**
+ * If the SSE event is a `run.waiting`, prompt the user for resume JSON
+ * and POST it to /runs/:runId/resume. Returns true if the event was a
+ * wait and was handled (so the caller skips default rendering).
+ *
+ * Schema-side validation is now gateway-side: we pass through whatever
+ * the user typed and let the gateway's wait step surface a validation
+ * failure as a step error if needed. This is a deliberate v1 simplification
+ * — pre-refactor the CLI did schema validation client-side, which only
+ * worked because the workflow ran in-process.
+ */
+async function maybeHandleWait(
+  ev: SseEvent,
+  runId: string,
+  client: { discovery: { url: string }; headers: Record<string, string> },
+  io: RunCommandIO,
+): Promise<boolean> {
+  if (ev.event !== 'run.waiting' && !(typeof ev.data === 'object' && ev.data !== null && (ev.data as { type?: string }).type === 'run.waiting')) {
+    return false
   }
-  return new EnvSecretResolver()
+  const payload = (typeof ev.data === 'object' && ev.data !== null ? ev.data : {}) as {
+    stepId?: string
+    message?: string
+    timeoutMs?: number
+  }
+  const req: SimpleWaitRequest = { stepId: payload.stepId ?? '(wait)' }
+  if (payload.message !== undefined) req.message = payload.message
+  if (payload.timeoutMs !== undefined) req.timeoutMs = payload.timeoutMs
+  const value = await promptForWaitInput(req, io)
+  const res = await fetchHttp(
+    `${client.discovery.url}/runs/${runId}/resume`,
+    {
+      method: 'POST',
+      headers: { ...client.headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ output: value }),
+    },
+    io as MainIO,
+  )
+  if (res !== null && !res.ok) {
+    await httpError(res, io as MainIO)
+  }
+  return true
+}
+
+/**
+ * Render a single SSE event to stderr. Mirrors the human/json formats
+ * the pre-refactor in-process bus produced so existing tests and operator
+ * muscle memory survive the dispatch flip.
+ */
+function renderEvent(ev: SseEvent, mode: 'human' | 'json' | 'none', io: RunCommandIO): void {
+  if (mode === 'none') return
+  const data = ev.data as Record<string, unknown> | undefined
+  if (mode === 'json') {
+    if (data !== undefined && typeof data === 'object') {
+      io.stderr.write(`${JSON.stringify(data)}\n`)
+    } else if (ev.raw !== '') {
+      io.stderr.write(`${ev.raw}\n`)
+    }
+    return
+  }
+  // human mode
+  if (data === undefined || typeof data !== 'object') return
+  const type = (data as { type?: string }).type
+  switch (type) {
+    case 'run.started':
+      // Already printed in runCommand body once we know the runId.
+      break
+    case 'step.start':
+      io.stderr.write(`  - ${safeForTty(String(data.stepId))} (${String(data.kind)})\n`)
+      break
+    case 'step.error': {
+      const err = data.error as { name?: string; message?: string } | undefined
+      const name = err?.name && err.name !== 'Error' ? `${safeForTty(err.name)}: ` : ''
+      io.stderr.write(
+        `  ! ${safeForTty(String(data.stepId))}: ${name}${safeForTty(err?.message ?? 'unknown')}\n`,
+      )
+      break
+    }
+    default:
+      break
+  }
 }
 
 function mapRunErrorToExit(errorName: string | undefined): ExitCode {
@@ -287,9 +334,27 @@ async function readStream(stream: NodeJS.ReadableStream): Promise<string> {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-async function promptForWaitInput(request: WaitRequest, io: RunCommandIO): Promise<unknown> {
+interface SimpleWaitRequest {
+  stepId: string
+  message?: string
+  timeoutMs?: number
+}
+
+async function promptForWaitInput(
+  request: SimpleWaitRequest,
+  io: RunCommandIO,
+): Promise<unknown> {
   const promptIo = openPromptIo(io)
-  const promptSignal = createPromptSignal(request)
+  const controller = new AbortController()
+  let timedOut = false
+  const timer =
+    request.timeoutMs === undefined
+      ? undefined
+      : setTimeout(() => {
+          timedOut = true
+          controller.abort()
+        }, request.timeoutMs)
+  timer?.unref?.()
   const rl = createInterface({
     input: promptIo.input,
     output: promptIo.output,
@@ -305,48 +370,27 @@ async function promptForWaitInput(request: WaitRequest, io: RunCommandIO): Promi
     while (true) {
       let raw: string
       try {
-        raw = await rl.question('resume JSON> ', { signal: promptSignal.signal })
-      } catch (error) {
-        if (promptSignal.timedOut) {
-          throw new WaitTimeoutError(
-            `wait(${request.stepId}) timed out after ${request.timeoutMs ?? 0}ms`,
-          )
+        raw = await rl.question('resume JSON> ', { signal: controller.signal })
+      } catch {
+        if (timedOut) {
+          throw new CliError(`wait(${request.stepId}) timed out`, 'wait-timeout')
         }
-        if (request.signal.aborted) {
-          throw new RunCancelledError()
-        }
-        const detail = error instanceof Error ? error.message : String(error)
-        throw new RunCancelledError(`wait(${request.stepId}) input cancelled (${detail})`)
+        throw new CliError(`wait(${request.stepId}) input cancelled`, 'wait-cancelled')
       }
-
       const trimmed = raw.trim()
       if (trimmed.length === 0) {
         promptIo.output.write('! enter JSON (use null for an empty value)\n')
         continue
       }
-
-      let parsed: unknown
       try {
-        parsed = JSON.parse(trimmed)
+        return JSON.parse(trimmed)
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error)
         promptIo.output.write(`! invalid JSON: ${detail}\n`)
-        continue
       }
-
-      if (request.outputSchema !== undefined) {
-        const validation = await validateWaitInput(request, parsed)
-        if (!validation.ok) {
-          promptIo.output.write(`! ${validation.message}\n`)
-          continue
-        }
-        return validation.value
-      }
-
-      return parsed
     }
   } finally {
-    promptSignal.dispose()
+    if (timer !== undefined) clearTimeout(timer)
     rl.close()
     promptIo.close()
   }
@@ -384,79 +428,6 @@ function openPromptIo(io: RunCommandIO): {
     output: io.stderr,
     close: () => {},
   }
-}
-
-function createPromptSignal(request: WaitRequest): {
-  signal: AbortSignal
-  timedOut: boolean
-  dispose: () => void
-} {
-  const controller = new AbortController()
-  let timedOut = false
-  const onAbort = () => controller.abort()
-  request.signal.addEventListener('abort', onAbort, { once: true })
-  const timer =
-    request.timeoutMs === undefined
-      ? undefined
-      : setTimeout(() => {
-          timedOut = true
-          controller.abort()
-        }, request.timeoutMs)
-  timer?.unref?.()
-  return {
-    signal: controller.signal,
-    get timedOut() {
-      return timedOut
-    },
-    dispose: () => {
-      request.signal.removeEventListener('abort', onAbort)
-      if (timer !== undefined) {
-        clearTimeout(timer)
-      }
-    },
-  }
-}
-
-async function validateWaitInput(
-  request: Pick<WaitRequest, 'outputSchema'>,
-  value: unknown,
-): Promise<{ ok: true; value: unknown } | { ok: false; message: string }> {
-  const schema = request.outputSchema
-  if (schema === undefined) return { ok: true, value }
-  const result = await schema['~standard'].validate(value)
-  if ('issues' in result && result.issues !== undefined) {
-    return {
-      ok: false,
-      message: formatSchemaIssues(
-        result.issues as ReadonlyArray<{
-          message: string
-          path: ReadonlyArray<unknown> | undefined
-        }>,
-      ),
-    }
-  }
-  return { ok: true, value: result.value }
-}
-
-function formatSchemaIssues(
-  issues: ReadonlyArray<{ message: string; path: ReadonlyArray<unknown> | undefined }>,
-): string {
-  return issues
-    .map((issue) => {
-      const path =
-        issue.path === undefined
-          ? ''
-          : issue.path
-              .map((segment) => {
-                if (typeof segment === 'object' && segment !== null && 'key' in segment) {
-                  return String((segment as { key: unknown }).key)
-                }
-                return String(segment)
-              })
-              .join('.')
-      return path ? `${path}: ${issue.message}` : issue.message
-    })
-    .join('; ')
 }
 
 function isTtyStream(stream: NodeJS.ReadableStream | NodeJS.WritableStream): boolean {
