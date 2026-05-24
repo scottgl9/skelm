@@ -49,8 +49,10 @@ Gateway flags:
   skelm gateway status [--json]            Show running pid / url / state
   skelm gateway stop                       SIGTERM the running gateway
   skelm gateway reload                     SIGHUP the running gateway
-  skelm gateway install   --systemd        Write ~/.config/systemd/user/skelm-gateway.service
-  skelm gateway uninstall --systemd        Remove the systemd unit file
+  skelm gateway install   --systemd        Write ~/.config/systemd/user/skelm-gateway.service (linux)
+  skelm gateway install   --launchd        Write ~/Library/LaunchAgents/com.skelm.gateway.plist (macOS)
+  skelm gateway uninstall --systemd        Remove the systemd unit file (linux)
+  skelm gateway uninstall --launchd        Remove the launchd plist (macOS)
   (pause|resume require the HTTP control surface — POST /gateway/pause|resume)
 
 Approvals config flags:
@@ -178,8 +180,10 @@ Gateway flags:
   skelm gateway status [--json]            Show running pid / url / state
   skelm gateway stop                       SIGTERM the running gateway
   skelm gateway reload                     SIGHUP the running gateway
-  skelm gateway install   --systemd        Write ~/.config/systemd/user/skelm-gateway.service
-  skelm gateway uninstall --systemd        Remove the systemd unit file
+  skelm gateway install   --systemd        Write ~/.config/systemd/user/skelm-gateway.service (linux)
+  skelm gateway install   --launchd        Write ~/Library/LaunchAgents/com.skelm.gateway.plist (macOS)
+  skelm gateway uninstall --systemd        Remove the systemd unit file (linux)
+  skelm gateway uninstall --launchd        Remove the launchd plist (macOS)
   (pause|resume require the HTTP control surface — POST /gateway/pause|resume)
 `,
   approvals: `Usage:
