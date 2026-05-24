@@ -200,9 +200,19 @@ function createRunEventBus(
         case 'step.start':
           io.stderr.write(`  - ${safeForTty(event.stepId)} (${event.kind})\n`)
           break
-        case 'step.error':
-          io.stderr.write(`  ! ${safeForTty(event.stepId)}: ${safeForTty(event.error.message)}\n`)
+        case 'step.error': {
+          // Surface the typed error class (e.g. BackendCapabilityError,
+          // PermissionDeniedError) so callers can recognize it from CLI
+          // output, not just the run-level failure line.
+          const name =
+            event.error.name && event.error.name !== 'Error'
+              ? `${safeForTty(event.error.name)}: `
+              : ''
+          io.stderr.write(
+            `  ! ${safeForTty(event.stepId)}: ${name}${safeForTty(event.error.message)}\n`,
+          )
           break
+        }
         default:
           break
       }
