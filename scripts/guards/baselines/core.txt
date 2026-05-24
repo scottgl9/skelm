@@ -252,9 +252,11 @@ type:RunHandle
 type:RunId
 type:RunMetadata
 type:RunOptions
+type:RunPatch
 type:RunStatus
 type:RunStore
 type:RunSummary
+type:RunWaiting
 type:ScriptTriggerConfig
 type:SecretResolver
 type:SerializedError

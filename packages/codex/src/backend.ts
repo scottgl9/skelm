@@ -308,14 +308,8 @@ async function composeSystemPrompt(
   return parts.join('\n\n---\n\n')
 }
 
-/**
- * AgentRequest doesn't have a typed sessionId field at the moment, but
- * runners may attach one through structural typing. Read defensively.
- * TODO(@skelm/core): promote `sessionId?: string` to AgentRequest so this
- * cast goes away.
- */
 function readSessionId(request: AgentRequest): string | undefined {
-  const sid = (request as { sessionId?: unknown }).sessionId
+  const sid = request.sessionId
   return typeof sid === 'string' && sid.length > 0 ? sid : undefined
 }
 
