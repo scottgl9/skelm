@@ -344,12 +344,14 @@ describe('main — integration', () => {
     })
   })
 
-  // TODO(refactor/cli-gateway-dispatch phase 5): workspace commands move
-  // to the gateway HTTP API. Re-enable once those have been ported.
-  it.skip('lists, shows, and cleans persistent workspaces', async () => {
+  it('lists, shows, and cleans persistent workspaces', async () => {
     await withProjectDir(async (dir) => {
+      // Workspaces are now gateway-managed: the WorkspaceManager that
+      // backs GET/DELETE /workspaces is rooted at <gw.stateDir>/workspaces,
+      // not at <project>/.skelm/workspaces. Set up the fixture against the
+      // harness gateway's state dir so the HTTP routes find it.
       const manager = new WorkspaceManager({
-        persistentBase: join(dir, '.skelm/workspaces'),
+        persistentBase: join(gw.stateDir, 'workspaces'),
       })
       const workspace = await manager.prepare({
         pipelineId: 'alpha-workflow',
