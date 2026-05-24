@@ -270,10 +270,32 @@ export function createServer(
       const eventStream = createEventStream(event)
       // Indexed subscription: bus only fans out to this listener for events
       // bound to runId, instead of every subscriber filtering on the hot path.
-      const unsubscribe = runner.events.forRun(runId, (runEvent: RunEvent) => {
+      // Prefer the gateway-wide events bus (every per-request Runner publishes
+      // to it). The legacy `runner` arg is the in-process Runner the bare
+      // createServer() path used; embedded callers that boot via the Gateway
+      // class pass `runner: undefined` and rely on gateway.events.
+      const bus = runner !== undefined ? runner.events : options.gateway?.events
+      if (bus === undefined) {
+        throw createError({
+          statusCode: 500,
+          message: 'no event bus available for SSE; missing runner or gateway',
+        })
+      }
+      const unsubscribe = bus.forRun(runId, (runEvent: RunEvent) => {
         eventStream
           .push({ event: runEvent.type, data: JSON.stringify(runEvent) })
           .catch(() => closed())
+        // Terminal-state events end the stream. Without this clients hang
+        // until the heartbeat-write fails or they time out — the SSE
+        // handler had no per-event closer prior to the CLI-as-gateway-
+        // interface refactor that now subscribes from the CLI itself.
+        if (
+          runEvent.type === 'run.completed' ||
+          runEvent.type === 'run.failed' ||
+          runEvent.type === 'run.cancelled'
+        ) {
+          closed()
+        }
       })
       // 15s heartbeat keeps NAT/proxy timeouts at bay and surfaces dead
       // peers via a failed push() so we can release the subscription
