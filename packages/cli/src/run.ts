@@ -257,7 +257,7 @@ async function resolveInput(args: RunCommandArgs, stdin: NodeJS.ReadableStream):
     const raw = await readStream(stdin)
     return parseJson(raw, 'stdin')
   }
-  return {}
+  return undefined
 }
 
 function parseJson(raw: string, source: string): unknown {
