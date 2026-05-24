@@ -42,11 +42,31 @@ export async function describeCommand(
   const client = await requireGateway(io as MainIO)
   if (client === null) return { exitCode: EXIT.CLI_ERROR }
 
-  const res = await fetchHttp(
-    `${client.discovery.url}/pipelines/${encodeURIComponent(args.workflow)}`,
-    { headers: client.headers },
-    io as MainIO,
-  )
+  // If the argument looks like a file path (has a slash or a known
+  // workflow extension), POST to describe-file; otherwise treat it as a
+  // workflow id and GET from the registry.
+  const looksLikePath = /[\\/]/.test(args.workflow) || /\.(?:m?[tj]s|c[tj]s|tsx?)$/.test(args.workflow)
+  let res: Response | null
+  if (looksLikePath) {
+    const absPath = args.workflow.startsWith('/')
+      ? args.workflow
+      : `${process.cwd()}/${args.workflow}`
+    res = await fetchHttp(
+      `${client.discovery.url}/pipelines/describe-file`,
+      {
+        method: 'POST',
+        headers: client.headers,
+        body: JSON.stringify({ file: absPath }),
+      },
+      io as MainIO,
+    )
+  } else {
+    res = await fetchHttp(
+      `${client.discovery.url}/pipelines/${encodeURIComponent(args.workflow)}`,
+      { headers: client.headers },
+      io as MainIO,
+    )
+  }
   if (res === null) return { exitCode: EXIT.CLI_ERROR }
   if (res.status === 404) {
     io.stderr.write(`error: workflow not found: ${args.workflow}\n`)
