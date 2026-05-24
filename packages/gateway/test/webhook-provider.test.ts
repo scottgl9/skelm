@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Gateway } from '../src/index.js'
+import { bootGatewayWithRetry } from './utils/boot-gateway.js'
 import { pickFreePort } from './utils/pick-free-port.js'
 
 let stateDir: string
@@ -22,17 +22,14 @@ function slackSignature(rawBody: string, timestamp: string, secret: string): str
 
 describe('webhook providers', () => {
   it('responds to Slack URL verification without firing the pipeline', async () => {
-    const port = await pickFreePort()
-    const proxyPort = await pickFreePort()
-    const gw = new Gateway({
+    const { gw, base } = await bootGatewayWithRetry(async (port) => ({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: proxyPort,
+      httpProxyPort: await pickFreePort(),
       config: {},
-    })
-    await gw.start()
+    }))
     try {
       const fired: string[] = []
       gw.managers.triggers.setOnFire(async (ctx) => {
@@ -49,7 +46,7 @@ describe('webhook providers', () => {
 
       const rawBody = JSON.stringify({ type: 'url_verification', challenge: 'abc123' })
       const timestamp = String(Math.floor(Date.now() / 1000))
-      const res = await fetch(`http://127.0.0.1:${port}/hooks/slack`, {
+      const res = await fetch(`${base}/hooks/slack`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -68,17 +65,14 @@ describe('webhook providers', () => {
   })
 
   it('verifies Slack request signatures and rejects invalid or replayed requests', async () => {
-    const port = await pickFreePort()
-    const proxyPort = await pickFreePort()
-    const gw = new Gateway({
+    const { gw, base } = await bootGatewayWithRetry(async (port) => ({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: proxyPort,
+      httpProxyPort: await pickFreePort(),
       config: {},
-    })
-    await gw.start()
+    }))
     try {
       const fired: string[] = []
       const payloads: unknown[] = []
@@ -97,7 +91,7 @@ describe('webhook providers', () => {
 
       const rawBody = JSON.stringify({ type: 'event_callback', event: { type: 'message' } })
       const freshTimestamp = String(Math.floor(Date.now() / 1000))
-      const ok = await fetch(`http://127.0.0.1:${port}/hooks/slack-events`, {
+      const ok = await fetch(`${base}/hooks/slack-events`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -109,7 +103,7 @@ describe('webhook providers', () => {
       expect(ok.status).toBe(200)
       expect(await ok.json()).toEqual({ ok: true, triggerId: 'slack-events' })
 
-      const invalid = await fetch(`http://127.0.0.1:${port}/hooks/slack-events`, {
+      const invalid = await fetch(`${base}/hooks/slack-events`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -121,7 +115,7 @@ describe('webhook providers', () => {
       expect(invalid.status).toBe(401)
 
       const staleTimestamp = String(Math.floor(Date.now() / 1000) - 301)
-      const replay = await fetch(`http://127.0.0.1:${port}/hooks/slack-events`, {
+      const replay = await fetch(`${base}/hooks/slack-events`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -146,17 +140,14 @@ describe('webhook providers', () => {
   })
 
   it('responds to the MS Graph validation token without firing the pipeline', async () => {
-    const port = await pickFreePort()
-    const proxyPort = await pickFreePort()
-    const gw = new Gateway({
+    const { gw, base } = await bootGatewayWithRetry(async (port) => ({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: proxyPort,
+      httpProxyPort: await pickFreePort(),
       config: {},
-    })
-    await gw.start()
+    }))
     try {
       const fired: string[] = []
       gw.managers.triggers.setOnFire(async (ctx) => {
@@ -178,7 +169,7 @@ describe('webhook providers', () => {
       })
 
       const res = await fetch(
-        `http://127.0.0.1:${port}/hooks/graph?validationToken=plain-text-token`,
+        `${base}/hooks/graph?validationToken=plain-text-token`,
       )
       expect(res.status).toBe(200)
       expect(res.headers.get('content-type')).toContain('text/plain')
@@ -190,17 +181,14 @@ describe('webhook providers', () => {
   })
 
   it('rejects ms-graph POSTs whose clientState does not match', async () => {
-    const port = await pickFreePort()
-    const proxyPort = await pickFreePort()
-    const gw = new Gateway({
+    const { gw, base } = await bootGatewayWithRetry(async (port) => ({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: proxyPort,
+      httpProxyPort: await pickFreePort(),
       config: {},
-    })
-    await gw.start()
+    }))
     try {
       const fired: string[] = []
       gw.managers.triggers.setOnFire(async (ctx) => {
@@ -216,7 +204,7 @@ describe('webhook providers', () => {
       })
 
       // Matching clientState: accepted, run fired.
-      const ok = await fetch(`http://127.0.0.1:${port}/hooks/graph-cs`, {
+      const ok = await fetch(`${base}/hooks/graph-cs`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ value: [{ clientState: 'expected-state', resource: 'x' }] }),
@@ -224,7 +212,7 @@ describe('webhook providers', () => {
       expect(ok.status).toBe(200)
 
       // Mismatched clientState: 401, no fire.
-      const bad = await fetch(`http://127.0.0.1:${port}/hooks/graph-cs`, {
+      const bad = await fetch(`${base}/hooks/graph-cs`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ value: [{ clientState: 'WRONG', resource: 'x' }] }),
@@ -232,7 +220,7 @@ describe('webhook providers', () => {
       expect(bad.status).toBe(401)
 
       // Mixed batch (one valid, one not): rejected as a whole, no partial fire.
-      const mixed = await fetch(`http://127.0.0.1:${port}/hooks/graph-cs`, {
+      const mixed = await fetch(`${base}/hooks/graph-cs`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -245,7 +233,7 @@ describe('webhook providers', () => {
       expect(mixed.status).toBe(401)
 
       // Body without `value` array: rejected.
-      const empty = await fetch(`http://127.0.0.1:${port}/hooks/graph-cs`, {
+      const empty = await fetch(`${base}/hooks/graph-cs`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({}),
