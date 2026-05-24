@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { promises as fs } from 'node:fs'
-import { homedir } from 'node:os'
+import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseDuration, pickExport } from '@skelm/core'
@@ -27,8 +27,10 @@ export interface GatewayArgs {
   httpPort?: number
   /** Override HTTP bind host. */
   httpHost?: string
-  /** @deprecated Kept for backwards compatibility — `gateway install` no longer requires this flag. */
+  /** Install as a systemd user service (linux). Defaults true on linux when neither flag is set. */
   systemd?: boolean
+  /** Install as a launchd user agent (macOS). Defaults true on darwin when neither flag is set. */
+  launchd?: boolean
 }
 
 function defaultStateDir(): string {
@@ -37,11 +39,24 @@ function defaultStateDir(): string {
 
 const SYSTEMD_DIR = `${process.env.HOME ?? homedir()}/.config/systemd/user`
 const SYSTEMD_UNIT_PATH = `${SYSTEMD_DIR}/skelm-gateway.service`
+const LAUNCHD_DIR = `${process.env.HOME ?? homedir()}/Library/LaunchAgents`
+const LAUNCHD_PLIST_PATH = `${LAUNCHD_DIR}/com.skelm.gateway.plist`
+const LAUNCHD_LABEL = 'com.skelm.gateway'
 
 /** Returns true if the skelm-gateway systemd unit file is installed. */
 async function isSystemdInstalled(): Promise<boolean> {
   try {
     await fs.access(SYSTEMD_UNIT_PATH)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Returns true if the skelm-gateway launchd plist is installed. */
+async function isLaunchdInstalled(): Promise<boolean> {
+  try {
+    await fs.access(LAUNCHD_PLIST_PATH)
     return true
   } catch {
     return false
@@ -91,10 +106,46 @@ export async function gatewayCommand(args: GatewayArgs, io: MainIO): Promise<Mai
       )
       return { exitCode: EXIT.CLI_ERROR }
     case 'install':
-      return installSystemd(io)
+      return installService(args, io)
     case 'uninstall':
-      return uninstallSystemd(io)
+      return uninstallService(args, io)
   }
+}
+
+/**
+ * Pick the platform-default service manager. Explicit --systemd / --launchd
+ * flags always win; otherwise we use the OS default (linux → systemd,
+ * darwin → launchd).
+ */
+function pickServiceManager(args: GatewayArgs): 'systemd' | 'launchd' | null {
+  if (args.systemd === true) return 'systemd'
+  if (args.launchd === true) return 'launchd'
+  const p = platform()
+  if (p === 'linux') return 'systemd'
+  if (p === 'darwin') return 'launchd'
+  return null
+}
+
+async function installService(args: GatewayArgs, io: MainIO): Promise<MainResult> {
+  const manager = pickServiceManager(args)
+  if (manager === null) {
+    io.stderr.write(
+      `error: install requires --systemd (linux) or --launchd (macOS) on this platform (${platform()})\n`,
+    )
+    return { exitCode: EXIT.CLI_ERROR }
+  }
+  return manager === 'systemd' ? installSystemd(io) : installLaunchd(io)
+}
+
+async function uninstallService(args: GatewayArgs, io: MainIO): Promise<MainResult> {
+  const manager = pickServiceManager(args)
+  if (manager === null) {
+    io.stderr.write(
+      `error: uninstall requires --systemd (linux) or --launchd (macOS) on this platform (${platform()})\n`,
+    )
+    return { exitCode: EXIT.CLI_ERROR }
+  }
+  return manager === 'systemd' ? uninstallSystemd(io) : uninstallLaunchd(io)
 }
 
 async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> {
@@ -102,15 +153,25 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     return detachGateway(args, io)
   }
 
-  // If the systemd unit is installed, delegate to `systemctl --user start`
-  // so the service runs in the background under systemd supervision.
+  // If a managed service unit is installed, delegate to the platform's
+  // service manager so the gateway runs supervised in the background.
   // Skip this when --foreground is explicitly requested.
   if (!args.foreground) {
-    const installed = await isSystemdInstalled()
-    if (installed) {
-      const result = runSync('systemctl', ['--user', 'start', 'skelm-gateway'])
+    const systemdInstalled = platform() === 'linux' && (await isSystemdInstalled())
+    const launchdInstalled = platform() === 'darwin' && (await isLaunchdInstalled())
+    if (systemdInstalled || launchdInstalled) {
+      const cmd = systemdInstalled
+        ? { bin: 'systemctl', args: ['--user', 'start', 'skelm-gateway'], hint: 'systemctl' }
+        : (() => {
+            const uid = process.getuid?.() ?? 0
+            return {
+              bin: 'launchctl',
+              args: ['kickstart', `gui/${uid}/${LAUNCHD_LABEL}`],
+              hint: 'launchctl',
+            }
+          })()
+      const result = runSync(cmd.bin, cmd.args)
       if (result.exitCode === 0) {
-        // Wait briefly for the gateway to write its discovery file.
         const probe = new Gateway({ stateDir: defaultStateDir() })
         const deadline = Date.now() + 5_000
         let disc = await readDiscovery(probe.discoveryPath)
@@ -118,18 +179,21 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
           await new Promise((r) => setTimeout(r, 100))
           disc = await readDiscovery(probe.discoveryPath)
         }
+        const logCmd = systemdInstalled
+          ? 'journalctl --user -u skelm-gateway -f'
+          : `tail -f ${defaultStateDir()}/gateway.log`
         io.stdout.write(
-          `skelm gateway started (background service)\n  url: ${disc?.url ?? '(pending)'}\n\nTo view logs:  journalctl --user -u skelm-gateway -f\nTo stop:       skelm gateway stop\n`,
+          `skelm gateway started (background service)\n  url: ${disc?.url ?? '(pending)'}\n\nTo view logs:  ${logCmd}\nTo stop:       skelm gateway stop\n`,
         )
         return { exitCode: EXIT.OK }
       }
-      // systemctl failed — fall through to foreground start and report the error.
       io.stderr.write(
-        `warning: systemctl start failed (${result.stderr.trim()}); starting in foreground instead.\n\n`,
+        `warning: ${cmd.hint} start failed (${result.stderr.trim()}); starting in foreground instead.\n\n`,
       )
-    } else {
+    } else if (platform() === 'linux' || platform() === 'darwin') {
+      const installCmd = platform() === 'darwin' ? '--launchd' : '--systemd'
       io.stderr.write(
-        'tip: run `skelm gateway install` to install the gateway as a persistent background service.\n\n',
+        `tip: run \`skelm gateway install ${installCmd}\` to install the gateway as a persistent background service.\n\n`,
       )
     }
   }
@@ -372,17 +436,23 @@ async function stopGateway(io: MainIO): Promise<MainResult> {
     return { exitCode: EXIT.CLI_ERROR }
   }
 
-  // If the systemd unit is installed, prefer `systemctl stop` so systemd
-  // stays in sync and won't auto-restart the process.
-  if (await isSystemdInstalled()) {
+  // If a managed service is installed, prefer the service manager's stop
+  // command so its bookkeeping stays in sync and it won't auto-restart.
+  if (platform() === 'linux' && (await isSystemdInstalled())) {
     const result = runSync('systemctl', ['--user', 'stop', 'skelm-gateway'])
     if (result.exitCode === 0) {
       io.stdout.write('skelm gateway stopped (via systemd)\n')
       return { exitCode: EXIT.OK }
     }
-    // Fall through to direct SIGTERM if systemctl failed for some reason
-    // (e.g. the unit is installed but the service isn't currently tracked).
     io.stderr.write(`systemctl stop failed (${result.stderr.trim()}); falling back to SIGTERM\n`)
+  } else if (platform() === 'darwin' && (await isLaunchdInstalled())) {
+    const uid = process.getuid?.() ?? 0
+    const result = runSync('launchctl', ['bootout', `gui/${uid}/${LAUNCHD_LABEL}`])
+    if (result.exitCode === 0) {
+      io.stdout.write('skelm gateway stopped (via launchd)\n')
+      return { exitCode: EXIT.OK }
+    }
+    io.stderr.write(`launchctl bootout failed (${result.stderr.trim()}); falling back to SIGTERM\n`)
   }
 
   try {
@@ -851,5 +921,111 @@ async function uninstallSystemd(io: MainIO): Promise<MainResult> {
 
   runSync('systemctl', ['--user', 'daemon-reload'])
   io.stdout.write('skelm gateway service uninstalled\n')
+  return { exitCode: EXIT.OK }
+}
+
+/**
+ * Build the launchd plist body. Mirrors the systemd unit in spirit:
+ * absolute paths so the agent doesn't depend on the launchd PATH (which
+ * is restrictive and would not find a `nvm`/`fnm`-managed node), foreground
+ * start so launchd owns the process lifecycle, and KeepAlive on crash.
+ */
+export function buildLaunchdPlist(): string {
+  const nodePath = process.execPath
+  const skelmBin = process.argv[1] ?? ''
+  if (!skelmBin) {
+    throw new Error('cannot determine skelm bin path (process.argv[1] is empty)')
+  }
+  const stateDir = defaultStateDir()
+  const logPath = `${stateDir}/gateway.log`
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${LAUNCHD_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${nodePath}</string>
+    <string>${skelmBin}</string>
+    <string>gateway</string>
+    <string>start</string>
+    <string>--foreground</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_ENV</key>
+    <string>production</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>${logPath}</string>
+  <key>StandardErrorPath</key>
+  <string>${logPath}</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
+`
+}
+
+async function installLaunchd(io: MainIO): Promise<MainResult> {
+  try {
+    await fs.mkdir(LAUNCHD_DIR, { recursive: true })
+    await fs.writeFile(LAUNCHD_PLIST_PATH, buildLaunchdPlist())
+  } catch (err) {
+    io.stderr.write(
+      `error: failed to write launchd plist ${LAUNCHD_PLIST_PATH}\n  ${(err as Error).message}\n`,
+    )
+    return { exitCode: EXIT.CLI_ERROR }
+  }
+  io.stdout.write(`wrote ${LAUNCHD_PLIST_PATH}\n`)
+
+  await fs.mkdir(defaultStateDir(), { recursive: true })
+
+  const uid = process.getuid?.() ?? 0
+  const domain = `gui/${uid}`
+  // bootstrap loads the plist into the user's GUI domain; if already loaded
+  // we bootout first so a re-install replaces the running instance cleanly.
+  const existing = runSync('launchctl', ['print', `${domain}/${LAUNCHD_LABEL}`])
+  if (existing.exitCode === 0) {
+    runSync('launchctl', ['bootout', `${domain}/${LAUNCHD_LABEL}`])
+  }
+  const bootstrap = runSync('launchctl', ['bootstrap', domain, LAUNCHD_PLIST_PATH])
+  if (bootstrap.exitCode !== 0) {
+    io.stderr.write(
+      `error: failed to bootstrap launchd agent\n  ${bootstrap.stderr.trim()}\n\nTo start manually:\n  launchctl bootstrap ${domain} ${LAUNCHD_PLIST_PATH}\n  launchctl kickstart ${domain}/${LAUNCHD_LABEL}\n`,
+    )
+    return { exitCode: EXIT.CLI_ERROR }
+  }
+  // kickstart explicitly so RunAtLoad doesn't have to be relied upon.
+  runSync('launchctl', ['kickstart', `${domain}/${LAUNCHD_LABEL}`])
+
+  io.stdout.write(
+    `skelm gateway agent installed and started\n\nTo view logs:  tail -f ${defaultStateDir()}/gateway.log\nTo stop:       skelm gateway stop\nTo uninstall:  skelm gateway uninstall --launchd\n`,
+  )
+  return { exitCode: EXIT.OK }
+}
+
+async function uninstallLaunchd(io: MainIO): Promise<MainResult> {
+  const uid = process.getuid?.() ?? 0
+  const domain = `gui/${uid}`
+  runSync('launchctl', ['bootout', `${domain}/${LAUNCHD_LABEL}`])
+  try {
+    await fs.rm(LAUNCHD_PLIST_PATH)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      io.stderr.write(`${LAUNCHD_PLIST_PATH} not installed\n`)
+      return { exitCode: EXIT.CLI_ERROR }
+    }
+    throw err
+  }
+  io.stdout.write('skelm gateway launchd agent uninstalled\n')
   return { exitCode: EXIT.OK }
 }
