@@ -157,7 +157,12 @@ export class TrustEnforcer {
   }
 
   canExec(binary: string): EnforceDecision {
-    if (!this.policy.allowedExecutables.has(binary)) {
+    const hasPathSeparator = binary.includes('/') || binary.includes('\\')
+    const allowed =
+      this.policy.allowedExecutables.has(binary) ||
+      (hasPathSeparator &&
+        this.policy.allowedExecutables.has(binary.split(/[\\/]/).pop() ?? binary))
+    if (!allowed) {
       return { allow: false, reason: 'not-in-allowlist', dimension: 'executable' }
     }
     return { allow: true }

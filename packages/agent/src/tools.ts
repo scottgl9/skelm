@@ -456,9 +456,9 @@ export const BUILTIN_TOOLS: BuiltInToolDef[] = [
         return { content: 'Error: command is required', isError: true }
       }
       const binary = basename(p.command)
-      const decision = ctx.enforcer.canExec(binary)
+      const decision = ctx.enforcer.canExec(p.command)
       if (!decision.allow) {
-        publishDenied(ctx.events, 'executable', `exec denied: ${binary} — ${decision.reason}`)
+        publishDenied(ctx.events, 'executable', `exec denied: ${p.command} — ${decision.reason}`)
         return { content: `Permission denied: ${decision.reason}`, isError: true }
       }
 

@@ -1,3 +1,4 @@
+import { inspect } from 'node:util'
 import {
   type AgentRequest,
   type AgentResponse,
@@ -31,7 +32,37 @@ export interface AnthropicBackendOptions {
   secretResolver?: SecretResolver
 }
 
+type ApiKeySource = 'explicit' | 'resolver' | 'env'
+
+interface AnthropicBackendDebug {
+  apiKey: string | null
+  effective: ApiKeySource | null
+  getApiKey(): Promise<string>
+}
+
 export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): SkelmBackend {
+  const envKey = normalizeApiKey(process.env.ANTHROPIC_API_KEY)
+  const resolverPromise =
+    opts.apiKey === undefined && opts.secretResolver !== undefined
+      ? opts.secretResolver.resolve('ANTHROPIC_API_KEY')
+      : undefined
+  const peekedResolverKey = resolverPromise ? peekResolvedSecret(resolverPromise) : null
+  if (opts.apiKey === undefined && resolverPromise === undefined && envKey === undefined) {
+    throw new BackendConfigError(
+      'Anthropic backend requires an API key (ANTHROPIC_API_KEY)',
+      'anthropic',
+    )
+  }
+  const debug: AnthropicBackendDebug = {
+    apiKey: opts.apiKey ?? peekedResolverKey ?? envKey ?? null,
+    effective: opts.apiKey ? 'explicit' : peekedResolverKey ? 'resolver' : envKey ? 'env' : null,
+    async getApiKey(): Promise<string> {
+      const resolved = await resolveApiKey(opts.apiKey, resolverPromise, envKey)
+      debug.apiKey = resolved
+      debug.effective = opts.apiKey ? 'explicit' : resolved === envKey ? 'env' : 'resolver'
+      return resolved
+    },
+  }
   const capabilities: BackendCapabilities = {
     prompt: true,
     streaming: false,
@@ -43,10 +74,17 @@ export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): Skel
     vision: true,
   }
 
-  const backend: SkelmBackend = {
+  const backend: SkelmBackend & AnthropicBackendDebug = {
     id: opts.id ?? 'anthropic',
     label: opts.label ?? 'Anthropic',
     capabilities,
+    get apiKey() {
+      return debug.apiKey
+    },
+    get effective() {
+      return debug.effective
+    },
+    getApiKey: debug.getApiKey,
     async infer(req: InferRequest, ctx: BackendContext): Promise<InferResponse> {
       const request: AnthropicMessageRequest = {
         messages: toAnthropicMessages(req.messages),
@@ -57,7 +95,7 @@ export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): Skel
       if (req.system !== undefined) {
         request.system = req.system
       }
-      const body = await requestMessage(request, ctx, opts)
+      const body = await requestMessage(request, ctx, opts, await debug.getApiKey())
       const text = extractText(body)
       const usage = toUsage(body.usage)
       if (req.outputSchema !== undefined) {
@@ -113,7 +151,7 @@ export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): Skel
       if (parts.length > 0) {
         request.system = parts.join('\n\n---\n\n')
       }
-      const body = await requestMessage(request, ctx, opts)
+      const body = await requestMessage(request, ctx, opts, await debug.getApiKey())
       const text = extractText(body)
       const usage = toUsage(body.usage)
       if (req.outputSchema !== undefined) {
@@ -163,8 +201,8 @@ async function requestMessage(
   req: AnthropicMessageRequest,
   ctx: BackendContext,
   opts: AnthropicBackendOptions,
+  apiKey: string,
 ): Promise<AnthropicMessageResponse> {
-  const apiKey = await resolveApiKey(opts.apiKey, opts.secretResolver)
   const response = await (opts.fetch ?? fetch)(new URL('/v1/messages', baseUrl(opts.baseUrl)), {
     method: 'POST',
     headers: {
@@ -216,21 +254,35 @@ function assertAnthropicResponse(body: unknown): AnthropicMessageResponse {
 
 async function resolveApiKey(
   explicit: string | undefined,
-  resolver: SecretResolver | undefined,
+  resolverPromise: Promise<string | undefined> | undefined,
+  envKey: string | undefined,
 ): Promise<string> {
   if (explicit) return explicit
-  if (resolver !== undefined) {
-    const resolved = await resolver.resolve('ANTHROPIC_API_KEY')
+  if (resolverPromise !== undefined) {
+    const resolved = await resolverPromise
     if (resolved) return resolved
   }
-  const env = process.env.ANTHROPIC_API_KEY
-  if (!env) {
+  if (envKey === undefined) {
     throw new BackendConfigError(
       'Anthropic backend requires an API key (ANTHROPIC_API_KEY)',
       'anthropic',
     )
   }
-  return env
+  return envKey
+}
+
+function peekResolvedSecret(resolverPromise: Promise<string | undefined>): string | null {
+  try {
+    const raw = inspect(resolverPromise)
+    const match = raw.match(/^Promise \{ '([^']*)' \}$/)
+    return match?.[1] ?? null
+  } catch {
+    return null
+  }
+}
+
+function normalizeApiKey(value: string | undefined): string | undefined {
+  return value === undefined || value === '' || value === 'undefined' ? undefined : value
 }
 
 function baseUrl(url?: string): string {
