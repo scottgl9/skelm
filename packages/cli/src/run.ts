@@ -449,6 +449,7 @@ async function promptForWaitInput(request: SimpleWaitRequest, io: RunCommandIO):
   const promptIo = openPromptIo(io)
   const controller = new AbortController()
   let timedOut = false
+  let inputClosed = false
   const timer =
     request.timeoutMs === undefined
       ? undefined
@@ -457,6 +458,17 @@ async function promptForWaitInput(request: SimpleWaitRequest, io: RunCommandIO):
           controller.abort()
         }, request.timeoutMs)
   timer?.unref?.()
+  // Input-stream end before any non-empty response means we have no
+  // interactive source — abort the prompt so the caller can fall back
+  // to the EXIT.RUN_PAUSED path. This covers the test-harness case of
+  // an empty Readable injected as stdin.
+  const onClose = () => {
+    inputClosed = true
+    controller.abort()
+  }
+  const inputAny = promptIo.input as NodeJS.EventEmitter
+  inputAny.once('end', onClose)
+  inputAny.once('close', onClose)
   const rl = createInterface({
     input: promptIo.input,
     output: promptIo.output,
@@ -479,6 +491,9 @@ async function promptForWaitInput(request: SimpleWaitRequest, io: RunCommandIO):
         }
         throw new CliError(`wait(${request.stepId}) input cancelled`, 'wait-cancelled')
       }
+      if (inputClosed && raw.trim().length === 0) {
+        throw new CliError(`wait(${request.stepId}) input cancelled`, 'wait-cancelled')
+      }
       const trimmed = raw.trim()
       if (trimmed.length === 0) {
         promptIo.output.write('! enter JSON (use null for an empty value)\n')
@@ -493,6 +508,8 @@ async function promptForWaitInput(request: SimpleWaitRequest, io: RunCommandIO):
     }
   } finally {
     if (timer !== undefined) clearTimeout(timer)
+    inputAny.removeListener('end', onClose)
+    inputAny.removeListener('close', onClose)
     rl.close()
     promptIo.close()
   }
@@ -507,9 +524,14 @@ async function promptForWaitInput(request: SimpleWaitRequest, io: RunCommandIO):
  */
 function hasInteractiveResumeInput(io: RunCommandIO): boolean {
   if (isTtyStream(io.stdin)) return true
+  // Injected stdin (e.g. test harness passing a Readable) is a usable
+  // input source as long as it isn't process.stdin itself in a non-tty
+  // environment — the latter is the "piped empty stdin from CI"
+  // scenario where we MUST fall through to EXIT.RUN_PAUSED so scripts
+  // don't hang.
+  if (io.stdin !== process.stdin) return true
   if (
     process.platform !== 'win32' &&
-    io.stdin === process.stdin &&
     io.stderr === process.stderr &&
     process.stderr.isTTY
   ) {
