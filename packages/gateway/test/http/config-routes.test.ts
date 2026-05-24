@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MemoryRunStore } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Gateway } from '../../src/index.js'
-import { pickFreePort } from '../utils/pick-free-port.js'
+import type { Gateway } from '../../src/index.js'
+import { bootGatewayWithRetry } from '../utils/boot-gateway.js'
 
 let stateDir: string
 
@@ -17,8 +17,7 @@ afterEach(async () => {
 })
 
 async function boot(): Promise<{ gw: Gateway; base: string }> {
-  const port = await pickFreePort()
-  const gw = new Gateway({
+  return bootGatewayWithRetry((port) => ({
     stateDir,
     watchRegistries: false,
     enableHttp: true,
@@ -28,9 +27,7 @@ async function boot(): Promise<{ gw: Gateway; base: string }> {
       server: { auth: { mode: 'none' }, maxConcurrentRuns: 4 },
       secrets: { driver: 'file', file: '/etc/skelm/secrets.json' },
     },
-  })
-  await gw.start()
-  return { gw, base: `http://127.0.0.1:${port}` }
+  }))
 }
 
 describe('/v1/config', () => {
@@ -98,8 +95,7 @@ describe('/v1/config', () => {
     // DataCloneError when `instances[]` carried closures like an
     // `infer` function on a backend factory. sanitize() now JSON
     // round-trips and PATCH no longer clones the entire config.
-    const port = await pickFreePort()
-    const gw = new Gateway({
+    const { gw, base } = await bootGatewayWithRetry((port) => ({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
@@ -122,15 +118,14 @@ describe('/v1/config', () => {
           } as unknown as never,
         ],
       },
-    })
-    await gw.start()
+    }))
     try {
-      const getRes = await fetch(`http://127.0.0.1:${port}/v1/config`)
+      const getRes = await fetch(`${base}/v1/config`)
       expect(getRes.status).toBe(200)
       const getBody = await getRes.json()
       expect(getBody.server.maxConcurrentRuns).toBe(2)
 
-      const patchRes = await fetch(`http://127.0.0.1:${port}/v1/config`, {
+      const patchRes = await fetch(`${base}/v1/config`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ 'server.maxConcurrentRuns': 5 }),
@@ -143,8 +138,7 @@ describe('/v1/config', () => {
   })
 
   it('redacts sensitive env vars on agents, mcpServers, and backends', async () => {
-    const port = await pickFreePort()
-    const gw = new Gateway({
+    const { gw, base } = await bootGatewayWithRetry((port) => ({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
@@ -179,10 +173,9 @@ describe('/v1/config', () => {
           },
         },
       },
-    })
-    await gw.start()
+    }))
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/v1/config`)
+      const res = await fetch(`${base}/v1/config`)
       const body = await res.json()
       expect(body.registries.agents[0].env.OPENAI_API_KEY).toBe('[redacted]')
       expect(body.registries.agents[0].env.LOG_LEVEL).toBe('info')
