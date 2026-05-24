@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MemoryRunStore } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Gateway } from '../../src/index.js'
-import { pickFreePort } from '../utils/pick-free-port.js'
+import type { Gateway } from '../../src/index.js'
+import { bootGatewayWithRetry } from '../utils/boot-gateway.js'
 
 let stateDir: string
 let gw: Gateway | undefined
@@ -12,17 +12,16 @@ let base: string
 
 beforeEach(async () => {
   stateDir = await mkdtemp(join(tmpdir(), 'skelm-secrets-route-'))
-  const port = await pickFreePort()
-  gw = new Gateway({
+  const booted = await bootGatewayWithRetry((port) => ({
     stateDir,
     enableHttp: true,
     httpPort: port,
     installSignalHandlers: false,
     runStore: new MemoryRunStore(),
     config: { secrets: { driver: 'file' } },
-  })
-  await gw.start()
-  base = `http://127.0.0.1:${port}`
+  }))
+  gw = booted.gw
+  base = booted.base
 })
 
 afterEach(async () => {

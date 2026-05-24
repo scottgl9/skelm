@@ -5,8 +5,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { MemoryRunStore } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Gateway } from '../../src/index.js'
-import { pickFreePort } from '../utils/pick-free-port.js'
+import type { Gateway } from '../../src/index.js'
+import { bootGatewayWithRetry } from '../utils/boot-gateway.js'
 
 // Reuse the cli package's fixture workflow — it sits inside the monorepo so
 // `@skelm/core` resolves via workspace symlinks, which is what real users see.
@@ -23,8 +23,7 @@ let base: string
 beforeEach(async () => {
   stateDir = await mkdtemp(join(tmpdir(), 'skelm-runfile-'))
   projectRoot = await mkdtemp(join(tmpdir(), 'skelm-runfile-root-'))
-  const port = await pickFreePort()
-  gw = new Gateway({
+  const booted = await bootGatewayWithRetry((port) => ({
     stateDir,
     projectRoot,
     watchRegistries: false,
@@ -32,9 +31,9 @@ beforeEach(async () => {
     httpPort: port,
     runStore: new MemoryRunStore(),
     loadWorkflow: async (_id, absolutePath) => import(pathToFileURL(absolutePath).href),
-  })
-  await gw.start()
-  base = `http://127.0.0.1:${port}`
+  }))
+  gw = booted.gw
+  base = booted.base
 })
 
 afterEach(async () => {
@@ -128,7 +127,9 @@ describe('POST /pipelines/start-file', () => {
     const { runId, status, pipelineId } = await startRes.json()
     expect(status).toBe('running')
     expect(runId).toMatch(/[a-f0-9-]{36}/)
-    expect(pipelineId).toMatch(/^cli:[0-9a-f]{16}$/)
+    // pipelineId now surfaces the workflow's declared id (so the CLI can
+    // render '> running <id>'), not the cli:<sha> registry-tracking id.
+    expect(pipelineId).toBe('hello-fixture')
 
     const deadline = Date.now() + 5_000
     let finalState: { status?: string; output?: unknown } | null = null

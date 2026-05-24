@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MemoryRunStore } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { ChainAuditWriter, Gateway } from '../../src/index.js'
-import { pickFreePort } from '../utils/pick-free-port.js'
+import { ChainAuditWriter, type Gateway } from '../../src/index.js'
+import { bootGatewayWithRetry } from '../utils/boot-gateway.js'
 
 let stateDir: string
 let gw: Gateway | undefined
@@ -12,7 +12,6 @@ let base: string
 
 beforeEach(async () => {
   stateDir = await mkdtemp(join(tmpdir(), 'skelm-audit-route-'))
-  const port = await pickFreePort()
   // Use ChainAuditWriter explicitly so we can pre-seed entries before
   // boot to assert reads work end-to-end.
   const auditWriter = new ChainAuditWriter(join(stateDir, 'audit.jsonl'))
@@ -30,15 +29,15 @@ beforeEach(async () => {
     timestamp: new Date('2025-01-02T00:00:00Z').toISOString(),
     details: { permission: 'exec' },
   })
-  gw = new Gateway({
+  const booted = await bootGatewayWithRetry((port) => ({
     stateDir,
     enableHttp: true,
     httpPort: port,
     installSignalHandlers: false,
     runStore: new MemoryRunStore(),
-  })
-  await gw.start()
-  base = `http://127.0.0.1:${port}`
+  }))
+  gw = booted.gw
+  base = booted.base
 })
 
 afterEach(async () => {

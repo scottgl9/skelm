@@ -198,6 +198,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
         secretResolver: enforcement.secretResolver,
         auditWriter: enforcement.auditWriter,
         store: gateway.runStore,
+        ...(gateway.backends !== undefined && { backends: gateway.backends }),
       })
       gateway.attachMetricsBus(runner.events)
       const controller = new AbortController()
@@ -276,6 +277,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
         secretResolver: enforcement.secretResolver,
         auditWriter: enforcement.auditWriter,
         store: gateway.runStore,
+        ...(gateway.backends !== undefined && { backends: gateway.backends }),
       })
       gateway.attachMetricsBus(runner.events)
       const controller = new AbortController()
@@ -332,6 +334,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
         secretResolver: enforcement.secretResolver,
         auditWriter: enforcement.auditWriter,
         store: gateway.runStore,
+        ...(gateway.backends !== undefined && { backends: gateway.backends }),
       })
       gateway.attachMetricsBus(runner.events)
       const controller = new AbortController()
