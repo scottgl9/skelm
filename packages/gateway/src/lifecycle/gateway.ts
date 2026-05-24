@@ -146,6 +146,14 @@ export class Gateway {
     return requireStarted(this.runStoreInternal, 'gateway runStore is not available')
   }
 
+  /** Shared backend registry as passed via GatewayOptions; undefined when
+   *  the gateway was constructed without one. Per-request Runners thread
+   *  this through so runs see the same backends config-defined or
+   *  pre-built instances would. */
+  get backends(): import('@skelm/core').BackendRegistry | undefined {
+    return this.options.backends
+  }
+
   /**
    * Register an AbortController for an in-flight run so that
    * `gateway.cancel(runId)` can abort it. The dispatcher calls this when
@@ -283,6 +291,7 @@ export class Gateway {
       secretResolver: enforcement.secretResolver,
       auditWriter: enforcement.auditWriter,
       store: this.runStore,
+      ...(this.options.backends !== undefined && { backends: this.options.backends }),
     })
     this.attachMetricsBus(runner.events)
     const controller = new AbortController()

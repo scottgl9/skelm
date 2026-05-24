@@ -1,6 +1,7 @@
 import type {
   ApprovalGate,
   AuditWriter,
+  BackendRegistry,
   PermissionResolver,
   RunStore,
   SecretResolver,
@@ -35,6 +36,11 @@ export interface GatewayOptions {
   installSignalHandlers?: boolean
   /** Enable FS watching on the workflow / skill registries. Defaults to true. */
   watchRegistries?: boolean
+  /** Shared backend registry. Workflows started via HTTP /pipelines/run-file,
+   *  /pipelines/start-file, and the trigger dispatcher all draw from this
+   *  registry. Without it, runs that reference a config-defined backend
+   *  (e.g. `agent({ backend: 'pi' })`) fail with BackendNotFoundError. */
+  backends?: BackendRegistry
   /** Override the canonical audit writer; defaults to NoopAuditWriter (Phase 5 wires the chain). */
   auditWriter?: AuditWriter
   /** Override the canonical secret resolver; defaults to env-backed (Phase 5 wires the file driver). */

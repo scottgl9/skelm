@@ -223,6 +223,16 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
   // registrations whose backing workflow file is gone (issue #162). The
   // closure captures `gateway` by reference so it's safe to declare here
   // before the construction completes.
+  // Build the backend registry BEFORE constructing the Gateway so it can be
+  // passed into GatewayOptions. The registry covers BOTH `config.instances`
+  // (pre-built backends like vercel-ai / opencode SDK / pi-sdk) AND
+  // `config.backends.<id>` factory entries (Pi RPC, opencode subprocess, …).
+  // Without it, runs that reference a config-backed backend id (e.g.
+  // `agent({ backend: 'pi' })`) — regardless of whether they were fired
+  // via a trigger or via HTTP /pipelines/run-file — fail with
+  // BackendNotFoundError.
+  const backendRegistry = await buildBackendRegistry(config)
+
   let gateway: Gateway
   const syncDeclared = async (): Promise<void> => {
     if (gateway === undefined) return
@@ -243,6 +253,7 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     config,
     loadWorkflow,
     onReload: syncDeclared,
+    ...(backendRegistry !== undefined && { backends: backendRegistry }),
   })
   installCrashHandlers(gateway, io)
   try {
@@ -251,13 +262,6 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     io.stderr.write(`gateway start failed: ${(err as Error).message}\n`)
     return { exitCode: EXIT.CLI_ERROR }
   }
-
-  // Build a backend registry covering BOTH `config.instances` (pre-built
-  // backends like vercel-ai / opencode SDK / pi-sdk) AND `config.backends.<id>`
-  // factory entries (Pi RPC, opencode subprocess, …). Without the latter,
-  // gateway-fired runs that reference a config-backed backend id (e.g.
-  // `agent({ backend: 'pi' })`) fail with `BackendNotFoundError`.
-  const backendRegistry = await buildBackendRegistry(config)
 
   // Replace the trigger coordinator's onFire with the real dispatcher.
   const dispatcher = createTriggerDispatcher({
