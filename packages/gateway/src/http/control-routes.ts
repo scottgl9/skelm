@@ -17,6 +17,8 @@ import {
 import type { Gateway } from '../lifecycle/gateway.js'
 import { DEFAULT_WEBHOOK_DEDUPE_TTL_MS } from '../triggers/dedupe-store.js'
 import { registerApprovalRoutes } from './routes/approvals.js'
+import { registerAuditRoutes } from './routes/audit.js'
+import { registerWorkspaceRoutes } from './routes/workspaces.js'
 import { registerBatchRoutes } from './routes/batch.js'
 import { registerConfigRoutes } from './routes/config.js'
 import { registerDashboardRoutes } from './routes/dashboard.js'
@@ -56,6 +58,8 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
   registerWorkflowRoutes(router, gateway)
   registerBatchRoutes(router, gateway)
   registerConfigRoutes(router, gateway)
+  registerAuditRoutes(router, gateway)
+  registerWorkspaceRoutes(router, gateway)
 
   app.use(router)
 

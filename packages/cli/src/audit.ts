@@ -1,7 +1,8 @@
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { ChainAuditWriter, FileSecretResolver } from '@skelm/gateway'
+import { FileSecretResolver } from '@skelm/gateway'
 import { EXIT } from './exit-codes.js'
+import { fetchHttp, httpError, requireGateway } from './internal/gateway-client.js'
 import type { MainIO, MainResult } from './internal/io.js'
 import { writeJsonOutput } from './internal/output.js'
 
@@ -31,44 +32,62 @@ function defaultStateDir(): string {
   return process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm')
 }
 
+interface AuditEntry {
+  seq: number
+  timestamp: string
+  actor: string
+  action: string
+  runId?: string
+  details?: unknown
+}
+
 export async function auditCommand(args: AuditQueryArgs, io: MainIO): Promise<MainResult> {
-  const auditPath = args.path ?? join(defaultStateDir(), 'audit.jsonl')
-  const writer = new ChainAuditWriter(auditPath)
+  const client = await requireGateway(io)
+  if (client === null) return { exitCode: EXIT.CLI_ERROR }
 
   if (args.verify) {
-    const breach = await writer.verify()
-    if (breach === null) {
-      io.stdout.write(`audit chain ok (${auditPath})\n`)
+    const res = await fetchHttp(
+      `${client.discovery.url}/audit/verify`,
+      { headers: client.headers },
+      io,
+    )
+    if (res === null) return { exitCode: EXIT.CLI_ERROR }
+    if (!res.ok) return (await httpError(res, io)) as MainResult
+    const body = (await res.json()) as { ok: boolean; breach?: { seq: number; reason: string } }
+    if (body.ok) {
+      io.stdout.write('audit chain ok\n')
       return { exitCode: EXIT.OK }
     }
-    io.stderr.write(`audit chain broken at seq ${breach.seq}: ${breach.reason}\n`)
+    io.stderr.write(`audit chain broken at seq ${body.breach?.seq}: ${body.breach?.reason}\n`)
     return { exitCode: EXIT.CLI_ERROR }
   }
 
-  const all = await writer.readAll()
-  const sinceTs = args.since ? Date.parse(args.since) : null
-  const untilTs = args.until ? Date.parse(args.until) : null
-  const filtered = all.filter((e) => {
-    if (args.runId && e.runId !== args.runId) return false
-    if (args.actor && e.actor !== args.actor) return false
-    if (args.action && e.action !== args.action) return false
-    const ts = Date.parse(e.timestamp)
-    if (sinceTs !== null && ts < sinceTs) return false
-    if (untilTs !== null && ts > untilTs) return false
-    return true
-  })
-  const limited = args.limit !== undefined ? filtered.slice(-args.limit) : filtered
+  const qs = new URLSearchParams()
+  if (args.runId) qs.set('runId', args.runId)
+  if (args.actor) qs.set('actor', args.actor)
+  if (args.action) qs.set('action', args.action)
+  if (args.since) qs.set('since', args.since)
+  if (args.until) qs.set('until', args.until)
+  if (args.limit !== undefined) qs.set('limit', String(args.limit))
+
+  const res = await fetchHttp(
+    `${client.discovery.url}/audit?${qs.toString()}`,
+    { headers: client.headers },
+    io,
+  )
+  if (res === null) return { exitCode: EXIT.CLI_ERROR }
+  if (!res.ok) return (await httpError(res, io)) as MainResult
+  const { entries } = (await res.json()) as { entries: AuditEntry[] }
 
   if (args.json) {
-    writeJsonOutput(io, limited)
+    writeJsonOutput(io, entries)
     return { exitCode: EXIT.OK }
   }
-
-  if (limited.length === 0) {
+  if (entries.length === 0) {
     io.stdout.write('no audit entries\n')
     return { exitCode: EXIT.OK }
   }
-  for (const e of limited) {
+  for (const e of entries) {
     const runStr = e.runId ? ` run:${e.runId.slice(0, 8)}` : ''
     io.stdout.write(`#${e.seq} ${e.timestamp} ${e.actor} ${e.action}${runStr}\n`)
     if (e.details !== undefined) {

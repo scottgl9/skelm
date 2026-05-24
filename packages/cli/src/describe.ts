@@ -1,7 +1,8 @@
-import { type DescribedStep, type PipelineDescription, describePipeline } from '@skelm/core'
+import type { DescribedStep, PipelineDescription } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
+import { fetchHttp, httpError, requireGateway } from './internal/gateway-client.js'
+import type { MainIO } from './internal/io.js'
 import { writeJsonOutput } from './internal/output.js'
-import { resolveWorkflowReference } from './workflows.js'
 
 export interface DescribeCommandArgs {
   workflow: string
@@ -13,6 +14,7 @@ export interface DescribeCommandArgs {
 export interface DescribeCommandIO {
   stdout: NodeJS.WritableStream
   stderr: NodeJS.WritableStream
+  stdin?: NodeJS.ReadableStream
 }
 
 export interface DescribeCommandResult {
@@ -23,23 +25,47 @@ interface CliWorkflowDescription extends PipelineDescription {
   readonly file: string
 }
 
+interface RemotePipelineDescription {
+  id: string
+  file: string
+  description?: string
+  version?: string
+  graph: { steps: DescribedStep[] } | null
+  input: unknown
+  output: unknown
+}
+
 export async function describeCommand(
   args: DescribeCommandArgs,
   io: DescribeCommandIO,
 ): Promise<DescribeCommandResult> {
-  const workflow = await resolveWorkflowReference(args.workflow, args.fromDir)
-  const baseDescription = describePipeline(workflow.pipeline)
+  const client = await requireGateway(io as MainIO)
+  if (client === null) return { exitCode: EXIT.CLI_ERROR }
+
+  const res = await fetchHttp(
+    `${client.discovery.url}/pipelines/${encodeURIComponent(args.workflow)}`,
+    { headers: client.headers },
+    io as MainIO,
+  )
+  if (res === null) return { exitCode: EXIT.CLI_ERROR }
+  if (res.status === 404) {
+    io.stderr.write(`error: workflow not found: ${args.workflow}\n`)
+    return { exitCode: EXIT.CLI_ERROR }
+  }
+  if (!res.ok) return (await httpError(res, io as MainIO)) as { exitCode: ExitCode }
+  const remote = (await res.json()) as RemotePipelineDescription
+
   const described: CliWorkflowDescription = {
-    ...baseDescription,
-    id: workflow.id,
-    file: workflow.file,
-    ...(workflow.description !== undefined && { description: workflow.description }),
-    ...(workflow.version !== undefined && { version: workflow.version }),
+    id: remote.id,
+    file: remote.file,
+    steps: remote.graph?.steps ?? [],
+    ...(remote.description !== undefined && { description: remote.description }),
+    ...(remote.version !== undefined && { version: remote.version }),
   }
 
   const format = args.json ? 'json' : (args.format ?? 'human')
   if (format === 'json') {
-    writeJsonOutput(io, described)
+    writeJsonOutput(io as MainIO, described)
     return { exitCode: EXIT.OK }
   }
   if (format === 'mermaid') {
