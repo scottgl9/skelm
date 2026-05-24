@@ -75,10 +75,12 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
     eventHandler(async () => {
       const loader = gateway.getWorkflowLoader()
       const entries = gateway.registries.workflows.list()
-      // Best-effort: load each pipeline to surface its declared id /
-      // description / version alongside the registry id (which is the
-      // file path under the project root). Loader failures fall back to
-      // the registry id so a single broken workflow doesn't break listing.
+      // `id` is the registry id (file path under projectRoot, or the
+      // operator-assigned id from POST /v1/workflows/register) — that's
+      // the long-standing public contract. Best-effort load each entry to
+      // surface the workflow's declared `pipelineId` plus description /
+      // version alongside it; loader failures fall back to the bare
+      // registry shape so a single broken workflow doesn't break listing.
       return Promise.all(
         entries.map(async (entry) => {
           if (loader === undefined) return { id: entry.id, file: entry.path }
@@ -86,8 +88,8 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
             const pipeline = await loadPipelineFromPath(loader, entry.id, entry.path)
             const desc = describePipeline(pipeline)
             return {
-              id: desc.id,
-              registryId: entry.id,
+              id: entry.id,
+              pipelineId: desc.id,
               file: entry.path,
               ...(desc.description !== undefined && { description: desc.description }),
               ...(desc.version !== undefined && { version: desc.version }),

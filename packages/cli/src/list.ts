@@ -21,6 +21,7 @@ export interface ListCommandResult {
 
 interface RemotePipeline {
   id: string
+  pipelineId?: string
   file: string
   description?: string
   version?: string
@@ -52,9 +53,12 @@ export async function listCommand(
     return { exitCode: EXIT.OK }
   }
 
+  // Prefer the declared pipeline.id when the gateway could load the
+  // workflow; fall back to the registry id (file path or operator-
+  // assigned id) when it couldn't.
   const rows = [
     ['ID', 'FILE', 'DESCRIPTION'],
-    ...workflows.map((w) => [w.id, w.file, w.description ?? '']),
+    ...workflows.map((w) => [w.pipelineId ?? w.id, w.file, w.description ?? '']),
   ]
   io.stdout.write(`${renderTable(rows)}\n`)
   return { exitCode: EXIT.OK }
