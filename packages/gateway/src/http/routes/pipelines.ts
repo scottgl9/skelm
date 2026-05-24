@@ -319,4 +319,39 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
       return { runId, status: 'running' as const, pipelineId: pipeline.id }
     }),
   )
+
+  /**
+   * Ad-hoc describe: load a workflow file by absolute path and return the
+   * same shape GET /pipelines/:id produces. Used by `skelm describe
+   * <path>` without requiring the workflow to be in the registry.
+   */
+  router.post(
+    '/pipelines/describe-file',
+    eventHandler(async (event) => {
+      const loader = gateway.getWorkflowLoader()
+      if (loader === undefined) {
+        throw createError({ statusCode: 501, message: 'gateway has no workflow loader' })
+      }
+      const rawBody = await readBody(event).catch(() => undefined)
+      const body =
+        rawBody !== null && typeof rawBody === 'object' ? (rawBody as { file?: unknown }) : {}
+      const filePath = await validateWorkflowFile(body.file)
+      const id = adhocPipelineId(filePath)
+      const pipeline = await loadPipelineFromPath(loader, id, filePath)
+      const desc = describePipeline(pipeline)
+      const [inputSchema, outputSchema] = await Promise.all([
+        tryToJsonSchema((pipeline as { inputSchema?: unknown }).inputSchema),
+        tryToJsonSchema((pipeline as { outputSchema?: unknown }).outputSchema),
+      ])
+      return {
+        id: desc.id,
+        file: filePath,
+        ...(desc.description !== undefined && { description: desc.description }),
+        ...(desc.version !== undefined && { version: desc.version }),
+        graph: { steps: desc.steps },
+        input: inputSchema,
+        output: outputSchema,
+      }
+    }),
+  )
 }
