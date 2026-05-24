@@ -70,7 +70,17 @@ export interface InProcessGateway {
  * points at (e.g. examples/hello/hello.workflow.mts) loads exactly as it
  * does in production.
  */
-export async function bootInProcessGateway(): Promise<InProcessGateway> {
+export interface BootOptions {
+  /** Point the gateway at a specific project root so its workflow registry
+   * discovers workflows there. */
+  projectRoot?: string
+  /** Pass through extra gateway config (registries, defaults, etc.). */
+  config?: Record<string, unknown>
+}
+
+export async function bootInProcessGateway(
+  options: BootOptions = {},
+): Promise<InProcessGateway> {
   const stateDir = await mkdtemp(join(tmpdir(), 'skelm-cli-gw-harness-'))
   process.env.SKELM_STATE_DIR = stateDir
   process.env.SKELM_NO_AUTOSTART = '1'
@@ -87,6 +97,11 @@ export async function bootInProcessGateway(): Promise<InProcessGateway> {
       httpPort: port,
       installSignalHandlers: false,
       loadWorkflow: async (_id, absolutePath) => import(pathToFileURL(absolutePath).href),
+      ...(options.projectRoot !== undefined && {
+        projectRoot: options.projectRoot,
+        watchRegistries: false,
+      }),
+      ...(options.config !== undefined && { config: options.config as never }),
     })
     try {
       await gw.start()
