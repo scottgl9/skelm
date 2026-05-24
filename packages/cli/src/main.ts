@@ -160,6 +160,7 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
             ...(parsed.flags.detach === true && { detach: true }),
             ...(parsed.flags.json === true && { json: true }),
             ...(parsed.flags.systemd === true && { systemd: true }),
+            ...(parsed.flags.launchd === true && { launchd: true }),
             ...(typeof parsed.flags['http-port'] === 'string' && {
               httpPort: Number(parsed.flags['http-port']),
             }),
