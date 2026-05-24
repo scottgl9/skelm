@@ -207,9 +207,13 @@ Audit flags:
   skelm secrets <get|set|list> [args]
 
 Secrets flags:
-  skelm secrets list [--json]
-  skelm secrets get <name> [--json]
-  skelm secrets set <name> --value <value> [--json]
+  skelm secrets list [--json]              List secret names (no values).
+  skelm secrets get <name> [--json]        Existence check — never returns the value.
+                                           Exits 0 if set, 1 if not set.
+                                           For the value itself, use it from inside a
+                                           workflow; the gateway never serializes
+                                           plaintext over HTTP.
+  skelm secrets set <name> --value <v>     Set or overwrite a secret value.
 `,
   debug: `Usage:
   skelm debug <breakpoints|add|remove|runs|release> [args]

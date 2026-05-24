@@ -1,6 +1,6 @@
 import { resolve as pathResolve } from 'node:path'
 import { EXIT } from './exit-codes.js'
-import { ensureGatewayReady, fetchHttp, httpError } from './internal/gateway-client.js'
+import { fetchHttp, httpError, requireGateway } from './internal/gateway-client.js'
 import type { MainIO, MainResult } from './internal/io.js'
 import { writeJsonOutput } from './internal/output.js'
 
@@ -54,7 +54,7 @@ export interface ScheduleFireArgs {
 export type ScheduleArgs = ScheduleAddArgs | ScheduleListArgs | ScheduleStopArgs | ScheduleFireArgs
 
 export async function scheduleCommand(args: ScheduleArgs, io: MainIO): Promise<MainResult> {
-  const client = await ensureGatewayReady(io)
+  const client = await requireGateway(io)
   if (client === null) return { exitCode: EXIT.CLI_ERROR }
   const { discovery, headers } = client
 

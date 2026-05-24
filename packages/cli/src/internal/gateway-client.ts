@@ -64,9 +64,16 @@ export async function isServiceInstalled(manager: ServiceManager): Promise<boole
  */
 export async function waitForReady(
   stateDir: string,
-  timeoutMs = 15_000,
+  timeoutMs?: number,
 ): Promise<DiscoveryRecord | null> {
-  const deadline = Date.now() + timeoutMs
+  // Resolution order: explicit arg > SKELM_GATEWAY_READY_TIMEOUT_MS env >
+  // 15s default. Cold/slow machines (or first-run installations that
+  // pull deps) can need longer than 15s.
+  const envOverride = process.env.SKELM_GATEWAY_READY_TIMEOUT_MS
+  const resolved =
+    timeoutMs ??
+    (envOverride !== undefined && /^\d+$/.test(envOverride) ? Number(envOverride) : 15_000)
+  const deadline = Date.now() + resolved
   while (Date.now() < deadline) {
     const disc = await readDiscovery(join(stateDir, 'gateway.json'))
     if (disc !== null) {
@@ -176,10 +183,10 @@ export async function autoStartGateway(io: MainIO): Promise<DiscoveryRecord | nu
     await emitAutostartHintOnce(manager, io)
   }
 
-  const disc = await waitForReady(stateDir, 15_000)
+  const disc = await waitForReady(stateDir)
   if (disc === null) {
     io.stderr.write(
-      'error: gateway did not become ready within 15s. Check `skelm gateway status` or the logs at ~/.skelm/gateway.log.\n',
+      'error: gateway did not become ready within the configured timeout. Check `skelm gateway status` or the logs at ~/.skelm/gateway.log. Set SKELM_GATEWAY_READY_TIMEOUT_MS to override the default (15000).\n',
     )
     return null
   }
@@ -204,23 +211,6 @@ export async function requireGateway(io: MainIO): Promise<GatewayClient | null> 
       }
       return null
     }
-  }
-  const headers: Record<string, string> = { 'content-type': 'application/json' }
-  if (discovery.token !== undefined) headers.authorization = `Bearer ${discovery.token}`
-  return { discovery, headers, stateDir }
-}
-
-/**
- * @deprecated Prefer `requireGateway` for commands that need the gateway
- * to be running. Kept for the read-only paths that should fail clearly
- * rather than auto-spawn.
- */
-export async function ensureGatewayReady(io: MainIO): Promise<GatewayClient | null> {
-  const stateDir = gatewayStateDir()
-  const discovery = await loadDiscovery(stateDir)
-  if (discovery === null) {
-    io.stderr.write('error: gateway is not running — start it with `skelm gateway start`\n')
-    return null
   }
   const headers: Record<string, string> = { 'content-type': 'application/json' }
   if (discovery.token !== undefined) headers.authorization = `Bearer ${discovery.token}`

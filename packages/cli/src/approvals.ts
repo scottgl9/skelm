@@ -1,12 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { EXIT } from './exit-codes.js'
-import {
-  ensureGatewayReady,
-  fetchHttp,
-  gatewayStateDir,
-  httpError,
-} from './internal/gateway-client.js'
+import { fetchHttp, gatewayStateDir, httpError, requireGateway } from './internal/gateway-client.js'
 import type { MainIO, MainResult } from './internal/io.js'
 import { writeJsonOutput } from './internal/output.js'
 
@@ -24,7 +19,7 @@ export async function approvalsCommand(args: ApprovalsArgs, io: MainIO): Promise
     return listApprovals(gatewayStateDir(), args, io)
   }
 
-  const client = await ensureGatewayReady(io)
+  const client = await requireGateway(io)
   if (client === null) return { exitCode: EXIT.CLI_ERROR }
   const { discovery, headers } = client
 

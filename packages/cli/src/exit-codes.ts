@@ -11,6 +11,13 @@ export const EXIT = {
   WAIT_TIMEOUT: 5,
   PERMISSION_DENIED: 6,
   STEP_TIMEOUT: 7,
+  /**
+   * The run finished in the `paused` state — typically because a `wait()`
+   * step is awaiting external input. Operators can resume via
+   * `POST /runs/:runId/resume` on the gateway. Interactive resume from
+   * the CLI is on the follow-up roadmap (needs live SSE event consumption).
+   */
+  RUN_PAUSED: 8,
 } as const
 
 export type ExitCode = (typeof EXIT)[keyof typeof EXIT]
