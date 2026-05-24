@@ -4,9 +4,11 @@ value:HELP_TEXT
 value:loadSkelmConfig
 value:loadWorkflowFromFile
 value:main
+value:mcpServeCommand
 value:parseArgv
 value:runCommand
 type:ExitCode
+type:McpServeArgs
 type:ParsedArgv
 type:ResolvedConfig
 type:RunCommandArgs

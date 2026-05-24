@@ -111,6 +111,7 @@ export default defineConfig({
             { text: 'Gateway', link: '/guides/gateway' },
             { text: 'Triggers', link: '/guides/triggers' },
             { text: 'ACP Sessions', link: '/guides/acp-sessions' },
+            { text: 'MCP Serve', link: '/guides/mcp-serve' },
             { text: 'MCP Servers', link: '/guides/mcp-servers' },
           ],
         },

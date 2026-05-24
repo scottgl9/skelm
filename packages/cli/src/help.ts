@@ -2,6 +2,7 @@ export const HELP_TEXT = `skelm — agentic and deterministic workflows in TypeS
 
 Usage:
   skelm run <workflow.ts> [flags]
+  skelm mcp serve [workflow.mts...]
   skelm list [--json]
   skelm describe <workflow> [--json | --format mermaid]
   skelm history [--workflow <id>] [--last <n>] [--run <id>] [--events] [--json]
@@ -24,6 +25,10 @@ Run flags:
   --input-file <path>     Input from a file
   --input-stdin           Read input JSON from stdin
   --events <fmt>          human (default) | json | none
+
+MCP flags:
+  skelm mcp serve [workflow.mts...]
+    --port <n>            Reserved for a future transport; stdio only in this release
 
 List flags:
   --json                  Write discovered workflows as JSON

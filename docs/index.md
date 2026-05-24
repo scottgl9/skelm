@@ -49,3 +49,5 @@ Most "agent frameworks" make it easy to demo a chatbot and impossible to operate
 It sits in a deliberately narrow niche: between a one-off LangChain script and a managed agent platform. If you want to run agentic and deterministic workflows on your own infrastructure, with security primitives that don't disappear when the demo ends, that's what skelm is for.
 
 Start with the [Quickstart](/quickstart/) for the five-minute path, or skim the [Recipes](/recipes/) to see complete examples.
+
+Project maintenance notes live in the [self-test plan](./skelm-self-test-plan.md).

@@ -103,6 +103,9 @@ importers:
       '@skelm/gateway':
         specifier: workspace:*
         version: link:../gateway
+      '@skelm/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
       '@skelm/opencode':
         specifier: workspace:*
         version: link:../opencode
@@ -227,6 +230,16 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@22.19.17)
 
+  packages/mcp-server:
+    dependencies:
+      '@skelm/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
   packages/metrics:
     dependencies:
       '@skelm/core':
@@ -320,6 +333,9 @@ importers:
       '@skelm/integration-sdk':
         specifier: workspace:*
         version: link:../integration-sdk
+      '@skelm/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
       '@skelm/scheduler':
         specifier: workspace:*
         version: link:../scheduler

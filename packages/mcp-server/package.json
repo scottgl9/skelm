@@ -1,37 +1,22 @@
 {
-  "name": "skelm",
+  "name": "@skelm/mcp-server",
   "version": "0.4.3",
-  "description": "skelm — TypeScript framework for secure, agentic, long-running workflows",
+  "description": "stdio MCP server that exposes skelm pipelines as tools",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
   "homepage": "https://skelm.dev/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/scottgl9/skelm.git",
-    "directory": "packages/skelm"
+    "directory": "packages/mcp-server"
   },
   "bugs": {
     "url": "https://github.com/scottgl9/skelm/issues"
   },
-  "keywords": [
-    "skelm",
-    "workflow",
-    "pipeline",
-    "agent",
-    "agentic",
-    "llm",
-    "mcp",
-    "acp",
-    "orchestration",
-    "typescript",
-    "automation"
-  ],
+  "keywords": ["skelm", "mcp", "model-context-protocol", "workflow", "pipeline"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "skelm": "dist/bin.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -44,16 +29,12 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && chmod +x dist/bin.js",
+    "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@skelm/core": "workspace:*",
-    "@skelm/cli": "workspace:*",
-    "@skelm/mcp-server": "workspace:*",
-    "@skelm/scheduler": "workspace:*",
-    "@skelm/integration-sdk": "workspace:*"
+    "@skelm/core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

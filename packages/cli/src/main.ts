@@ -15,6 +15,7 @@ import { initCommand } from './init.js'
 import { listCommand } from './list.js'
 import { CliError } from './load-workflow.js'
 import { logsCommand } from './logs.js'
+import { mcpServeCommand } from './mcp-serve.js'
 import { runCommand } from './run.js'
 import { scheduleCommand } from './schedule.js'
 import { sessionsCommand } from './sessions.js'
@@ -64,6 +65,28 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
           ...(events !== undefined && { events }),
         }
         const result = await runCommand(args, io)
+        return { exitCode: result.exitCode }
+      }
+      case 'mcp': {
+        const sub = parsed.positional[0]
+        if (sub !== 'serve') {
+          io.stderr.write(
+            'error: mcp requires serve subcommand\n  skelm mcp serve [workflow.mts...]\n',
+          )
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        const portFlag = parsed.flags.port
+        const port =
+          typeof portFlag === 'string' && /^\d+$/.test(portFlag)
+            ? Number.parseInt(portFlag, 10)
+            : undefined
+        const result = await mcpServeCommand(
+          {
+            workflows: parsed.positional.slice(1),
+            ...(port !== undefined ? { port } : {}),
+          },
+          io,
+        )
         return { exitCode: result.exitCode }
       }
       case 'list': {

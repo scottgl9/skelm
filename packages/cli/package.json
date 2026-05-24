@@ -37,6 +37,7 @@
   "dependencies": {
     "@skelm/codex": "workspace:*",
     "@skelm/core": "workspace:*",
+    "@skelm/mcp-server": "workspace:*",
     "@skelm/opencode": "workspace:*",
     "@skelm/pi": "workspace:*",
     "@skelm/gateway": "workspace:*",
