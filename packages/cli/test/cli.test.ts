@@ -173,11 +173,7 @@ describe('main — integration', () => {
     )
   })
 
-  // TODO(refactor/cli-gateway-dispatch phase 4 follow-up): wait/resume
-  // requires gateway-side SSE delivery of run.waiting events. Skipped
-  // until the gateway emits per-request events through a bus the CLI
-  // SSE subscriber can observe.
-  it.skip('prompts for wait() input and resumes interactively', async () => {
+  it('prompts for wait() input and resumes interactively', async () => {
     const filePath = join(FIXTURES_DIR, 'wait.workflow.mts')
 
     const { stdout, stderr, exitCode } = await invoke(['run', filePath], '{"approved":true}\n')
@@ -188,9 +184,9 @@ describe('main — integration', () => {
     expect(stderr).toContain('resume JSON> ')
   })
 
-  // TODO(refactor/cli-gateway-dispatch): the gateway in this harness is
-  // booted without a skelm.config.ts, so the default OpenAI backend wiring
-  // isn't applied. Re-enable once the harness boots with project config.
+  // The harness gateway has no backends wired. Re-enable once the
+  // harness accepts a BackendRegistry option and we point it at a fake
+  // OpenAI server — separate from the CLI-as-gateway-interface refactor.
   it.skip('loads the default OpenAI backend for llm() workflows without a config file', async () => {
     const filePath = join(FIXTURES_DIR, 'openai-default.workflow.mts')
 
@@ -234,8 +230,9 @@ describe('main — integration', () => {
     }
   })
 
-  // TODO(refactor/cli-gateway-dispatch): same project-config dependency
-  // as the OpenAI test above. Re-enable in a follow-up.
+  // Same backend-wiring gap as the OpenAI test above — needs the
+  // harness to register an Anthropic-compatible backend before this
+  // workflow can resolve its agent() step.
   it.skip('loads AGENTS.md content into agent() system prompts', async () => {
     const filePath = join(FIXTURES_DIR, 'agentdef.workflow.mts')
 
@@ -282,10 +279,9 @@ describe('main — integration', () => {
     }
   })
 
-  // TODO(refactor/cli-gateway-dispatch): list/describe now query the
-  // gateway's registry. The harness boots without a projectRoot/config so
-  // it knows nothing about the fixture project's workflows. Re-enable
-  // once the harness can be steered at a specific project root.
+  // Covered end-to-end by list-describe-via-gateway.test.ts which boots
+  // a gateway with projectRoot pointing at the fixture project. Kept
+  // here in skipped form as a reminder that this path is exercised.
   it.skip('lists and describes discovered workflows', async () => {
     await withProjectDir(async (dir) => {
       const listed = await invokeInDir(['list'], dir)
@@ -318,9 +314,10 @@ describe('main — integration', () => {
     })
   })
 
-  // TODO(refactor/cli-gateway-dispatch phase 5): history + events go
-  // through the gateway HTTP API. Re-enable once those commands have been
-  // ported to the gateway client.
+  // history + events are exercised via the gateway HTTP routes; this
+  // specific spawn-from-fixture-dir test still needs the harness to
+  // accept a per-test projectRoot. Lower priority since history.ts is
+  // covered by its own unit test.
   it.skip('shows run history and persisted events from the local store', async () => {
     await withProjectDir(async (dir) => {
       const runFile = join(dir, 'workflows/alpha.workflow.mts')
