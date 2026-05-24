@@ -173,6 +173,13 @@ export interface AgentRequest {
   outputSchema?: SkelmSchema
   /** Agent definition loaded from AGENTS.md (and optional SOUL.md). */
   agentDef?: AgentDefinition
+  /**
+   * Stable session identifier the backend can use to resume a prior
+   * conversation (e.g. Codex's session-id, opencode's session file).
+   * Set by the runner when the step opts into session continuity;
+   * absent for one-shot agent calls.
+   */
+  sessionId?: string
 }
 
 /** Agent definition loaded from AGENTS.md. */
