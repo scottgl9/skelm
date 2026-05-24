@@ -80,7 +80,7 @@ Output:
 {"greeting":"hello, world"}
 ```
 
-`skelm run` is the local one-shot path for executing a workflow immediately. It loads the workflow, resolves the input, runs the pipeline, and prints the final JSON output to stdout.
+`skelm run` is the one-shot path for executing a workflow immediately. It dispatches to the gateway (auto-starting one on first invocation if no service is installed), streams events live over SSE, and prints the final JSON output to stdout.
 
 It does not leave a cron, webhook, interval, poll, or queue trigger registered. Long-running triggers are hosted by `skelm gateway start`.
 
@@ -214,9 +214,15 @@ Register the backend in `skelm.config.ts`, then make sure the step's `backend:` 
 
 ### Do I need the gateway for `skelm run`?
 
-No. `skelm run` is the local one-shot path.
+Yes — since the CLI-as-gateway-interface refactor, every non-exempt CLI command (`run`, `list`, `describe`, `history`, `audit`, `workspace`, `secrets`) dispatches to the gateway over HTTP. The first time you invoke `skelm run` without a gateway running, the CLI auto-spawns one in the background and prints a hint suggesting `skelm gateway install --systemd` (linux) or `skelm gateway install --launchd` (macOS) so future runs use a supervised service.
 
-You need the gateway for long-running schedules, webhooks, queues, HTTP inspection, approvals, sessions, and other persistent concerns.
+Exempt commands that work with no gateway: `help`, `version`, all `gateway *` subcommands, `init`, `validate`. Set `SKELM_NO_AUTOSTART=1` to opt out of auto-spawn (the CLI then exits non-zero with an actionable message).
+
+### Why did `skelm run` print a `> paused (runId=…)` and exit code 8?
+
+Code 8 is `EXIT.RUN_PAUSED`. The workflow has a `wait()` step parked, and the CLI couldn't drive the resume prompt — either because you ran in a non-interactive environment (CI, piped empty stdin) or because there's no `/dev/tty` available. The stderr message includes the exact `curl -X POST .../runs/<runId>/resume` invocation you can use to resume out-of-band.
+
+When the CLI does have a TTY (or an injected stdin in the test harness), it prompts for the resume JSON inline and continues streaming.
 
 ### I added a schedule, but nothing fires
 

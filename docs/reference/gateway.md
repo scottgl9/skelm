@@ -99,8 +99,9 @@ The gateway is required for:
 | GET | `/health` | Liveness check |
 | GET | `/registry/workflows` | List discovered workflows |
 | POST | `/runs` | Start a run (sync or async) |
-| GET | `/runs/:id` | Fetch run state |
-| GET | `/runs/:id/events` | SSE event stream |
+| GET | `/runs/:id` | Fetch run state (includes `waiting` while parked at a `wait()` step) |
+| GET | `/runs/:id/events` | Persisted event log (JSON list) |
+| GET | `/runs/:id/stream` | Live SSE event stream (replay-then-tail) |
 | POST | `/runs/:id/cancel` | Cancel a run |
 | POST | `/runs/:id/resume` | Resume a `wait()` step |
 | POST | `/approvals/:id/approve` | Approve a gated action |
@@ -166,12 +167,15 @@ SKELM_EGRESS_TOKEN=<runId>:<stepId>
 
 ## Run events (SSE)
 
-Connect to `GET /runs/:id/events` for a server-sent event stream. Events include:
+Connect to `GET /runs/:id/stream` for a server-sent event stream. The handler is **replay-then-tail**: persisted events from the run store are delivered first, then live events from the bus, with composite-key dedup so the boundary is invisible. This means a client subscribing *after* a sub-second run completed still receives every event in order. Headers are flushed explicitly so undici `fetch` yields chunks immediately. A 15-second heartbeat (`event: ping`) keeps NAT/proxy timeouts at bay.
 
-- `run.started`, `run.completed`, `run.failed`, `run.cancelled`
-- `step.started`, `step.completed`, `step.failed`, `step.skipped`
-- `permission.denied` — emitted when enforcement blocks an action
-- `tool.called`, `tool.result`
+Frames:
+
+- Initial `event: run.state` — a Run snapshot (`runId`, `pipelineId`, `status`, `steps`, `startedAt`, `completedAt`, `output`, `error`, plus `waiting` while parked).
+- Persisted/live `RunEvent` frames: `run.created`, `run.started`, `step.start`, `step.complete`, `step.error`, `step.skipped`, `step.partial`, `step.retry`, `run.waiting`, `run.resumed`, `run.completed`, `run.failed`, `run.cancelled`, `tool.call`, `tool.result`, `tool.denied`, `permission.denied`, `secret.accessed`, `secret.not_found`, `run.warning`.
+- The stream closes when a terminal `run.completed` / `run.failed` / `run.cancelled` is delivered, or when the client disconnects.
+
+`GET /runs/:id/events` returns the persisted event log as a JSON list (`{ events: RunEvent[] }`) — clamped to a default 1000 and hard cap 5000 per request. Use `?since=<at>` for incremental pulls and `?limit=<n>` to narrow.
 
 ## Audit log
 
