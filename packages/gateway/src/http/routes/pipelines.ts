@@ -72,9 +72,32 @@ const idempotency = new Map<string, string>()
 export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
   router.get(
     '/pipelines',
-    eventHandler(async () =>
-      gateway.registries.workflows.list().map((entry) => ({ id: entry.id, file: entry.path })),
-    ),
+    eventHandler(async () => {
+      const loader = gateway.getWorkflowLoader()
+      const entries = gateway.registries.workflows.list()
+      // Best-effort: load each pipeline to surface its declared id /
+      // description / version alongside the registry id (which is the
+      // file path under the project root). Loader failures fall back to
+      // the registry id so a single broken workflow doesn't break listing.
+      return Promise.all(
+        entries.map(async (entry) => {
+          if (loader === undefined) return { id: entry.id, file: entry.path }
+          try {
+            const pipeline = await loadPipelineFromPath(loader, entry.id, entry.path)
+            const desc = describePipeline(pipeline)
+            return {
+              id: desc.id,
+              registryId: entry.id,
+              file: entry.path,
+              ...(desc.description !== undefined && { description: desc.description }),
+              ...(desc.version !== undefined && { version: desc.version }),
+            }
+          } catch {
+            return { id: entry.id, file: entry.path }
+          }
+        }),
+      )
+    }),
   )
 
   router.get(
@@ -88,15 +111,34 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
       } catch {
         id = raw
       }
-      const entry = gateway.registries.workflows.get(id)
+      const loader = gateway.getWorkflowLoader()
+      // Resolve by registry id first (file path), fall back to scanning
+      // for a pipeline whose declared id matches. The latter is what
+      // `skelm describe <pipeline-id>` typically passes — the user thinks
+      // of their workflow by its id() not its file location.
+      let entry = gateway.registries.workflows.get(id)
+      let pipeline: Awaited<ReturnType<typeof loadPipelineFromPath>> | undefined
+      if (entry === undefined && loader !== undefined) {
+        for (const candidate of gateway.registries.workflows.list()) {
+          try {
+            const p = await loadPipelineFromPath(loader, candidate.id, candidate.path)
+            if ((p as { id?: string }).id === id) {
+              entry = candidate
+              pipeline = p
+              break
+            }
+          } catch {
+            // skip broken candidates
+          }
+        }
+      }
       if (entry === undefined) {
         throw createError({ statusCode: 404, message: 'pipeline not found' })
       }
-      const loader = gateway.getWorkflowLoader()
       if (loader === undefined) {
         return { id: entry.id, file: entry.path, graph: null, input: null, output: null }
       }
-      const pipeline = await loadPipelineFromPath(loader, id, entry.path)
+      if (pipeline === undefined) pipeline = await loadPipelineFromPath(loader, id, entry.path)
       const desc = describePipeline(pipeline)
       const [inputSchema, outputSchema] = await Promise.all([
         tryToJsonSchema((pipeline as { inputSchema?: unknown }).inputSchema),
