@@ -530,11 +530,7 @@ function hasInteractiveResumeInput(io: RunCommandIO): boolean {
   // scenario where we MUST fall through to EXIT.RUN_PAUSED so scripts
   // don't hang.
   if (io.stdin !== process.stdin) return true
-  if (
-    process.platform !== 'win32' &&
-    io.stderr === process.stderr &&
-    process.stderr.isTTY
-  ) {
+  if (process.platform !== 'win32' && io.stderr === process.stderr && process.stderr.isTTY) {
     try {
       accessSync('/dev/tty', fsConstants.R_OK | fsConstants.W_OK)
       return true
