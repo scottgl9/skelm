@@ -8,13 +8,14 @@ import { pickFreePort } from './pick-free-port.js'
  * bind. A couple of retries collapse the race window to ~microseconds.
  */
 export async function bootGatewayWithRetry(
-  optionsFactory: (port: number) => GatewayOptions,
+  optionsFactory: (port: number) => GatewayOptions | Promise<GatewayOptions>,
   retries = 5,
 ): Promise<{ gw: Gateway; base: string; port: number }> {
   let lastErr: unknown
   for (let attempt = 0; attempt < retries; attempt++) {
     const port = await pickFreePort()
-    const gw = new Gateway(optionsFactory(port))
+    const options = await optionsFactory(port)
+    const gw = new Gateway(options)
     try {
       await gw.start()
       return { gw, base: `http://127.0.0.1:${port}`, port }
