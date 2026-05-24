@@ -165,7 +165,13 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     await syncDeclaredTriggers(gateway, io)
   }
   gateway = new Gateway({
-    installSignalHandlers: true,
+    // The CLI owns process signals in foreground mode (see the SIGTERM/SIGINT/
+    // SIGHUP handlers below). If the gateway installed its own handlers too,
+    // SIGTERM would fire both — the gateway's stop() and the CLI's stop() race,
+    // the second concurrent drain errors on already-closed resources, and the
+    // gateway's handler force-exits 1 instead of the clean 0 a graceful
+    // shutdown should produce.
+    installSignalHandlers: false,
     enableHttp: true,
     stateDir: defaultStateDir(),
     ...(httpPort !== undefined && { httpPort }),
@@ -216,11 +222,21 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     `skelm gateway started\n  pid: ${process.pid}\n  url: ${discovery?.url ?? '(unbound)'}\n  state-dir: ${gateway.stateDir}\n  workflows: ${gateway.registries.workflows.list().length}\n  agents:    ${gateway.registries.agents.list().length}\n  triggers:  ${declaredCount}\n`,
   )
 
+  // SIGHUP drives a live reload so `skelm gateway reload` keeps working now
+  // that the gateway no longer installs its own signal handlers. reload()
+  // runs the onReload hook (syncDeclared) wired at construction.
+  const onReloadSignal = (): void => {
+    void gateway.reload().catch((err: unknown) => {
+      io.stderr.write(`gateway reload failed: ${(err as Error).message}\n`)
+    })
+  }
+  process.on('SIGHUP', onReloadSignal)
   await new Promise<void>((resolve) => {
     const onStop = () => resolve()
     process.once('SIGTERM', onStop)
     process.once('SIGINT', onStop)
   })
+  process.off('SIGHUP', onReloadSignal)
   await gateway.stop()
   io.stdout.write('skelm gateway stopped\n')
   return { exitCode: EXIT.OK }
@@ -488,8 +504,18 @@ WantedBy=default.target
  *  4. Warn if user lingering is not enabled (service won't survive logout)
  */
 async function installSystemd(io: MainIO): Promise<MainResult> {
-  await fs.mkdir(SYSTEMD_DIR, { recursive: true })
-  await fs.writeFile(SYSTEMD_UNIT_PATH, buildSystemdUnit())
+  // Fail loudly if the unit file can't be written — otherwise the later
+  // `systemctl enable` fails with a confusing "Unit file does not exist"
+  // and the operator can't tell the write never happened.
+  try {
+    await fs.mkdir(SYSTEMD_DIR, { recursive: true })
+    await fs.writeFile(SYSTEMD_UNIT_PATH, buildSystemdUnit())
+  } catch (err) {
+    io.stderr.write(
+      `error: failed to write systemd unit ${SYSTEMD_UNIT_PATH}\n  ${(err as Error).message}\n`,
+    )
+    return { exitCode: EXIT.CLI_ERROR }
+  }
   io.stdout.write(`wrote ${SYSTEMD_UNIT_PATH}\n`)
 
   // Touch defaultStateDir so PrivateTmp + ReadWritePaths land cleanly when the unit runs.
