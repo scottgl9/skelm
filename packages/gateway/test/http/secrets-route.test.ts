@@ -38,7 +38,7 @@ describe('/secrets', () => {
     expect(names).toEqual([])
   })
 
-  it('PUT /secrets/:name persists; GET /secrets/:name returns plaintext', async () => {
+  it('PUT /secrets/:name persists; GET /secrets/:name returns existence only', async () => {
     const put = await fetch(`${base}/secrets/TEST_KEY`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -50,14 +50,29 @@ describe('/secrets', () => {
     const list = await fetch(`${base}/secrets`)
     expect((await list.json()).names).toContain('TEST_KEY')
 
+    // Deliberately write-only: GET returns set: true with NO value field.
     const get = await fetch(`${base}/secrets/TEST_KEY`)
     expect(get.status).toBe(200)
-    expect(await get.json()).toEqual({ name: 'TEST_KEY', value: 's3cret' })
+    const body = await get.json()
+    expect(body).toEqual({ name: 'TEST_KEY', set: true })
+    expect(body).not.toHaveProperty('value')
   })
 
   it('GET /secrets/:name returns 404 for an unknown name', async () => {
     const res = await fetch(`${base}/secrets/missing`)
     expect(res.status).toBe(404)
+  })
+
+  it('plaintext never leaves the gateway: list returns names without values', async () => {
+    await fetch(`${base}/secrets/SENSITIVE`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ value: 'super-secret-value' }),
+    })
+    const list = await fetch(`${base}/secrets`)
+    const text = await list.text()
+    expect(text).toContain('SENSITIVE')
+    expect(text).not.toContain('super-secret-value')
   })
 
   it('PUT /secrets/:name with non-string value returns 400', async () => {

@@ -23,7 +23,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
     - `POST /pipelines/run-file`, `POST /pipelines/start-file`, `POST /pipelines/describe-file` — ad-hoc execution / description of a workflow file by absolute path
     - `GET /audit`, `GET /audit/verify` — chain reader
     - `GET /workspaces`, `GET /workspaces/:wf/:name`, `DELETE /workspaces/:wf/:name`
-    - `GET /secrets`, `GET/PUT/DELETE /secrets/:name`
+    - `GET /secrets` (names only), `GET /secrets/:name` (existence check: `{name, set: true}`), `PUT/DELETE /secrets/:name`. Plaintext deliberately never leaves the gateway process over HTTP — workflows resolve values in-process via the gateway-side SecretResolver. `skelm secrets get NAME` reports `NAME: set` / `NAME: not set` rather than the value.
 
   A new structural guard (`pnpm guards` → `scripts/guards/cli-no-core-runtime.ts`) keeps the CLI from reintroducing in-process runtime work.
 
