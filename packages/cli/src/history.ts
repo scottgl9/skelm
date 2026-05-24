@@ -59,7 +59,7 @@ export async function historyCommand(
         { headers: client.headers },
         io as MainIO,
       )
-      if (evRes !== null && evRes.ok) {
+      if (evRes?.ok) {
         const { events } = (await evRes.json()) as { events: unknown[] }
         for (const e of events) {
           io.stderr.write(`${JSON.stringify(e)}\n`)

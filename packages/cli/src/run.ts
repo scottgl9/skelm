@@ -11,11 +11,11 @@ import {
 import type { Run } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import {
+  type SseEvent,
   fetchHttp,
   httpError,
   openSse,
   requireGateway,
-  type SseEvent,
 } from './internal/gateway-client.js'
 import type { MainIO } from './internal/io.js'
 import { safeForTty } from './internal/safe-text.js'
@@ -131,9 +131,7 @@ export async function runCommand(
     activeRunId = result.runId
 
     if (eventMode === 'human') {
-      io.stderr.write(
-        `> running ${result.pipelineId ?? absPath} (runId=${result.runId})\n`,
-      )
+      io.stderr.write(`> running ${result.pipelineId ?? absPath} (runId=${result.runId})\n`)
     }
 
     // Pull and render the event log produced during this run.
@@ -143,14 +141,10 @@ export async function runCommand(
         { headers: client.headers },
         io as MainIO,
       )
-      if (evRes !== null && evRes.ok) {
+      if (evRes?.ok) {
         const { events } = (await evRes.json()) as { events: unknown[] }
         for (const e of events) {
-          renderEvent(
-            { event: 'message', id: undefined, data: e, raw: '' },
-            eventMode,
-            io,
-          )
+          renderEvent({ event: 'message', id: undefined, data: e, raw: '' }, eventMode, io)
         }
       }
     }
@@ -161,15 +155,14 @@ export async function runCommand(
       { headers: client.headers },
       io as MainIO,
     )
-    const run =
-      stateRes !== null && stateRes.ok
-        ? ((await stateRes.json()) as Run<unknown, unknown>)
-        : ({
-            runId: result.runId,
-            status: result.status,
-            output: result.output,
-            ...(result.error !== undefined && { error: result.error }),
-          } as unknown as Run<unknown, unknown>)
+    const run = stateRes?.ok
+      ? ((await stateRes.json()) as Run<unknown, unknown>)
+      : ({
+          runId: result.runId,
+          status: result.status,
+          output: result.output,
+          ...(result.error !== undefined && { error: result.error }),
+        } as unknown as Run<unknown, unknown>)
 
     if (run.status === 'completed') {
       io.stdout.write(`${JSON.stringify(run.output)}\n`)
@@ -214,7 +207,14 @@ async function maybeHandleWait(
   client: { discovery: { url: string }; headers: Record<string, string> },
   io: RunCommandIO,
 ): Promise<boolean> {
-  if (ev.event !== 'run.waiting' && !(typeof ev.data === 'object' && ev.data !== null && (ev.data as { type?: string }).type === 'run.waiting')) {
+  if (
+    ev.event !== 'run.waiting' &&
+    !(
+      typeof ev.data === 'object' &&
+      ev.data !== null &&
+      (ev.data as { type?: string }).type === 'run.waiting'
+    )
+  ) {
     return false
   }
   const payload = (typeof ev.data === 'object' && ev.data !== null ? ev.data : {}) as {
@@ -340,10 +340,7 @@ interface SimpleWaitRequest {
   timeoutMs?: number
 }
 
-async function promptForWaitInput(
-  request: SimpleWaitRequest,
-  io: RunCommandIO,
-): Promise<unknown> {
+async function promptForWaitInput(request: SimpleWaitRequest, io: RunCommandIO): Promise<unknown> {
   const promptIo = openPromptIo(io)
   const controller = new AbortController()
   let timedOut = false
