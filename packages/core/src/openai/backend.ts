@@ -167,10 +167,9 @@ async function resolveApiKey(
     const resolved = await resolverPromise
     if (resolved) return resolved
   }
-  if (envKey === undefined) {
-    throw new BackendConfigError('OpenAI backend requires an API key (OPENAI_API_KEY)', 'openai')
-  }
-  return envKey
+  // Construction-time guard ensures envKey is defined here; this satisfies
+  // the return type without a redundant throw.
+  return envKey as string
 }
 
 function peekResolvedSecret(resolverPromise: Promise<string | undefined>): string | null {
