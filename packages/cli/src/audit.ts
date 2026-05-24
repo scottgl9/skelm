@@ -122,6 +122,13 @@ export async function secretsCommand(args: SecretsArgs, io: MainIO): Promise<Mai
       // Existence check only — the gateway intentionally never returns
       // plaintext over HTTP. Workflows resolve secret values gateway-side
       // via the in-process SecretResolver. Use `secrets set` to overwrite.
+      //
+      // Exit semantics (documented in help.ts + docs/CHANGELOG.md):
+      //   - set     → stdout "<name>: set"      / exit 0
+      //   - not set → stdout "<name>: not set"  / exit 1 (EXIT.CLI_ERROR)
+      // The non-zero exit on "not set" makes `secrets get FOO || …`
+      // chainable in shell scripts. Use --json to get a structured
+      // {set: boolean} payload if you'd rather branch on stdout.
       const res = await fetchHttp(
         `${client.discovery.url}/secrets/${encodeURIComponent(args.name)}`,
         { headers: client.headers },

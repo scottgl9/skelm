@@ -27,6 +27,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
   A new structural guard (`pnpm guards` → `scripts/guards/cli-no-core-runtime.ts`) keeps the CLI from reintroducing in-process runtime work.
 
+  **Temporarily unavailable.** Interactive `wait()` resume from `skelm run` is not yet wired in this release. Workflows that call `wait()` now finish in `status: 'waiting'`; the CLI prints an explanatory message with the exact `POST /runs/:runId/resume` curl invocation needed to unblock them, and exits with the new `EXIT.RUN_PAUSED = 8` code. Pre-refactor, the CLI drove the resume prompt in-process via a `waitForInput` callback; restoring that on top of the dispatch model needs live SSE event consumption from the gateway (h3 `createEventStream` doesn't currently flush headers eagerly enough for undici `fetch` to begin yielding chunks — tracked as a follow-up).
+
 ## [0.4.3] - 2026-05-22
 
 ### Breaking Changes

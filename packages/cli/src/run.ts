@@ -93,46 +93,98 @@ export async function runCommand(
   process.once('SIGTERM', onSig)
 
   try {
-    // Sync execution: gateway runs the workflow to completion and returns
-    // the final state. We then fetch /runs/:id/events to render the event
-    // log in the user's chosen --events mode.
+    // Async execution + polling: POST /pipelines/start-file fires the run
+    // and returns the runId immediately. We then poll GET /runs/:id until
+    // a terminal-or-waiting state is reached, so a workflow that parks on
+    // wait() doesn't hang the CLI forever (the sync /pipelines/run-file
+    // path awaits handle.wait() which never resolves for a paused run).
     //
     // Live SSE event streaming via GET /runs/:id/stream is supported on
-    // the gateway side (see the gateway.events shared bus added alongside
-    // this), but h3's createEventStream doesn't flush headers eagerly
-    // enough for undici fetch to begin yielding chunks from a sub-second
-    // run. Sync run-file + post-completion event pull is correct and
-    // simple here — the gateway is local so latency is sub-millisecond.
-    const runRes = await fetchHttp(
-      `${client.discovery.url}/pipelines/run-file`,
+    // the gateway side (see the gateway.events shared bus), but h3's
+    // createEventStream doesn't flush headers eagerly enough for undici
+    // fetch to begin yielding chunks from a sub-second run. Polling is
+    // correct and simple here — the gateway is local so per-poll latency
+    // is sub-millisecond.
+    const startRes = await fetchHttp(
+      `${client.discovery.url}/pipelines/start-file`,
       {
         method: 'POST',
         headers: client.headers,
         body: JSON.stringify({ file: absPath, input: input ?? {} }),
       },
       io as MainIO,
-      5 * 60_000,
     )
-    if (runRes === null) return { exitCode: EXIT.CLI_ERROR }
-    if (!runRes.ok) {
-      return (await httpError(runRes, io as MainIO)) as { exitCode: ExitCode }
+    if (startRes === null) return { exitCode: EXIT.CLI_ERROR }
+    if (!startRes.ok) {
+      return (await httpError(startRes, io as MainIO)) as { exitCode: ExitCode }
     }
-    const result = (await runRes.json()) as {
-      runId: string
-      pipelineId?: string
-      status: 'completed' | 'failed' | 'cancelled' | 'paused'
-      output?: unknown
-      error?: { name?: string; message?: string }
-    }
-    activeRunId = result.runId
+    const started = (await startRes.json()) as { runId: string; pipelineId?: string }
+    activeRunId = started.runId
 
     if (eventMode === 'human') {
-      io.stderr.write(`> running ${result.pipelineId ?? absPath} (runId=${result.runId})\n`)
+      io.stderr.write(`> running ${started.pipelineId ?? absPath} (runId=${started.runId})\n`)
+    }
+
+    // Poll until terminal-or-paused. 150ms cadence is fast enough for
+    // sub-second runs to feel synchronous, slow enough not to overwhelm
+    // an in-process gateway. 5-minute hard cap matches the prior sync
+    // endpoint's behaviour.
+    //
+    // The runner keeps `Run.status` at 'running' while a wait() step is
+    // parked (it only flips to a terminal status on finalize), so we
+    // also scan the recent event log for an unmatched `run.waiting` to
+    // detect the paused condition.
+    //
+    // TODO(refactor/cli-gateway-dispatch follow-up): expose
+    // `Run.waiting?: WaitRequest` on the gateway's run state so the CLI
+    // can detect pause from a single GET /runs/:id instead of a second
+    // GET /runs/:id/events. Also re-enable interactive resume from the
+    // CLI once live SSE consumption lands (h3 createEventStream header
+    // flush is the current blocker — see comments above).
+    const deadline = Date.now() + 5 * 60_000
+    let run: Run<unknown, unknown> | null = null
+    let pausedAtWait = false
+    // Grace window so a wait() step with its own short timeoutMs gets a
+    // chance to time out naturally (-> WAIT_TIMEOUT) before we declare
+    // it stuck (-> RUN_PAUSED). The shortest fixture uses 50ms, so we
+    // wait at least one full second of "still parked at wait" before
+    // breaking out.
+    let waitingSinceMs: number | null = null
+    const PAUSE_GRACE_MS = 1_000
+    while (Date.now() < deadline) {
+      const stateRes = await fetchHttp(
+        `${client.discovery.url}/runs/${started.runId}`,
+        { headers: client.headers },
+        io as MainIO,
+      )
+      if (stateRes === null) return { exitCode: EXIT.CLI_ERROR }
+      if (!stateRes.ok) {
+        return (await httpError(stateRes, io as MainIO)) as { exitCode: ExitCode }
+      }
+      run = (await stateRes.json()) as Run<unknown, unknown>
+      const s = run.status
+      if (s === 'completed' || s === 'failed' || s === 'cancelled') break
+      if (await isPausedAtWait(client, started.runId, io as MainIO)) {
+        if (waitingSinceMs === null) waitingSinceMs = Date.now()
+        if (Date.now() - waitingSinceMs >= PAUSE_GRACE_MS) {
+          pausedAtWait = true
+          break
+        }
+      } else {
+        waitingSinceMs = null
+      }
+      await new Promise((r) => setTimeout(r, 150))
+    }
+    if (run === null) {
+      io.stderr.write(
+        `error: run ${started.runId} timed out after 5 minutes without terminal state\n`,
+      )
+      return { exitCode: EXIT.CLI_ERROR }
     }
 
     if (eventMode !== 'none') {
       const evRes = await fetchHttp(
-        `${client.discovery.url}/runs/${result.runId}/events?limit=5000`,
+        `${client.discovery.url}/runs/${started.runId}/events?limit=5000`,
         { headers: client.headers },
         io as MainIO,
       )
@@ -143,20 +195,6 @@ export async function runCommand(
         }
       }
     }
-
-    const stateRes = await fetchHttp(
-      `${client.discovery.url}/runs/${result.runId}`,
-      { headers: client.headers },
-      io as MainIO,
-    )
-    const run = stateRes?.ok
-      ? ((await stateRes.json()) as Run<unknown, unknown>)
-      : ({
-          runId: result.runId,
-          status: result.status,
-          output: result.output,
-          ...(result.error !== undefined && { error: result.error }),
-        } as unknown as Run<unknown, unknown>)
 
     if (run.status === 'completed') {
       io.stdout.write(`${JSON.stringify(run.output)}\n`)
@@ -171,6 +209,25 @@ export async function runCommand(
       }
       return { exitCode: EXIT.CANCELLED, run }
     }
+    if (pausedAtWait) {
+      // wait() step is awaiting external input. Interactive resume from
+      // the CLI isn't wired yet (needs live SSE delivery — see
+      // packages/cli/src/run.ts:96-105). Surface this clearly instead of
+      // falling through to a misleading "> failed: unknown" line, and
+      // exit with the documented RUN_PAUSED code so scripts can branch.
+      io.stderr.write(
+        [
+          `> paused (runId=${run.runId}): workflow is awaiting input at a wait() step.`,
+          '  Interactive resume from the CLI is not yet available.',
+          '  Resume directly on the gateway:',
+          `    curl -X POST ${client.discovery.url}/runs/${run.runId}/resume \\`,
+          "      -H 'content-type: application/json' \\",
+          `      -d '{"output": <your-json-here>}'`,
+          '',
+        ].join('\n'),
+      )
+      return { exitCode: EXIT.RUN_PAUSED, run }
+    }
     if (eventMode === 'human') {
       const prefix = run.error?.name ? `${safeForTty(run.error.name)}: ` : ''
       io.stderr.write(
@@ -182,6 +239,39 @@ export async function runCommand(
     process.off('SIGINT', onSig)
     process.off('SIGTERM', onSig)
   }
+}
+
+/**
+ * Read the recent events for a run and return true if the run is parked
+ * at a wait() step — i.e. the most recent `run.waiting` event is not
+ * yet followed by a `run.resumed` or a terminal event. Used during the
+ * poll loop because the runner keeps `Run.status === 'running'` while
+ * waiting.
+ */
+async function isPausedAtWait(
+  client: { discovery: { url: string }; headers: Record<string, string> },
+  runId: string,
+  io: MainIO,
+): Promise<boolean> {
+  const res = await fetchHttp(
+    `${client.discovery.url}/runs/${encodeURIComponent(runId)}/events?limit=200`,
+    { headers: client.headers },
+    io,
+  )
+  if (res === null || !res.ok) return false
+  const { events } = (await res.json()) as { events: Array<{ type?: string }> }
+  let waiting = false
+  for (const e of events) {
+    if (e.type === 'run.waiting') waiting = true
+    else if (
+      e.type === 'run.resumed' ||
+      e.type === 'run.completed' ||
+      e.type === 'run.failed' ||
+      e.type === 'run.cancelled'
+    )
+      waiting = false
+  }
+  return waiting
 }
 
 /**
