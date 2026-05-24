@@ -8,6 +8,16 @@ Part of [skelm](https://github.com/scottgl9/skelm).
 
 This package owns the `skelm` bin and the `runCommand` / `parseArgv` / `main` primitives that the bin composes. Both the published [`skelm`](https://www.npmjs.com/package/skelm) meta package and direct workspace consumers use the same `main(argv, io)` entry point — tests can drive the CLI without spawning a subprocess.
 
+## Architecture
+
+As of v0.5, the CLI dispatches every non-exempt command (`run`, `list`, `describe`, `history`, `audit`, `workspace`, `secrets`) to a local **gateway** process over HTTP. The CLI no longer constructs `Runner`, `EventBus`, `SqliteRunStore`, `WorkspaceManager`, `ChainAuditWriter`, `FileSecretResolver`, or the skill registry in-process — the gateway is the single execution surface and trust boundary.
+
+Exempt commands (still work with no gateway running): `help`, `version`, `gateway *`, `init`, `validate`.
+
+When a non-exempt command runs with no gateway live, the CLI auto-starts one. If the platform's service manager has the unit installed (`systemctl --user start skelm-gateway` on linux, `launchctl kickstart` on macOS) it delegates; otherwise it spawns `skelm gateway start` detached and prints a one-time hint suggesting `skelm gateway install --systemd` (linux) or `--launchd` (macOS) for a supervised service.
+
+Opt out of auto-start with `SKELM_NO_AUTOSTART=1` (the CLI then exits non-zero with an actionable message). In CI auto-spawn is refused unless `SKELM_AUTOSTART_IN_CI=1`.
+
 ## Install
 
 End users install the [`skelm`](https://www.npmjs.com/package/skelm) meta package, which ships the same bin:
@@ -44,7 +54,8 @@ skelm logs                            Tail gateway logs
 skelm gateway start                   Run the gateway (foreground; Ctrl-C drains and exits)
 skelm gateway status                  Inspect a running gateway
 skelm gateway stop                    Stop a running gateway
-skelm gateway install --systemd       Install a user-level systemd unit
+skelm gateway install --systemd       Install a user-level systemd unit (linux)
+skelm gateway install --launchd       Install a user-level launchd LaunchAgent (macOS)
 skelm --version
 skelm --help
 ```

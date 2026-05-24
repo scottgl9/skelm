@@ -46,11 +46,18 @@ skelm init my-bot && cd my-bot && npm install
 skelm run workflows/hello.workflow.mts --input '{"name":"world"}'
 ```
 
+`skelm run` (and the other workflow / state commands) dispatch to a local **gateway** process. If none is running the CLI auto-starts one in the background; for a supervised service that survives reboots, install it with:
+
+```bash
+skelm gateway install --systemd   # linux
+skelm gateway install --launchd   # macOS
+```
+
 `skelm init` scaffolds canonical `.mts` modules (`skelm.config.mts` and `workflows/*.mts`) so Node's native loader handles them regardless of `package.json` `"type"`. From here you can edit workflows, add agent steps, schedule them, or stand up the gateway:
 
 ```bash
 skelm schedule add workflows/hello.workflow.mts --cron '0 * * * *'  # cron job
-skelm gateway start                                                # long-running service
+skelm gateway start                                                # foreground (development)
 ```
 
 📖 **Next:** [Quickstart guide](./docs/quickstart/README.md)
