@@ -13,7 +13,6 @@ import type { H3Event } from 'h3'
 import {
   createApp,
   createError,
-  createEventStream,
   createRouter,
   eventHandler,
   readBody,
@@ -267,9 +266,6 @@ export function createServer(
       const state = await runStore.getRun(runId)
       if (!state) throw createError({ statusCode: 404, message: 'Run not found' })
 
-      const eventStream = createEventStream(event)
-      // Indexed subscription: bus only fans out to this listener for events
-      // bound to runId, instead of every subscriber filtering on the hot path.
       // Prefer the gateway-wide events bus (every per-request Runner publishes
       // to it). The legacy `runner` arg is the in-process Runner the bare
       // createServer() path used; embedded callers that boot via the Gateway
@@ -281,59 +277,154 @@ export function createServer(
           message: 'no event bus available for SSE; missing runner or gateway',
         })
       }
-      const unsubscribe = bus.forRun(runId, (runEvent: RunEvent) => {
-        eventStream
-          .push({ event: runEvent.type, data: JSON.stringify(runEvent) })
-          .catch(() => closed())
-        // Terminal-state events end the stream. Without this clients hang
-        // until the heartbeat-write fails or they time out — the SSE
-        // handler had no per-event closer prior to the CLI-as-gateway-
-        // interface refactor that now subscribes from the CLI itself.
-        if (
-          runEvent.type === 'run.completed' ||
-          runEvent.type === 'run.failed' ||
-          runEvent.type === 'run.cancelled'
-        ) {
-          closed()
-        }
+
+      // Raw SSE response. Bypassing h3's EventStream gives us an explicit
+      // `res.flushHeaders()` and avoids the TransformStream buffering that
+      // delayed initial chunk delivery on sub-second runs. See the comment
+      // in packages/cli/src/run.ts:96-105 for the prior diagnosis.
+      const res = event.node.res
+      const req = event.node.req
+      event._handled = true
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'private, no-cache, no-store, no-transform, must-revalidate, max-age=0',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
       })
-      // 15s heartbeat keeps NAT/proxy timeouts at bay and surfaces dead
-      // peers via a failed push() so we can release the subscription
-      // instead of leaking it indefinitely on a half-open TCP socket.
-      const heartbeat = setInterval(() => {
-        eventStream.push({ event: 'ping', data: '{}' }).catch(() => closed())
-      }, 15_000)
-      heartbeat.unref?.()
+      res.flushHeaders()
+
+      const writeFrame = (eventType: string, data: string): void => {
+        if (res.writableEnded || res.destroyed) return
+        res.write(`event: ${eventType}\ndata: ${data}\n\n`)
+      }
+
+      // Buffer live events that arrive while we're draining the persisted
+      // history, then merge them after replay with composite-key dedup.
+      // Dedup key: type|at|stepId|delta|attempt (high-entropy fields per-run).
+      const tailBuffer: RunEvent[] = []
+      const seen = new Set<string>()
+      const keyOf = (e: RunEvent): string => {
+        const stepId = 'stepId' in e ? (e.stepId ?? '') : ''
+        const delta = 'delta' in e ? String(e.delta) : ''
+        const attempt = 'attempt' in e ? String(e.attempt) : ''
+        return `${e.type}|${e.at}|${stepId}|${delta}|${attempt}`
+      }
+
+      const isTerminal = (e: RunEvent): boolean =>
+        e.type === 'run.completed' || e.type === 'run.failed' || e.type === 'run.cancelled'
+
       let isClosed = false
-      const closed = (): void => {
-        if (isClosed) return
-        isClosed = true
-        clearInterval(heartbeat)
-        unsubscribe()
-        eventStream.close().catch(() => {})
-      }
-      eventStream.onClosed(closed)
-      await eventStream.push({
-        event: 'run.state',
-        data: JSON.stringify({
-          runId: state.runId,
-          pipelineId: state.pipelineId,
-          status: state.status,
-          steps: state.steps,
-          startedAt: state.startedAt,
-          completedAt: state.completedAt,
-          output: state.output,
-          error: state.error,
-        }),
+      let unsubscribe: () => void = () => {}
+      let heartbeat: ReturnType<typeof setInterval> | undefined
+      const finishPromise = new Promise<void>((resolve) => {
+        const close = (): void => {
+          if (isClosed) return
+          isClosed = true
+          unsubscribe()
+          if (heartbeat !== undefined) clearInterval(heartbeat)
+          if (!res.writableEnded) {
+            try {
+              res.end()
+            } catch {
+              // socket already gone
+            }
+          }
+          resolve()
+        }
+        // Buffer phase: collect, don't push.
+        unsubscribe = bus.forRun(runId, (runEvent: RunEvent) => {
+          tailBuffer.push(runEvent)
+        })
+        req.on('close', close)
+        req.on('error', close)
+
+        // Initial run.state snapshot lets clients render before any events
+        // arrive. Not part of the persisted event stream.
+        writeFrame(
+          'run.state',
+          JSON.stringify({
+            runId: state.runId,
+            pipelineId: state.pipelineId,
+            status: state.status,
+            steps: state.steps,
+            startedAt: state.startedAt,
+            completedAt: state.completedAt,
+            output: state.output,
+            error: state.error,
+          }),
+        )
+
+        // Replay-then-tail. Eliminates the "subscribed too late" race for
+        // sub-second runs: persisted events drain first, then live events
+        // that weren't already in the replay flush from the buffer.
+        ;(async () => {
+          try {
+            for await (const e of runStore.listEvents(runId)) {
+              if (isClosed) return
+              const k = keyOf(e)
+              seen.add(k)
+              writeFrame(e.type, JSON.stringify(e))
+              if (isTerminal(e)) {
+                close()
+                return
+              }
+            }
+            // Switch buffered tail into push mode. Drain anything queued
+            // during the replay above (skipping events we already sent),
+            // then swap the subscriber to write directly.
+            const queued = tailBuffer.splice(0)
+            for (const e of queued) {
+              if (isClosed) return
+              const k = keyOf(e)
+              if (seen.has(k)) continue
+              seen.add(k)
+              writeFrame(e.type, JSON.stringify(e))
+              if (isTerminal(e)) {
+                close()
+                return
+              }
+            }
+            unsubscribe()
+            unsubscribe = bus.forRun(runId, (runEvent: RunEvent) => {
+              if (isClosed) return
+              const k = keyOf(runEvent)
+              if (seen.has(k)) return
+              seen.add(k)
+              writeFrame(runEvent.type, JSON.stringify(runEvent))
+              if (isTerminal(runEvent)) close()
+            })
+            // If the run completed during replay/drain the snapshot already
+            // reflected a terminal status — close on that as well.
+            if (
+              state.status === 'completed' ||
+              state.status === 'failed' ||
+              state.status === 'cancelled'
+            ) {
+              close()
+              return
+            }
+          } catch (err) {
+            const detail = err instanceof Error ? err.message : String(err)
+            writeFrame('error', JSON.stringify({ message: detail }))
+            close()
+          }
+        })()
+
+        // 15s heartbeat keeps NAT/proxy timeouts at bay and surfaces dead
+        // peers via a failed write so we can release the subscription
+        // instead of leaking it on a half-open TCP socket.
+        heartbeat = setInterval(() => {
+          if (isClosed) return
+          try {
+            res.write(`event: ping\ndata: {}\n\n`)
+          } catch {
+            close()
+          }
+        }, 15_000)
+        heartbeat.unref?.()
       })
-      if (
-        state.status === 'completed' ||
-        state.status === 'failed' ||
-        state.status === 'cancelled'
-      ) {
-        closed()
-      }
-      return eventStream.send()
+
+      return finishPromise
     }),
   )
 
