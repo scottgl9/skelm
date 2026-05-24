@@ -1,9 +1,26 @@
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { EXIT } from '../src/exit-codes.js'
 import { main } from '../src/main.js'
+import { type InProcessGateway, bootInProcessGateway } from './_helpers/gateway-harness.js'
+
+let gw: InProcessGateway
+let priorStateDir: string | undefined
+let priorNoAutostart: string | undefined
+
+beforeAll(async () => {
+  priorStateDir = process.env.SKELM_STATE_DIR
+  priorNoAutostart = process.env.SKELM_NO_AUTOSTART
+  gw = await bootInProcessGateway()
+}, 30_000)
+
+afterAll(async () => {
+  await gw?.stop()
+  process.env.SKELM_STATE_DIR = priorStateDir
+  process.env.SKELM_NO_AUTOSTART = priorNoAutostart
+})
 
 // Per AGENTS.md every documented CLI exit code must have a test. Prior
 // to this suite only OK / CLI_ERROR / SCHEMA_VALIDATION were covered;
