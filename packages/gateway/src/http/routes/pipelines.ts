@@ -198,6 +198,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
         secretResolver: enforcement.secretResolver,
         auditWriter: enforcement.auditWriter,
         store: gateway.runStore,
+        events: gateway.events,
         ...(gateway.backends !== undefined && { backends: gateway.backends }),
       })
       gateway.attachMetricsBus(runner.events)
@@ -277,6 +278,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
         secretResolver: enforcement.secretResolver,
         auditWriter: enforcement.auditWriter,
         store: gateway.runStore,
+        events: gateway.events,
         ...(gateway.backends !== undefined && { backends: gateway.backends }),
       })
       gateway.attachMetricsBus(runner.events)
@@ -334,6 +336,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
         secretResolver: enforcement.secretResolver,
         auditWriter: enforcement.auditWriter,
         store: gateway.runStore,
+        events: gateway.events,
         ...(gateway.backends !== undefined && { backends: gateway.backends }),
       })
       gateway.attachMetricsBus(runner.events)

@@ -5,6 +5,7 @@ import {
   type AuditWriter,
   DEFAULT_CONFIG,
   EnvSecretResolver,
+  EventBus,
   MemoryRunStore,
   type NetworkPolicy,
   NoopAuditWriter,
@@ -84,6 +85,10 @@ export class Gateway {
   private readonly inFlightRunners = new Map<string, import('@skelm/core').Runner>()
   private metricsInternal: import('@skelm/metrics').MetricsCollector | null = null
   private metricsBus: import('@skelm/core').EventBus | null = null
+  /** Single shared EventBus that every per-request Runner publishes into,
+   *  and that GET /runs/:id/stream subscribes to. Lazily-constructed; the
+   *  first reader or writer creates it. */
+  private eventsBusInternal: import('@skelm/core').EventBus | null = null
   private readonly breakpointsInternal: import('../debug/breakpoint-registry.js').BreakpointRegistry
   private workflowRegistrationInternal: WorkflowRegistrationService | null = null
   private workflowArchiveInternal: WorkflowArchiveService | null = null
@@ -152,6 +157,20 @@ export class Gateway {
    *  pre-built instances would. */
   get backends(): import('@skelm/core').BackendRegistry | undefined {
     return this.options.backends
+  }
+
+  /**
+   * Gateway-wide event bus. Every per-request Runner constructed by the
+   * gateway publishes into this bus, and GET /runs/:id/stream subscribes
+   * to it via `forRun(runId, ...)`. Without a single shared bus, events
+   * emitted by Runners constructed in the HTTP routes never reach SSE
+   * subscribers (the SSE handler can only subscribe to one bus).
+   */
+  get events(): EventBus {
+    if (this.eventsBusInternal === null) {
+      this.eventsBusInternal = new EventBus()
+    }
+    return this.eventsBusInternal
   }
 
   /**
@@ -291,6 +310,7 @@ export class Gateway {
       secretResolver: enforcement.secretResolver,
       auditWriter: enforcement.auditWriter,
       store: this.runStore,
+      events: this.events,
       ...(this.options.backends !== undefined && { backends: this.options.backends }),
     })
     this.attachMetricsBus(runner.events)
