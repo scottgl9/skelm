@@ -280,7 +280,7 @@ export class Runner {
           .write({
             runId: event.runId,
             actor: 'runtime',
-            action: 'mcp.tool.invoked',
+            action: 'tool.call',
             details: { stepId: event.stepId, tool: event.tool, at: event.at },
           })
           .catch(() => {})
@@ -290,7 +290,7 @@ export class Runner {
           .write({
             runId: event.runId,
             actor: 'runtime',
-            action: 'mcp.tool.completed',
+            action: 'tool.result',
             details: {
               stepId: event.stepId,
               tool: event.tool,
@@ -531,12 +531,12 @@ export async function runPipeline<TInput, TOutput>(
         })
       } else if (event.type === 'tool.call') {
         queue({
-          action: 'mcp.tool.invoked',
+          action: 'tool.call',
           details: { stepId: event.stepId, tool: event.tool, at: event.at },
         })
       } else if (event.type === 'tool.result') {
         queue({
-          action: 'mcp.tool.completed',
+          action: 'tool.result',
           details: {
             stepId: event.stepId,
             tool: event.tool,

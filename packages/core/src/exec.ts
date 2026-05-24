@@ -11,7 +11,7 @@
 // Subprocess spawning happens only after a successful permission check; the
 // step-level policy is intersected with project defaults by the runner.
 import { type ChildProcess, spawn } from 'node:child_process'
-import { basename, sep } from 'node:path'
+import { basename } from 'node:path'
 import { ExecConfigError, PermissionDeniedError } from './errors.js'
 import type { EventBus, RunEvent } from './events.js'
 import type { TrustEnforcer } from './permissions.js'
@@ -47,13 +47,7 @@ export function createExec(
   const canAudit = events !== undefined && runId !== undefined && stepId !== undefined
   return async function exec(req: ExecRequest): Promise<ExecResult> {
     const { binary, argv } = resolveCommand(req)
-    // Default-deny on path-injection: if the binary value contains a path
-    // separator the policy must allowlist that exact value. Without this,
-    // an allowlist of ['git'] would accept '/tmp/evil/git' because the
-    // basename matched.
-    const hasPathSeparator = binary.includes('/') || binary.includes(sep)
-    const checkName = hasPathSeparator ? binary : basename(binary)
-    const decision = enforcer.canExec(checkName)
+    const decision = enforcer.canExec(binary)
     if (!decision.allow) {
       if (canAudit) {
         const denyEvent: Extract<RunEvent, { type: 'permission.denied' }> = {
@@ -61,13 +55,13 @@ export function createExec(
           runId: runId as RunId,
           stepId: stepId as StepId,
           dimension: 'executable',
-          detail: `exec denied: "${checkName}" not in allowedExecutables`,
+          detail: `exec denied: "${binary}" not in allowedExecutables`,
           at: Date.now(),
         }
         events?.publish(denyEvent)
       }
       throw new PermissionDeniedError(
-        `exec denied: "${checkName}" not in allowedExecutables (reason: ${decision.reason})`,
+        `exec denied: "${binary}" not in allowedExecutables (reason: ${decision.reason})`,
       )
     }
     const toolName = `exec:${basename(binary)}`

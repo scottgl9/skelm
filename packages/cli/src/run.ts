@@ -91,7 +91,8 @@ export async function runCommand(
   const bus = createRunEventBus(eventMode, workflow.id, io)
 
   const workflowDir = dirname(resolve(process.cwd(), workflowPath))
-  const { config, projectRoot } = await loadSkelmConfig({ fromDir: workflowDir })
+  const { config, projectRoot, hasExplicitDefaultPermissions, hasExplicitPermissionProfiles } =
+    await loadSkelmConfig({ fromDir: workflowDir })
   const secretResolver = buildSecretResolver(config)
   const resolvedWorkflow = applyConfiguredBackends(
     applyAgentDefinitions(workflow, workflowDir),
@@ -133,12 +134,14 @@ export async function runCommand(
         stateStore: store,
         auditWriter,
         workflowPath: resolvedWorkflowPath,
-        ...(config.defaults?.permissions !== undefined && {
-          defaultPermissions: config.defaults.permissions,
-        }),
-        ...(config.defaults?.permissionProfiles !== undefined && {
-          permissionProfiles: config.defaults.permissionProfiles,
-        }),
+        ...(hasExplicitDefaultPermissions &&
+          config.defaults?.permissions !== undefined && {
+            defaultPermissions: config.defaults.permissions,
+          }),
+        ...(hasExplicitPermissionProfiles &&
+          config.defaults?.permissionProfiles !== undefined && {
+            permissionProfiles: config.defaults.permissionProfiles,
+          }),
         workspaceManager,
         ...(backends !== undefined && { backends }),
         secretResolver,
@@ -168,8 +171,9 @@ export async function runCommand(
   }
 
   if (eventMode === 'human') {
+    const prefix = run.error?.name ? `${safeForTty(run.error.name)}: ` : ''
     io.stderr.write(
-      `> failed (runId=${run.runId}): ${safeForTty(run.error?.message ?? 'unknown')}\n`,
+      `> failed (runId=${run.runId}): ${prefix}${safeForTty(run.error?.message ?? 'unknown')}\n`,
     )
   }
   return { exitCode: mapRunErrorToExit(run.error?.name), run }
@@ -253,7 +257,7 @@ async function resolveInput(args: RunCommandArgs, stdin: NodeJS.ReadableStream):
     const raw = await readStream(stdin)
     return parseJson(raw, 'stdin')
   }
-  return undefined
+  return {}
 }
 
 function parseJson(raw: string, source: string): unknown {
