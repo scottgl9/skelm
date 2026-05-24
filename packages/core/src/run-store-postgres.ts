@@ -19,6 +19,7 @@ import type {
   ArtifactRef,
   AuditEntry,
   RunFilter,
+  RunPatch,
   RunStore,
   RunSummary,
 } from './run-store.js'
@@ -60,7 +61,7 @@ export class PostgresRunStore implements RunStore {
   async putRun(_run: Run): Promise<void> {
     throw new NotImplementedError('putRun')
   }
-  async updateRun(_runId: RunId, _patch: Partial<Run>): Promise<void> {
+  async updateRun(_runId: RunId, _patch: RunPatch): Promise<void> {
     throw new NotImplementedError('updateRun')
   }
   async getRun(_runId: RunId): Promise<Run | null> {

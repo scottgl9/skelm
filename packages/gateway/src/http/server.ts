@@ -351,6 +351,7 @@ export function createServer(
             completedAt: state.completedAt,
             output: state.output,
             error: state.error,
+            ...(state.waiting !== undefined && { waiting: state.waiting }),
           }),
         )
 
