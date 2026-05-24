@@ -1,8 +1,25 @@
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { main } from '../src/main.js'
+import { type InProcessGateway, bootInProcessGateway } from './_helpers/gateway-harness.js'
+
+let gw: InProcessGateway
+let priorStateDir: string | undefined
+let priorNoAutostart: string | undefined
+
+beforeAll(async () => {
+  priorStateDir = process.env.SKELM_STATE_DIR
+  priorNoAutostart = process.env.SKELM_NO_AUTOSTART
+  gw = await bootInProcessGateway()
+}, 30_000)
+
+afterAll(async () => {
+  await gw?.stop()
+  process.env.SKELM_STATE_DIR = priorStateDir
+  process.env.SKELM_NO_AUTOSTART = priorNoAutostart
+})
 
 // BUG-087/088/089: typed errors (BackendCapabilityError, PermissionDeniedError,
 // …) were thrown correctly but the CLI's human-mode `step.error` line printed

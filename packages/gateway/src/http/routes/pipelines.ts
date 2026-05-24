@@ -252,6 +252,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
         const finalState = await handle.wait()
         return {
           runId: finalState.runId,
+          pipelineId: pipeline.id,
           status: finalState.status,
           output: finalState.output,
           ...(finalState.error !== undefined && { error: finalState.error }),
@@ -315,7 +316,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
           console.error(`gateway: run ${runId} wait rejected:`, (err as Error)?.message ?? err)
         })
         .finally(() => gateway.unregisterRun(runId))
-      return { runId, status: 'running' as const, pipelineId: id }
+      return { runId, status: 'running' as const, pipelineId: pipeline.id }
     }),
   )
 }
