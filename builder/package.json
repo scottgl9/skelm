@@ -11,8 +11,8 @@
     "clean": "true"
   },
   "dependencies": {
-    "@skelm/agent": "workspace:*",
-    "@skelm/codex": "workspace:*",
+    "@earendil-works/pi-coding-agent": ">=0.75.0",
+    "@skelm/pi": "workspace:*",
     "skelm": "workspace:*",
     "zod": "^4.4.2"
   },
