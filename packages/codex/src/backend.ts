@@ -26,6 +26,7 @@ import {
   consumeStream,
   makeCodexClient,
 } from './client.js'
+import { toCodexOutputSchema } from './output-schema.js'
 import { mapPermissionsToCodex } from './permission-mapper.js'
 import type { CodexBackendOptions } from './types.js'
 
@@ -148,8 +149,13 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
       // backend's `timeoutMs` (defensive ceiling). The SDK honors a single
       // AbortSignal on TurnOptions natively.
       const turnSignal = composeAbortSignal(context.signal, options.timeoutMs ?? 300_000)
+      // The SDK writes outputSchema verbatim to the --output-schema file, and
+      // the OpenAI structured-output API requires strict JSON Schema
+      // (additionalProperties:false + required). Convert the step's schema here
+      // rather than handing the SDK a raw standard-schema object.
+      const codexOutputSchema = await toCodexOutputSchema(request.outputSchema)
       const { events } = await thread.runStreamed(userPrompt, {
-        ...(request.outputSchema !== undefined && { outputSchema: request.outputSchema }),
+        ...(codexOutputSchema !== undefined && { outputSchema: codexOutputSchema }),
         signal: turnSignal.signal,
       })
 
