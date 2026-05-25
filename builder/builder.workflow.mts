@@ -61,8 +61,11 @@ export default pipeline({
         const outDir = input.outDir ?? '.'
         return `Build a skelm workflow for this spec:\n\n${spec}\n\nWrite the file into ${outDir}/ and validate it before returning.`
       },
+      // Self-contained least-privilege grants (no config profile dependency, so
+      // the workflow is portable): read the project, write generated files, run
+      // skelm/node, load the skelm skill. No network egress — the backend
+      // reaches the LLM endpoint directly, not through a tool.
       permissions: {
-        profile: 'builder',
         fsRead: ['./'],
         fsWrite: ['./'],
         allowedExecutables: ['skelm', 'node'],

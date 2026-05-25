@@ -17,19 +17,4 @@ export default defineConfig({
       maxTokens: 4096,
     }),
   ],
-  defaults: {
-    permissionProfiles: {
-      // Least-privilege baseline for the builder agent: read the project (to
-      // study the skelm skill + existing workflows), write generated files,
-      // and shell out to `skelm validate` / `node`. No network beyond the
-      // local LLM endpoint, which the backend reaches directly (not via a tool).
-      builder: {
-        fsRead: ['./'],
-        fsWrite: ['./'],
-        allowedExecutables: ['skelm', 'node'],
-        allowedSkills: ['skelm'],
-        networkEgress: 'deny',
-      },
-    },
-  },
 })
