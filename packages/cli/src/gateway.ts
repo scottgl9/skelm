@@ -89,6 +89,20 @@ function isLingeringEnabled(): boolean {
   return result.stdout.trim() === 'Linger=yes'
 }
 
+/** Returns true if the skelm-gateway systemd/launchd service is currently active. */
+async function isServiceRunning(): Promise<boolean> {
+  if (platform() === 'linux' && (await isSystemdInstalled())) {
+    const result = runSync('systemctl', ['--user', 'is-active', 'skelm-gateway'])
+    return result.exitCode === 0 && result.stdout.trim() === 'active'
+  }
+  if (platform() === 'darwin' && (await isLaunchdInstalled())) {
+    const uid = process.getuid?.() ?? 0
+    const result = runSync('launchctl', ['print', `gui/${uid}/${LAUNCHD_LABEL}`])
+    return result.exitCode === 0
+  }
+  return false
+}
+
 export async function gatewayCommand(args: GatewayArgs, io: MainIO): Promise<MainResult> {
   switch (args.subcommand) {
     case 'start':
@@ -160,6 +174,21 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     const systemdInstalled = platform() === 'linux' && (await isSystemdInstalled())
     const launchdInstalled = platform() === 'darwin' && (await isLaunchdInstalled())
     if (systemdInstalled || launchdInstalled) {
+      // First check if the service is already active/running
+      const isAlreadyRunning = await isServiceRunning()
+      if (isAlreadyRunning) {
+        // Service is already running, just report success
+        const probe = new Gateway({ stateDir: defaultStateDir() })
+        const disc = await readDiscovery(probe.discoveryPath)
+        const logCmd = systemdInstalled
+          ? 'journalctl --user -u skelm-gateway -f'
+          : `tail -f ${defaultStateDir()}/gateway.log`
+        io.stdout.write(
+          `skelm gateway already active (background service)\n  url: ${disc?.url ?? '(pending)'}\n\nTo view logs:  ${logCmd}\nTo stop:       skelm gateway stop\n`,
+        )
+        return { exitCode: EXIT.OK }
+      }
+
       const cmd = systemdInstalled
         ? { bin: 'systemctl', args: ['--user', 'start', 'skelm-gateway'], hint: 'systemctl' }
         : (() => {
@@ -423,21 +452,23 @@ async function probeGatewayUrl(url: string): Promise<boolean> {
  * Stop the gateway. If the systemd unit is installed and the service is
  * active, delegate to `systemctl --user stop` so systemd tracks the state
  * correctly. Otherwise, send SIGTERM to the PID from the lockfile.
+ *
+ * Returns exit 0 even when the gateway is not running (idempotent behavior).
  */
 async function stopGateway(io: MainIO): Promise<MainResult> {
   const probe = new Gateway({ stateDir: defaultStateDir() })
   const lock = await readLockfile(probe.lockfilePath)
 
-  // If nothing is running at all, say so clearly.
+  // If nothing is running at all, say so clearly but return success.
   if (lock === null || !isProcessAlive(lock.pid)) {
     if (lock !== null) {
-      io.stderr.write(
+      io.stdout.write(
         `gateway: not running (stale lockfile — pid ${lock.pid} is dead; will be reclaimed on next 'skelm gateway start')\n`,
       )
     } else {
-      io.stderr.write('gateway: not running\n')
+      io.stdout.write('gateway: not running\n')
     }
-    return { exitCode: EXIT.CLI_ERROR }
+    return { exitCode: EXIT.OK }
   }
 
   // If a managed service is installed, prefer the service manager's stop
@@ -445,7 +476,7 @@ async function stopGateway(io: MainIO): Promise<MainResult> {
   if (platform() === 'linux' && (await isSystemdInstalled())) {
     const result = runSync('systemctl', ['--user', 'stop', 'skelm-gateway'])
     if (result.exitCode === 0) {
-      io.stdout.write('skelm gateway stopped (via systemd)\n')
+      io.stdout.write('skelm gateway stopped (systemctl --user stop skelm-gateway)\n')
       return { exitCode: EXIT.OK }
     }
     io.stderr.write(`systemctl stop failed (${result.stderr.trim()}); falling back to SIGTERM\n`)
@@ -473,14 +504,14 @@ async function signalGateway(sig: 'SIGTERM' | 'SIGHUP', io: MainIO): Promise<Mai
   const probe = new Gateway({ stateDir: defaultStateDir() })
   const lock = await readLockfile(probe.lockfilePath)
   if (lock === null) {
-    io.stderr.write('gateway: not running\n')
-    return { exitCode: EXIT.CLI_ERROR }
+    io.stdout.write('gateway: not running\n')
+    return { exitCode: EXIT.OK }
   }
   if (!isProcessAlive(lock.pid)) {
-    io.stderr.write(
+    io.stdout.write(
       `gateway: not running (stale lockfile — pid ${lock.pid} is dead; will be reclaimed on next 'skelm gateway start')\n`,
     )
-    return { exitCode: EXIT.CLI_ERROR }
+    return { exitCode: EXIT.OK }
   }
   try {
     process.kill(lock.pid, sig)
@@ -505,20 +536,28 @@ async function detachGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
   const argv = [process.argv[1] ?? 'skelm', 'gateway', 'start']
   if (args.httpPort !== undefined) argv.push('--http-port', String(args.httpPort))
   if (args.httpHost !== undefined) argv.push('--http-host', args.httpHost)
+  // Ensure SKELM_STATE_DIR is passed to the child process
+  const childEnv = { ...process.env }
+  if (process.env.SKELM_STATE_DIR) {
+    childEnv.SKELM_STATE_DIR = process.env.SKELM_STATE_DIR
+  }
   const child = spawn(process.execPath, argv, {
     detached: true,
     stdio: 'ignore',
-    env: process.env,
+    env: childEnv,
   })
   child.unref()
   // Give the child a moment to acquire the lockfile and write discovery, so
   // a follow-up `skelm gateway status` (the typical next step) doesn't race
   // ahead of it. Bounded poll, not a fixed sleep.
   const probe = new Gateway({ stateDir: defaultStateDir() })
-  const deadline = Date.now() + 5_000
+  const deadline = Date.now() + 8_000
   while (Date.now() < deadline) {
     const lock = await readLockfile(probe.lockfilePath)
-    if (lock !== null && lock.pid === child.pid && isProcessAlive(lock.pid)) {
+    // Don't assert lock.pid === child.pid: on some platforms the spawned
+    // wrapper process forks once more before exec, so the gateway's actual
+    // pid differs from the spawn() return value. Accept any live lock.
+    if (lock !== null && isProcessAlive(lock.pid)) {
       const disc = await readDiscovery(probe.discoveryPath)
       io.stdout.write(
         `skelm gateway started (detached)\n  pid: ${lock.pid}\n  url: ${disc?.url ?? '(pending)'}\n`,
@@ -528,7 +567,7 @@ async function detachGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
     await new Promise((r) => setTimeout(r, 100))
   }
   io.stderr.write(
-    `gateway start --detach: child pid ${child.pid} did not acquire lockfile within 5s. Inspect logs via journalctl or rerun in foreground.\n`,
+    'gateway start --detach: gateway did not acquire lockfile within 8s. Inspect logs via journalctl or rerun in foreground.\n',
   )
   return { exitCode: EXIT.CLI_ERROR }
 }

@@ -47,6 +47,7 @@ export {
   AgentMaxTurnsError,
   BackendCapabilityError,
   BackendConfigError,
+  BackendNetworkError,
   BackendNotFoundError,
   BackendRegistry,
   BackendSessionError,

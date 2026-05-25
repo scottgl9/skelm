@@ -386,6 +386,23 @@ export class BackendUpstreamError extends Error {
 }
 
 /**
+ * Thrown when a backend encounters a network/fetch error (DNS failure,
+ * connection refused, timeout, TLS error, etc.). Distinguishable from
+ * BackendUpstreamError (which means we got a response but it was an error)
+ * and BackendConfigError (which means local configuration is wrong).
+ */
+export class BackendNetworkError extends Error {
+  override readonly name = 'BackendNetworkError'
+  constructor(
+    message: string,
+    readonly backendId?: BackendId,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options)
+  }
+}
+
+/**
  * Thrown when an agent session operation (create, prompt, mcp.add,
  * subscribe) fails. Wraps the upstream error payload as `cause`.
  */
