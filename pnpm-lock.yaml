@@ -27,6 +27,22 @@ importers:
         specifier: ^4.4.2
         version: 4.4.2
 
+  builder:
+    dependencies:
+      '@skelm/agent':
+        specifier: workspace:*
+        version: link:../packages/agent
+      skelm:
+        specifier: workspace:*
+        version: link:../packages/skelm
+      zod:
+        specifier: ^4.4.2
+        version: 4.4.2
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
   docs:
     devDependencies:
       typedoc:
@@ -2049,6 +2065,7 @@ packages:
     resolution: {integrity: sha512-orrrD74MBUyK8jOAD/r0+lfa1I2MO6I+vAkmAWzMYbCcgrN4lCrmK52gRFQq/JRxfYPfonkr4b0jcY7Olqdqbw==}
     dependencies:
       undici-types: 6.21.0
+    dev: true
 
   /@types/node@22.19.17:
     resolution: {integrity: sha512-wGdMcf+vPYM6jikpS/qhg6WiqSV/OhG+jeeHT/KlVqxYfD40iYJf9/AE1uQxVWFvU7MipKRkRv8NSHiCGgPr8Q==}
@@ -2132,7 +2149,7 @@ packages:
       '@vitest/spy': 2.1.9
       estree-walker: 3.0.3
       magic-string: 0.30.21
-      vite: 5.4.21(@types/node@20.19.39)
+      vite: 5.4.21(@types/node@22.19.17)
 
   /@vitest/mocker@3.2.4(vite@5.4.21):
     resolution: {integrity: sha512-46ryTE9RZO/rfDd7pEqFl7etuyzekzEhUbTW3BvmeO/BcCMEgq59BKhek3dXDWgAj4oMK6OZi+vRr1wPW6qjEQ==}
@@ -4073,6 +4090,7 @@ packages:
       rollup: 4.60.2
     optionalDependencies:
       fsevents: 2.3.3
+    dev: true
 
   /vite@5.4.21(@types/node@22.19.17):
     resolution: {integrity: sha512-o5a9xKjbtuhY6Bi5S3+HvbRERmouabWbyUcpXXUA1u+GNUKoROi9byOJ8M0nHbHYHkYICiMlqxkg1KkYmm25Sw==}
