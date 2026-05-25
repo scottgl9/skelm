@@ -8,6 +8,8 @@ The CLI walks up from `cwd` to find `skelm.config.ts` (or `.js` / `.mjs`). When 
 import { defineConfig } from 'skelm'
 
 export default defineConfig({
+  entrypoint?: string,                       // workflow run by `skelm run <dir>` (relative to this file)
+
   // ── Backends ────────────────────────────────────────────────────────
   backend?: string,                          // legacy single-backend selector; prefer `backends.default`
   backends?: {
@@ -237,6 +239,28 @@ OPENAI_MODEL=gpt-4-turbo skelm run my.workflow.mts
 ```
 
 For secrets accessed via `step.secrets` declarations, the existing `secrets.driver` mechanism is the right channel — the `.env` layer is intended for non-secret defaults and for operators who already manage secrets via `.env` files.
+
+## entrypoint
+
+When `skelm run <directory>` targets a directory, the CLI looks for a
+`skelm.config.*` in that directory and runs the workflow named by its
+`entrypoint` field, resolved relative to the config file. This lets a workflow
+project be run by directory:
+
+```ts
+// builder/skelm.config.mts
+export default defineConfig({ entrypoint: './builder.workflow.mts' })
+```
+
+```bash
+skelm run builder        # runs builder/builder.workflow.mts
+```
+
+When unset, `skelm run <dir>` falls back to `index.workflow.{mts,ts}` or a
+single unambiguous `*.workflow.{mts,ts}` file. See the
+[`skelm run` reference](./cli.md). Note the gateway resolves backends from the
+config it was **started** with, so a project's own backend wiring only applies
+when the gateway runs with that config.
 
 ## Notes
 
