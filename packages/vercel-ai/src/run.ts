@@ -1,4 +1,4 @@
-import { combineSignals } from '@skelm/core'
+import { BackendCapabilityError, combineSignals } from '@skelm/core'
 import type { AgentRequest, AgentResponse, BackendContext } from '@skelm/core'
 import { type ModelMessage, Output, generateText, stepCountIs, streamText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
@@ -168,6 +168,8 @@ export async function vercelAiRun(
     if (timeoutCtl.signal.aborted) {
       throw new VercelAiBackendTimeoutError(`vercel-ai run timed out after ${timeout}ms`, err)
     }
+    // Re-throw BackendCapabilityError without wrapping (e.g., vision allowlist rejections)
+    if (err instanceof BackendCapabilityError) throw err
     if (err instanceof VercelAiBackendError) throw err
     throw new VercelAiBackendError(`vercel-ai agent run failed: ${(err as Error).message}`, err)
   } finally {
