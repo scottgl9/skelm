@@ -57,11 +57,14 @@ describe('code() exec — explicit-deny', () => {
     expect(run.error?.message).toMatch(/"node"/)
   })
 
-  it('accepts absolute-path binaries when the basename is allowlisted', async () => {
+  it('denies an absolute-path binary when only the basename is allowlisted (no basename-bypass)', async () => {
+    // An allowlist of bare ['node'] must NOT accept an arbitrary absolute path
+    // whose basename happens to be 'node' — that was the basename-bypass closed
+    // in 0366b65. Invoking by path requires the exact path to be allowlisted.
     const nodeBin = process.execPath
     const nodeName = nodeBin.split('/').pop() ?? 'node'
     const wf = pipeline({
-      id: 'wf-basename-allow',
+      id: 'wf-basename-bypass-denied',
       steps: [
         code({
           id: 'try-abs-path',
@@ -76,7 +79,8 @@ describe('code() exec — explicit-deny', () => {
       ],
     })
     const run = await runPipeline(wf, undefined)
-    expect(run.status).toBe('completed')
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('PermissionDeniedError')
   })
 
   it('absolute paths are accepted when explicitly allowlisted by full path', async () => {
