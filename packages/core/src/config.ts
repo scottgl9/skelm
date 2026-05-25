@@ -105,6 +105,13 @@ export interface SkelmConfigRegistries {
 }
 
 export interface SkelmConfig {
+  /**
+   * Workflow file to run when `skelm run <dir>` targets this project's
+   * directory. Resolved relative to the config file. When unset, `skelm run`
+   * on a directory falls back to an `index.workflow.{mts,ts}` /
+   * `index.pipeline.{mts,ts}` file or a single unambiguous workflow file.
+   */
+  entrypoint?: string
   /** Default backend id used by llm()/agent() steps that don't specify one. */
   backend?: string
   backends?: SkelmConfigBackends

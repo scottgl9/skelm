@@ -209,6 +209,10 @@ skelm run ./workflows/ticket-to-pr.workflow.mts --input '{"ticketId":"PROJ-42"}'
 # Run with input from file
 skelm run ./workflows/ticket-to-pr.workflow.mts --input-file input.json
 
+# Run a workflow project by directory (resolves skelm.config `entrypoint`,
+# else index.workflow.mts, else the single workflow file in the dir)
+skelm run ./builder --input '{"spec":"..."}'
+
 # List discovered pipelines
 skelm list
 
