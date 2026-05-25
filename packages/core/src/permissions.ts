@@ -157,15 +157,20 @@ export class TrustEnforcer {
   }
 
   canExec(binary: string): EnforceDecision {
-    const hasPathSeparator = binary.includes('/') || binary.includes('\\')
-    const allowed =
-      this.policy.allowedExecutables.has(binary) ||
-      (hasPathSeparator &&
-        this.policy.allowedExecutables.has(binary.split(/[\\/]/).pop() ?? binary))
-    if (!allowed) {
-      return { allow: false, reason: 'not-in-allowlist', dimension: 'executable' }
+    // A binary is allowed only by an exact allowlist entry. We deliberately do
+    // NOT fall back to the basename of a path-bearing binary: an allowlist of
+    // ['git'] must never accept '/tmp/evil/git' (the basename-bypass closed in
+    // 0366b65). Bare names match as-is (basename === name); invoking by path
+    // requires the exact path to be allowlisted.
+    if (this.policy.allowedExecutables.has(binary)) {
+      return { allow: true }
     }
-    return { allow: true }
+    const hasPathSeparator = binary.includes('/') || binary.includes('\\')
+    return {
+      allow: false,
+      reason: hasPathSeparator ? 'path-not-in-allowlist' : 'not-in-allowlist',
+      dimension: 'executable',
+    }
   }
 
   canAttachMcpServer(serverId: string): EnforceDecision {
