@@ -1,4 +1,4 @@
-import { combineSignals, isMultimodal } from '@skelm/core'
+import { BackendCapabilityError, combineSignals, isMultimodal } from '@skelm/core'
 import type {
   BackendContext,
   ContentPart,
@@ -143,6 +143,8 @@ export async function vercelAiInfer(
     if (timeoutCtl.signal.aborted) {
       throw new VercelAiBackendTimeoutError(`vercel-ai inference timed out after ${timeout}ms`, err)
     }
+    // Re-throw BackendCapabilityError without wrapping (e.g., vision allowlist rejections)
+    if (err instanceof BackendCapabilityError) throw err
     if (err instanceof VercelAiBackendError) throw err
     throw new VercelAiBackendError(`vercel-ai inference failed: ${(err as Error).message}`, err)
   } finally {

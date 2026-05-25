@@ -17,6 +17,7 @@ import { EXIT } from './exit-codes.js'
 import type { MainIO, MainResult } from './internal/io.js'
 import { writeJsonOutput } from './internal/output.js'
 import { loadSkelmConfig } from './load-config.js'
+import { loadWorkflowFromFile } from './load-workflow.js'
 
 export interface GatewayArgs {
   subcommand: 'start' | 'stop' | 'pause' | 'resume' | 'reload' | 'status' | 'install' | 'uninstall'
@@ -239,8 +240,10 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
   // path (so invoke() steps and `POST /pipelines/<id>/run` can resolve
   // workflow modules). Without this on the Gateway constructor, HTTP /run
   // returns 501 and invoke() targets fail with "pipeline not found".
-  const loadWorkflow = async (_id: string, absolutePath: string): Promise<unknown> =>
-    import(pathToFileURL(absolutePath).href)
+  // Use loadWorkflowFromFile so out-of-tree workflows (e.g. /tmp/) get the
+  // transient node_modules symlink that lets them resolve 'skelm' / '@skelm/*'.
+  const loadWorkflow = (_id: string, absolutePath: string): Promise<unknown> =>
+    loadWorkflowFromFile(absolutePath).then((p) => ({ default: p }))
 
   // F043: SKELM_STATE_DIR env override must thread through to the Gateway
   // constructor; without an explicit option the constructor falls back to
