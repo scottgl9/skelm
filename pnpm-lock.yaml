@@ -32,6 +32,9 @@ importers:
       '@skelm/agent':
         specifier: workspace:*
         version: link:../packages/agent
+      '@skelm/codex':
+        specifier: workspace:*
+        version: link:../packages/codex
       skelm:
         specifier: workspace:*
         version: link:../packages/skelm
