@@ -171,8 +171,19 @@ describe('OpenAI backend', () => {
     expect(calls).toEqual(['OPENAI_API_KEY'])
   })
 
-  it('throws BackendConfigError when neither explicit, resolver, nor env key is available', () => {
-    expect(() => createOpenAIBackend()).toThrow(BackendConfigError)
+  it('constructs without a key and defers BackendConfigError to first use', async () => {
+    process.env.OPENAI_API_KEY = undefined
+    // Construction must not throw — the gateway has to start out-of-box with
+    // the default openai backend even when no key is configured.
+    const backend = createOpenAIBackend({ baseUrl: 'http://127.0.0.1:1/v1' })
+    expect(backend.id).toBe('openai')
+    // The missing key surfaces only when the backend is actually invoked.
+    await expect(
+      backend.infer?.(
+        { messages: [{ role: 'user', content: 'ping' }] },
+        { signal: AbortSignal.timeout(5_000) },
+      ),
+    ).rejects.toBeInstanceOf(BackendConfigError)
   })
 })
 

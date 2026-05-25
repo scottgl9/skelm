@@ -44,9 +44,11 @@ export function createOpenAIBackend(opts: OpenAIBackendOptions = {}): SkelmBacke
       ? opts.secretResolver.resolve('OPENAI_API_KEY')
       : undefined
   const peekedResolverKey = resolverPromise ? peekResolvedSecret(resolverPromise) : null
-  if (opts.apiKey === undefined && resolverPromise === undefined && envKey === undefined) {
-    throw new BackendConfigError('OpenAI backend requires an API key (OPENAI_API_KEY)', 'openai')
-  }
+  // The missing-key error is deferred to first use (resolveApiKey) rather than
+  // thrown here: constructing this backend must not crash gateway startup just
+  // because it sits in the default config and OPENAI_API_KEY is unset. A
+  // workflow that actually invokes the openai backend fails at the step with a
+  // clear BackendConfigError; one that never uses it runs unaffected.
   const debug: OpenAIBackendDebug = {
     apiKey: opts.apiKey ?? peekedResolverKey ?? envKey ?? null,
     effective: opts.apiKey ? 'explicit' : peekedResolverKey ? 'resolver' : envKey ? 'env' : null,
@@ -167,9 +169,10 @@ async function resolveApiKey(
     const resolved = await resolverPromise
     if (resolved) return resolved
   }
-  // Construction-time guard ensures envKey is defined here; this satisfies
-  // the return type without a redundant throw.
-  return envKey as string
+  if (envKey !== undefined) return envKey
+  // Deferred from construction: a missing key only fails when the backend is
+  // actually invoked, not at gateway startup.
+  throw new BackendConfigError('OpenAI backend requires an API key (OPENAI_API_KEY)', 'openai')
 }
 
 function peekResolvedSecret(resolverPromise: Promise<string | undefined>): string | null {
