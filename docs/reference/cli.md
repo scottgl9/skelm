@@ -30,7 +30,7 @@ events stream as JSON-Lines.
 
 ## Subcommands
 
-### `skelm run <pipeline.ts>`
+### `skelm run <pipeline.ts | directory>`
 
 Run a pipeline file directly. The runtime loads the file, type-checks the
 exported pipeline, and executes it with the runner.
@@ -41,6 +41,24 @@ exported pipeline, and executes it with the runner.
 | `--input-file`   | Read input JSON from a file                         |
 | `--input-stdin`  | Read input JSON from stdin                          |
 | `--events <fmt>` | `human` (default), `json`, or `none`                |
+
+When the argument is a **directory**, the CLI resolves it to a single workflow
+file, in order:
+
+1. A `skelm.config.*` file in the directory whose `entrypoint` field names the
+   workflow (resolved relative to that directory) — see
+   [config reference](./config.md#entrypoint).
+2. An `index.workflow.{mts,ts}` or `index.pipeline.{mts,ts}` in the directory.
+3. The single `*.workflow.{mts,ts}` / `*.pipeline.{mts,ts}` file, if exactly one
+   exists.
+
+If a directory has neither a declared entrypoint nor an unambiguous workflow
+file, `skelm run` exits `1` (CLI error). Resolution happens client-side; the
+gateway always receives a concrete file path.
+
+```bash
+skelm run builder --input '{"spec":"a workflow that summarizes a GitHub issue"}'
+```
 
 ### `skelm list [--json]`
 

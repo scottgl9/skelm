@@ -1,6 +1,5 @@
 import { accessSync, createReadStream, createWriteStream, constants as fsConstants } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import {
   PermissionDeniedError,
@@ -20,6 +19,7 @@ import {
 import type { MainIO } from './internal/io.js'
 import { safeForTty } from './internal/safe-text.js'
 import { CliError } from './load-workflow.js'
+import { resolveWorkflowPath } from './resolve-entrypoint.js'
 
 export interface RunCommandArgs {
   workflowPath: string
@@ -70,8 +70,12 @@ export async function runCommand(
   }
 
   let input: unknown
+  let absPath: string
   try {
     input = await resolveInput(args, io.stdin)
+    // A directory arg resolves to its declared/conventional entrypoint here,
+    // client-side; the gateway always receives a concrete file path.
+    absPath = await resolveWorkflowPath(workflowPath)
   } catch (err) {
     if (err instanceof CliError) {
       io.stderr.write(`error: ${err.message}\n`)
@@ -81,7 +85,6 @@ export async function runCommand(
   }
 
   const eventMode: 'human' | 'json' | 'none' = args.events ?? 'human'
-  const absPath = resolve(process.cwd(), workflowPath)
 
   const client = await requireGateway(io as MainIO)
   if (client === null) return { exitCode: EXIT.CLI_ERROR }

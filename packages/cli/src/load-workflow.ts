@@ -142,7 +142,8 @@ export class CliError extends Error {
       | 'argv'
       | 'internal'
       | 'wait-timeout'
-      | 'wait-cancelled',
+      | 'wait-cancelled'
+      | 'entrypoint-unresolved',
   ) {
     super(message)
   }
