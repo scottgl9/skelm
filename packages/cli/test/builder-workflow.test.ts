@@ -25,8 +25,9 @@ describe('builder workflow', () => {
     expect(build.permissions).toBeDefined()
     expect(build.permissions?.allowedSkills).toContain('skelm')
     expect(build.permissions?.fsWrite?.length).toBeGreaterThan(0)
-    // The builder reaches the LLM endpoint via the backend, not a tool — no egress.
-    expect(build.permissions?.networkEgress).toBe('deny')
+    // The in-process pi-sdk backend cannot enforce a narrower egress policy, so
+    // the step grants 'allow' (skelm fails closed on anything else for pi-sdk).
+    expect(build.permissions?.networkEgress).toBe('allow')
   })
 
   it('passes skelm validate', async () => {
