@@ -16,7 +16,9 @@ const Input = z.object({
   outDir: z.string().optional(),
 })
 
-const Output = z.object({
+// strictObject emits `additionalProperties: false` in the JSON schema, which
+// Codex's structured-output (response_format) mode requires.
+const Output = z.strictObject({
   path: z.string(),
   summary: z.string(),
   permissions: z.array(z.string()),
@@ -24,7 +26,7 @@ const Output = z.object({
 
 const SYSTEM = `You author skelm workflow files. skelm is a TypeScript framework whose unit of work is a typed pipeline.
 
-First call load_skill("skelm") and follow it as the authoring API reference.
+Consult the skelm skill as the authoring API reference: call load_skill("skelm") if you have that tool, otherwise read skills/skelm/SKILL.md from the project.
 
 Produce exactly one workflow file:
 - A single .mts file that \`export default pipeline({ ... })\` (import from "skelm").
@@ -51,7 +53,7 @@ export default pipeline({
     }),
     agent({
       id: 'build',
-      backend: 'agent',
+      backend: 'codex',
       skills: ['skelm'],
       system: SYSTEM,
       prompt: (ctx) => {
@@ -63,8 +65,8 @@ export default pipeline({
       },
       // Self-contained least-privilege grants (no config profile dependency, so
       // the workflow is portable): read the project, write generated files, run
-      // skelm/node, load the skelm skill. No network egress — the backend
-      // reaches the LLM endpoint directly, not through a tool.
+      // skelm/node, load the skelm skill. No agent-tool network egress — the
+      // backend reaches the model API in its own process, not through a tool.
       permissions: {
         fsRead: ['./'],
         fsWrite: ['./'],

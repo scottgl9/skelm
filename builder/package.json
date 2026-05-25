@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@skelm/agent": "workspace:*",
+    "@skelm/codex": "workspace:*",
     "skelm": "workspace:*",
     "zod": "^4.4.2"
   },
