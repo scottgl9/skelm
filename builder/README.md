@@ -44,7 +44,7 @@ skelm run builder
 
 ## Permissions
 
-The `build` agent runs under the least-privilege `builder` profile: read the
+The `build` agent runs under least-privilege, self-contained grants: read the
 project, write generated files, and run `skelm` / `node` — nothing else, and no
 network egress (the backend reaches the LLM endpoint directly, not via a tool).
 
