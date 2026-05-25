@@ -4,23 +4,28 @@ A skelm workflow that **builds other skelm workflows** from a natural-language
 spec — skelm, dogfooding itself.
 
 `builder.workflow.mts` runs an `agent()` step (driven by the
-[Codex](https://www.npmjs.com/package/@openai/codex-sdk) coding-agent backend)
-that consults the bundled `skelm` skill, authors a new `*.workflow.mts`, writes
-it, and self-checks it with `skelm validate` before returning
-`{ path, summary, permissions }`. A leading `wait()` step prompts for the spec
-interactively when one isn't passed up front.
+[pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) coding-agent
+SDK backend) that consults the bundled `skelm` skill, authors a new
+`*.workflow.mts`, writes it, and self-checks it with `skelm validate` before
+returning `{ path, summary, permissions }`. A leading `wait()` step prompts for
+the spec interactively when one isn't passed up front.
+
+The pi SDK backend runs the agent **in-process** (no OS sandbox), so it works on
+hosts where bubblewrap-based sandboxes can't initialize, and it points at any
+local OpenAI-compatible endpoint.
 
 ## Run it
 
 The gateway resolves backends from the config it is **started** with, so start
 the gateway from this directory so it picks up `skelm.config.mts` (which wires
-the Codex backend and declares the `entrypoint`). Codex authenticates via the
-host `codex` CLI (`codex login`) or `CODEX_API_KEY`:
+the pi backend and declares the `entrypoint`):
 
 ```bash
 cd builder
+# Defaults target a local server at http://localhost:8000/v1 with model qwen36.
 skelm gateway start                # foreground; Ctrl-C to stop
-# Optionally pin a model: CODEX_MODEL=gpt-5.3-codex skelm gateway start
+# Override the endpoint/model:
+# OPENAI_BASE_URL=http://localhost:8000/v1 OPENAI_MODEL=qwen36 skelm gateway start
 ```
 
 Then, from the repo root:
@@ -38,23 +43,24 @@ skelm run builder
 
 ## Environment
 
-| Var            | Default                | Purpose                                  |
-| -------------- | ---------------------- | ---------------------------------------- |
-| `CODEX_MODEL`  | host codex config      | Override the Codex model id              |
-| `CODEX_API_KEY`| —                      | API key, if not using `codex login`      |
+| Var               | Default                    | Purpose                            |
+| ----------------- | -------------------------- | ---------------------------------- |
+| `OPENAI_BASE_URL` | `http://localhost:8000/v1` | OpenAI-compatible LLM endpoint     |
+| `OPENAI_MODEL`    | `qwen36`                   | Model id                           |
+| `OPENAI_API_KEY`  | `unused`                   | API key (local servers ignore it)  |
 
 ## Permissions
 
 The `build` agent runs under least-privilege, self-contained grants: read the
-project, write generated files, and run `skelm` / `node` — nothing else, and no
-agent-tool network egress (Codex reaches the model API in its own process, not
-through a tool).
+project, write generated files, run `skelm` / `node`, and load the `skelm`
+skill. `networkEgress` is `allow` because the in-process pi-sdk backend can't
+route agent traffic through the gateway egress proxy — skelm fails closed on any
+narrower policy for this backend (use the pi RPC or opencode subprocess backends
+when you need the egress proxy to enforce a restricted network policy).
 
 `skills/skelm/SKILL.md` is a symlink to the repo's canonical skelm skill so the
 agent loads a single source of truth.
 
-> **Note:** Codex enforces its own bubblewrap sandbox for shell/file tools. On
-> hosts that block unprivileged user namespaces (e.g. AppArmor's
-> `kernel.apparmor_restrict_unprivileged_userns=1`), that sandbox cannot
-> initialize and Codex's file writes/exec will fail. Run on a host where
-> unprivileged userns is permitted, or use a backend with in-process tools.
+> **Note:** small local models reliably write the workflow but don't always end
+> with a strict JSON summary, so `finalize` recovers the result from the agent's
+> output (preferring a JSON object if one was emitted, else the generated path).
