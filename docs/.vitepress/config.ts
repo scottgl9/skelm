@@ -98,6 +98,7 @@ export default defineConfig({
         {
           text: 'Authoring',
           items: [
+            { text: 'Building Workflows', link: '/guides/building-workflows' },
             { text: 'Writing a Backend', link: '/guides/writing-a-backend' },
             { text: 'Writing a Plugin', link: '/guides/writing-a-plugin' },
             { text: 'Writing a Custom Integration', link: '/guides/writing-a-custom-integration' },
