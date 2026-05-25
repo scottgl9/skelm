@@ -4,7 +4,7 @@
  * through wire-format types.
  */
 
-import { BackendUpstreamError } from '@skelm/core'
+import { BackendNetworkError, BackendUpstreamError } from '@skelm/core'
 
 export interface OpenAIErrorResponse {
   error?: {
@@ -117,12 +117,19 @@ export async function chatCompletion(
   const timeoutSignal = AbortSignal.timeout(opts.timeoutMs)
   const combinedSignal = opts.signal ? AbortSignal.any([timeoutSignal, opts.signal]) : timeoutSignal
 
-  const res = await fetch(url.toString(), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal: combinedSignal,
-  })
+  let res: Response
+  try {
+    res = await fetch(url.toString(), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: combinedSignal,
+    })
+  } catch (err) {
+    // Wrap network/fetch errors in a typed BackendError
+    const msg = (err as Error)?.message ?? String(err)
+    throw new BackendNetworkError(`LLM request failed: ${msg}`, 'agent', { cause: err })
+  }
 
   if (!res.ok) {
     let errMsg = res.statusText

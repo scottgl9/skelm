@@ -71,10 +71,11 @@ describe('skelm gateway — CLI smoke', () => {
     } catch {}
   })
 
-  it('stop fails cleanly when the gateway is not running', async () => {
-    const { stderr, exitCode } = await invoke(['gateway', 'stop'])
-    expect(exitCode).toBe(EXIT.CLI_ERROR)
-    expect(stderr).toContain('not running')
+  it('stop is idempotent when the gateway is not running', async () => {
+    // stop now exits 0 (idempotent) so operators can call it unconditionally.
+    const { stdout, exitCode } = await invoke(['gateway', 'stop'])
+    expect(exitCode).toBe(EXIT.OK)
+    expect(stdout).toContain('not running')
   })
 
   it('approvals list returns empty on a clean state dir', async () => {
