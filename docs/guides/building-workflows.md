@@ -21,8 +21,8 @@ natural-language spec, demonstrating the directory-run convention and the
 
 ```bash
 # Start the gateway from builder/ so it loads builder/skelm.config.mts
-# (which wires the local LLM backend and declares the entrypoint).
-cd builder && OPENAI_MODEL=<your-model> skelm gateway start
+# (which wires the backend and declares the entrypoint).
+cd builder && skelm gateway start
 
 # One-shot: pass the spec as input
 skelm run builder --input '{"spec":"a workflow that summarizes a GitHub issue"}'
