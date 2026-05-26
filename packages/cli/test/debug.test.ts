@@ -10,16 +10,24 @@ import { main } from '../src/main.js'
 
 let stateDir: string
 let priorStateDir: string | undefined
+let priorNoAutostart: string | undefined
 
 beforeEach(async () => {
   stateDir = await mkdtemp(join(tmpdir(), 'skelm-cli-dbg-'))
   priorStateDir = process.env.SKELM_STATE_DIR
+  priorNoAutostart = process.env.SKELM_NO_AUTOSTART
   process.env.SKELM_STATE_DIR = stateDir
+  // The "gateway is not running" case below deliberately exercises the
+  // no-gateway path. Disable auto-start so the CLI fails fast with a clean
+  // error instead of spawning a real ad-hoc gateway and waiting for readiness.
+  process.env.SKELM_NO_AUTOSTART = '1'
 })
 
 afterEach(async () => {
   if (priorStateDir === undefined) process.env.SKELM_STATE_DIR = undefined
   else process.env.SKELM_STATE_DIR = priorStateDir
+  if (priorNoAutostart === undefined) process.env.SKELM_NO_AUTOSTART = undefined
+  else process.env.SKELM_NO_AUTOSTART = priorNoAutostart
   await rm(stateDir, { recursive: true, force: true })
 })
 
