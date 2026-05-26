@@ -154,6 +154,21 @@ See [Backend documentation](./docs/backends/README.md) for setup guides, and [Co
 
 ---
 
+## Automated testing
+
+skelm is tested against itself. [**skelm-self-test**](https://github.com/scottgl9/skelm-self-test) is a live agentic harness that runs skelm workflows to verify skelm — no external test runner required.
+
+```bash
+# From the skelm-self-test repo
+pnpm install
+skelm run workflows/test-runner.workflow.mts
+cat results/latest.md
+```
+
+See [skelm-self-test](https://github.com/scottgl9/skelm-self-test) for setup, environment variables, and the full test plan.
+
+---
+
 ## Community
 
 - [GitHub Discussions](https://github.com/scottgl9/skelm/discussions) — Questions and show & tell
