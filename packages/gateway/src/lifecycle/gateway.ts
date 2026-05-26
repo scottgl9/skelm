@@ -1,4 +1,5 @@
-import { homedir } from 'node:os'
+import { mkdtempSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import {
   type ApprovalGate,
@@ -98,7 +99,22 @@ export class Gateway {
   private reloadPendingAfter: Promise<void> | null = null
 
   constructor(private readonly options: GatewayOptions = {}) {
-    this.stateDir = options.stateDir ?? join(homedir(), '.skelm')
+    // A config-less gateway (embedded / probe / test construction) that is
+    // also given no explicit stateDir must NOT adopt the shared default
+    // ~/.skelm: start()/stop() and the start() error path call
+    // removeDiscovery(this.discoveryPath), so an embedded instance pointed at
+    // ~/.skelm/gateway.json would delete a separately-running persistent
+    // gateway's discovery record while that gateway is still alive — every
+    // later CLI command then fails to discover it ("gateway did not become
+    // ready"). Isolate the whole state dir per instance, mirroring how the
+    // config-less branch below isolates the ports. The CLI's `gateway start`
+    // always supplies a config and an explicit stateDir, so the conventional
+    // shared gateway is unchanged.
+    this.stateDir =
+      options.stateDir ??
+      (options.config === undefined
+        ? mkdtempSync(join(tmpdir(), 'skelm-embedded-gateway-'))
+        : join(homedir(), '.skelm'))
     this.projectRoot = resolve(options.projectRoot ?? process.cwd())
     this.lockfilePath = join(this.stateDir, 'gateway.lock')
     this.discoveryPath = join(this.stateDir, 'gateway.json')
