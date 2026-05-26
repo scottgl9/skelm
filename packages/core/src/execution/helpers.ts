@@ -50,8 +50,15 @@ export function assertBackendSupportsPermissions(
   if (unresolved.size === 0) return
 
   if (backend.capabilities.toolPermissions === 'unsupported') {
+    // Name the capability class so the refusal is actionable instead of
+    // generic: a `toolPermissions: 'unsupported'` backend (e.g. Pi RPC, which
+    // runs the agent loop in a subprocess skelm cannot introspect) cannot
+    // enforce any of the tool-class dimensions. Listing them here keeps this
+    // pre-flight message consistent with the `'wrapped'` branch below and with
+    // the backend's own defense-in-depth refusal, and surfaces the same
+    // contract whether the constraint trips at pre-flight or inside run().
     throw new BackendCapabilityError(
-      `backend ${backend.id} cannot enforce declared permissions for step "${stepId}"`,
+      `backend ${backend.id} cannot enforce tool, executable, filesystem, MCP, or skill permissions for step "${stepId}" (declared: ${[...unresolved].join(', ')}). Use a backend with native tool-permission enforcement, or remove those dimensions and rely on networkEgress + the gateway egress proxy.`,
       backend.id,
       'toolPermissions',
     )
