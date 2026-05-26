@@ -72,6 +72,7 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         secretResolver: enforcement.secretResolver,
         auditWriter: enforcement.auditWriter,
         store: opts.gateway.runStore,
+        workspaceManager: opts.gateway.workspaceManager,
         ...(opts.backends !== undefined && { backends: opts.backends }),
       })
       // Feed step events into the metrics collector if enabled.

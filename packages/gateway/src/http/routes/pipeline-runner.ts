@@ -48,6 +48,7 @@ export async function runPipelineSync(
     secretResolver: enforcement.secretResolver,
     auditWriter: enforcement.auditWriter,
     store: gateway.runStore,
+    workspaceManager: gateway.workspaceManager,
   })
   gateway.attachMetricsBus(runner.events)
   const controller = new AbortController()
