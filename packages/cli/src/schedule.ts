@@ -1,4 +1,5 @@
-import { resolve as pathResolve } from 'node:path'
+import { statSync } from 'node:fs'
+import { relative as pathRelative, resolve as pathResolve } from 'node:path'
 import { EXIT } from './exit-codes.js'
 import { fetchHttp, httpError, requireGateway } from './internal/gateway-client.js'
 import type { MainIO, MainResult } from './internal/io.js'
@@ -363,7 +364,65 @@ async function resolveWorkflowId(
     io.stderr.write('hint: use the full registry id from `skelm list`\n')
     return null
   }
+  // 4. The input names a real workflow file on disk that the gateway has not
+  // indexed (it lives outside the registry glob). `skelm run <path>` already
+  // accepts such an arbitrary file by POSTing its absolute path; a schedule
+  // must end up with a registry id the trigger dispatcher can resolve at
+  // fire time, so register it explicitly (POST /v1/workflows/register) and
+  // schedule against the returned id. Without this, `schedule add
+  // fixtures/foo.workflow.ts` errored "workflow not registered" even though
+  // the file exists and `run` would have executed it.
+  const fileId = await registerWorkflowFile(userInput, baseUrl, headers, io)
+  if (fileId !== undefined) return fileId
   io.stderr.write(`error: workflow not registered: ${userInput}\n`)
   io.stderr.write('hint: run `skelm list` to see registered workflows\n')
   return null
+}
+
+/**
+ * If `userInput` points at an existing workflow file on disk, register it
+ * with the gateway and return the resulting registry id. Returns `undefined`
+ * when the input is not a file (so the caller falls through to its
+ * "not registered" error) or `null` when registration failed and an error
+ * was already written.
+ */
+async function registerWorkflowFile(
+  userInput: string,
+  baseUrl: string,
+  headers: Record<string, string>,
+  io: MainIO,
+): Promise<string | null | undefined> {
+  const abs = pathResolve(process.cwd(), userInput)
+  try {
+    if (!statSync(abs).isFile()) return undefined
+  } catch {
+    return undefined
+  }
+  // Prefer a cwd-relative id (matches the registry's project-root-relative
+  // ids); fall back to the absolute path when the file sits outside the cwd
+  // tree. `..` segments are rejected by the gateway's id validator, so an
+  // out-of-tree relative path is normalised to its absolute form.
+  const rel = pathRelative(process.cwd(), abs)
+  const id = rel !== '' && !rel.startsWith('..') ? rel : abs
+  const res = await fetchHttp(
+    `${baseUrl}/v1/workflows/register`,
+    {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ id, source: { type: 'path', path: abs } }),
+    },
+    io,
+  )
+  if (res === null) {
+    io.stderr.write(`error: failed to reach gateway at ${baseUrl}/v1/workflows/register\n`)
+    return null
+  }
+  if (!res.ok) {
+    io.stderr.write(
+      `error: failed to register workflow "${userInput}": ${res.status} ${await res.text()}\n`,
+    )
+    return null
+  }
+  const out = (await res.json()) as { workflow?: { id?: string } }
+  return out.workflow?.id ?? id
 }
