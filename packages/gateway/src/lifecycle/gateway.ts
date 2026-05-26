@@ -320,6 +320,36 @@ export class Gateway {
       throw startPipelineError(501, 'gateway has no workflow loader')
     }
     const pipeline = await loadPipelineFromPath(loader, pipelineId, entry.path)
+    const { runId } = this.#startRunnerAsync(pipeline, input, entry.path)
+    return { runId }
+  }
+
+  /**
+   * Async ad-hoc start by absolute workflow path. The caller (HTTP routes)
+   * is responsible for validating the path against the loader trust boundary
+   * before handing it here. Mirrors {@link startPipelineAsync} but for a file
+   * that need not be in the workflow registry, so `POST /runs` and
+   * `POST /pipelines/start-file` share one start path.
+   */
+  async startAdhocRunByFile(
+    absolutePath: string,
+    registryId: string,
+    input: unknown,
+  ): Promise<{ runId: string; pipelineId: string }> {
+    const loader = this.getWorkflowLoader()
+    if (loader === undefined) {
+      throw startPipelineError(501, 'gateway has no workflow loader')
+    }
+    const pipeline = await loadPipelineFromPath(loader, registryId, absolutePath)
+    const { runId } = this.#startRunnerAsync(pipeline, input, absolutePath)
+    return { runId, pipelineId: pipeline.id }
+  }
+
+  #startRunnerAsync(
+    pipeline: import('@skelm/core').Pipeline,
+    input: unknown,
+    workflowPath: string,
+  ): { runId: string } {
     const enforcement = this.enforcement
     const runner = new Runner({
       approvalGate: enforcement.approvalGate,
@@ -343,7 +373,7 @@ export class Gateway {
         signal: controller.signal,
         skillSource: createSkillSource({
           registry: this.registries.skills,
-          workflowPath: entry.path,
+          workflowPath,
         }),
         pipelineRegistry: makeGatewayPipelineRegistry(this),
       })

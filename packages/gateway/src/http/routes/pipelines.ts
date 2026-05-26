@@ -1,70 +1,15 @@
-import { createHash } from 'node:crypto'
-import { stat } from 'node:fs/promises'
-import { isAbsolute, normalize } from 'node:path'
 import { Runner, describePipeline } from '@skelm/core'
 import { type Router, createError, eventHandler, readBody } from 'h3'
 import type { Gateway } from '../../lifecycle/gateway.js'
 import { createSkillSource } from '../../registries/skill-source.js'
 import {
+  adhocPipelineId,
   decodeMaybe,
   loadPipelineFromPath,
   makeGatewayPipelineRegistry,
   tryToJsonSchema,
+  validateWorkflowFile,
 } from './utils.js'
-
-/**
- * Validate a file path the caller wants the gateway to load. Defends the
- * gateway-as-loader trust boundary against:
- *   - relative paths (callers must give us an absolute path so we don't
- *     resolve against the gateway's cwd, which is operator-controlled)
- *   - `..` traversal in the supplied string (normalize then compare)
- *   - non-existent or non-file targets
- *   - extensions we never load (only .ts / .tsx / .mts / .cts / .js / .mjs / .cjs)
- *
- * The path validation is intentionally minimal: the gateway's existing
- * workflow loader is the actual trust boundary for "what code runs". This
- * check just stops the obvious foot-guns and the obvious cross-tenant
- * exfiltration shapes (`/etc/passwd`, `../../foo`).
- */
-async function validateWorkflowFile(file: unknown): Promise<string> {
-  if (typeof file !== 'string' || file === '') {
-    throw createError({ statusCode: 400, message: 'file: must be a non-empty string' })
-  }
-  if (!isAbsolute(file)) {
-    throw createError({ statusCode: 400, message: 'file: must be an absolute path' })
-  }
-  const normalized = normalize(file)
-  if (normalized !== file || normalized.includes(`${'/'}..${'/'}`) || normalized.endsWith('/..')) {
-    throw createError({ statusCode: 400, message: 'file: must not contain traversal segments' })
-  }
-  const ALLOWED = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/
-  if (!ALLOWED.test(normalized)) {
-    throw createError({
-      statusCode: 400,
-      message: 'file: must end in .ts, .tsx, .mts, .cts, .js, .mjs, or .cjs',
-    })
-  }
-  try {
-    const s = await stat(normalized)
-    if (!s.isFile()) {
-      throw createError({ statusCode: 404, message: 'file: not a regular file' })
-    }
-  } catch (err) {
-    const e = err as NodeJS.ErrnoException & { statusCode?: number }
-    if (e.statusCode !== undefined) throw err
-    if (e.code === 'ENOENT') {
-      throw createError({ statusCode: 404, message: 'file: not found' })
-    }
-    throw createError({ statusCode: 500, message: `file stat failed: ${e.message}` })
-  }
-  return normalized
-}
-
-function adhocPipelineId(file: string): string {
-  // Stable id per absolute path; lets idempotency-key caching and
-  // run-history lookups group repeated invocations of the same file.
-  return `cli:${createHash('sha1').update(file).digest('hex').slice(0, 16)}`
-}
 
 // Per-(pipeline, idempotency-key) → runId map shared by /run and /start.
 const idempotency = new Map<string, string>()
