@@ -79,9 +79,10 @@ export function registerConfigRoutes(router: Router, gateway: Gateway): void {
 
 /**
  * Drop token-like fields from every config branch the operator can put a
- * secret in: server.auth, secrets.file, agents[].env, mcpServers[].env, and
- * top-level backend entries. The list grows by inclusion — any new config
- * branch that can hold credentials should run through the same keyword scan.
+ * secret in: server.auth, secrets.file, the top-level env map, agents[].env,
+ * mcpServers[].env, and top-level backend entries. The list grows by inclusion
+ * — any new config branch that can hold credentials should run through the same
+ * keyword scan.
  */
 function sanitize(config: import('@skelm/core').SkelmConfig): Record<string, unknown> {
   // The runtime SkelmConfig can carry live backend instances (functions
@@ -100,6 +101,15 @@ function sanitize(config: import('@skelm/core').SkelmConfig): Record<string, unk
   // Secret driver paths are sensitive in some deployments — redact the file path.
   const secrets = (clone.secrets ?? {}) as Record<string, unknown>
   if (typeof secrets.file === 'string') secrets.file = '[redacted]'
+
+  // The top-level `env` map is forwarded to backends and spawned subprocesses
+  // and routinely holds credentials (e.g. OPENAI_API_KEY). It was previously
+  // returned verbatim — every other env-bearing branch (agents/mcpServers/
+  // backends) is scanned, but this one was missed, leaking secret values.
+  const env = clone.env
+  if (env !== null && typeof env === 'object') {
+    redactMatchingKeys(env as Record<string, unknown>, new Set())
+  }
 
   // registries.agents[].env and registries.mcpServers[].env can carry bearer
   // tokens / API keys forwarded to the spawned subprocess. Redact matching keys.

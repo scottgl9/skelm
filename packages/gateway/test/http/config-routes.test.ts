@@ -189,4 +189,34 @@ describe('/v1/config', () => {
       await gw.stop()
     }
   })
+
+  it('redacts sensitive vars in the top-level env map', async () => {
+    // Regression: sanitize() scanned agents/mcpServers/backends env but missed
+    // the top-level `env` map, returning OPENAI_API_KEY (and other credentials)
+    // verbatim in GET /v1/config.
+    const { gw, base } = await bootGatewayWithRetry((port) => ({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      runStore: new MemoryRunStore(),
+      config: {
+        server: { auth: { mode: 'none' }, maxConcurrentRuns: 4 },
+        env: {
+          OPENAI_API_KEY: 'sk-secret',
+          OPENAI_BASE_URL: 'http://localhost:8000/v1',
+          OPENAI_MODEL: 'qwen36',
+        },
+      } as never,
+    }))
+    try {
+      const res = await fetch(`${base}/v1/config`)
+      const body = await res.json()
+      expect(body.env.OPENAI_API_KEY).toBe('[redacted]')
+      expect(body.env.OPENAI_BASE_URL).toBe('http://localhost:8000/v1')
+      expect(body.env.OPENAI_MODEL).toBe('qwen36')
+    } finally {
+      await gw.stop()
+    }
+  })
 })
