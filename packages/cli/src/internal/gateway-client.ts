@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { promises as fs } from 'node:fs'
+import { type AddressInfo, createServer } from 'node:net'
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 import { type DiscoveryRecord, readDiscovery } from '@skelm/gateway'
@@ -16,6 +17,28 @@ export type ServiceManager = 'systemd' | 'launchd' | 'none'
 
 export function gatewayStateDir(): string {
   return process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm')
+}
+
+/** The default state dir (`~/.skelm`), used when SKELM_STATE_DIR is unset. */
+export function defaultStateDir(): string {
+  return join(homedir(), '.skelm')
+}
+
+/**
+ * Ask the OS for a free TCP port (bind to :0, read the assigned port, release).
+ * Used so an auto-started gateway for a NON-default state dir binds a port that
+ * won't collide with the conventional shared gateway's fixed port.
+ */
+export async function findFreePort(): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    const srv = createServer()
+    srv.once('error', reject)
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address() as AddressInfo | null
+      const port = addr?.port ?? 0
+      srv.close(() => (port > 0 ? resolve(port) : reject(new Error('no free port'))))
+    })
+  })
 }
 
 export async function loadDiscovery(stateDir?: string): Promise<DiscoveryRecord | null> {
@@ -174,6 +197,25 @@ export async function autoStartGateway(io: MainIO): Promise<DiscoveryRecord | nu
     // process. The child's argv[0]/argv[1] mirror the parent's so it
     // re-execs the same skelm binary.
     const argv = [process.argv[1] ?? 'skelm', 'gateway', 'start']
+    // An ad-hoc gateway for a NON-default SKELM_STATE_DIR must not collide with
+    // the conventional shared gateway (or another state dir's gateway) on the
+    // config's fixed port: the child inherits SKELM_STATE_DIR (so its lockfile
+    // and gateway.json are state-dir-scoped) but, without an explicit port,
+    // would still bind config.server.port (e.g. 14738). Two state dirs then
+    // race for the same port — the loser fails with "did not become ready",
+    // and a stale gateway.json can point a command at the WRONG gateway's data.
+    // Bind a free port instead; the CLI discovers the real URL from the state
+    // dir's gateway.json, so the port need not be well-known. The default state
+    // dir keeps config.server.port so the conventional shared gateway is intact.
+    if (stateDir !== defaultStateDir()) {
+      try {
+        const port = await findFreePort()
+        argv.push('--http-port', String(port))
+      } catch {
+        // Couldn't grab a free port — fall back to the config port and let the
+        // readiness check surface any collision as before.
+      }
+    }
     const child = spawn(process.execPath, argv, {
       detached: true,
       stdio: 'ignore',
