@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   defaultStateDir,
   detectServiceManager,
+  discoveryFromEnvUrl,
   findFreePort,
   gatewayStateDir,
   isServiceInstalled,
@@ -19,21 +20,31 @@ let stateDir: string
 let priorStateDir: string | undefined
 let priorNoAutostart: string | undefined
 let priorCi: string | undefined
+let priorGatewayUrl: string | undefined
+let priorGatewayToken: string | undefined
 
 beforeEach(async () => {
   stateDir = await mkdtemp(join(tmpdir(), 'skelm-cli-gwc-'))
   priorStateDir = process.env.SKELM_STATE_DIR
   priorNoAutostart = process.env.SKELM_NO_AUTOSTART
   priorCi = process.env.CI
+  priorGatewayUrl = process.env.SKELM_GATEWAY_URL
+  priorGatewayToken = process.env.SKELM_GATEWAY_TOKEN
   process.env.SKELM_STATE_DIR = stateDir
   process.env.SKELM_NO_AUTOSTART = '1'
   process.env.CI = 'false'
+  // Blank rather than `delete` (Biome forbids the delete operator);
+  // discoveryFromEnvUrl treats an empty/whitespace URL as "unset".
+  process.env.SKELM_GATEWAY_URL = ''
+  process.env.SKELM_GATEWAY_TOKEN = ''
 })
 
 afterEach(async () => {
   process.env.SKELM_STATE_DIR = priorStateDir
   process.env.SKELM_NO_AUTOSTART = priorNoAutostart
   process.env.CI = priorCi
+  process.env.SKELM_GATEWAY_URL = priorGatewayUrl ?? ''
+  process.env.SKELM_GATEWAY_TOKEN = priorGatewayToken ?? ''
   await rm(stateDir, { recursive: true, force: true })
 })
 
@@ -114,6 +125,36 @@ describe('gateway-client', () => {
     const client = await requireGateway(io.io)
     expect(client).toBeNull()
     expect(io.err()).toContain('SKELM_AUTOSTART_IN_CI')
+  })
+
+  it('discoveryFromEnvUrl is null when SKELM_GATEWAY_URL is unset', () => {
+    expect(discoveryFromEnvUrl()).toBeNull()
+  })
+
+  it('discoveryFromEnvUrl builds a record from SKELM_GATEWAY_URL (trailing slash trimmed)', () => {
+    process.env.SKELM_GATEWAY_URL = 'http://localhost:14777/'
+    const disc = discoveryFromEnvUrl()
+    expect(disc?.url).toBe('http://localhost:14777')
+    expect(disc?.token).toBeUndefined()
+  })
+
+  it('discoveryFromEnvUrl carries SKELM_GATEWAY_TOKEN when set', () => {
+    process.env.SKELM_GATEWAY_URL = 'http://localhost:14777'
+    process.env.SKELM_GATEWAY_TOKEN = 'secret-tok'
+    expect(discoveryFromEnvUrl()?.token).toBe('secret-tok')
+  })
+
+  it('requireGateway targets SKELM_GATEWAY_URL directly, bypassing discovery and auto-start', async () => {
+    // No gateway.json exists and SKELM_NO_AUTOSTART=1, so without the URL env
+    // requireGateway would return null. The explicit URL must win.
+    process.env.SKELM_GATEWAY_URL = 'http://localhost:14777'
+    process.env.SKELM_GATEWAY_TOKEN = 'tok'
+    const io = mkIo()
+    const client = await requireGateway(io.io)
+    expect(client).not.toBeNull()
+    expect(client?.discovery.url).toBe('http://localhost:14777')
+    expect(client?.headers.authorization).toBe('Bearer tok')
+    expect(io.err()).toBe('')
   })
 
   it('requireGateway returns a client when a discovery record is already present', async () => {
