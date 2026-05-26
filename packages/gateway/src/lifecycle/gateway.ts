@@ -346,6 +346,7 @@ export class Gateway {
           workflowPath: entry.path,
         }),
         pipelineRegistry: makeGatewayPipelineRegistry(this),
+        ...this.egressRunOptions(),
       })
     } catch (err) {
       this.unregisterRun(runId)
@@ -430,6 +431,27 @@ export class Gateway {
       env.SKELM_EGRESS_TOKEN = egressToken
     }
     return env
+  }
+
+  /**
+   * The egress-proxy wiring to pass into every `Runner.start()` the gateway
+   * drives. Without it the runner's `hasEgressProxy` hint is false (so the
+   * network dimension is treated as unenforceable for subprocess backends like
+   * Pi RPC) AND subprocess steps spawn with no `HTTP_PROXY`, bypassing the
+   * proxy entirely. The trigger dispatcher already supplies these; every
+   * HTTP run path (`skelm run`, `/pipelines/:id/run`, `/v1/*`) must too.
+   */
+  egressRunOptions(): {
+    registerEgressToken: (runId: string, stepId: string, policy: NetworkPolicy) => string
+    unregisterEgressToken: (runId: string, stepId: string) => void
+    getProxyEnv: (egressToken?: string) => Record<string, string> | undefined
+  } {
+    return {
+      registerEgressToken: (runId, stepId, policy) =>
+        this.registerEgressToken(runId, stepId, policy),
+      unregisterEgressToken: (runId, stepId) => this.unregisterEgressToken(runId, stepId),
+      getProxyEnv: (egressToken) => this.getProxyEnvVars(egressToken),
+    }
   }
 
   async start(): Promise<void> {
