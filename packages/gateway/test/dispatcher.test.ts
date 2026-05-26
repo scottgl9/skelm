@@ -125,6 +125,55 @@ describe('createTriggerDispatcher', () => {
     await gw.stop()
   })
 
+  it('runs a workflowId that is an absolute path to a file outside the registry', async () => {
+    // `POST /schedules` accepts an absolute path to a workflow the gateway
+    // never glob-indexed. The dispatcher must fall back to that path so the
+    // fire actually starts a run instead of recording `workflow not
+    // registered` while still reporting `dispatched`.
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
+    })
+    await gw.start()
+
+    const absPath = join(projectRoot, 'workflows/hello.workflow.mts')
+    const ran: string[] = []
+    const fakePipeline = pipeline({
+      id: 'hello',
+      steps: [
+        code({
+          id: 'step',
+          run: () => {
+            ran.push('step')
+            return {}
+          },
+        }),
+      ],
+    })
+
+    // The registry id is `workflows/hello.workflow.mts`; firing with the
+    // absolute path is NOT a registry id, so resolution must use the path.
+    expect(gw.registries.workflows.get(absPath)).toBeUndefined()
+
+    const dispatcher = createTriggerDispatcher({
+      gateway: gw,
+      loadWorkflow: async (_id, abs) => {
+        expect(abs).toBe(absPath)
+        return { default: fakePipeline }
+      },
+    })
+    const coordinator = new TriggerCoordinator({ onFire: dispatcher })
+    coordinator.register({ kind: 'manual', id: 'abs', workflowId: absPath })
+    await coordinator.fire('abs')
+
+    expect(ran).toEqual(['step'])
+    expect(coordinator.get('abs')?.lastError).toBeUndefined()
+    await coordinator.stop()
+    await gw.stop()
+  })
+
   it('records lastError on the trigger when the workflow id is unknown', async () => {
     const gw = new Gateway({ stateDir, projectRoot, watchRegistries: false })
     await gw.start()
