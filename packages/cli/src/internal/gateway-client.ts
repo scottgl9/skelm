@@ -240,8 +240,36 @@ export async function autoStartGateway(io: MainIO): Promise<DiscoveryRecord | nu
  * unless auto-start succeeds. Use this for any CLI command that requires
  * the gateway to actually do work.
  */
+/**
+ * Build a discovery record from `SKELM_GATEWAY_URL` when it is set, letting a
+ * caller target an already-running gateway by URL instead of by state-dir
+ * discovery file. `SKELM_GATEWAY_TOKEN` supplies the bearer token for a
+ * gateway that requires auth. Returns null when the env var is unset or blank.
+ */
+export function discoveryFromEnvUrl(): DiscoveryRecord | null {
+  const url = process.env.SKELM_GATEWAY_URL?.trim()
+  if (url === undefined || url === '') return null
+  const token = process.env.SKELM_GATEWAY_TOKEN?.trim()
+  return {
+    pid: -1,
+    url: url.replace(/\/+$/, ''),
+    ...(token !== undefined && token !== '' && { token }),
+    startedAt: new Date().toISOString(),
+  }
+}
+
 export async function requireGateway(io: MainIO): Promise<GatewayClient | null> {
   const stateDir = gatewayStateDir()
+  // An explicit SKELM_GATEWAY_URL points the CLI at a specific running gateway
+  // by URL — bypassing the state-dir discovery file and never auto-starting a
+  // local one. This is how callers address a gateway they did not start
+  // themselves (a remote service, or a fixture on a known port).
+  const fromUrl = discoveryFromEnvUrl()
+  if (fromUrl !== null) {
+    const headers: Record<string, string> = { 'content-type': 'application/json' }
+    if (fromUrl.token !== undefined) headers.authorization = `Bearer ${fromUrl.token}`
+    return { discovery: fromUrl, headers, stateDir }
+  }
   let discovery = await loadDiscovery(stateDir)
   if (discovery === null) {
     discovery = await autoStartGateway(io)

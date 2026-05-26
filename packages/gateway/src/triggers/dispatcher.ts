@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { isAbsolute } from 'node:path'
 import { type BackendRegistry, Runner } from '@skelm/core'
 import { makeGatewayPipelineRegistry } from '../http/routes/utils.js'
 import type { Gateway } from '../lifecycle/gateway.js'
@@ -45,11 +47,21 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
   return async (ctx: FireContext): Promise<void> => {
     let runId: string | null = null
     try {
+      // A schedule's workflowId is normally a registry id, but `POST
+      // /schedules` (and the manual schedule flows it backs) accept an
+      // absolute path to a workflow file the gateway never glob-indexed.
+      // Resolving only against the registry left those fires reporting
+      // `dispatched` while the dispatch threw `workflow not registered` and
+      // produced no Run. Fall back to the absolute path itself when it points
+      // at an existing file so the loader can import it directly.
       const entry = opts.gateway.registries.workflows.get(ctx.workflowId)
-      if (entry === undefined) {
+      const workflowPath =
+        entry?.path ??
+        (isAbsolute(ctx.workflowId) && existsSync(ctx.workflowId) ? ctx.workflowId : undefined)
+      if (workflowPath === undefined) {
         throw new Error(`workflow not registered: ${ctx.workflowId}`)
       }
-      const exported = await opts.loadWorkflow(ctx.workflowId, entry.path)
+      const exported = await opts.loadWorkflow(ctx.workflowId, workflowPath)
       const pipeline = isPipelineish(exported) ? exported : extractDefault(exported)
       if (pipeline === undefined) {
         throw new Error(`workflow ${ctx.workflowId} did not export a default pipeline`)
@@ -74,7 +86,7 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
       const handle = runner.start(pipeline as Parameters<Runner['start']>[0], pipelineInput, {
         runId,
         signal: controller.signal,
-        workflowPath: entry.path,
+        workflowPath,
         triggerId: ctx.triggerId,
         registerEgressToken: (runId, stepId, policy) =>
           opts.gateway.registerEgressToken(runId, stepId, policy),
