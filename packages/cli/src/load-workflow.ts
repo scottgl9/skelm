@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Pipeline } from '@skelm/core'
@@ -75,11 +75,23 @@ function ensureNodeModulesResolvable(workflowDir: string): () => void {
   // 'skelm' meta-package; fall back to one with '@skelm/core'.
   const searchRoots: string[] = []
   if (typeof process.argv[1] === 'string') {
-    // Use the literal argv[1] path (do NOT resolve symlinks — the shim
-    // node_modules/.bin/skelm points into the consumer's node_modules,
-    // which is exactly where 'skelm' is installed).
-    searchRoots.push(dirname(process.argv[1]))
+    // Use the literal argv[1] path first — the shim node_modules/.bin/skelm
+    // points into the consumer's node_modules, which is exactly where 'skelm'
+    // is installed. Also add the real path for cases where argv[1] is a
+    // standalone symlink in e.g. ~/.local/bin (not a node_modules shim).
+    const literal = dirname(process.argv[1])
+    searchRoots.push(literal)
+    try {
+      const real = dirname(realpathSync(process.argv[1]))
+      if (real !== literal) searchRoots.push(real)
+    } catch {
+      /* best-effort */
+    }
   }
+  // Also search from cwd — when the gateway is started from a project
+  // directory that has its own node_modules/skelm (e.g. the self-test repo),
+  // that is the correct place to link from.
+  searchRoots.push(process.cwd())
   searchRoots.push(dirname(fileURLToPath(import.meta.url)))
 
   let bestWithSkelm: string | undefined
