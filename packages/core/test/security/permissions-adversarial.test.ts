@@ -135,6 +135,59 @@ describe('permission enforcement — adversarial', () => {
       ]),
     )
   })
+
+  it('names the tool-class dimensions when a toolPermissions:unsupported backend is asked to enforce them', async () => {
+    // Regression: the pre-flight refusal for an `'unsupported'` backend used to
+    // throw a generic "cannot enforce declared permissions" message that did
+    // not name what could not be enforced — unlike the backend's own
+    // defense-in-depth refusal. A non-empty grant (allowedTools/fsRead) survives
+    // into the resolved policy and trips this pre-flight path, so the surfaced
+    // message must state the capability boundary explicitly.
+    const registry = new BackendRegistry()
+    const backend: SkelmBackend = {
+      id: 'pi',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'unsupported',
+      },
+      async run() {
+        // Should never run: the pre-flight capability check refuses first.
+        return { text: 'should not reach' }
+      },
+    }
+    registry.register(backend)
+
+    const run = await runPipeline(
+      pipeline({
+        id: 'unsupported-named-dimensions',
+        steps: [
+          agent({
+            id: 'step',
+            backend: 'pi',
+            prompt: 'go',
+            permissions: {
+              allowedTools: ['fs.read'],
+              fsRead: ['./'],
+              networkEgress: 'deny',
+            },
+          }),
+        ],
+      }),
+      undefined,
+      { backends: registry },
+    )
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('BackendCapabilityError')
+    expect(run.error?.message).toMatch(
+      /cannot enforce tool, executable, filesystem, MCP, or skill permissions/,
+    )
+  })
 })
 
 function workflow(prompt: string) {
