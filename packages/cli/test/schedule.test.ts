@@ -1,8 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createServer as createNetServer } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Gateway } from '@skelm/gateway'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { EXIT } from '../src/exit-codes.js'
@@ -218,6 +219,66 @@ describe('skelm schedule — CLI smoke', () => {
       await gw.stop()
     }
   })
+
+  // F044 follow-up: `skelm run <path>` accepts any on-disk workflow file, but
+  // `schedule add <path>` used to reject a file that lived outside the
+  // registry glob with "workflow not registered" — even though the file
+  // existed — leaving the schedule un-creatable. The CLI now registers such a
+  // file with the gateway and schedules against the resulting registry id.
+  it('add <file-path> auto-registers a workflow outside the glob and schedules it', async () => {
+    const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
+    // Glob discovers only project/workflows/*.workflow.mts, so the registry is
+    // non-empty but hello.workflow.mts (directly under fixtures) is NOT in it.
+    const gw = await startGatewayOnFreePort(stateDir, {
+      projectRoot: fixtures,
+      config: { registries: { workflows: { glob: 'project/workflows/**/*.workflow.mts' } } },
+      loadWorkflow: true,
+    })
+    try {
+      const helloPath = join(fixtures, 'hello.workflow.mts')
+      const added = await invoke([
+        'schedule',
+        'add',
+        helloPath,
+        '--id',
+        'hello-sched',
+        '--cron',
+        '0 * * * *',
+        '--json',
+      ])
+      expect(added.exitCode).toBe(EXIT.OK)
+      const schedule = JSON.parse(added.stdout) as { id: string; workflowId: string }
+      expect(schedule.id).toBe('hello-sched')
+      // Resolves to a registry id the dispatcher can later load (the path
+      // relative to the CLI's cwd) rather than failing "workflow not
+      // registered". The exact prefix depends on cwd; what matters is it is a
+      // relative registry id, not the bare absolute path the user typed.
+      expect(schedule.workflowId.endsWith('hello.workflow.mts')).toBe(true)
+      expect(schedule.workflowId.startsWith('/')).toBe(false)
+
+      // The file is now a registered workflow, so a manual fire dispatches it
+      // instead of erroring "workflow not registered".
+      const fired = await invoke(['schedule', 'fire', 'hello-sched'])
+      expect(fired.exitCode).toBe(EXIT.OK)
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('add rejects an unknown id with no backing file', async () => {
+    const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
+    const gw = await startGatewayOnFreePort(stateDir, {
+      projectRoot: fixtures,
+      config: { registries: { workflows: { glob: 'project/workflows/**/*.workflow.mts' } } },
+    })
+    try {
+      const result = await invoke(['schedule', 'add', 'no-such-workflow.ts', '--cron', '0 * * * *'])
+      expect(result.exitCode).toBe(EXIT.CLI_ERROR)
+      expect(result.stderr).toContain('workflow not registered')
+    } finally {
+      await gw.stop()
+    }
+  })
 })
 
 interface InvokeResult {
@@ -276,7 +337,10 @@ async function pickFreePort(): Promise<number> {
  * loses with `Error: listen EADDRINUSE`. Retrying with a fresh pick removes
  * the flake while keeping the test against a real HTTP server.
  */
-async function startGatewayOnFreePort(stateDir: string): Promise<Gateway> {
+async function startGatewayOnFreePort(
+  stateDir: string,
+  extra: { projectRoot?: string; config?: Record<string, unknown>; loadWorkflow?: boolean } = {},
+): Promise<Gateway> {
   const MAX_ATTEMPTS = 6
   let lastErr: unknown
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -287,7 +351,11 @@ async function startGatewayOnFreePort(stateDir: string): Promise<Gateway> {
       enableHttp: true,
       httpPort: port,
       url: `http://127.0.0.1:${port}`,
-      config: {},
+      config: extra.config ?? {},
+      ...(extra.projectRoot !== undefined && { projectRoot: extra.projectRoot }),
+      ...(extra.loadWorkflow === true && {
+        loadWorkflow: async (_id: string, abs: string) => await import(pathToFileURL(abs).href),
+      }),
     })
     try {
       await gw.start()
