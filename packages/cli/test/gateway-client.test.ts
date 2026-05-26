@@ -1,10 +1,12 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  defaultStateDir,
   detectServiceManager,
+  findFreePort,
   gatewayStateDir,
   isServiceInstalled,
   loadDiscovery,
@@ -38,6 +40,27 @@ afterEach(async () => {
 describe('gateway-client', () => {
   it('gatewayStateDir honors SKELM_STATE_DIR', () => {
     expect(gatewayStateDir()).toBe(stateDir)
+  })
+
+  it('defaultStateDir is ~/.skelm and differs from a custom SKELM_STATE_DIR', () => {
+    expect(defaultStateDir()).toBe(join(homedir(), '.skelm'))
+    // The auto-start free-port path keys off this inequality: a custom state
+    // dir must NOT be treated as the default (else it would reuse the fixed port).
+    expect(stateDir).not.toBe(defaultStateDir())
+  })
+
+  it('findFreePort returns distinct, bindable ports for ad-hoc gateways', async () => {
+    const a = await findFreePort()
+    const b = await findFreePort()
+    expect(a).toBeGreaterThan(0)
+    expect(b).toBeGreaterThan(0)
+    // Must actually be bindable (the port is released before we return it).
+    const { createServer } = await import('node:net')
+    await new Promise<void>((resolve, reject) => {
+      const srv = createServer()
+      srv.once('error', reject)
+      srv.listen(a, '127.0.0.1', () => srv.close(() => resolve()))
+    })
   })
 
   it('detectServiceManager returns a valid value for the host', () => {
