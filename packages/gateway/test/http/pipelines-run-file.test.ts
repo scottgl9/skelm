@@ -14,6 +14,11 @@ const HELLO_FIXTURE = join(
   dirname(fileURLToPath(import.meta.url)),
   '../../../cli/test/fixtures/hello.workflow.mts',
 )
+// A workflow that parks at wait() with no timeout — drives the resume path.
+const WAIT_FIXTURE = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../cli/test/fixtures/wait.workflow.mts',
+)
 
 let stateDir: string
 let projectRoot: string
@@ -113,6 +118,100 @@ describe('POST /pipelines/run-file', () => {
       body: JSON.stringify({ file: path }),
     })
     expect(res.status).toBe(422)
+  })
+})
+
+describe('POST /runs', () => {
+  it('starts an ad-hoc run by pipelinePath and returns runId immediately', async () => {
+    const startRes = await fetch(`${base}/runs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pipelinePath: HELLO_FIXTURE, input: { name: 'runs' } }),
+    })
+    expect(startRes.status).toBe(200)
+    const { runId, status, pipelineId } = await startRes.json()
+    expect(status).toBe('running')
+    expect(runId).toMatch(/[a-f0-9-]{36}/)
+    expect(pipelineId).toBe('hello-fixture')
+
+    const deadline = Date.now() + 5_000
+    let finalState: { status?: string; output?: unknown } | null = null
+    while (Date.now() < deadline) {
+      const r = await fetch(`${base}/runs/${runId}`)
+      if (r.ok) {
+        finalState = await r.json()
+        if (finalState?.status === 'completed' || finalState?.status === 'failed') break
+      }
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    expect(finalState?.status).toBe('completed')
+    expect(finalState?.output).toEqual({ greeting: 'hello, runs' })
+  })
+
+  it('parks at wait() then resumes to completion via POST /runs/:id/resume with {input}', async () => {
+    const startRes = await fetch(`${base}/runs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pipelinePath: WAIT_FIXTURE, input: {} }),
+    })
+    expect(startRes.status).toBe(200)
+    const { runId } = await startRes.json()
+
+    // Poll until the run parks at the wait() step.
+    const waitDeadline = Date.now() + 5_000
+    let parked = false
+    while (Date.now() < waitDeadline) {
+      const r = await fetch(`${base}/runs/${runId}`)
+      if (r.ok) {
+        const state = await r.json()
+        if (state?.waiting !== undefined) {
+          parked = true
+          break
+        }
+      }
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    expect(parked).toBe(true)
+
+    // Resume using the `input` alias (not the documented `output` field).
+    const resumeRes = await fetch(`${base}/runs/${runId}/resume`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ input: { approved: true } }),
+    })
+    expect(resumeRes.status).toBe(200)
+    expect((await resumeRes.json()).resumed).toBe(true)
+
+    const deadline = Date.now() + 5_000
+    let finalState: { status?: string; output?: unknown } | null = null
+    while (Date.now() < deadline) {
+      const r = await fetch(`${base}/runs/${runId}`)
+      if (r.ok) {
+        finalState = await r.json()
+        if (finalState?.status === 'completed' || finalState?.status === 'failed') break
+      }
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    expect(finalState?.status).toBe('completed')
+    expect(finalState?.output).toEqual({ approved: true })
+  })
+
+  it('rejects a relative pipelinePath with 400', async () => {
+    const res = await fetch(`${base}/runs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pipelinePath: 'relative/path.pipeline.ts' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects a missing pipelinePath with 404', async () => {
+    const res = await fetch(`${base}/runs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pipelinePath: join(projectRoot, 'nope.pipeline.ts') }),
+    })
+    expect(res.status).toBe(404)
   })
 })
 

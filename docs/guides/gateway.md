@@ -176,10 +176,11 @@ Plus the routes the CLI dispatches to, which the refactor added:
 | `/pipelines/run-file` | POST | Sync ad-hoc execution by absolute workflow path. Body: `{ file, input? }`. |
 | `/pipelines/start-file` | POST | Async ad-hoc start; returns `{ runId, pipelineId }` immediately. |
 | `/pipelines/describe-file` | POST | Compile + describe a workflow file (no run). |
+| `/runs` | POST | Async ad-hoc start by absolute workflow path. Body: `{ pipelinePath, input? }`; returns `{ runId, pipelineId, status }`. Sibling of `/pipelines/start-file`. |
 | `/runs/:runId` | GET | Run state. Includes `waiting` while parked at a `wait()` step. |
 | `/runs/:runId/events` | GET | Persisted event log. Clamped to `?limit=1000` (hard cap 5000); use `?since=` for incremental tailing. |
 | `/runs/:runId/stream` | GET | Live SSE stream (replay-then-tail, explicit `flushHeaders`, 15s heartbeat). |
-| `/runs/:runId/resume` | POST | Body: `{ output }`. Resumes a `wait()` step. |
+| `/runs/:runId/resume` | POST | Body: `{ output }` (or `{ input }` as an alias). Resumes a `wait()` step. |
 | `/audit`, `/audit/verify` | GET | Chain reader and verifier. |
 | `/workspaces`, `/workspaces/:wf/:name` | GET, DELETE | Persistent workspace inventory. |
 | `/secrets` | GET | Names only (no values). |
