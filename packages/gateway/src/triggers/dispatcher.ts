@@ -88,10 +88,7 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         signal: controller.signal,
         workflowPath,
         triggerId: ctx.triggerId,
-        registerEgressToken: (runId, stepId, policy) =>
-          opts.gateway.registerEgressToken(runId, stepId, policy),
-        unregisterEgressToken: (runId, stepId) => opts.gateway.unregisterEgressToken(runId, stepId),
-        getProxyEnv: (egressToken) => opts.gateway.getProxyEnvVars(egressToken),
+        ...opts.gateway.egressRunOptions(),
         beforeStep: async (info) => {
           if (breakpoints.has(info.stepId)) {
             await breakpoints.pause({ runId: info.runId, stepId: info.stepId, kind: info.kind })

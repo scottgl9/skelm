@@ -161,6 +161,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
             workflowPath: entry.path,
           }),
           pipelineRegistry: makeGatewayPipelineRegistry(gateway),
+          ...gateway.egressRunOptions(),
         })
         const finalState = await handle.wait()
         if (idemKey !== null) idempotency.set(`${id}:${idemKey}`, finalState.runId)
@@ -241,6 +242,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
             workflowPath: filePath,
           }),
           pipelineRegistry: makeGatewayPipelineRegistry(gateway),
+          ...gateway.egressRunOptions(),
         })
         const finalState = await handle.wait()
         return {
@@ -300,6 +302,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
             workflowPath: filePath,
           }),
           pipelineRegistry: makeGatewayPipelineRegistry(gateway),
+          ...gateway.egressRunOptions(),
         })
       } catch (err) {
         gateway.unregisterRun(runId)

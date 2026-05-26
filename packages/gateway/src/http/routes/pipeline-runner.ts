@@ -61,6 +61,7 @@ export async function runPipelineSync(
         registry: gateway.registries.skills,
         workflowPath: entry.path,
       }),
+      ...gateway.egressRunOptions(),
     })
     const final = await handle.wait()
     return {
