@@ -1,5 +1,3 @@
-import { join } from 'node:path'
-import { WorkspaceManager } from '@skelm/core'
 import { type Router, createError, eventHandler } from 'h3'
 import type { Gateway } from '../../lifecycle/gateway.js'
 import { decodeMaybe } from './utils.js'
@@ -14,11 +12,13 @@ import { decodeMaybe } from './utils.js'
  * The CLI used to construct WorkspaceManager locally and call into it;
  * those code paths now route through here so the gateway owns the
  * persistent-base directory and any related locks.
+ *
+ * Reuses the gateway's shared WorkspaceManager (the same instance the
+ * per-request Runners use) so a persistent workspace created by a run and the
+ * workspace these routes list/show/clean resolve to one base directory.
  */
 export function registerWorkspaceRoutes(router: Router, gateway: Gateway): void {
-  const manager = new WorkspaceManager({
-    persistentBase: join(gateway.stateDir, 'workspaces'),
-  })
+  const manager = gateway.workspaceManager
 
   router.get(
     '/workspaces',

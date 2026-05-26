@@ -16,6 +16,7 @@ import {
   type SecretResolver,
   type SkelmConfig,
   SqliteRunStore,
+  WorkspaceManager,
 } from '@skelm/core'
 import { SuspendApprovalGate } from '../approvals/suspend-gate.js'
 import { ChainAuditWriter } from '../audit/chain.js'
@@ -79,6 +80,7 @@ export class Gateway {
   private enforcementInternal: GatewayEnforcement | null = null
   private managersInternal: GatewayManagers | null = null
   private runStoreInternal: RunStore | null = null
+  private workspaceManagerInternal: WorkspaceManager | null = null
   private httpServer: SkelmServer | null = null
   private egressProxy: EgressProxy | null = null
   private tokenPolicyStore: TokenPolicyMap | null = null
@@ -165,6 +167,25 @@ export class Gateway {
   /** The durable RunStore; constructed at start() per the storage config. */
   get runStore(): RunStore {
     return requireStarted(this.runStoreInternal, 'gateway runStore is not available')
+  }
+
+  /**
+   * The single WorkspaceManager every per-request Runner the gateway builds
+   * must share, scoped to `<stateDir>/workspaces`. The `/workspaces` routes
+   * (list/show/clean) read from this same base, so a persistent workspace a
+   * run creates is visible to those routes. Without threading this into the
+   * Runner, the runner falls back to its own default base (`~/.skelm/workspaces`)
+   * and the two diverge under any non-default gateway state dir — the workspace
+   * exists on disk but `skelm workspace list/show/clean` can't see it. Lazily
+   * constructed and cached so all callers share one instance (one lock domain).
+   */
+  get workspaceManager(): WorkspaceManager {
+    if (this.workspaceManagerInternal === null) {
+      this.workspaceManagerInternal = new WorkspaceManager({
+        persistentBase: join(this.stateDir, 'workspaces'),
+      })
+    }
+    return this.workspaceManagerInternal
   }
 
   /** Shared backend registry as passed via GatewayOptions; undefined when
@@ -357,6 +378,7 @@ export class Gateway {
       auditWriter: enforcement.auditWriter,
       store: this.runStore,
       events: this.events,
+      workspaceManager: this.workspaceManager,
       ...(this.options.backends !== undefined && { backends: this.options.backends }),
     })
     this.attachMetricsBus(runner.events)
