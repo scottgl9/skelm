@@ -1,3 +1,4 @@
+import { type SkelmAgentOptions, createSkelmAgentBackend } from '@skelm/agent'
 import { type CodexBackendOptions, createCodexBackend } from '@skelm/codex'
 import {
   BackendRegistry,
@@ -180,6 +181,27 @@ function createBackend(backendId: string, config: SkelmConfig, secretResolver?: 
         ...(model !== undefined && { model }),
         ...(secretResolver !== undefined && { secretResolver }),
       })
+    }
+    // Declarative id is 'skelm-agent', not 'agent': the bare `agent` key in
+    // `backends:` is a reserved selector (which backend agent steps default to),
+    // so it never reaches string-keyed registration.
+    case 'skelm-agent': {
+      // @skelm/agent takes a plain apiKey (no lazy secretResolver), so resolve eagerly.
+      const directApiKey = readString(entry.apiKey)
+      const resolvedApiKey = directApiKey ?? resolveSecret(entry.apiKey)
+      const baseUrl = readString(entry.baseUrl)
+      const model = readString(entry.model)
+      const timeoutMs = readNumber(entry.timeoutMs)
+      const maxTokens = readNumber(entry.maxTokens)
+      const vision = typeof entry.vision === 'boolean' ? entry.vision : undefined
+      const opts: SkelmAgentOptions = { id: backendId }
+      if (resolvedApiKey !== undefined) opts.apiKey = resolvedApiKey
+      if (baseUrl !== undefined) opts.baseUrl = baseUrl
+      if (model !== undefined) opts.model = model
+      if (timeoutMs !== undefined) opts.timeoutMs = timeoutMs
+      if (maxTokens !== undefined) opts.maxTokens = maxTokens
+      if (vision !== undefined) opts.vision = vision
+      return createSkelmAgentBackend(opts)
     }
     case 'opencode': {
       const apiKey = entry.apiKey as string | { secret: string } | undefined
