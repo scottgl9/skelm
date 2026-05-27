@@ -112,6 +112,7 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
           workflowPath,
           triggerId: ctx.triggerId,
           unrestrictedGrant: opts.gateway.isUnrestrictedGranted(ctx.workflowId),
+          ...opts.gateway.defaultPermissionRunOptions(),
           ...opts.gateway.egressRunOptions(),
           ...opts.gateway.agentmemoryRunOptions(),
           beforeStep: async (info) => {

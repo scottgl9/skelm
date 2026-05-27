@@ -3,12 +3,15 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  type AgentPermissions,
   type BackendContext,
   BackendRegistry,
   type PersistentSessionRecord,
   type SkelmBackend,
+  agent,
   loadSession,
   persistentAgent,
+  pipeline,
 } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Gateway, InMemoryQueueDriver, createTriggerDispatcher } from '../src/index.js'
@@ -17,6 +20,7 @@ interface SeenTurn {
   prompt: string
   system?: string
   unrestricted?: boolean
+  allowedExecutables?: string[]
 }
 
 // Echo backend: returns the prompt as text and records the system prompt +
@@ -40,6 +44,7 @@ function echoBackend(seen: SeenTurn[]): SkelmBackend {
         prompt: typeof request.prompt === 'string' ? request.prompt : '',
         ...(request.system !== undefined && { system: request.system }),
         unrestricted: context.permissions?.unrestricted === true,
+        allowedExecutables: [...(context.permissions?.allowedExecutables ?? [])],
       })
       return { text: `echo:${typeof request.prompt === 'string' ? request.prompt : ''}` }
     },
@@ -74,9 +79,11 @@ async function bootGateway(opts: {
   audit: AuditEntry[]
   agentModule: unknown
   unrestrictedGrants?: readonly string[]
+  defaultPermissions?: AgentPermissions
 }): Promise<Gateway> {
   const registry = new BackendRegistry()
   registry.register(echoBackend(opts.seen))
+  const hasDefaults = opts.unrestrictedGrants !== undefined || opts.defaultPermissions !== undefined
   const gw = new Gateway({
     stateDir,
     projectRoot,
@@ -89,8 +96,13 @@ async function bootGateway(opts: {
     },
     config: {
       registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
-      ...(opts.unrestrictedGrants !== undefined && {
-        defaults: { unrestrictedGrants: opts.unrestrictedGrants },
+      ...(hasDefaults && {
+        defaults: {
+          ...(opts.unrestrictedGrants !== undefined && {
+            unrestrictedGrants: opts.unrestrictedGrants,
+          }),
+          ...(opts.defaultPermissions !== undefined && { permissions: opts.defaultPermissions }),
+        },
       }),
     },
     loadWorkflow: async () => opts.agentModule,
@@ -230,6 +242,58 @@ describe('persistent-agent dispatch', () => {
 
     expect(seen[0]?.unrestricted).toBe(true)
     expect(audit.some((e) => e.action === 'permission.bypassed')).toBe(true)
+    await gw.stop()
+  })
+
+  it('applies config.defaults.permissions as an intersection ceiling on a persistent turn', async () => {
+    const seen: SeenTurn[] = []
+    const audit: AuditEntry[] = []
+    const bot = persistentAgent<{ chatId: string; text: string }>({
+      id: 'bot',
+      backend: 'echo',
+      permissions: { allowedExecutables: ['git', 'rm'] },
+      sessionKey: (p) => p.chatId,
+    })
+    const gw = await bootGateway({
+      seen,
+      audit,
+      agentModule: { default: bot },
+      defaultPermissions: { allowedExecutables: ['git'] }, // operator ceiling
+    })
+    const driver = wireQueue(gw)
+    driver.push({ chatId: 'c1', text: 'hi' })
+    await new Promise((r) => setTimeout(r, 80))
+
+    // The agent asked for git+rm; the operator ceiling is git-only ⇒ intersect to git.
+    expect(seen[0]?.allowedExecutables).toEqual(['git'])
+    await gw.stop()
+  })
+
+  it('applies config.defaults.permissions to a gateway-run pipeline (the previously-dormant gap)', async () => {
+    const seen: SeenTurn[] = []
+    const audit: AuditEntry[] = []
+    const wf = pipeline({
+      id: 'echo-pipeline',
+      steps: [
+        agent({
+          id: 'a',
+          backend: 'echo',
+          prompt: 'hi',
+          permissions: { allowedExecutables: ['git', 'rm'] },
+        }),
+      ],
+    })
+    const gw = await bootGateway({
+      seen,
+      audit,
+      agentModule: { default: wf },
+      defaultPermissions: { allowedExecutables: ['git'] },
+    })
+    const driver = wireQueue(gw)
+    driver.push({ chatId: 'c1', text: 'hi' })
+    await new Promise((r) => setTimeout(r, 80))
+
+    expect(seen[0]?.allowedExecutables).toEqual(['git'])
     await gw.stop()
   })
 })
