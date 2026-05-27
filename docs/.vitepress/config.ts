@@ -83,6 +83,7 @@ export default defineConfig({
           text: 'Recipes',
           items: [
             { text: 'All Recipes', link: '/recipes/' },
+            { text: 'Telegram Persistent Agent', link: '/recipes/telegram-persistent-agent' },
             { text: 'Coding Agent on Chat', link: '/recipes/coding-agent-on-chat' },
             { text: 'Ticket to PR', link: '/recipes/ticket-to-pr' },
             { text: 'Email Triage', link: '/recipes/email-triage' },
