@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+
+- **`@skelm/agent` is now bundled with the CLI.** `@skelm/cli` depends on the first-party agent backend, so installing the `skelm` meta-package pulls it in automatically alongside the `codex`, `opencode`, and `pi` backends. Reference it declaratively under the `skelm-agent` id: `backends: { 'skelm-agent': { baseUrl, apiKey, model?, maxTokens?, timeoutMs?, vision? }, agent: 'skelm-agent' }` (the bare `agent` key is a reserved selector, so the backend definition uses `skelm-agent`). The `apiKey` accepts a literal or an `{ secret: "ENV_NAME" }` reference, resolved eagerly since the agent backend takes a plain key.
+
 ## [0.4.4] - 2026-05-26
 
 ### Breaking Changes

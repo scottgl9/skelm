@@ -82,6 +82,64 @@ describe('buildBackendRegistry', () => {
       await server.close()
     }
   })
+  it('registers the bundled @skelm/agent backend from config and sends its apiKey', async () => {
+    const server = await startJsonServer(async (_body, headers) => {
+      expect(headers.authorization).toBe('Bearer agent-key')
+      return { choices: [{ message: { content: 'ok' } }] }
+    })
+
+    try {
+      const registry = await buildBackendRegistry({
+        backends: {
+          'skelm-agent': {
+            baseUrl: server.baseUrl,
+            apiKey: 'agent-key',
+          },
+        },
+      } satisfies SkelmConfig)
+
+      const backend = registry?.resolveForLlm({ backendId: 'skelm-agent' })
+      expect(backend).toBeDefined()
+      const response = await backend?.infer?.(
+        { messages: [{ role: 'user', content: 'hello' }] },
+        { signal: new AbortController().signal },
+      )
+
+      expect(response?.text).toBe('ok')
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('resolves the @skelm/agent apiKey from an env secret reference', async () => {
+    process.env.SKELM_AGENT_TEST_KEY = 'env-resolved-key'
+    const server = await startJsonServer(async (_body, headers) => {
+      expect(headers.authorization).toBe('Bearer env-resolved-key')
+      return { choices: [{ message: { content: 'ok' } }] }
+    })
+
+    try {
+      const registry = await buildBackendRegistry({
+        backends: {
+          'skelm-agent': {
+            baseUrl: server.baseUrl,
+            apiKey: { secret: 'SKELM_AGENT_TEST_KEY' },
+          },
+        },
+      } satisfies SkelmConfig)
+
+      const backend = registry?.resolveForLlm({ backendId: 'skelm-agent' })
+      const response = await backend?.infer?.(
+        { messages: [{ role: 'user', content: 'hello' }] },
+        { signal: new AbortController().signal },
+      )
+
+      expect(response?.text).toBe('ok')
+    } finally {
+      await server.close()
+      process.env.SKELM_AGENT_TEST_KEY = undefined
+    }
+  })
 })
 
 async function startJsonServer(

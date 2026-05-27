@@ -35,6 +35,7 @@
     "prepublishOnly": "node ../../scripts/guards/dist-invariants.ts"
   },
   "dependencies": {
+    "@skelm/agent": "workspace:*",
     "@skelm/codex": "workspace:*",
     "@skelm/core": "workspace:*",
     "@skelm/opencode": "workspace:*",
