@@ -17,6 +17,12 @@ export interface ExecutionRuntime {
   readonly store?: RunStore
   readonly defaultPermissions?: AgentPermissions
   readonly permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+  /**
+   * Operator grant for the unrestricted bypass, supplied only by the trust
+   * boundary (gateway). When true, an agent/code step whose resolved policy
+   * requested the bypass runs `unrestricted`. Never derived from author input.
+   */
+  readonly unrestrictedGrant?: boolean
   readonly approvalGate?: ApprovalGate
   readonly skillSource?: (skillId: string) => Promise<Skill | null>
   readonly secretResolver?: SecretResolver

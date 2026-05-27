@@ -317,6 +317,21 @@ trigger.error  { triggerId, message }
 
 [`examples/telegram-bot/`](https://github.com/scottgl9/skelm/tree/main/examples/telegram-bot) is the canonical worked example: pipeline declares the trigger, config registers the source, `skelm gateway start` runs the loop and dispatches each inbound message into a workflow run with the message as input. The agent's reply is posted back via the source's `onResult`.
 
+## Triggers that drive a persistent agent
+
+A trigger's `workflowId` can resolve to a [persistent agent](/concepts/persistent-agents) instead of a pipeline. The declaration is identical — a persistent agent exposes the same `triggers` array — but the gateway routes the fire to a single durable conversational *turn* rather than a fresh pipeline run:
+
+```ts
+export default persistentAgent({
+  id: 'support-bot',
+  backend: 'pi',
+  triggers: [{ kind: 'queue', sourceId: 'telegram' }],
+  sessionKey: (msg) => msg.chatId,
+})
+```
+
+A `queue` trigger turns each inbound message into a turn (with the reply posted via `onResult`); a `cron`/`interval` trigger drives proactive turns. The conversation for each `sessionKey` is durable across fires and restarts.
+
 ## Wiring directly (without pipeline declarations)
 
 For programmatic control or tests:

@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
-import { type BackendRegistry, Runner } from '@skelm/core'
+import { type BackendRegistry, Runner, isPersistentAgent } from '@skelm/core'
 import { makeGatewayPipelineRegistry } from '../http/routes/utils.js'
 import type { Gateway } from '../lifecycle/gateway.js'
+import { runPersistentTurn } from './persistent-turn.js'
 import type { FireContext, RunCallback } from './types.js'
 
 /**
@@ -62,43 +63,68 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         throw new Error(`workflow not registered: ${ctx.workflowId}`)
       }
       const exported = await opts.loadWorkflow(ctx.workflowId, workflowPath)
-      const pipeline = isPipelineish(exported) ? exported : extractDefault(exported)
-      if (pipeline === undefined) {
-        throw new Error(`workflow ${ctx.workflowId} did not export a default pipeline`)
+
+      // Persistent agents are not pipelines: a fire runs one enforced turn that
+      // loads/saves a durable conversation rather than a fresh pipeline run. The
+      // turn runner owns its own Run registration, so `runId` stays null here.
+      let output: unknown
+      const target = isPersistentAgent(exported) ? exported : extractDefault(exported)
+      const persistentTarget = isPersistentAgent(target)
+        ? (target as Parameters<typeof runPersistentTurn>[0]['agent'])
+        : undefined
+      if (persistentTarget !== undefined) {
+        const turn = await runPersistentTurn({
+          gateway: opts.gateway,
+          agent: persistentTarget,
+          payload: ctx.payload,
+          triggerId: ctx.triggerId,
+          ...(opts.backends !== undefined && { backends: opts.backends }),
+        })
+        output = turn.output
+      } else {
+        const pipeline = isPipelineish(exported) ? exported : extractDefault(exported)
+        if (pipeline === undefined) {
+          throw new Error(`workflow ${ctx.workflowId} did not export a default pipeline`)
+        }
+        const enforcement = opts.gateway.enforcement
+        const runner = new Runner({
+          approvalGate: enforcement.approvalGate,
+          secretResolver: enforcement.secretResolver,
+          auditWriter: enforcement.auditWriter,
+          store: opts.gateway.runStore,
+          workspaceManager: opts.gateway.workspaceManager,
+          ...(opts.backends !== undefined && { backends: opts.backends }),
+        })
+        // Feed step events into the metrics collector if enabled.
+        opts.gateway.attachMetricsBus(runner.events)
+        opts.gateway.metrics?.recordTriggerFire(ctx.triggerId)
+        const controller = new AbortController()
+        runId = crypto.randomUUID()
+        opts.gateway.registerRun(runId, controller, runner)
+        const breakpoints = opts.gateway.breakpoints
+        const pipelineInput =
+          ctx.payload !== undefined
+            ? ctx.payload
+            : { triggerId: ctx.triggerId, firedAt: ctx.firedAt }
+        const handle = runner.start(pipeline as Parameters<Runner['start']>[0], pipelineInput, {
+          runId,
+          signal: controller.signal,
+          workflowPath,
+          triggerId: ctx.triggerId,
+          unrestrictedGrant: opts.gateway.isUnrestrictedGranted(ctx.workflowId),
+          ...opts.gateway.egressRunOptions(),
+          ...opts.gateway.agentmemoryRunOptions(),
+          beforeStep: async (info) => {
+            if (breakpoints.has(info.stepId)) {
+              await breakpoints.pause({ runId: info.runId, stepId: info.stepId, kind: info.kind })
+            }
+          },
+          pipelineRegistry: makeGatewayPipelineRegistry(opts.gateway),
+        })
+        const result = await handle.wait()
+        output = (result as { output?: unknown }).output
       }
-      const enforcement = opts.gateway.enforcement
-      const runner = new Runner({
-        approvalGate: enforcement.approvalGate,
-        secretResolver: enforcement.secretResolver,
-        auditWriter: enforcement.auditWriter,
-        store: opts.gateway.runStore,
-        workspaceManager: opts.gateway.workspaceManager,
-        ...(opts.backends !== undefined && { backends: opts.backends }),
-      })
-      // Feed step events into the metrics collector if enabled.
-      opts.gateway.attachMetricsBus(runner.events)
-      opts.gateway.metrics?.recordTriggerFire(ctx.triggerId)
-      const controller = new AbortController()
-      runId = crypto.randomUUID()
-      opts.gateway.registerRun(runId, controller, runner)
-      const breakpoints = opts.gateway.breakpoints
-      const pipelineInput =
-        ctx.payload !== undefined ? ctx.payload : { triggerId: ctx.triggerId, firedAt: ctx.firedAt }
-      const handle = runner.start(pipeline as Parameters<Runner['start']>[0], pipelineInput, {
-        runId,
-        signal: controller.signal,
-        workflowPath,
-        triggerId: ctx.triggerId,
-        ...opts.gateway.egressRunOptions(),
-        ...opts.gateway.agentmemoryRunOptions(),
-        beforeStep: async (info) => {
-          if (breakpoints.has(info.stepId)) {
-            await breakpoints.pause({ runId: info.runId, stepId: info.stepId, kind: info.kind })
-          }
-        },
-        pipelineRegistry: makeGatewayPipelineRegistry(opts.gateway),
-      })
-      const result = await handle.wait()
+
       // If the trigger came from a queue driver that wants to react to the
       // run's output (e.g. post a reply), invoke its onResult hook.
       const reg = opts.gateway.managers.triggers.get(ctx.triggerId)
@@ -107,7 +133,7 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         const driver = opts.gateway.managers.triggers.getQueueDriver(driverId)
         if (driver?.onResult !== undefined) {
           try {
-            await driver.onResult(ctx.payload, (result as { output?: unknown }).output)
+            await driver.onResult(ctx.payload, output)
           } catch (err) {
             opts.onError?.(err as Error, ctx)
           }
@@ -134,6 +160,6 @@ function isPipelineish(value: unknown): value is { steps: readonly unknown[] } {
 function extractDefault(mod: unknown): unknown {
   if (typeof mod !== 'object' || mod === null) return undefined
   const m = mod as Record<string, unknown>
-  if (isPipelineish(m.default)) return m.default
+  if (isPipelineish(m.default) || isPersistentAgent(m.default)) return m.default
   return undefined
 }

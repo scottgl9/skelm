@@ -168,6 +168,23 @@ export class Gateway {
     return this.config
   }
 
+  /**
+   * Whether a workflow / persistent-agent id is granted the unrestricted
+   * permission bypass. The grant is operator-side only — the union of
+   * `config.defaults.unrestrictedGrants` and the comma-separated env var
+   * `SKELM_UNRESTRICTED_WORKFLOWS`. An author's `requestUnrestricted` is inert
+   * unless this returns true. See `docs/concepts/permissions.md`.
+   */
+  isUnrestrictedGranted(workflowId: string): boolean {
+    const fromConfig = this.config.defaults?.unrestrictedGrants ?? []
+    if (fromConfig.includes(workflowId)) return true
+    const fromEnv = (process.env.SKELM_UNRESTRICTED_WORKFLOWS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+    return fromEnv.includes(workflowId)
+  }
+
   /** Throws if accessed before start() succeeds or after stop(). */
   get registries(): GatewayRegistries {
     return requireStarted(this.registriesInternal, 'gateway registries are not available')
@@ -630,7 +647,11 @@ export class Gateway {
       if (this.options.loadWorkflow !== undefined) {
         const loadWorkflow = this.options.loadWorkflow
         this.managersInternal.triggers.setOnFire(
-          createTriggerDispatcher({ gateway: this, loadWorkflow }),
+          createTriggerDispatcher({
+            gateway: this,
+            loadWorkflow,
+            ...(this.options.backends !== undefined && { backends: this.options.backends }),
+          }),
         )
       }
       if (this.options.enableMetrics) {
