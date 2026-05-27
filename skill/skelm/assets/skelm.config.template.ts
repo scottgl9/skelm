@@ -84,4 +84,14 @@ export default defineConfig({
     host: '127.0.0.1',
     auth: { mode: 'none' }, // set to 'bearer' with an env-resolved token for remote access
   },
+
+  // Optional cross-session memory via the agentmemory server. Disabled by
+  // default; uncomment + grant ops in defaults.permissions.agentmemory to use.
+  // Run the server with: npx @agentmemory/agentmemory
+  // agentmemory: {
+  //   enabled: true,
+  //   url: 'http://localhost:3111',
+  //   // secretName: 'AGENTMEMORY_SECRET',
+  //   timeoutMs: 3000,
+  // },
 })

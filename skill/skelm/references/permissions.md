@@ -19,6 +19,7 @@ interface AgentPermissions {
   fsRead?: readonly string[]                  // path roots agent may read
   fsWrite?: readonly string[]                 // path roots agent may write
   approval?: ApprovalPolicy                   // gates dimensions on human approval
+  agentmemory?: AgentmemoryPolicy             // per-op gate for the agentmemory integration
 }
 ```
 
@@ -61,6 +62,26 @@ type NetworkPolicy = 'allow' | 'deny' | { allowHosts: readonly string[] }
 - `'allow'` — any outbound request is permitted.
 - `'deny'` — all outbound requests are blocked.
 - `{ allowHosts: ['api.github.com', 'registry.npmjs.org'] }` — hostname allowlist.
+
+## AgentmemoryPolicy
+
+Per-operation gate for the optional [agentmemory](https://github.com/rohitg00/agentmemory) integration (`@skelm/agentmemory`). Default-deny like every other dimension.
+
+```ts
+type AgentmemoryPolicy =
+  | 'deny'                       // disable the whole dimension
+  | {
+      allowObserve?:  boolean    // record tool use / turn outcomes / the user prompt
+      allowSearch?:   boolean    // smart-search recall prepended to the system prompt
+      allowSession?:  boolean    // open / close per-step sessions
+      allowContext?:  boolean    // token-budgeted context block (custom code)
+      allowSave?:     boolean    // explicitly persist an insight (custom code)
+      allowRecall?:   boolean    // recent / by-session retrieval + sessions list (custom code)
+      allowGraph?:    boolean    // knowledge-graph traversal (custom code)
+    }
+```
+
+The integration is **disabled by default at two layers**: the gateway config (`agentmemory.enabled`, default `false`) and these permissions. The automatic backend loop uses `observe`/`search`/`session`; the rest are for custom backend/step code via `ctx.agentmemory`. A step that grants no op receives no handle, so its memory hooks are a silent no-op. See [the agentmemory guide](../../../docs/guides/agentmemory.md).
 
 ## Composition: intersection-only
 

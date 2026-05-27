@@ -163,6 +163,7 @@ The permission model has these dimensions. Every field is optional and defaults 
 | FS read     | `fsRead`                           | Path roots the agent may read                        |
 | FS write    | `fsWrite`                          | Path roots the agent may write                       |
 | Approval    | `approval`                         | `{ on: PermissionDimension[], rememberFor?: number }` — gate dimensions on human approval |
+| Agentmemory | `agentmemory`                      | Per-op gate for the optional [agentmemory](https://github.com/rohitg00/agentmemory) integration: `observe`/`search`/`session`/`context`/`save`/`recall`/`graph`, or `'deny'`. Default-deny; a step with no op granted gets no memory handle at all |
 
 **Composition is intersection-only.** Project defaults → permission profile → step-level permissions. Each layer can only narrow, never widen. If a project default denies network and a step sets `networkEgress: 'allow'`, the resolved policy is still deny.
 

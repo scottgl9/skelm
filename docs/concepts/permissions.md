@@ -35,6 +35,8 @@ In production the **gateway** owns the canonical instances and hands them to eve
 3. An adversarial fixture under `packages/core/test/security/` proves the deny path fires.
 4. The dimension is documented here.
 
+Beyond the core dimensions (tools, executables, MCP servers, skills, secrets, network, filesystem, approval), the `agentmemory` dimension gates the optional [agentmemory integration](/guides/agentmemory) per operation — `observe`/`search`/`session`/`context`/`save`/`recall`/`graph`, or the `'deny'` shorthand. It follows every rule above: omitted ⇒ deny (proven by `packages/core/test/security/agentmemory-default-deny.test.ts`), intersection-only composition, and the gateway hands a step no memory handle at all unless its policy grants an op.
+
 ## Where each piece lives today
 
 | Concern | Phase | Status |
