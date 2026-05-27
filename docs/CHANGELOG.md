@@ -9,6 +9,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Added
 
 - **`@skelm/agent` is now bundled with the CLI.** `@skelm/cli` depends on the first-party agent backend, so installing the `skelm` meta-package pulls it in automatically alongside the `codex`, `opencode`, and `pi` backends. Reference it declaratively under the `skelm-agent` id: `backends: { 'skelm-agent': { baseUrl, apiKey, model?, maxTokens?, timeoutMs?, vision? }, agent: 'skelm-agent' }` (the bare `agent` key is a reserved selector, so the backend definition uses `skelm-agent`). The `apiKey` accepts a literal or an `{ secret: "ENV_NAME" }` reference, resolved eagerly since the agent backend takes a plain key.
+- **First-class agentmemory integration (`@skelm/agentmemory`).** New workspace package shipping a typed REST client and a gateway-wired `AgentmemoryHandle` for the [agentmemory](https://github.com/rohitg00/agentmemory) memory microservice. Direct integration — no MCP shim. Enable via `agentmemory: { enabled: true, url, secretName, timeoutMs }` in `skelm.config.ts`.
+- **New `agentmemory` permission dimension on `AgentPermissions`.** Default-deny, with four per-op flags (`allowObserve`, `allowSearch`, `allowSession`, `allowContext`) and a `'deny'` shorthand. `TrustEnforcer.canUseAgentmemory(op)` returns the standard `EnforceDecision`; denials emit `permission.denied` events under `dimension: 'agentmemory'`.
+- **`BackendContext.agentmemory?: AgentmemoryHandle`.** Gateway injects per step; backends consume unconditionally — the handle internally enforces `canUseAgentmemory` and swallows transport errors as `agentmemory.error` events.
+- **Backend wiring** in `@skelm/agent` (per-tool observe + smart-search recall under a `<memory>` block), `@skelm/codex`, `@skelm/opencode`, `@skelm/vercel-ai`, and `@skelm/pi` (per-turn observe + recall prepended to system prompts).
+- **`docs/guides/agentmemory.md`** with the trust-boundary explanation, config reference, per-backend hook table, and troubleshooting.
 
 ## [0.4.4] - 2026-05-26
 

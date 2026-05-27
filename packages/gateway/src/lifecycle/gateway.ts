@@ -531,9 +531,7 @@ export class Gateway {
           defaultProject,
           runId: ctx.runId,
           stepId: ctx.stepId,
-          ...(eventsBus !== undefined
-            ? { events: (event) => eventsBus.publish(event) }
-            : {}),
+          ...(eventsBus !== undefined ? { events: (event) => eventsBus.publish(event) } : {}),
         })
       },
     }

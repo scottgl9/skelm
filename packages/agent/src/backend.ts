@@ -326,7 +326,8 @@ async function runAgentLoop(
 
     let memoryRecall = ''
     if (agentmemory !== undefined) {
-      const promptText = typeof req.prompt === 'string' ? req.prompt : extractTextFromParts(req.prompt)
+      const promptText =
+        typeof req.prompt === 'string' ? req.prompt : extractTextFromParts(req.prompt)
       if (promptText.length > 0) {
         const recall = await agentmemory.smartSearch({ query: promptText, limit: 5, sessionId })
         if (recall.hits.length > 0) {
