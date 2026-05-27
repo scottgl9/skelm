@@ -2,6 +2,7 @@ value:GitHubApiError
 value:GitHubIntegration
 value:IntegrationBase
 value:IntegrationRegistry
+value:MatrixIntegration
 value:MsGraphIntegration
 value:SlackIntegration
 value:TelegramIntegration
@@ -13,6 +14,7 @@ value:deleteWebhook
 value:getAuthenticatedUser
 value:getMsGraphValidationToken
 value:githubFetch
+value:matrixSyncToInputs
 value:normalizeGitHubPrEvent
 value:postIssueComment
 value:postPullRequestReview
@@ -22,6 +24,7 @@ value:telegramUpdateToInput
 value:verifyGitHubSignature
 value:verifyMsGraphClientState
 value:verifySlackSignature
+type:CreateMatrixTriggerSourceOptions
 type:CreateRemoteTuiTriggerSourceOptions
 type:CreateTelegramTriggerSourceOptions
 type:CreateTuiTriggerSourceOptions
@@ -44,6 +47,12 @@ type:IntegrationClass
 type:IntegrationConfig
 type:JiraConfig
 type:JiraIssueTrigger
+type:MatrixConfig
+type:MatrixMessageInput
+type:MatrixMessageTrigger
+type:MatrixSendMessageOptions
+type:MatrixSyncOptions
+type:MatrixTriggerSource
 type:MsGraphIntegrationType
 type:PostIssueCommentParams
 type:PostPullRequestReviewParams

@@ -328,6 +328,15 @@ telegram.createTriggerSource({
 })
 ```
 
+The [Matrix](https://matrix.org) source has the same gate via `allowedRoomIds` / `allowedUsers`. It also drops the bot's *own* messages (Matrix `/sync` echoes them back) using `credentials.userId`, so a freewheeling agent never replies to itself. See the [Matrix persistent agent](/recipes/matrix-persistent-agent) recipe.
+
+```ts
+matrix.createTriggerSource({
+  dropPending: true,
+  allowedRoomIds: ['!yourroom:example.org'], // only this room may talk to the bot
+})
+```
+
 ## Triggers that drive a persistent workflow
 
 A trigger's `workflowId` can resolve to a [persistent workflow](/concepts/persistent-workflows) instead of a plain pipeline. The declaration is identical — a persistent workflow exposes the same `triggers` array — but the gateway routes the fire through any preamble steps and then to a single durable conversational *turn* rather than a fresh stateless run:

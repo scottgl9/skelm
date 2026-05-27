@@ -219,3 +219,27 @@ export interface TuiConfig extends IntegrationConfig {
   id: 'tui'
   credentials: Record<string, never>
 }
+
+/** Matrix-specific types */
+export interface MatrixConfig extends IntegrationConfig {
+  id: 'matrix'
+  credentials: {
+    /** Homeserver base URL, e.g. https://matrix.example.org */
+    homeserverUrl: string
+    /** Bot access token (Bearer). */
+    accessToken: string
+    /**
+     * The bot's own user id (e.g. @bot:example.org). Used to drop the bot's own
+     * timeline events so it doesn't reply to itself. Resolved via /whoami when omitted.
+     */
+    userId?: string
+  }
+}
+
+export interface MatrixMessageTrigger {
+  eventId: string
+  roomId: string
+  sender: string
+  body: string
+  date: number
+}
