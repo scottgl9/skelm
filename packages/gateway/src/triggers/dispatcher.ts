@@ -90,6 +90,7 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         workflowPath,
         triggerId: ctx.triggerId,
         ...opts.gateway.egressRunOptions(),
+        ...opts.gateway.agentmemoryRunOptions(),
         beforeStep: async (info) => {
           if (breakpoints.has(info.stepId)) {
             await breakpoints.pause({ runId: info.runId, stepId: info.stepId, kind: info.kind })

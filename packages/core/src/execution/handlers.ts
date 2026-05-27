@@ -622,6 +622,15 @@ async function runAgentStep(
               timeoutMs,
             )
           : undefined
+      const agentmemoryHandle =
+        runtime?.agentmemoryHandleFactory !== undefined && policy !== undefined
+          ? runtime.agentmemoryHandleFactory({
+              runId: ctx.run.runId,
+              stepId: step.id,
+              canUseAgentmemory: (op) => new TrustEnforcer(policy).canUseAgentmemory(op),
+              ...(events !== undefined && { events }),
+            })
+          : undefined
       let response: import('../backend.js').AgentResponse
       try {
         // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
@@ -635,6 +644,7 @@ async function runAgentStep(
           ...(egressToken !== undefined && { egressToken }),
           ...(proxyEnv !== undefined && { proxyEnv }),
           ...(onPartial !== undefined && { onPartial }),
+          ...(agentmemoryHandle !== undefined && { agentmemory: agentmemoryHandle }),
           // Plumb the runner's event bus + run/step identifiers so any
           // McpHost the backend brings up itself can publish tool.call /
           // tool.result events that the runner audits. Without this,
