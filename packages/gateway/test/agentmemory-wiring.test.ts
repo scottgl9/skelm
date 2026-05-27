@@ -100,6 +100,42 @@ describe('gateway agentmemory wiring', () => {
     }
   })
 
+  it('hands out a handle only when the step granted at least one op', async () => {
+    healthyFetch()
+    const gw = new Gateway({
+      stateDir,
+      enableHttp: false,
+      config: baseConfig({ enabled: true, url: 'http://memory.invalid:3111', timeoutMs: 50 }),
+    })
+    await gw.start()
+    try {
+      const factory = gw.agentmemoryRunOptions().agentmemoryHandleFactory
+      // A step that granted no agentmemory op gets no handle at all (opt-in).
+      const denied = factory?.({
+        runId: 'r',
+        stepId: 's',
+        canUseAgentmemory: () => ({
+          allow: false,
+          reason: 'not-in-allowlist',
+          dimension: 'agentmemory',
+        }),
+      })
+      expect(denied).toBeUndefined()
+      // Granting a single op is enough to receive a handle.
+      const granted = factory?.({
+        runId: 'r',
+        stepId: 's',
+        canUseAgentmemory: (op) =>
+          op === 'observe'
+            ? { allow: true }
+            : { allow: false, reason: 'not-in-allowlist', dimension: 'agentmemory' },
+      })
+      expect(granted).toBeDefined()
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('is inert when agentmemory is disabled', async () => {
     const gw = new Gateway({ stateDir, enableHttp: false, config: baseConfig() })
     await gw.start()

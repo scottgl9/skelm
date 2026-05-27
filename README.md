@@ -28,6 +28,7 @@ skelm is a TypeScript framework for authoring and running **workflows** — type
 - **MCP-native** — Model Context Protocol servers lifecycle-managed by the gateway
 - **Skill support** — Reusable `SKILL.md` capability bundles injected into agent system prompts; permission-gated via `allowedSkills`; auto-discovered from `skills/**/SKILL.md` by the gateway registry
 - **Trigger-rich runtime** — Cron, intervals, and webhooks via `@skelm/scheduler`; poll, queue, file-watch, and event-source triggers via the gateway's `TriggerCoordinator`
+- **Cross-session memory** — Optional [agentmemory](https://github.com/rohitg00/agentmemory) integration (`@skelm/agentmemory`): agents capture observations and recall prior context across runs, gated by a default-deny `agentmemory` permission and disabled until you opt in
 
 > **Status:** Early development. APIs are unstable until v1. Feedback and contributions welcome.
 
@@ -138,6 +139,7 @@ See [Backend documentation](./docs/backends/README.md) for setup guides, and [Co
 | `@skelm/codex` | OpenAI Codex backend via the official `@openai/codex-sdk` |
 | `@skelm/vercel-ai` | Vercel AI SDK backend with streaming |
 | `@skelm/agent` | First-party native agent backend with built-in tools |
+| `@skelm/agentmemory` | Optional cross-session memory via the agentmemory server: typed REST client + gateway-wired handle |
 | `@skelm/metrics` | Prometheus-format metrics |
 | `@skelm/otel` | OpenTelemetry tracing |
 
