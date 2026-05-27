@@ -143,6 +143,12 @@ type:AgentCapabilities
 type:AgentDefinition
 type:AgentMessage
 type:AgentPermissions
+type:AgentmemoryContextBlock
+type:AgentmemoryHandle
+type:AgentmemoryOperation
+type:AgentmemoryPolicy
+type:AgentmemorySearchHit
+type:AgentmemorySearchResult
 type:AgentPlugin
 type:AgentProvider
 type:AgentProviderConfig
@@ -241,6 +247,7 @@ type:ProviderModel
 type:ProviderQuery
 type:ProviderSelection
 type:ProviderSpecificCapabilities
+type:ResolvedAgentmemoryPolicy
 type:ResolvedPolicy
 type:ResolvedToolMatcher
 type:RetryPolicy
