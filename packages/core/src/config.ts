@@ -174,7 +174,7 @@ export interface SkelmConfig {
 export interface SkelmConfigAgentmemory {
   /** When false (or omitted), no agentmemory handle is wired. */
   enabled?: boolean
-  /** Base URL of the agentmemory server. Defaults to http://localhost:3111. */
+  /** Base URL of the agentmemory server. Defaults to `http://localhost:3111`. */
   url?: string
   /**
    * Name of a secret resolved through the gateway's `SecretResolver` and sent
