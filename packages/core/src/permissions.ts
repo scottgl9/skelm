@@ -21,6 +21,23 @@ export type PermissionDimension =
   | 'network'
   | 'fs.read'
   | 'fs.write'
+  | 'agentmemory'
+
+/** Operations the agentmemory dimension can independently allow. */
+export type AgentmemoryOperation = 'observe' | 'search' | 'session' | 'context'
+
+/**
+ * Per-operation gate for the agentmemory dimension. Each flag defaults to
+ * deny when omitted. `'deny'` blocks all four ops as a quick disable.
+ */
+export type AgentmemoryPolicy =
+  | 'deny'
+  | {
+      allowObserve?: boolean
+      allowSearch?: boolean
+      allowSession?: boolean
+      allowContext?: boolean
+    }
 
 /** Network egress policy. */
 export type NetworkPolicy = 'allow' | 'deny' | { allowHosts: readonly string[] }
@@ -62,6 +79,12 @@ export interface AgentPermissions {
   fsWrite?: readonly string[]
   /** Approval gating policy. */
   approval?: ApprovalPolicy
+  /**
+   * Per-operation gate for the agentmemory integration. Default-deny: an
+   * omitted field denies every observe/search/session/context call. See
+   * `@skelm/agentmemory` for the integration that consumes this dimension.
+   */
+  agentmemory?: AgentmemoryPolicy
 }
 
 /** A frozen, normalized policy ready for enforcement. Built by `resolvePermissions`. */
@@ -76,6 +99,15 @@ export interface ResolvedPolicy {
   readonly fsRead: ReadonlySet<string>
   readonly fsWrite: ReadonlySet<string>
   readonly approval: ApprovalPolicy | null
+  readonly agentmemory: ResolvedAgentmemoryPolicy
+}
+
+/** Frozen, normalized agentmemory policy. */
+export interface ResolvedAgentmemoryPolicy {
+  readonly allowObserve: boolean
+  readonly allowSearch: boolean
+  readonly allowSession: boolean
+  readonly allowContext: boolean
 }
 
 /** Internal canonical shape of a tool matcher used for O(1) lookups. */
@@ -136,7 +168,42 @@ export function resolvePermissions(
     fsRead: intersectStrings(inputs.map((p) => p.fsRead)),
     fsWrite: intersectStrings(inputs.map((p) => p.fsWrite)),
     approval: lastDefined(inputs.map((p) => p.approval)) ?? null,
+    agentmemory: intersectAgentmemory(inputs.map((p) => p.agentmemory)),
   })
+}
+
+const AGENTMEMORY_DENY: ResolvedAgentmemoryPolicy = Object.freeze({
+  allowObserve: false,
+  allowSearch: false,
+  allowSession: false,
+  allowContext: false,
+})
+
+function intersectAgentmemory(
+  policies: ReadonlyArray<AgentmemoryPolicy | undefined>,
+): ResolvedAgentmemoryPolicy {
+  const present = policies.filter((p): p is AgentmemoryPolicy => p !== undefined)
+  if (present.length === 0) return AGENTMEMORY_DENY
+  let acc: ResolvedAgentmemoryPolicy | null = null
+  for (const p of present) {
+    if (p === 'deny') return AGENTMEMORY_DENY
+    const normalized: ResolvedAgentmemoryPolicy = Object.freeze({
+      allowObserve: p.allowObserve === true,
+      allowSearch: p.allowSearch === true,
+      allowSession: p.allowSession === true,
+      allowContext: p.allowContext === true,
+    })
+    acc =
+      acc === null
+        ? normalized
+        : Object.freeze({
+            allowObserve: acc.allowObserve && normalized.allowObserve,
+            allowSearch: acc.allowSearch && normalized.allowSearch,
+            allowSession: acc.allowSession && normalized.allowSession,
+            allowContext: acc.allowContext && normalized.allowContext,
+          })
+  }
+  return acc ?? AGENTMEMORY_DENY
 }
 
 /**
@@ -202,6 +269,20 @@ export class TrustEnforcer {
       return { allow: true }
     }
     return { allow: false, reason: 'host-not-allowed', dimension: 'network' }
+  }
+
+  canUseAgentmemory(op: AgentmemoryOperation): EnforceDecision {
+    const p = this.policy.agentmemory
+    const allow =
+      op === 'observe'
+        ? p.allowObserve
+        : op === 'search'
+          ? p.allowSearch
+          : op === 'session'
+            ? p.allowSession
+            : p.allowContext
+    if (allow) return { allow: true }
+    return { allow: false, reason: 'not-in-allowlist', dimension: 'agentmemory' }
   }
 
   canRead(path: string): EnforceDecision {

@@ -283,6 +283,78 @@ export interface BackendContext {
   runId?: string
   /** Step id of the active step; supplied alongside `events`. */
   stepId?: string
+  /**
+   * Gateway-owned agentmemory handle. Present only when the gateway has the
+   * agentmemory integration configured AND the step's resolved policy
+   * permits at least one agentmemory operation. Backends should call its
+   * methods unconditionally when present — each method internally enforces
+   * `canUseAgentmemory` and surfaces denials as `permission.denied` events
+   * rather than throwing. Undefined disables every agentmemory hook silently.
+   */
+  agentmemory?: AgentmemoryHandle
+}
+
+/**
+ * Minimal interface backends consume; the concrete implementation lives in
+ * `@skelm/agentmemory` and is wired by the gateway. Method bodies must be
+ * cheap to call when the underlying server is unreachable — backends invoke
+ * `observe` after every tool call and should never have the agent loop block
+ * on memory I/O.
+ */
+export interface AgentmemoryHandle {
+  /** Start a session at agent launch; idempotent on the session id. */
+  startSession(input: {
+    sessionId: string
+    project?: string
+    cwd?: string
+    model?: string
+    tags?: readonly string[]
+  }): Promise<void>
+  /** Mark the session ended at dispose; idempotent. */
+  endSession(input: { sessionId: string }): Promise<void>
+  /**
+   * Record an observation (tool use, file event, etc). Fire-and-forget from
+   * the backend's perspective — the implementation absorbs network failures.
+   */
+  observe(input: {
+    sessionId: string
+    hookType: string
+    data: unknown
+    project?: string
+    cwd?: string
+  }): Promise<void>
+  /**
+   * Hybrid search (BM25 + vector + graph). Backends typically call this once
+   * per turn to fetch context to prepend to the system prompt.
+   */
+  smartSearch(input: {
+    query: string
+    limit?: number
+    sessionId?: string
+  }): Promise<AgentmemorySearchResult>
+  /** Fetch a token-budgeted context block for direct prompt injection. */
+  context(input: {
+    project?: string
+    query: string
+    tokenBudget?: number
+  }): Promise<AgentmemoryContextBlock>
+}
+
+export interface AgentmemorySearchHit {
+  readonly id: string
+  readonly title: string
+  readonly content: string
+  readonly score?: number
+  readonly concepts?: readonly string[]
+}
+
+export interface AgentmemorySearchResult {
+  readonly hits: readonly AgentmemorySearchHit[]
+}
+
+export interface AgentmemoryContextBlock {
+  readonly text: string
+  readonly tokenEstimate?: number
 }
 
 /**

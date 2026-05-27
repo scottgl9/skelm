@@ -56,6 +56,10 @@ export {
   LLMTruncatedError,
 } from './backend.js'
 export type {
+  AgentmemoryContextBlock,
+  AgentmemoryHandle,
+  AgentmemorySearchHit,
+  AgentmemorySearchResult,
   AgentRequest,
   AgentResponse,
   BackendCapabilities,
@@ -257,12 +261,15 @@ export {
 export { buildSystemPrompt, buildSystemPromptFromRequest } from './system-prompt.js'
 export type { SystemPromptInput, BuildFromRequestContext } from './system-prompt.js'
 export type {
+  AgentmemoryOperation,
+  AgentmemoryPolicy,
   AgentPermissions,
   ApprovalPolicy,
   EnforceDecision,
   NetworkPolicy,
   PermissionDenialReason,
   PermissionDimension,
+  ResolvedAgentmemoryPolicy,
   ResolvedPolicy,
   ResolvedToolMatcher,
   ToolMatcher,
