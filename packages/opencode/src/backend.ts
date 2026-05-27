@@ -153,6 +153,12 @@ function createEmptyPolicy(): ResolvedPolicy {
     fsRead: new Set(),
     fsWrite: new Set(),
     approval: null,
+    agentmemory: {
+      allowObserve: false,
+      allowSearch: false,
+      allowSession: false,
+      allowContext: false,
+    },
   }
 }
 

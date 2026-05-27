@@ -156,6 +156,12 @@ function createDefaultPolicy(cwd: string, agentDefRoot: string): ResolvedPolicy 
     fsRead: roots,
     fsWrite: roots,
     approval: null,
+    agentmemory: Object.freeze({
+      allowObserve: false,
+      allowSearch: false,
+      allowSession: false,
+      allowContext: false,
+    }),
   })
 }
 
@@ -261,6 +267,12 @@ async function runAgentLoop(
   }
   const mcpHost = ctx.mcpHost ?? ownMcpHost
 
+  const agentmemory = ctx.agentmemory
+  const sessionId = req.sessionId ?? `skelm-${ctx.runId ?? Date.now()}-${ctx.stepId ?? 'agent'}`
+  if (agentmemory !== undefined) {
+    await agentmemory.startSession({ sessionId, project: opts.cwd, cwd: opts.cwd })
+  }
+
   try {
     // Surface every MCP tool the host has bridged in alongside the built-ins,
     // so the model actually knows it can call them. Without this the agent
@@ -312,6 +324,17 @@ async function runAgentLoop(
           }))
         : undefined
 
+    let memoryRecall = ''
+    if (agentmemory !== undefined) {
+      const promptText = typeof req.prompt === 'string' ? req.prompt : extractTextFromParts(req.prompt)
+      if (promptText.length > 0) {
+        const recall = await agentmemory.smartSearch({ query: promptText, limit: 5, sessionId })
+        if (recall.hits.length > 0) {
+          memoryRecall = formatMemoryRecall(recall.hits)
+        }
+      }
+    }
+
     const systemContent = buildSystemPromptFromRequest(req, {
       cwd: opts.cwd,
       platform: process.platform,
@@ -323,7 +346,10 @@ async function runAgentLoop(
     })
 
     const messages: OpenAIMessage[] = [
-      { role: 'system', content: systemContent },
+      {
+        role: 'system',
+        content: memoryRecall.length > 0 ? `${memoryRecall}\n\n${systemContent}` : systemContent,
+      },
       { role: 'user', content: toOpenAIChatContent(req.prompt) },
     ]
 
@@ -410,13 +436,45 @@ async function runAgentLoop(
           content: result.content,
           tool_call_id: tc.id,
         })
+
+        if (agentmemory !== undefined) {
+          void agentmemory.observe({
+            sessionId,
+            hookType: result.isError ? 'post_tool_failure' : 'post_tool_use',
+            data: {
+              tool_name: tc.function.name,
+              tool_input: parsedArgs,
+              tool_output: result.content.slice(0, 8000),
+            },
+            project: opts.cwd,
+            cwd: opts.cwd,
+          })
+        }
       }
     }
 
     throw new AgentMaxTurnsError(maxTurns)
   } finally {
+    if (agentmemory !== undefined) {
+      await agentmemory.endSession({ sessionId }).catch(() => {})
+    }
     if (ownMcpHost !== undefined) await ownMcpHost.dispose()
   }
+}
+
+function extractTextFromParts(parts: readonly ContentPart[]): string {
+  return parts
+    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+    .map((p) => p.text)
+    .join(' ')
+    .slice(0, 1024)
+}
+
+function formatMemoryRecall(
+  hits: ReadonlyArray<{ id: string; title: string; content: string }>,
+): string {
+  const lines = hits.slice(0, 5).map((h) => `- ${h.title}: ${h.content.slice(0, 240)}`)
+  return `<memory>\nRelevant prior context:\n${lines.join('\n')}\n</memory>`
 }
 
 /**
