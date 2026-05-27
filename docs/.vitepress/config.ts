@@ -113,6 +113,7 @@ export default defineConfig({
             { text: 'Triggers', link: '/guides/triggers' },
             { text: 'ACP Sessions', link: '/guides/acp-sessions' },
             { text: 'MCP Servers', link: '/guides/mcp-servers' },
+            { text: 'Agentmemory', link: '/guides/agentmemory' },
           ],
         },
         {

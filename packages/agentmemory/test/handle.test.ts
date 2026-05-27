@@ -43,7 +43,9 @@ describe('createAgentmemoryHandle', () => {
   })
 
   it('forwards observe/session/search/context when policy allows', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ hits: [] })) as unknown as typeof globalThis.fetch
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ hits: [] }),
+    ) as unknown as typeof globalThis.fetch
     const client = new AgentmemoryClient({ url: 'http://x', fetch: fetchMock })
     const audit = vi.fn()
     const handle = createAgentmemoryHandle({
