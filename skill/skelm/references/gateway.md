@@ -12,6 +12,7 @@ The gateway is a long-running process that is the **trust boundary** for all ske
 - **Trigger dispatch** — receives cron, webhook, interval, and queue triggers; starts runs accordingly.
 - **Registry management** — watches workflow, skill, and MCP server directories; hot-reloads on change.
 - **ACP session persistence** — survives gateway restarts; sessions are re-attached on startup.
+- **Agentmemory client** — when `agentmemory.enabled` is set, owns the single `@skelm/agentmemory` REST client and hands each step a permission-gated handle (only when the step's policy grants an op). Backends never call the memory server directly.
 
 **Never write enforcement logic in pipeline or step code.** Pipelines are the user layer; the gateway is the trust layer.
 

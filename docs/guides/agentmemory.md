@@ -6,6 +6,8 @@ When enabled, every agent step on a supported backend opens a session, captures 
 
 A runnable walkthrough lives in `examples/agentmemory/` — it demonstrates the two-run recall pattern and how custom code calls the broadened ops.
 
+**Disabled by default.** The integration is off until you opt in at *two* layers: the gateway config (`agentmemory.enabled: true`) and per-agent permissions (the default-deny `agentmemory` ops). With either omitted, the gateway hands the step no handle at all and every memory hook is a silent no-op — no sessions, no observations, no recall.
+
 ## Supported backends
 
 - `@skelm/agent` — per-tool observe + smart-search recall
@@ -75,7 +77,7 @@ The built-in backend loops only use `observe`, `search`, and `session`. The `con
 
 A shorthand `agentmemory: 'deny'` zeroes the dimension even when defaults granted it. Per-step permissions intersect with project defaults; nothing widens.
 
-Denials are non-fatal: they emit `permission.denied` events (visible via the gateway run-events stream) and the agent loop continues with that op disabled.
+agentmemory is opt-in per agent. A step that grants **no** agentmemory op receives no handle at all — its memory hooks are a silent no-op (no calls, no events). A step that grants some ops gets a handle; calls to a non-granted op are non-fatal — they emit `permission.denied` events (visible via the gateway run-events stream) and the agent loop continues with that op disabled.
 
 ## Trust boundary
 

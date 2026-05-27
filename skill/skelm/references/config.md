@@ -66,6 +66,14 @@ export default defineConfig({
     },
   },
   plugins?: readonly string[],               // package names imported at gateway startup
+
+  // ── Optional integrations ───────────────────────────────────────────
+  agentmemory?: {
+    enabled?:    boolean,                    // default false — integration is off unless true
+    url?:        string,                     // default 'http://localhost:3111'
+    secretName?: string,                     // secret resolved by SecretResolver, sent as Bearer
+    timeoutMs?:  number,                     // per-request timeout, default 3000
+  },
 })
 ```
 
@@ -206,3 +214,4 @@ export default defineConfig({
 - `permissionProfiles` entries narrow `defaults.permissions`; profiles cannot widen the project baseline.
 - When `registries.workflows.glob` is omitted, the gateway uses the value from `pipelines.glob` (or the default `workflows/**/*.workflow.{mts,ts}`).
 - `secrets.driver: 'file'` reads JSON from `secrets.file`; the gateway never logs secret values.
+- `agentmemory` enables the optional cross-session memory integration. It is **disabled by default**; set `enabled: true` and grant the relevant ops via `defaults.permissions.agentmemory` (or per step). See [the agentmemory guide](../../../docs/guides/agentmemory.md).

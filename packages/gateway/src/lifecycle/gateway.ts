@@ -59,6 +59,18 @@ export type {
   GatewayState,
 } from './gateway-types.js'
 
+// Every agentmemory op, used to decide whether a step opted into the
+// integration at all. Keep in sync with `AgentmemoryOperation` in core.
+const AGENTMEMORY_OPS = [
+  'observe',
+  'search',
+  'session',
+  'context',
+  'save',
+  'recall',
+  'graph',
+] as const
+
 /**
  * Long-running gateway lifecycle. Phase 2 wired the lockfile, discovery
  * file, and signal handlers; Phase 3 adds config-driven registries with
@@ -524,6 +536,13 @@ export class Gateway {
     const defaultProject = this.projectRoot
     return {
       agentmemoryHandleFactory: (ctx) => {
+        // Optional per agent: only hand out a handle when the step's resolved
+        // policy permits at least one agentmemory op. A step that didn't opt in
+        // gets no handle at all, so the backend's memory hooks become a clean
+        // no-op instead of calling into a handle that denies every op (which
+        // would spew `permission.denied` events and waste work every turn).
+        const anyAllowed = AGENTMEMORY_OPS.some((op) => ctx.canUseAgentmemory(op).allow)
+        if (!anyAllowed) return undefined
         const eventsBus = ctx.events
         return createAgentmemoryHandle({
           client,
