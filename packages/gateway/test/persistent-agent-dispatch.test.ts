@@ -194,7 +194,7 @@ describe('persistent-agent dispatch', () => {
     const seen: SeenTurn[] = []
     const audit: AuditEntry[] = []
     const bot = persistentAgent<{ chatId: string; text: string }>({
-      id: 'hermes',
+      id: 'assistant',
       backend: 'echo',
       permissions: { requestUnrestricted: true },
       sessionKey: (p) => p.chatId,
@@ -213,7 +213,7 @@ describe('persistent-agent dispatch', () => {
     const seen: SeenTurn[] = []
     const audit: AuditEntry[] = []
     const bot = persistentAgent<{ chatId: string; text: string }>({
-      id: 'hermes',
+      id: 'assistant',
       backend: 'echo',
       permissions: { requestUnrestricted: true },
       sessionKey: (p) => p.chatId,
@@ -222,7 +222,7 @@ describe('persistent-agent dispatch', () => {
       seen,
       audit,
       agentModule: { default: bot },
-      unrestrictedGrants: ['hermes'],
+      unrestrictedGrants: ['assistant'],
     })
     const driver = wireQueue(gw)
     driver.push({ chatId: 'c1', text: 'hi' })

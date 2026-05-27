@@ -196,7 +196,7 @@ export default defineConfig({
   defaults: {
     // SECURITY: grants FULL exec/network/fs bypass to these ids as the gateway
     // user. Only ids you fully trust.
-    unrestrictedGrants: ['telegram-hermes'],
+    unrestrictedGrants: ['telegram-assistant'],
   },
 })
 ```

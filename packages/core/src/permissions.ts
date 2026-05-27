@@ -102,7 +102,7 @@ export interface AgentPermissions {
    */
   agentmemory?: AgentmemoryPolicy
   /**
-   * Author REQUEST for a full permission bypass (freewheeling, hermes-style).
+   * Author REQUEST for a full permission bypass (a freewheeling assistant).
    * Inert on its own: it only takes effect when the operator also grants the
    * workflow id in gateway config (`defaults.unrestrictedGrants`). A pipeline
    * can therefore never self-escalate — `resolvePermissions` only honours this

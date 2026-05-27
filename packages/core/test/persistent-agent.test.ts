@@ -51,7 +51,7 @@ describe('persistentAgent()', () => {
 
   it('forwards requestUnrestricted on permissions untouched', () => {
     const a = persistentAgent({
-      id: 'hermes',
+      id: 'assistant',
       sessionKey: () => 'k',
       permissions: { requestUnrestricted: true },
     })
