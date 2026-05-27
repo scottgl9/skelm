@@ -129,6 +129,7 @@ export async function runPersistentTurn(
           signal: controller.signal,
           triggerId,
           unrestrictedGrant: gateway.isUnrestrictedGranted(a.id),
+          ...gateway.defaultPermissionRunOptions(),
           ...gateway.egressRunOptions(),
           ...gateway.agentmemoryRunOptions(),
         },
