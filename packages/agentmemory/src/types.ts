@@ -66,6 +66,13 @@ export interface SessionEndRequest {
   sessionId: string
 }
 
+/**
+ * Liveness result for the agentmemory server. `ok` reflects that `/health`
+ * answered 2xx — a reachability probe, not deep health. The upstream server
+ * returns a rich metrics object with no top-level `ok`/`version`; the client
+ * synthesizes `ok` from the HTTP status and only surfaces `version` when the
+ * server provides one.
+ */
 export interface HealthResponse {
   ok: boolean
   version?: string

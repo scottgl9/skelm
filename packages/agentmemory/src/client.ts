@@ -51,7 +51,7 @@ export class AgentmemoryClient {
   }
 
   async health(): Promise<HealthResponse> {
-    return this.get<HealthResponse>('/health')
+    return normalizeHealth(await this.get<unknown>('/health'))
   }
 
   async startSession(req: SessionStartRequest): Promise<void> {
@@ -162,6 +162,16 @@ async function safeText(res: Response): Promise<string> {
   } catch {
     return ''
   }
+}
+
+// Reaching this point means `/health` answered 2xx (non-2xx threw upstream),
+// so the server is live. Honor an explicit `ok`/`healthy` boolean when the
+// server sends one; otherwise treat a 2xx as healthy. Surface `version` only
+// when present.
+function normalizeHealth(raw: unknown): HealthResponse {
+  const r = (raw !== null && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const ok = typeof r.ok === 'boolean' ? r.ok : typeof r.healthy === 'boolean' ? r.healthy : true
+  return typeof r.version === 'string' ? { ok, version: r.version } : { ok }
 }
 
 // Pull the first array found under one of `keys` (or a bare top-level array).
