@@ -113,6 +113,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@skelm/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@skelm/codex':
         specifier: workspace:*
         version: link:../codex
