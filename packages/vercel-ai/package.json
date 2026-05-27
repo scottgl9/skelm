@@ -37,10 +37,12 @@
   },
   "peerDependencies": {
     "ai": ">=5.0.0",
+    "@skelm/agentmemory": "workspace:*",
     "@skelm/core": "workspace:*"
   },
   "devDependencies": {
     "@ai-sdk/openai": "^3.0.0",
+    "@skelm/agentmemory": "workspace:*",
     "@skelm/core": "workspace:*",
     "@types/node": "^20.10.0",
     "ai": "^6.0.0",
