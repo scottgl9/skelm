@@ -118,7 +118,7 @@ agentmemory?: {
 
 | Backend            | Session  | Recall                          | Observe                          |
 |--------------------|----------|---------------------------------|----------------------------------|
-| `@skelm/agent`     | start/end| `<memory>` block on system      | per tool call (`post_tool_use` / `post_tool_failure`) |
+| `@skelm/agent`     | start/end| `<memory>` block on system      | per tool call (`post_tool_use` / `post_tool_failure`) + final answer (`task_completed`) |
 | `@skelm/codex`     | start/end| prepended to composeSystemPrompt| per turn (`task_completed`)      |
 | `@skelm/opencode`  | start/end| prepended to system             | per turn (`task_completed`)      |
 | `@skelm/vercel-ai` | start/end| prepended to system             | per turn (`task_completed`)      |
