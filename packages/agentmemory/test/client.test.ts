@@ -44,13 +44,14 @@ describe('AgentmemoryClient', () => {
     const fetchMock = vi.fn(async () => jsonResponse({})) as unknown as typeof globalThis.fetch
     const client = new AgentmemoryClient({ url: 'http://localhost:3111', fetch: fetchMock })
     await client.endSession({ sessionId: 's' })
-    const init = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit
+    const init = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1] as RequestInit
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined()
   })
 
   it('throws AgentmemoryError on non-2xx status with parsed message', async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response('boom', { status: 500 }),
+    const fetchMock = vi.fn(
+      async () => new Response('boom', { status: 500 }),
     ) as unknown as typeof globalThis.fetch
     const client = new AgentmemoryClient({ url: 'http://x', fetch: fetchMock })
     await expect(client.smartSearch({ query: 'q' })).rejects.toMatchObject({

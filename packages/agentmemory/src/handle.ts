@@ -63,7 +63,10 @@ export type AgentmemoryRuntimeEvent =
 export function createAgentmemoryHandle(opts: AgentmemoryHandleOptions): AgentmemoryHandle {
   const { client, canUseAgentmemory, audit, events, defaultProject } = opts
 
-  function denied(op: 'observe' | 'search' | 'session' | 'context', dimension: PermissionDimension): void {
+  function denied(
+    op: 'observe' | 'search' | 'session' | 'context',
+    dimension: PermissionDimension,
+  ): void {
     if (events) {
       events({
         type: 'permission.denied',

@@ -32,7 +32,9 @@ export async function startMemoryTurn(
   opts: MemoryTurnInit,
 ): Promise<MemoryTurnResult> {
   if (handle === undefined) return { sessionId: opts.sessionId, recallPrefix: '' }
-  const sessionInput: Parameters<AgentmemoryHandle['startSession']>[0] = { sessionId: opts.sessionId }
+  const sessionInput: Parameters<AgentmemoryHandle['startSession']>[0] = {
+    sessionId: opts.sessionId,
+  }
   if (opts.project !== undefined) sessionInput.project = opts.project
   if (opts.cwd !== undefined) sessionInput.cwd = opts.cwd
   await handle.startSession(sessionInput)
@@ -43,9 +45,7 @@ export async function startMemoryTurn(
     sessionId: opts.sessionId,
   })
   if (recall.hits.length === 0) return { sessionId: opts.sessionId, recallPrefix: '' }
-  const lines = recall.hits
-    .slice(0, 5)
-    .map((h) => `- ${h.title}: ${h.content.slice(0, 240)}`)
+  const lines = recall.hits.slice(0, 5).map((h) => `- ${h.title}: ${h.content.slice(0, 240)}`)
   const recallPrefix = `<memory>\nRelevant prior context:\n${lines.join('\n')}\n</memory>\n\n`
   return { sessionId: opts.sessionId, recallPrefix }
 }

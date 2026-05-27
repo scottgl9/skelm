@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentmemoryOperation } from '../../src/permissions.js'
-import { resolvePermissions, TrustEnforcer } from '../../src/permissions.js'
+import { TrustEnforcer, resolvePermissions } from '../../src/permissions.js'
 
 // Adversarial coverage for the `agentmemory` permission dimension.
 //
