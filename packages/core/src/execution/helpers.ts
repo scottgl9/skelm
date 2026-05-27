@@ -98,6 +98,9 @@ export function createDetachedWorkspaceRuntime(
     ...(runtime.permissionProfiles !== undefined && {
       permissionProfiles: runtime.permissionProfiles,
     }),
+    ...(runtime.unrestrictedGrant !== undefined && {
+      unrestrictedGrant: runtime.unrestrictedGrant,
+    }),
     ...(runtime.skillSource !== undefined && { skillSource: runtime.skillSource }),
     ...(runtime.secretResolver !== undefined && { secretResolver: runtime.secretResolver }),
     ...(runtime.registerEgressToken !== undefined && {

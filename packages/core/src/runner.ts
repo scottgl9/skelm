@@ -84,6 +84,13 @@ export interface RunOptions {
   defaultPermissions?: AgentPermissions
   /** Optional named permission profiles referenced by permissions.profile. */
   permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+  /**
+   * Operator grant for the unrestricted bypass. Supplied only by the gateway
+   * (the trust boundary) for workflows / persistent agents it has allowlisted.
+   * A step's `requestUnrestricted` is inert unless this is true. See
+   * `docs/concepts/permissions.md`.
+   */
+  unrestrictedGrant?: boolean
   /** Optional workspace manager used by agent() steps with workspaces. */
   workspaceManager?: WorkspaceManager
   /** Optional hook used by wait() steps to suspend until external input arrives. */
@@ -240,6 +247,7 @@ export class Runner {
       | 'stateStore'
       | 'defaultPermissions'
       | 'permissionProfiles'
+      | 'unrestrictedGrant'
       | 'workspaceManager'
     > & { events?: EventBus } & RunnerEnforcement = {},
   ) {
@@ -280,6 +288,18 @@ export class Runner {
           .catch(() => {
             // audit writer failures must not poison the run.
           })
+      }
+      // A full permission bypass is a security event: record it durably so the
+      // audit log shows when default-deny was intentionally short-circuited.
+      if (event.type === 'permission.bypassed') {
+        void this.enforcement.auditWriter
+          .write({
+            runId: event.runId,
+            actor: 'runtime',
+            action: 'permission.bypassed',
+            details: { stepId: event.stepId, detail: event.detail, at: event.at },
+          })
+          .catch(() => {})
       }
       // Record successful tool calls so the audit log captures legitimate
       // privileged operations, not just denials.
@@ -329,6 +349,9 @@ export class Runner {
       }),
       ...(this.options.permissionProfiles !== undefined && {
         permissionProfiles: this.options.permissionProfiles,
+      }),
+      ...(this.options.unrestrictedGrant !== undefined && {
+        unrestrictedGrant: this.options.unrestrictedGrant,
       }),
       ...(this.options.workspaceManager !== undefined && {
         workspaceManager: this.options.workspaceManager,
@@ -775,6 +798,9 @@ export async function runPipeline<TInput, TOutput>(
           }),
           ...(options.permissionProfiles !== undefined && {
             permissionProfiles: options.permissionProfiles,
+          }),
+          ...(options.unrestrictedGrant !== undefined && {
+            unrestrictedGrant: options.unrestrictedGrant,
           }),
           ...(options.approvalGate !== undefined && { approvalGate: options.approvalGate }),
           ...(options.skillSource !== undefined && { skillSource: options.skillSource }),
