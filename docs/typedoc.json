@@ -25,6 +25,11 @@
   "excludeInternal": true,
   "excludeProtected": false,
   "sort": ["source-order"],
+  "packageOptions": {
+    "validation": {
+      "notExported": false
+    }
+  },
   "docsRoot": ".",
   "indexFormat": "table",
   "parametersFormat": "table",

@@ -488,9 +488,9 @@ function lastDefined<T>(arr: ReadonlyArray<T | undefined>): T | undefined {
  * Use this to build `BackendContext.fetch` when running an agent step that
  * declares a network policy.
  *
- * @param policy  The resolved policy for the current step.
- * @param events  Optional callback to emit `permission.denied` events.
- * @param base    Base fetch implementation (defaults to `globalThis.fetch`).
+ * @param enforcer  Trust enforcer holding the resolved policy for the current step.
+ * @param events    Optional callback to emit `permission.denied` events.
+ * @param base      Base fetch implementation (defaults to `globalThis.fetch`).
  */
 export function createPolicyFetch(
   enforcer: TrustEnforcer,
