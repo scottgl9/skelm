@@ -2,6 +2,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  deriveSessionId,
+  endMemoryTurn,
+  extractPromptText as extractPromptTextHelper,
+  recordMemoryTurn,
+  startMemoryTurn,
+} from '@skelm/agentmemory'
+import {
   BackendConfigError,
   buildSystemPromptFromRequest,
   extractPromptText,
@@ -73,6 +80,17 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
     ...(options.label !== undefined && { label: options.label }),
 
     async run(request: AgentRequest, context: BackendContext): Promise<AgentResponse> {
+      const sessionIdForMemory = deriveSessionId(request, {
+        ...(context.runId !== undefined && { runId: context.runId }),
+        ...(context.stepId !== undefined && { stepId: context.stepId }),
+      })
+      const memoryProject = request.cwd ?? process.cwd()
+      const memoryTurn = await startMemoryTurn(context.agentmemory, {
+        sessionId: sessionIdForMemory,
+        project: memoryProject,
+        cwd: memoryProject,
+        promptText: extractPromptTextHelper(request.prompt),
+      })
       // When neither the request nor the context carries a resolved policy,
       // synthesize an empty-deny ResolvedPolicy from `resolvePermissions(
       // undefined, undefined)`. This matches the documented default-deny
@@ -106,7 +124,13 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
 
       // Compose the system prompt via @skelm/core's shared builder so
       // systemPromptMode / systemPromptIncludeAgentDef take effect here.
-      const systemPrompt = await composeSystemPrompt(request, context, options.model)
+      const baseSystemPrompt = await composeSystemPrompt(request, context, options.model)
+      const systemPrompt =
+        memoryTurn.recallPrefix.length > 0
+          ? baseSystemPrompt === undefined
+            ? memoryTurn.recallPrefix
+            : `${memoryTurn.recallPrefix}${baseSystemPrompt}`
+          : baseSystemPrompt
       // Codex SDK accepts string OR Array<{type:'text'}|{type:'local_image',path}>.
       // For image-bearing prompts we materialize each image to a temp file
       // (Codex requires filesystem paths, not data URLs) and clean up after
@@ -184,6 +208,13 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
           }),
         }
       }
+      await recordMemoryTurn(context.agentmemory, {
+        sessionId: memoryTurn.sessionId,
+        project: memoryProject,
+        cwd: memoryProject,
+        resultText: response.text ?? '',
+      })
+      await endMemoryTurn(context.agentmemory, memoryTurn.sessionId)
       return response
     },
   }

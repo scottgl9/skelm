@@ -4,6 +4,11 @@ value:AgentmemoryConfigSchema
 value:AgentmemoryError
 value:DEFAULT_AGENTMEMORY_BASE_PATH
 value:createAgentmemoryHandle
+value:deriveSessionId
+value:endMemoryTurn
+value:extractPromptText
+value:recordMemoryTurn
+value:startMemoryTurn
 type:AgentmemoryAuditEvent
 type:AgentmemoryClientOptions
 type:AgentmemoryConfig
@@ -15,6 +20,9 @@ type:ContextRequest
 type:ContextResponse
 type:HealthResponse
 type:HookPayload
+type:MemoryTurnInit
+type:MemoryTurnRecord
+type:MemoryTurnResult
 type:SessionEndRequest
 type:SessionStartRequest
 type:SmartSearchHit
