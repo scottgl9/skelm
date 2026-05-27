@@ -2,6 +2,10 @@
 
 Complete, runnable workflows for the patterns customers ship most often. Each recipe is a self-contained project: full `skelm.config.ts`, full workflow, agent definitions where used, schedule registration, and a "why each piece is here" section explaining the trade-offs.
 
+## Chat bots & persistent agents
+
+- **[Telegram persistent agent](./telegram-persistent-agent.md)** — a chat bot you talk *through*: one durable conversation per chat, surviving restarts, optionally freewheeling via the operator-gated unrestricted bypass. The canonical persistent-agent pattern.
+
 ## Long-running scheduled workflows
 
 - **[Coding agent on chat](./coding-agent-on-chat.md)** — webhook-triggered coding workflow with a persistent repo workspace. Receives chat messages, opens PRs, replies. The canonical "long-running agent reachable via chat" pattern.

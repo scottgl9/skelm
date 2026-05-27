@@ -6,7 +6,7 @@ Every skelm agent backend that accepts a top-level system prompt builds it throu
 
 Before this lived in core, every backend had its own ad-hoc composition (`soul + instructions + system + skill blocks`, joined by separators) and the first-party `@skelm/agent` backend was building a prompt and then immediately discarding it. The new builder is a single source of truth that:
 
-- gives a tool-capable model a competent default system prompt — informed by surveying pi, openclaw, opencode, hermes-agent, and nanoclaw,
+- gives a tool-capable model a competent default system prompt — informed by surveying established tool-capable agents,
 - stays compact (the built-in default sections are capped at 5000 characters, guarded by a test),
 - composes cleanly with AGENTS.md / SOUL.md / user overrides,
 - escapes dynamic content (tool/skill names, paths) so the prompt can't be hijacked by adversarial tool metadata.

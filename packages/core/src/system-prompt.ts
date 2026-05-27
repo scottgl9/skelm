@@ -3,9 +3,8 @@
  * top-level system prompt (anthropic, agent). Pure function — no I/O.
  *
  * Section ordering, XML inventory style, and recency-weight ordering of
- * AGENTS.md / SOUL.md / user system are informed by the survey of pi,
- * openclaw, opencode, hermes-agent, and nanoclaw under
- * ~/sandbox/personal/agents.
+ * AGENTS.md / SOUL.md / user system are informed by a survey of established
+ * tool-capable agent system prompts.
  */
 
 import type { AgentRequest } from './backend.js'
