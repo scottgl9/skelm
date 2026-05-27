@@ -8,6 +8,13 @@
 // documented in @earendil-works/pi-coding-agent/docs/rpc.md.
 
 import {
+  deriveSessionId,
+  endMemoryTurn,
+  extractPromptText as extractPromptTextForMemory,
+  recordMemoryTurn,
+  startMemoryTurn,
+} from '@skelm/agentmemory'
+import {
   PermissionDeniedError,
   createConcurrencySemaphore,
   extractPromptText,
@@ -106,6 +113,18 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
       }
       await acquire()
 
+      const memorySessionId = deriveSessionId(request, {
+        ...(context.runId !== undefined && { runId: context.runId }),
+        ...(context.stepId !== undefined && { stepId: context.stepId }),
+      })
+      const memoryProject = request.cwd ?? options.cwd ?? process.cwd()
+      const memoryTurn = await startMemoryTurn(context.agentmemory, {
+        sessionId: memorySessionId,
+        project: memoryProject,
+        cwd: memoryProject,
+        promptText: extractPromptTextForMemory(request.prompt),
+      })
+
       const client = new PiRpcClient({
         command: options.command ?? 'pi',
         ...(options.provider !== undefined && { provider: options.provider }),
@@ -126,8 +145,19 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
         await client.start()
 
         const skillBodies = await loadSkillBodies(request, context)
-        const prompt = buildPrompt(request, skillBodies)
+        const basePrompt = buildPrompt(request, skillBodies)
+        const prompt =
+          memoryTurn.recallPrefix.length > 0
+            ? `${memoryTurn.recallPrefix}${basePrompt}`
+            : basePrompt
         const result = await client.prompt(prompt, options.timeout ?? 300_000)
+
+        await recordMemoryTurn(context.agentmemory, {
+          sessionId: memoryTurn.sessionId,
+          project: memoryProject,
+          cwd: memoryProject,
+          resultText: result.text,
+        })
 
         return {
           text: result.text,
@@ -155,6 +185,7 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
       } finally {
         context.signal.removeEventListener('abort', onAbort)
         await client.stop()
+        await endMemoryTurn(context.agentmemory, memoryTurn.sessionId)
         release()
       }
     },

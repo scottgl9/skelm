@@ -18,6 +18,15 @@ export type {
   AgentmemoryRuntimeEvent,
 } from './handle.js'
 
+export {
+  deriveSessionId,
+  endMemoryTurn,
+  extractPromptText,
+  recordMemoryTurn,
+  startMemoryTurn,
+} from './lifecycle.js'
+export type { MemoryTurnInit, MemoryTurnRecord, MemoryTurnResult } from './lifecycle.js'
+
 export type {
   AgentmemoryHookType,
   ContextRequest,

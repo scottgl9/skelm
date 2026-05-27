@@ -164,6 +164,9 @@ importers:
         specifier: ^0.130.0
         version: 0.130.0
     devDependencies:
+      '@skelm/agentmemory':
+        specifier: workspace:*
+        version: link:../agentmemory
       '@skelm/core':
         specifier: workspace:*
         version: link:../core
@@ -290,6 +293,9 @@ importers:
         specifier: ^1.14.33
         version: 1.14.33
     devDependencies:
+      '@skelm/agentmemory':
+        specifier: workspace:*
+        version: link:../agentmemory
       '@skelm/core':
         specifier: workspace:*
         version: link:../core
@@ -321,6 +327,9 @@ importers:
       '@earendil-works/pi-coding-agent':
         specifier: ^0.75.4
         version: 0.75.4(zod@4.4.2)
+      '@skelm/agentmemory':
+        specifier: workspace:*
+        version: link:../agentmemory
       '@skelm/core':
         specifier: workspace:*
         version: link:../core
@@ -377,6 +386,9 @@ importers:
       '@ai-sdk/openai':
         specifier: ^3.0.0
         version: 3.0.62(zod@4.4.2)
+      '@skelm/agentmemory':
+        specifier: workspace:*
+        version: link:../agentmemory
       '@skelm/core':
         specifier: workspace:*
         version: link:../core
