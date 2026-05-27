@@ -12,6 +12,7 @@ Runnable workflow examples. Each subdirectory is a self-contained workflow you c
 | `incident-response/`     | Webhook-triggered triage: `parallel()` + `branch()` + `agent()` root-cause.|
 | `approval-workflow/`     | Human-in-the-loop expense approval via `wait()`; auto-approves under $100. |
 | `sprint-planning/`       | Cron-triggered LLM story selection feeding from `code()` capacity calc.    |
+| `agentmemory/`           | Cross-session recall via the agentmemory integration (two-run pattern).    |
 
 ## Run
 

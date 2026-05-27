@@ -39,6 +39,16 @@ export async function startMemoryTurn(
   if (opts.cwd !== undefined) sessionInput.cwd = opts.cwd
   await handle.startSession(sessionInput)
   if (opts.promptText.length === 0) return { sessionId: opts.sessionId, recallPrefix: '' }
+  // Capture the user prompt itself as memory (gated by the `observe` op;
+  // a no-op when observe is denied), not just tool calls and final results.
+  const observeInput: Parameters<AgentmemoryHandle['observe']>[0] = {
+    sessionId: opts.sessionId,
+    hookType: 'user_prompt_submit',
+    data: { prompt: opts.promptText },
+  }
+  if (opts.project !== undefined) observeInput.project = opts.project
+  if (opts.cwd !== undefined) observeInput.cwd = opts.cwd
+  await handle.observe(observeInput)
   const recall = await handle.smartSearch({
     query: opts.promptText,
     limit: 5,

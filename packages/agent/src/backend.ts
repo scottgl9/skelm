@@ -161,6 +161,9 @@ function createDefaultPolicy(cwd: string, agentDefRoot: string): ResolvedPolicy 
       allowSearch: false,
       allowSession: false,
       allowContext: false,
+      allowSave: false,
+      allowRecall: false,
+      allowGraph: false,
     }),
   })
 }
@@ -329,6 +332,13 @@ async function runAgentLoop(
       const promptText =
         typeof req.prompt === 'string' ? req.prompt : extractTextFromParts(req.prompt)
       if (promptText.length > 0) {
+        void agentmemory.observe({
+          sessionId,
+          hookType: 'user_prompt_submit',
+          data: { prompt: promptText },
+          project: opts.cwd,
+          cwd: opts.cwd,
+        })
         const recall = await agentmemory.smartSearch({ query: promptText, limit: 5, sessionId })
         if (recall.hits.length > 0) {
           memoryRecall = formatMemoryRecall(recall.hits)

@@ -332,12 +332,43 @@ export interface AgentmemoryHandle {
     limit?: number
     sessionId?: string
   }): Promise<AgentmemorySearchResult>
-  /** Fetch a token-budgeted context block for direct prompt injection. */
+  /**
+   * Fetch a token-budgeted context block for direct prompt injection. The
+   * upstream server requires a `sessionId`; omit only when you have none (the
+   * call then returns an empty block rather than throwing).
+   */
   context(input: {
+    sessionId?: string
     project?: string
     query: string
     tokenBudget?: number
   }): Promise<AgentmemoryContextBlock>
+  /**
+   * Explicitly persist an insight (the author-driven counterpart to the
+   * automatic `observe` capture). Custom step/backend code calls this; the
+   * built-in backend loops do not.
+   */
+  save(input: {
+    sessionId?: string
+    project?: string
+    title: string
+    content: string
+    concepts?: readonly string[]
+  }): Promise<AgentmemorySaveResult>
+  /** Recall recent or by-session memories (distinct from hybrid `smartSearch`). */
+  recall(input: {
+    sessionId?: string
+    project?: string
+    limit?: number
+  }): Promise<AgentmemoryRecallResult>
+  /** List recent sessions with highlights. */
+  sessions(input: { project?: string; limit?: number }): Promise<AgentmemorySessionsResult>
+  /** Traverse the knowledge graph over concepts, files, and patterns. */
+  graphQuery(input: {
+    project?: string
+    query: string
+    limit?: number
+  }): Promise<AgentmemoryGraphResult>
 }
 
 export interface AgentmemorySearchHit {
@@ -355,6 +386,42 @@ export interface AgentmemorySearchResult {
 export interface AgentmemoryContextBlock {
   readonly text: string
   readonly tokenEstimate?: number
+}
+
+export interface AgentmemorySaveResult {
+  readonly id: string
+}
+
+export interface AgentmemoryRecallResult {
+  readonly hits: readonly AgentmemorySearchHit[]
+}
+
+export interface AgentmemorySessionSummary {
+  readonly id: string
+  readonly title?: string
+  readonly startedAt?: number
+  readonly highlights?: readonly string[]
+}
+
+export interface AgentmemorySessionsResult {
+  readonly sessions: readonly AgentmemorySessionSummary[]
+}
+
+export interface AgentmemoryGraphNode {
+  readonly id: string
+  readonly label: string
+  readonly kind?: string
+}
+
+export interface AgentmemoryGraphEdge {
+  readonly from: string
+  readonly to: string
+  readonly relation?: string
+}
+
+export interface AgentmemoryGraphResult {
+  readonly nodes: readonly AgentmemoryGraphNode[]
+  readonly edges: readonly AgentmemoryGraphEdge[]
 }
 
 /** Factory context handed to the gateway's per-step agentmemory factory. */

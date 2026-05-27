@@ -555,6 +555,23 @@ export class Gateway {
       timeoutMs,
       ...(secret !== undefined ? { secret } : {}),
     })
+    // Non-blocking health probe: never delay start() by the server's latency,
+    // and never throw into the start path. A failed probe is non-fatal — agent
+    // steps still run, only the memory effect is lost. The `.catch` makes this
+    // a handled rejection, so it can't surface as an unhandled rejection in the
+    // gateway's main loop.
+    void this.agentmemoryClient
+      .health()
+      .then(() => {
+        console.error(`gateway: agentmemory client wired (${url})`)
+      })
+      .catch((err: unknown) => {
+        console.warn(
+          `gateway: agentmemory configured (${url}) but health check failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        )
+      })
   }
 
   /** True when the gateway has the agentmemory client wired. */
