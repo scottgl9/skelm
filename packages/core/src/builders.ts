@@ -26,7 +26,7 @@ import type {
   WorkspaceConfig,
 } from './types.js'
 
-function normalizePipelineTrigger(
+export function normalizePipelineTrigger(
   pipelineId: string,
   trigger: import('./types.js').PipelineTrigger,
 ): import('./types.js').PipelineTrigger {

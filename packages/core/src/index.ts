@@ -187,6 +187,20 @@ export {
 } from './builders.js'
 export type { TestResult } from './builders.js'
 export {
+  defaultPromptOf,
+  defaultReplyOf,
+  isPersistentAgent,
+  persistentAgent,
+} from './persistent-agent.js'
+export type { PersistentAgent, PersistentAgentDef } from './persistent-agent.js'
+export {
+  createSessionRecord,
+  loadSession,
+  PERSISTENT_AGENT_NAMESPACE,
+  saveSession,
+} from './persistent-agent-store.js'
+export type { PersistentSessionRecord } from './persistent-agent-store.js'
+export {
   ExecConfigError,
   InvokePipelineNotFoundError,
   PermissionDeniedError,
