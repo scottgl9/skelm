@@ -161,6 +161,29 @@ export interface SkelmConfig {
    * applying this map.
    */
   env?: Readonly<Record<string, string>>
+  /**
+   * Optional agentmemory integration. When enabled, the gateway instantiates
+   * an `@skelm/agentmemory` client and exposes a per-step `AgentmemoryHandle`
+   * to backends through `BackendContext.agentmemory`. Per-step opt-in is
+   * still required via `permissions.agentmemory`.
+   */
+  agentmemory?: SkelmConfigAgentmemory
+}
+
+/** Configuration block for the agentmemory integration. */
+export interface SkelmConfigAgentmemory {
+  /** When false (or omitted), no agentmemory handle is wired. */
+  enabled?: boolean
+  /** Base URL of the agentmemory server. Defaults to http://localhost:3111. */
+  url?: string
+  /**
+   * Name of a secret resolved through the gateway's `SecretResolver` and sent
+   * as `Authorization: Bearer <value>`. Optional; omit for unauthenticated
+   * local servers.
+   */
+  secretName?: string
+  /** Per-request timeout in milliseconds. Defaults to 3000. */
+  timeoutMs?: number
 }
 
 /**

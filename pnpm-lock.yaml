@@ -198,6 +198,9 @@ importers:
 
   packages/gateway:
     dependencies:
+      '@skelm/agentmemory':
+        specifier: workspace:*
+        version: link:../agentmemory
       '@skelm/core':
         specifier: workspace:*
         version: link:../core

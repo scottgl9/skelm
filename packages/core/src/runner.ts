@@ -166,6 +166,14 @@ export interface RunOptions {
    */
   getProxyEnv?: (egressToken?: string) => Record<string, string> | undefined
   /**
+   * Optional factory that produces a per-step `AgentmemoryHandle`. The
+   * gateway wires this from `config.agentmemory` when enabled. The runner
+   * invokes it after permissions resolution, with a `canUseAgentmemory`
+   * predicate bound to the step's resolved policy, and injects the result
+   * into `BackendContext.agentmemory`. Omitting it disables agentmemory.
+   */
+  agentmemoryHandleFactory?: import('./backend.js').AgentmemoryHandleFactory
+  /**
    * Optional registry for resolving pipelines by ID for `invoke()` steps.
    * When omitted, invoke() steps throw InvokePipelineNotFoundError.
    */
@@ -778,6 +786,9 @@ export async function runPipeline<TInput, TOutput>(
             unregisterEgressToken: options.unregisterEgressToken,
           }),
           ...(options.getProxyEnv !== undefined && { getProxyEnv: options.getProxyEnv }),
+          ...(options.agentmemoryHandleFactory !== undefined && {
+            agentmemoryHandleFactory: options.agentmemoryHandleFactory,
+          }),
           ...(options.pipelineRegistry !== undefined && {
             pipelineRegistry: options.pipelineRegistry,
           }),

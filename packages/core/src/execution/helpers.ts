@@ -107,6 +107,9 @@ export function createDetachedWorkspaceRuntime(
       unregisterEgressToken: runtime.unregisterEgressToken,
     }),
     ...(runtime.getProxyEnv !== undefined && { getProxyEnv: runtime.getProxyEnv }),
+    ...(runtime.agentmemoryHandleFactory !== undefined && {
+      agentmemoryHandleFactory: runtime.agentmemoryHandleFactory,
+    }),
     currentWorkspace,
     setCurrentWorkspace: (workspace) => {
       currentWorkspace = workspace
