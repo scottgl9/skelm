@@ -392,6 +392,19 @@ async function runAgentLoop(
         const content = choice.message.content
         const text = typeof content === 'string' ? content : content !== null ? String(content) : ''
         const reasoning = choice.message.reasoning_content
+        // Record the agent's final answer, mirroring the per-turn
+        // `task_completed` observation the other backends emit via
+        // recordMemoryTurn. Without this, a no-tool reasoning run persists
+        // only the prompt, never the outcome.
+        if (agentmemory !== undefined && text.length > 0) {
+          await agentmemory.observe({
+            sessionId,
+            hookType: 'task_completed',
+            data: { result: text.slice(0, 8000) },
+            project: opts.cwd,
+            cwd: opts.cwd,
+          })
+        }
         return {
           text,
           stopReason: choice.finish_reason ?? 'stop',

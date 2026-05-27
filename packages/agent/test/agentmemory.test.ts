@@ -116,10 +116,15 @@ describe('@skelm/agent — agentmemory wiring', () => {
 
     // The user prompt is captured, and the fs_read produces a post_tool_use observation.
     const observeCalls = (agentmemory.observe as ReturnType<typeof vi.fn>).mock.calls.map(
-      (c) => c[0] as { hookType: string },
+      (c) => c[0] as { hookType: string; data: unknown },
     )
     expect(observeCalls.some((o) => o.hookType === 'user_prompt_submit')).toBe(true)
     expect(observeCalls.some((o) => o.hookType === 'post_tool_use')).toBe(true)
+    // The final answer is recorded as task_completed (consistent with the
+    // other backends), not just the prompt and tool calls.
+    const completed = observeCalls.find((o) => o.hookType === 'task_completed')
+    expect(completed).toBeDefined()
+    expect((completed?.data as { result: string }).result).toContain('DONE')
 
     // Recall hit is prepended to the system message of the first model call.
     const firstBody = JSON.parse((fetchSpy.mock.calls[0]?.[1] as { body: string }).body) as {
