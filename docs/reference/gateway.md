@@ -186,6 +186,23 @@ skelm audit query --run <runId>
 skelm audit query --action permission.denied --since 2025-01-01T00:00:00Z
 ```
 
+## Unrestricted grants
+
+The gateway is the only place the [unrestricted permission bypass](/concepts/permissions#the-unrestricted-bypass-freewheeling-agents) can be turned on. An agent's `permissions.requestUnrestricted` is inert unless the operator allowlists its id:
+
+```ts
+// skelm.config.ts
+export default defineConfig({
+  defaults: {
+    // SECURITY: grants FULL exec/network/fs bypass to these ids as the gateway
+    // user. Only ids you fully trust.
+    unrestrictedGrants: ['telegram-hermes'],
+  },
+})
+```
+
+The grant is the union of `defaults.unrestrictedGrants` and the comma-separated env var `SKELM_UNRESTRICTED_WORKFLOWS`. At dispatch the gateway calls `isUnrestrictedGranted(id)` and threads the result into the run as `unrestrictedGrant`; the resolved policy is `unrestricted` only when the agent both requested it and is granted. Every bypassed turn emits a `permission.bypassed` audit entry.
+
 ## systemd integration
 
 ```bash

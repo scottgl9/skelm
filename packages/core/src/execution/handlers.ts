@@ -22,7 +22,12 @@ import { EventBus } from '../events.js'
 import { createExec } from '../exec.js'
 import { extractJsonFromText, tryParseJson } from '../json-utils.js'
 import { createMcpHost } from '../mcp/host.js'
-import type { AgentPermissions, NetworkPolicy, PermissionDimension } from '../permissions.js'
+import type {
+  AgentPermissions,
+  NetworkPolicy,
+  PermissionDimension,
+  ResolvedPolicy,
+} from '../permissions.js'
 import { TrustEnforcer, createPolicyFetch, resolvePermissions } from '../permissions.js'
 import { MemoryRunStore } from '../run-store.js'
 import {
@@ -64,6 +69,26 @@ import { createSecretsAccessor, resolveValueOrFn, resolveValueOrFnAsync } from '
 import type { ExecutionRuntime } from './runtime.js'
 
 const defaultStateStore = new MemoryRunStore()
+
+// Emit the audit signal for an operator-granted full bypass. Called once per
+// step whose resolved policy is `unrestricted`, so the short-circuit is never
+// silent (see docs/concepts/permissions.md). The runner's audit subscription
+// turns this into a durable AuditWriter entry.
+function emitBypassIfUnrestricted(
+  policy: ResolvedPolicy,
+  events: EventBus | undefined,
+  runId: string,
+  stepId: string,
+): void {
+  if (policy.unrestricted !== true || events === undefined) return
+  events.publish({
+    type: 'permission.bypassed',
+    runId,
+    stepId,
+    detail: `step "${stepId}" running UNRESTRICTED (operator-granted full permission bypass)`,
+    at: Date.now(),
+  })
+}
 
 export async function runStepWithRetry(
   step: Step,
@@ -196,7 +221,9 @@ async function runCodeStep(
       runtime?.defaultPermissions,
       applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
       runtime?.permissionProfiles ?? {},
+      { grantUnrestricted: runtime?.unrestrictedGrant === true },
     )
+    emitBypassIfUnrestricted(policy, events, ctx.run.runId, step.id)
     const enforcer = new TrustEnforcer(policy)
 
     // Same per-step timeout pattern used by runAgentStep: chain a fresh
@@ -407,8 +434,10 @@ async function runAgentStep(
             runtime?.defaultPermissions,
             applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
             runtime?.permissionProfiles,
+            { grantUnrestricted: runtime?.unrestrictedGrant === true },
           )
         : undefined
+    if (policy !== undefined) emitBypassIfUnrestricted(policy, events, ctx.run.runId, step.id)
     const resolvedSecrets = await resolveDeclaredSecrets(
       step,
       policy,
@@ -848,6 +877,9 @@ async function runIdempotent(
       ...(runtime?.permissionProfiles !== undefined && {
         permissionProfiles: runtime.permissionProfiles,
       }),
+      ...(runtime?.unrestrictedGrant !== undefined && {
+        unrestrictedGrant: runtime.unrestrictedGrant,
+      }),
       currentWorkspace: runtime?.currentWorkspace,
       setCurrentWorkspace: (workspace) => runtime?.setCurrentWorkspace(workspace),
       deferRunWorkspaceFinalizer: (finalizer) => runtime?.deferRunWorkspaceFinalizer(finalizer),
@@ -1029,6 +1061,9 @@ async function runInvokeStep(
     ...(runtime?.permissionProfiles !== undefined && {
       permissionProfiles: runtime.permissionProfiles,
     }),
+    ...(runtime?.unrestrictedGrant !== undefined && {
+      unrestrictedGrant: runtime.unrestrictedGrant,
+    }),
     ...(runtime?.workspaceManager !== undefined && { workspaceManager: runtime.workspaceManager }),
     ...(runtime?.skillSource !== undefined && { skillSource: runtime.skillSource }),
     ...(runtime?.secretResolver !== undefined && { secretResolver: runtime.secretResolver }),
@@ -1069,6 +1104,9 @@ async function runPipelineStep(
     }),
     ...(runtime?.permissionProfiles !== undefined && {
       permissionProfiles: runtime.permissionProfiles,
+    }),
+    ...(runtime?.unrestrictedGrant !== undefined && {
+      unrestrictedGrant: runtime.unrestrictedGrant,
     }),
     ...(runtime?.workspaceManager !== undefined && { workspaceManager: runtime.workspaceManager }),
     ...(runtime?.skillSource !== undefined && { skillSource: runtime.skillSource }),
