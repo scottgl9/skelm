@@ -14,6 +14,8 @@ type:IntegrationClass
 type:IntegrationConfig
 type:JiraConfig
 type:JiraIssueTrigger
+type:MatrixConfig
+type:MatrixMessageTrigger
 type:RateLimitConfig
 type:RunInput
 type:SlackConfig

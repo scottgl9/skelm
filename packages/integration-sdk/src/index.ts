@@ -28,6 +28,8 @@ export type {
   TelegramWebhookEvent,
   TelegramMessageTrigger,
   TuiConfig,
+  MatrixConfig,
+  MatrixMessageTrigger,
 } from './types.js'
 
 // Base class

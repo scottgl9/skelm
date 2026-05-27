@@ -6,6 +6,7 @@ Complete, runnable workflows for the patterns customers ship most often. Each re
 
 - **[Telegram persistent workflow](./telegram-persistent-workflow.md)** — a chat bot you talk *through*: one durable conversation per chat, surviving restarts, optionally freewheeling via the operator-gated unrestricted bypass. The canonical persistent-workflow pattern, with a `code()` preamble.
 - **[TUI persistent workflow](./tui-persistent-workflow.md)** — the same pattern driven from a local terminal UI, and the minimal persistent-workflow shape (no preamble, just the terminal agent).
+- **[Matrix persistent agent](./matrix-persistent-agent.md)** — the same persistent-agent pattern over [Matrix](https://matrix.org): one durable conversation per room, with a who-can-talk allowlist and self-message (echo) filtering. Unencrypted rooms.
 
 ## Long-running scheduled workflows
 
