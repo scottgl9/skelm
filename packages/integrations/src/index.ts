@@ -27,6 +27,8 @@ export type {
   TelegramWebhookEvent,
   TelegramMessageTrigger,
   TuiConfig,
+  MatrixConfig,
+  MatrixMessageTrigger,
 } from '@skelm/integration-sdk'
 
 export {
@@ -70,6 +72,15 @@ export {
   type MsGraphIntegrationType,
 } from './ms-graph.js'
 export { SlackIntegration, verifySlackSignature } from './slack.js'
+export {
+  MatrixIntegration,
+  matrixSyncToInputs,
+  type CreateMatrixTriggerSourceOptions,
+  type MatrixMessageInput,
+  type MatrixSendMessageOptions,
+  type MatrixSyncOptions,
+  type MatrixTriggerSource,
+} from './matrix.js'
 export {
   TelegramIntegration,
   telegramUpdateToInput,
