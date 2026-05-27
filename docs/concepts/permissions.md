@@ -37,6 +37,25 @@ In production the **gateway** owns the canonical instances and hands them to eve
 
 Beyond the core dimensions (tools, executables, MCP servers, skills, secrets, network, filesystem, approval), the `agentmemory` dimension gates the optional [agentmemory integration](/guides/agentmemory) per operation — `observe`/`search`/`session`/`context`/`save`/`recall`/`graph`, or the `'deny'` shorthand. It follows every rule above: omitted ⇒ deny (proven by `packages/core/test/security/agentmemory-default-deny.test.ts`), intersection-only composition, and the gateway hands a step no memory handle at all unless its policy grants an op.
 
+## The unrestricted bypass (freewheeling agents)
+
+Some use cases — a personal chat assistant you talk to over Telegram, a [persistent agent](/concepts/persistent-agents) behaving like a freewheeling shell — want a full bypass of default-deny rather than an exhaustive allow-list. skelm supports this **only as an explicit, operator-gated, audited opt-in**. It never weakens default-deny for anything that does not opt in.
+
+The bypass is **two-keyed** — both keys are required, and they live on opposite sides of the trust boundary:
+
+1. **Author request** (untrusted): the agent declares `permissions.requestUnrestricted: true`. On its own this flag does **nothing** — it cannot widen a single allow-list. A pipeline therefore cannot self-escalate.
+2. **Operator grant** (trusted): the gateway operator lists the workflow / persistent-agent id in `defaults.unrestrictedGrants` (or the env var `SKELM_UNRESTRICTED_WORKFLOWS`, comma-separated). The gateway passes this grant into `resolvePermissions(..., { grantUnrestricted: true })`; authors can never set it.
+
+```
+unrestricted = operator-granted  AND  author-requested
+```
+
+Requested-but-not-granted ⇒ normal enforcement. Granted-but-not-requested ⇒ normal enforcement. Only when both agree does `TrustEnforcer` short-circuit every dimension (tools, exec, network, fs, secrets, MCP, skills, agentmemory) to allow.
+
+The bypass is **never silent**: when a step or turn resolves to `unrestricted`, the runtime emits one `permission.bypassed` event, written through the single `AuditWriter` like every other decision. The resolved allow-lists are left exactly as intersected (the bypass is a short-circuit, not a permissive profile) so removing the grant immediately restores default-deny.
+
+> **SECURITY.** A granted agent runs arbitrary exec / network / fs as the gateway user. Grant only ids you fully trust, and pair it with containment (workspace isolation) and an inbound allowlist on whatever drives it (e.g. a Telegram `allowedChatIds` filter — see [triggers](/guides/triggers)). Coverage: `packages/core/test/security/unrestricted-gated.test.ts` pins all four corners of the truth table.
+
 ## Where each piece lives today
 
 | Concern | Phase | Status |

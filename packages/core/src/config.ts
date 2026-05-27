@@ -128,6 +128,18 @@ export interface SkelmConfig {
     backend?: string
     permissions?: AgentPermissions
     permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+    /**
+     * Operator grant for the full permission bypass. Workflow / persistent-agent
+     * ids listed here may run `unrestricted` IF they also set
+     * `permissions.requestUnrestricted`. Authors cannot self-escalate; only this
+     * operator-side list (or the env var `SKELM_UNRESTRICTED_WORKFLOWS`,
+     * comma-separated) flips the bypass on. Empty/omitted ⇒ no grants.
+     *
+     * SECURITY: a granted agent runs arbitrary exec/network/fs as the gateway
+     * user. Grant only ids you fully trust. Every bypassed turn is audited via
+     * a `permission.bypassed` event.
+     */
+    unrestrictedGrants?: readonly string[]
   }
   /** Workflow discovery configuration. */
   pipelines?: {

@@ -73,6 +73,16 @@ export type RunEvent =
       at: number
     }
   | {
+      // Emitted once when a step/turn resolves to a full permission bypass
+      // (operator-granted `unrestricted`). Never silent: this is the audit
+      // signal that the default-deny model was intentionally short-circuited.
+      type: 'permission.bypassed'
+      runId: RunId
+      stepId: StepId
+      detail: string
+      at: number
+    }
+  | {
       type: 'step.retry'
       runId: RunId
       stepId: StepId
