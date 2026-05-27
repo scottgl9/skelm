@@ -122,6 +122,17 @@ describe('AgentmemoryClient', () => {
     expect(init.method).toBe('GET')
   })
 
+  it('synthesizes ok:true from a rich metrics /health body with no top-level ok', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        circuitBreaker: { state: 'closed' },
+        health: { connectionState: 'connected' },
+      }),
+    ) as unknown as typeof globalThis.fetch
+    const client = new AgentmemoryClient({ url: 'http://x', fetch: fetchMock })
+    expect(await client.health()).toEqual({ ok: true })
+  })
+
   it('POSTs /session/start and /session/end with their request bodies', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({})) as unknown as typeof globalThis.fetch
     const client = new AgentmemoryClient({ url: 'http://x', fetch: fetchMock })
