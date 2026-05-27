@@ -195,6 +195,9 @@ function createEmptyPolicy(): ResolvedPolicy {
       allowSearch: false,
       allowSession: false,
       allowContext: false,
+      allowSave: false,
+      allowRecall: false,
+      allowGraph: false,
     },
   }
 }

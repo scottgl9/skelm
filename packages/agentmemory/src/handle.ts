@@ -1,7 +1,12 @@
 import type {
   AgentmemoryContextBlock,
+  AgentmemoryGraphResult,
   AgentmemoryHandle,
+  AgentmemoryOperation,
+  AgentmemoryRecallResult,
+  AgentmemorySaveResult,
   AgentmemorySearchResult,
+  AgentmemorySessionsResult,
   EnforceDecision,
   PermissionDimension,
 } from '@skelm/core'
@@ -14,8 +19,8 @@ export interface AgentmemoryHandleOptions {
    * Per-op enforcer. Returns an EnforceDecision; when `allow: false` the
    * call is short-circuited and a `permission.denied` event is published.
    */
-  canUseAgentmemory: (op: 'observe' | 'search' | 'session' | 'context') => EnforceDecision
-  /** Audit hook: called with one of `agentmemory.{observe,search,session.start,session.end,context}`. */
+  canUseAgentmemory: (op: AgentmemoryOperation) => EnforceDecision
+  /** Audit hook: called with one of `agentmemory.{observe,search,session.start,session.end,context,save,recall,sessions,graph}`. */
   audit?: (event: AgentmemoryAuditEvent) => void
   /** Permission-denied / error events for the run's EventBus. */
   events?: (event: AgentmemoryRuntimeEvent) => void
@@ -31,6 +36,10 @@ export type AgentmemoryAuditEvent =
   | { type: 'agentmemory.observe'; sessionId: string; hookType: string; at: number }
   | { type: 'agentmemory.search'; query: string; hits: number; at: number }
   | { type: 'agentmemory.context'; query: string; at: number }
+  | { type: 'agentmemory.save'; id: string; at: number }
+  | { type: 'agentmemory.recall'; hits: number; at: number }
+  | { type: 'agentmemory.sessions'; count: number; at: number }
+  | { type: 'agentmemory.graph'; query: string; nodes: number; at: number }
 
 export type AgentmemoryRuntimeEvent =
   | {
@@ -45,7 +54,7 @@ export type AgentmemoryRuntimeEvent =
       type: 'agentmemory.error'
       runId?: string
       stepId?: string
-      op: 'observe' | 'search' | 'session' | 'context'
+      op: AgentmemoryOperation
       message: string
       status?: number
       at: number
@@ -63,10 +72,7 @@ export type AgentmemoryRuntimeEvent =
 export function createAgentmemoryHandle(opts: AgentmemoryHandleOptions): AgentmemoryHandle {
   const { client, canUseAgentmemory, audit, events, defaultProject } = opts
 
-  function denied(
-    op: 'observe' | 'search' | 'session' | 'context',
-    dimension: PermissionDimension,
-  ): void {
+  function denied(op: AgentmemoryOperation, dimension: PermissionDimension): void {
     if (events) {
       events({
         type: 'permission.denied',
@@ -79,7 +85,7 @@ export function createAgentmemoryHandle(opts: AgentmemoryHandleOptions): Agentme
     }
   }
 
-  function reportError(op: 'observe' | 'search' | 'session' | 'context', err: unknown): void {
+  function reportError(op: AgentmemoryOperation, err: unknown): void {
     if (!events) return
     const e = err instanceof AgentmemoryError ? err : undefined
     events({
@@ -174,6 +180,7 @@ export function createAgentmemoryHandle(opts: AgentmemoryHandleOptions): Agentme
       }
       try {
         const res = await client.context({
+          sessionId: input.sessionId ?? '',
           project: input.project ?? defaultProject ?? '',
           query: input.query,
           ...(input.tokenBudget !== undefined ? { token_budget: input.tokenBudget } : {}),
@@ -185,6 +192,88 @@ export function createAgentmemoryHandle(opts: AgentmemoryHandleOptions): Agentme
       } catch (err) {
         reportError('context', err)
         return { text: '' }
+      }
+    },
+    async save(input): Promise<AgentmemorySaveResult> {
+      const d = canUseAgentmemory('save')
+      if (!d.allow) {
+        denied('save', d.dimension)
+        return { id: '' }
+      }
+      try {
+        const res = await client.save({
+          project: input.project ?? defaultProject ?? '',
+          title: input.title,
+          content: input.content,
+          ...(input.sessionId !== undefined ? { session_id: input.sessionId } : {}),
+          ...(input.concepts !== undefined ? { concepts: input.concepts } : {}),
+        })
+        audit?.({ type: 'agentmemory.save', id: res.id, at: Date.now() })
+        return { id: res.id }
+      } catch (err) {
+        reportError('save', err)
+        return { id: '' }
+      }
+    },
+    async recall(input): Promise<AgentmemoryRecallResult> {
+      const d = canUseAgentmemory('recall')
+      if (!d.allow) {
+        denied('recall', d.dimension)
+        return { hits: [] }
+      }
+      try {
+        const res = await client.recall({
+          project: input.project ?? defaultProject ?? '',
+          ...(input.sessionId !== undefined ? { session_id: input.sessionId } : {}),
+          ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        })
+        audit?.({ type: 'agentmemory.recall', hits: res.hits.length, at: Date.now() })
+        return { hits: res.hits }
+      } catch (err) {
+        reportError('recall', err)
+        return { hits: [] }
+      }
+    },
+    async sessions(input): Promise<AgentmemorySessionsResult> {
+      const d = canUseAgentmemory('recall')
+      if (!d.allow) {
+        denied('recall', d.dimension)
+        return { sessions: [] }
+      }
+      try {
+        const res = await client.sessions({
+          project: input.project ?? defaultProject ?? '',
+          ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        })
+        audit?.({ type: 'agentmemory.sessions', count: res.sessions.length, at: Date.now() })
+        return { sessions: res.sessions }
+      } catch (err) {
+        reportError('recall', err)
+        return { sessions: [] }
+      }
+    },
+    async graphQuery(input): Promise<AgentmemoryGraphResult> {
+      const d = canUseAgentmemory('graph')
+      if (!d.allow) {
+        denied('graph', d.dimension)
+        return { nodes: [], edges: [] }
+      }
+      try {
+        const res = await client.graphQuery({
+          project: input.project ?? defaultProject ?? '',
+          query: input.query,
+          ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        })
+        audit?.({
+          type: 'agentmemory.graph',
+          query: input.query,
+          nodes: res.nodes.length,
+          at: Date.now(),
+        })
+        return { nodes: res.nodes, edges: res.edges }
+      } catch (err) {
+        reportError('graph', err)
+        return { nodes: [], edges: [] }
       }
     },
   }

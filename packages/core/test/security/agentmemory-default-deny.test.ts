@@ -9,7 +9,15 @@ import { TrustEnforcer, resolvePermissions } from '../../src/permissions.js'
 // op denies every other op. `'deny'` shorthand zeroes the whole dimension
 // even when defaults granted it.
 
-const ALL_OPS: readonly AgentmemoryOperation[] = ['observe', 'search', 'session', 'context']
+const ALL_OPS: readonly AgentmemoryOperation[] = [
+  'observe',
+  'search',
+  'session',
+  'context',
+  'save',
+  'recall',
+  'graph',
+]
 
 function makeEnforcer(
   defaults: Parameters<typeof resolvePermissions>[0],
@@ -47,17 +55,42 @@ describe('agentmemory permission — default-deny', () => {
       expect(enforcer.canUseAgentmemory(op).allow).toBe(false)
     }
   })
+
+  it('empty agentmemory object grants nothing — denies every op', () => {
+    const enforcer = makeEnforcer({ agentmemory: {} }, { agentmemory: {} })
+    for (const op of ALL_OPS) {
+      expect(enforcer.canUseAgentmemory(op).allow).toBe(false)
+    }
+  })
 })
 
 describe('agentmemory permission — explicit-deny', () => {
-  it('granting one op denies the other three', () => {
+  it('granting one op denies every other op', () => {
     const enforcer = makeEnforcer(undefined, { agentmemory: { allowSearch: true } })
     expect(enforcer.canUseAgentmemory('search').allow).toBe(true)
-    for (const op of ['observe', 'session', 'context'] as const) {
+    for (const op of ALL_OPS.filter((o) => o !== 'search')) {
       const decision = enforcer.canUseAgentmemory(op)
       expect(decision.allow).toBe(false)
       if (!decision.allow) expect(decision.dimension).toBe('agentmemory')
     }
+  })
+
+  it('granting a broadened op (save) denies every other op', () => {
+    const enforcer = makeEnforcer(undefined, { agentmemory: { allowSave: true } })
+    expect(enforcer.canUseAgentmemory('save').allow).toBe(true)
+    for (const op of ALL_OPS.filter((o) => o !== 'save')) {
+      expect(enforcer.canUseAgentmemory(op).allow).toBe(false)
+    }
+  })
+
+  it('recall and graph are independently gated', () => {
+    const recallOnly = makeEnforcer(undefined, { agentmemory: { allowRecall: true } })
+    expect(recallOnly.canUseAgentmemory('recall').allow).toBe(true)
+    expect(recallOnly.canUseAgentmemory('graph').allow).toBe(false)
+
+    const graphOnly = makeEnforcer(undefined, { agentmemory: { allowGraph: true } })
+    expect(graphOnly.canUseAgentmemory('graph').allow).toBe(true)
+    expect(graphOnly.canUseAgentmemory('recall').allow).toBe(false)
   })
 
   it('intersection narrows: defaults allow all, step allows only observe', () => {
