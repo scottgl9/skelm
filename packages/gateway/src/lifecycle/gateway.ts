@@ -3,6 +3,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { AgentmemoryClient, createAgentmemoryHandle } from '@skelm/agentmemory'
 import {
+  type AgentPermissions,
   type ApprovalGate,
   type AuditWriter,
   DEFAULT_CONFIG,
@@ -146,6 +147,14 @@ export class Gateway {
       const defaultServer = DEFAULT_CONFIG.server ?? {}
       this.config = {
         ...DEFAULT_CONFIG,
+        // Do NOT inherit DEFAULT_CONFIG's deny-all permission baseline as an
+        // operator default: the CLI loader deliberately treats framework
+        // permission defaults as non-authoritative, and applying the empty
+        // allow-lists as an intersection ceiling would deny every step. Keep
+        // only non-permission defaults (e.g. backend) for the no-config path.
+        ...(DEFAULT_CONFIG.defaults !== undefined && {
+          defaults: stripPermissionDefaults(DEFAULT_CONFIG.defaults),
+        }),
         server: {
           ...defaultServer,
           port: 0,
@@ -429,6 +438,7 @@ export class Gateway {
           workflowPath,
         }),
         pipelineRegistry: makeGatewayPipelineRegistry(this),
+        ...this.defaultPermissionRunOptions(),
         ...this.egressRunOptions(),
         ...this.agentmemoryRunOptions(),
       })
@@ -570,6 +580,29 @@ export class Gateway {
           ...(eventsBus !== undefined ? { events: (event) => eventsBus.publish(event) } : {}),
         })
       },
+    }
+  }
+
+  /**
+   * Project-default permissions to apply to every gateway-driven run. Spread
+   * into `runner.start(...)` so a workflow's resolved policy intersects with the
+   * operator's `config.defaults.permissions` ceiling (and named profiles).
+   *
+   * Only the operator's explicitly-declared defaults are applied — the merge in
+   * the CLI loader never propagates the framework deny-all baseline, and the
+   * gateway's no-config fallback strips it too, so an unset default stays
+   * `undefined` (no narrowing) rather than denying every step.
+   */
+  defaultPermissionRunOptions(): {
+    defaultPermissions?: AgentPermissions
+    permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+  } {
+    const defaults = this.config.defaults
+    return {
+      ...(defaults?.permissions !== undefined && { defaultPermissions: defaults.permissions }),
+      ...(defaults?.permissionProfiles !== undefined && {
+        permissionProfiles: defaults.permissionProfiles,
+      }),
     }
   }
 
@@ -1087,6 +1120,16 @@ function requireStarted<T>(value: T | null, notAvailableMsg: string): T {
     throw new Error(`${notAvailableMsg} — start() the gateway first`)
   }
   return value
+}
+
+// Drop `permissions` from a config `defaults` block. Used for the no-config
+// fallback so the framework deny-all baseline is never applied as an operator
+// permission ceiling (mirrors the CLI loader's deliberate exclusion).
+function stripPermissionDefaults(
+  defaults: NonNullable<SkelmConfig['defaults']>,
+): NonNullable<SkelmConfig['defaults']> {
+  const { permissions: _permissions, ...rest } = defaults
+  return rest
 }
 
 function startPipelineError(statusCode: number, message: string): Error & { statusCode: number } {
