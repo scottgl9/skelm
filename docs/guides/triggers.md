@@ -317,6 +317,17 @@ trigger.error  { triggerId, message }
 
 [`examples/telegram-bot/`](https://github.com/scottgl9/skelm/tree/main/examples/telegram-bot) is the canonical worked example: pipeline declares the trigger, config registers the source, `skelm gateway start` runs the loop and dispatches each inbound message into a workflow run with the message as input. The agent's reply is posted back via the source's `onResult`.
 
+### Who-can-talk allowlist
+
+`telegram.createTriggerSource({ allowedChatIds, allowedUsers })` drops inbound updates from any chat / sender not on the allowlist *before* they fire a workflow. Each configured filter is a gate (both must pass when both are set). This is **strongly recommended** whenever the target is a privileged or [unrestricted](/concepts/permissions#the-unrestricted-bypass-freewheeling-agents) agent: an open Telegram channel that drives such an agent lets anyone who finds the bot act as it.
+
+```ts
+telegram.createTriggerSource({
+  dropPending: true,
+  allowedChatIds: ['123456789'], // only this chat may talk to the bot
+})
+```
+
 ## Triggers that drive a persistent agent
 
 A trigger's `workflowId` can resolve to a [persistent agent](/concepts/persistent-agents) instead of a pipeline. The declaration is identical — a persistent agent exposes the same `triggers` array — but the gateway routes the fire to a single durable conversational *turn* rather than a fresh pipeline run:

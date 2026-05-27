@@ -78,6 +78,22 @@ export interface CreateTelegramTriggerSourceOptions {
    * `{ reply: string }` for the default behavior to apply.
    */
   postReply?: boolean
+  /**
+   * Who-can-talk allowlist by chat id. When set, updates from any other chat
+   * are dropped before they fire a workflow. Omitted ⇒ no chat restriction.
+   *
+   * SECURITY: an open inbound channel that drives a privileged (especially
+   * unrestricted) agent lets anyone who finds the bot act as it. Set this (and/
+   * or {@link allowedUsers}) whenever the target agent is not strictly sandboxed.
+   */
+  allowedChatIds?: readonly string[]
+  /**
+   * Who-can-talk allowlist by sender username / first name (the `from` field of
+   * {@link TelegramMessageInput}). When set, updates from any other sender are
+   * dropped. Omitted ⇒ no sender restriction. Combined with
+   * {@link allowedChatIds} as AND: every configured filter must pass.
+   */
+  allowedUsers?: readonly string[]
 }
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org'
@@ -321,6 +337,13 @@ export class TelegramIntegration extends IntegrationBase {
     const longPollSeconds = options.longPollSeconds ?? 25
     const allowedUpdates = options.allowedUpdates ?? ['message']
     const postReply = options.postReply ?? true
+    const allowedChatIds = options.allowedChatIds
+    const allowedUsers = options.allowedUsers
+    const isAllowed = (input: TelegramMessageInput): boolean => {
+      if (allowedChatIds !== undefined && !allowedChatIds.includes(input.chatId)) return false
+      if (allowedUsers !== undefined && !allowedUsers.includes(input.from)) return false
+      return true
+    }
     const integration = this
     let stopping = false
     let abortCtl: AbortController | null = null
@@ -362,6 +385,9 @@ export class TelegramIntegration extends IntegrationBase {
           seen.add(update.update_id)
           const input = telegramUpdateToInput(update)
           if (input === null) continue
+          // Who-can-talk gate: drop non-allowlisted senders before they can
+          // fire a workflow (critical when the target agent is unrestricted).
+          if (!isAllowed(input)) continue
           try {
             await onMessage(input)
           } catch {

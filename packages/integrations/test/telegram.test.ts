@@ -253,6 +253,70 @@ describe('TelegramIntegration', () => {
     expect((seen[1] as { text: string }).text).toBe('two')
   })
 
+  it('createTriggerSource drops updates from non-allowlisted chats/users', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        result: [
+          {
+            update_id: 200,
+            message: {
+              message_id: 1,
+              chat: { id: 7 },
+              from: { username: 'alice' },
+              date: 0,
+              text: 'allowed',
+            },
+          },
+          {
+            update_id: 201,
+            message: {
+              message_id: 2,
+              chat: { id: 99 },
+              from: { username: 'mallory' },
+              date: 0,
+              text: 'blocked-chat',
+            },
+          },
+          {
+            update_id: 202,
+            message: {
+              message_id: 3,
+              chat: { id: 7 },
+              from: { username: 'mallory' },
+              date: 0,
+              text: 'blocked-user',
+            },
+          },
+        ],
+      }),
+    )
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true, result: [] }))
+
+    const tg = new TelegramIntegration(makeConfig(), {
+      fetch: fetchMock as unknown as typeof fetch,
+    })
+    await tg.init()
+    const source = tg.createTriggerSource({
+      dropPending: false,
+      longPollSeconds: 0,
+      allowedChatIds: ['7'],
+      allowedUsers: ['alice'],
+    })
+
+    const seen: Array<{ text: string }> = []
+    source.start({
+      onMessage: async (payload) => {
+        seen.push(payload as { text: string })
+      },
+    })
+    await new Promise((r) => setTimeout(r, 30))
+    await source.stop()
+
+    // Only the update matching BOTH allowlists fires.
+    expect(seen.map((s) => s.text)).toEqual(['allowed'])
+  })
+
   it('createTriggerSource onResult posts output.reply via sendMessage', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ ok: true, result: { message_id: 999, chat: { id: 1 }, date: 0 } }),
