@@ -40,6 +40,7 @@ value:ModelProviderBase
 value:ModelRegistry
 value:NoopAuditWriter
 value:NotImplementedError
+value:PERSISTENT_AGENT_NAMESPACE
 value:PROTOCOL_VERSION
 value:PermissionDeniedError
 value:PermissionResolver
@@ -97,9 +98,12 @@ value:createOpenAIBackend
 value:createPolicyFetch
 value:createRoutingBackend
 value:createScriptTrigger
+value:createSessionRecord
 value:createSlackTrigger
 value:createThreadHost
 value:createWebhookTrigger
+value:defaultPromptOf
+value:defaultReplyOf
 value:defineConfig
 value:describePipeline
 value:describeStep
@@ -114,8 +118,10 @@ value:imagePart
 value:imagePartFromFile
 value:invoke
 value:isMultimodal
+value:isPersistentAgent
 value:llm
 value:loadAgentDefinition
+value:loadSession
 value:loadSkillBodies
 value:loadTsModule
 value:loop
@@ -123,11 +129,13 @@ value:messageHasImage
 value:parallel
 value:parseDuration
 value:parseSkill
+value:persistentAgent
 value:pickExport
 value:pipeline
 value:pipelineStep
 value:resolvePermissions
 value:runPipeline
+value:saveSession
 value:selectProvider
 value:selectProviderForTask
 value:serializeError
@@ -239,6 +247,9 @@ type:ParallelWaitFor
 type:PermissionDenialReason
 type:PermissionDimension
 type:PermissionResolverOptions
+type:PersistentAgent
+type:PersistentAgentDef
+type:PersistentSessionRecord
 type:Pipeline
 type:PipelineDescription
 type:PipelineStep

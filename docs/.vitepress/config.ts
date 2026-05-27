@@ -71,6 +71,7 @@ export default defineConfig({
           items: [
             { text: 'Overview', link: '/concepts/' },
             { text: 'Permissions', link: '/concepts/permissions' },
+            { text: 'Persistent Agents', link: '/concepts/persistent-agents' },
             { text: 'Coding Agents', link: '/concepts/coding-agents' },
             { text: 'System Prompt', link: '/concepts/system-prompt' },
             { text: 'Registries', link: '/concepts/registries' },
