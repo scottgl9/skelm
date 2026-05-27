@@ -282,6 +282,7 @@ export type {
   ResolvedAgentmemoryPolicy,
   ResolvedPolicy,
   ResolvedToolMatcher,
+  ResolvePermissionsOptions,
   ToolMatcher,
 } from './permissions.js'
 export type { RunHandle, RunOptions, WaitRequest } from './runner.js'

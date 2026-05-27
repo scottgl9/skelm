@@ -101,6 +101,15 @@ export interface AgentPermissions {
    * that consumes this dimension.
    */
   agentmemory?: AgentmemoryPolicy
+  /**
+   * Author REQUEST for a full permission bypass (freewheeling, hermes-style).
+   * Inert on its own: it only takes effect when the operator also grants the
+   * workflow id in gateway config (`defaults.unrestrictedGrants`). A pipeline
+   * can therefore never self-escalate — `resolvePermissions` only honours this
+   * when the gateway passes `{ grantUnrestricted: true }`. Default-deny:
+   * omitted (or operator-ungranted) keeps normal per-dimension enforcement.
+   */
+  requestUnrestricted?: boolean
 }
 
 /** A frozen, normalized policy ready for enforcement. Built by `resolvePermissions`. */
@@ -116,6 +125,13 @@ export interface ResolvedPolicy {
   readonly fsWrite: ReadonlySet<string>
   readonly approval: ApprovalPolicy | null
   readonly agentmemory: ResolvedAgentmemoryPolicy
+  /**
+   * Full bypass: when `true`, `TrustEnforcer` short-circuits every dimension to
+   * allow. Set only when an author requested it AND the operator granted it
+   * (see `resolvePermissions` opts). Optional so hand-built policies default to
+   * normal enforcement; omitted is treated as `false`.
+   */
+  readonly unrestricted?: boolean
 }
 
 /** Frozen, normalized agentmemory policy. */
@@ -156,6 +172,17 @@ const EMPTY_MATCHER: ResolvedToolMatcher = Object.freeze({
   star: false,
 })
 
+/** Options supplied ONLY by the trust boundary (gateway), never by an author. */
+export interface ResolvePermissionsOptions {
+  /**
+   * Operator grant for the full bypass. When `true` AND some input layer set
+   * `requestUnrestricted`, the resolved policy is `unrestricted`. The author
+   * side alone can never set this — that is what keeps a pipeline from
+   * self-escalating.
+   */
+  grantUnrestricted?: boolean
+}
+
 /**
  * Resolve a permission policy from project defaults + step-level fields.
  * Intersection-only: nothing widens. The returned policy is immutable.
@@ -164,6 +191,7 @@ export function resolvePermissions(
   defaults: AgentPermissions | undefined,
   stepLevel: AgentPermissions | undefined,
   profiles: Readonly<Record<string, AgentPermissions>> = {},
+  opts: ResolvePermissionsOptions = {},
 ): ResolvedPolicy {
   const profile =
     stepLevel?.profile === undefined
@@ -175,6 +203,12 @@ export function resolvePermissions(
   const inputs = [defaults, profile, stripProfile(stepLevel)].filter(
     (p): p is AgentPermissions => p !== undefined,
   )
+
+  // Two-key bypass: only true when the operator granted it AND an author layer
+  // requested it. `requestUnrestricted` never participates in the intersection
+  // math below — it cannot widen any allow-list, only flip this flag.
+  const requested = inputs.some((p) => p.requestUnrestricted === true)
+  const unrestricted = opts.grantUnrestricted === true && requested
 
   return Object.freeze({
     allowedTools: intersectToolMatchers(inputs.map((p) => p.allowedTools)),
@@ -188,6 +222,7 @@ export function resolvePermissions(
     fsWrite: intersectStrings(inputs.map((p) => p.fsWrite)),
     approval: lastDefined(inputs.map((p) => p.approval)) ?? null,
     agentmemory: intersectAgentmemory(inputs.map((p) => p.agentmemory)),
+    unrestricted,
   })
 }
 
@@ -242,6 +277,7 @@ export class TrustEnforcer {
   constructor(readonly policy: ResolvedPolicy) {}
 
   canCallTool(toolId: string): EnforceDecision {
+    if (this.policy.unrestricted === true) return { allow: true }
     if (matches(this.policy.deniedTools, toolId)) {
       return { allow: false, reason: 'in-denylist', dimension: 'tool' }
     }
@@ -252,6 +288,7 @@ export class TrustEnforcer {
   }
 
   canExec(binary: string): EnforceDecision {
+    if (this.policy.unrestricted === true) return { allow: true }
     // A binary is allowed only by an exact allowlist entry. We deliberately do
     // NOT fall back to the basename of a path-bearing binary: an allowlist of
     // ['git'] must never accept '/tmp/evil/git' (the basename-bypass closed in
@@ -269,6 +306,7 @@ export class TrustEnforcer {
   }
 
   canAttachMcpServer(serverId: string): EnforceDecision {
+    if (this.policy.unrestricted === true) return { allow: true }
     if (!this.policy.allowedMcpServers.has(serverId)) {
       return { allow: false, reason: 'not-in-allowlist', dimension: 'mcp' }
     }
@@ -276,6 +314,7 @@ export class TrustEnforcer {
   }
 
   canLoadSkill(skillId: string): EnforceDecision {
+    if (this.policy.unrestricted === true) return { allow: true }
     if (!this.policy.allowedSkills.has(skillId)) {
       return { allow: false, reason: 'not-in-allowlist', dimension: 'skill' }
     }
@@ -283,6 +322,7 @@ export class TrustEnforcer {
   }
 
   canAccessSecret(name: string): EnforceDecision {
+    if (this.policy.unrestricted === true) return { allow: true }
     if (!this.policy.allowedSecrets.has(name)) {
       return { allow: false, reason: 'not-in-allowlist', dimension: 'secret' }
     }
@@ -290,6 +330,7 @@ export class TrustEnforcer {
   }
 
   canFetch(host: string): EnforceDecision {
+    if (this.policy.unrestricted === true) return { allow: true }
     const policy = this.policy.networkEgress
     if (policy === 'allow') return { allow: true }
     if (policy === 'deny') return { allow: false, reason: 'no-policy', dimension: 'network' }
@@ -300,6 +341,7 @@ export class TrustEnforcer {
   }
 
   canUseAgentmemory(op: AgentmemoryOperation): EnforceDecision {
+    if (this.policy.unrestricted === true) return { allow: true }
     const p = this.policy.agentmemory
     const allow: Record<AgentmemoryOperation, boolean> = {
       observe: p.allowObserve,
@@ -327,6 +369,7 @@ export class TrustEnforcer {
     roots: ReadonlySet<string> | undefined,
     dimension: 'fs.read' | 'fs.write',
   ): EnforceDecision {
+    if (this.policy.unrestricted === true) return { allow: true }
     if (!roots || roots.size === 0)
       return { allow: false, reason: 'path-not-in-allowlist', dimension }
     const normalized = normalizeFsPath(path)
@@ -509,6 +552,7 @@ export function createPolicyFetch(
   base: typeof globalThis.fetch = globalThis.fetch,
 ): typeof globalThis.fetch {
   return async function policyFetch(input, init) {
+    if (enforcer.policy.unrestricted === true) return base(input, init)
     const url =
       typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url
     let host: string
