@@ -145,6 +145,8 @@ type:AgentMessage
 type:AgentPermissions
 type:AgentmemoryContextBlock
 type:AgentmemoryHandle
+type:AgentmemoryHandleFactory
+type:AgentmemoryHandleFactoryContext
 type:AgentmemoryOperation
 type:AgentmemoryPolicy
 type:AgentmemorySearchHit
@@ -276,6 +278,7 @@ type:SessionUpdate
 type:SkelmBackend
 type:SkelmConfig
 type:SkelmConfigAgentEntry
+type:SkelmConfigAgentmemory
 type:SkelmConfigBackendEntry
 type:SkelmConfigBackends
 type:SkelmConfigMcpServerEntry

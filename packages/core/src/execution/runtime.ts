@@ -1,3 +1,4 @@
+import type { AgentmemoryHandleFactory } from '../backend.js'
 import type { ApprovalGate, SecretResolver } from '../enforcement/index.js'
 import type { AgentPermissions, NetworkPolicy } from '../permissions.js'
 import type { RunStore, StateStore } from '../run-store.js'
@@ -22,6 +23,13 @@ export interface ExecutionRuntime {
   readonly registerEgressToken?: (runId: string, stepId: string, policy: NetworkPolicy) => string
   readonly unregisterEgressToken?: (runId: string, stepId: string) => void
   readonly getProxyEnv?: (egressToken?: string) => Record<string, string> | undefined
+  /**
+   * Optional factory called per agent step to produce a gateway-wired
+   * `AgentmemoryHandle`. The runner invokes it after resolving permissions
+   * and before the backend `run()` call, then injects the returned handle
+   * into `BackendContext.agentmemory`. Undefined disables agentmemory.
+   */
+  readonly agentmemoryHandleFactory?: AgentmemoryHandleFactory
   readonly pipelineRegistry?: (
     pipelineId: string,
   ) => Pipeline | undefined | Promise<Pipeline | undefined>

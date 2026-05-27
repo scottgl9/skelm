@@ -1,6 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { AgentmemoryClient, createAgentmemoryHandle } from '@skelm/agentmemory'
 import {
   type ApprovalGate,
   type AuditWriter,
@@ -84,6 +85,7 @@ export class Gateway {
   private httpServer: SkelmServer | null = null
   private egressProxy: EgressProxy | null = null
   private tokenPolicyStore: TokenPolicyMap | null = null
+  private agentmemoryClient: AgentmemoryClient | null = null
   private readonly inFlightRuns = new Map<string, AbortController>()
   private readonly inFlightRunners = new Map<string, import('@skelm/core').Runner>()
   private metricsInternal: import('@skelm/metrics').MetricsCollector | null = null
@@ -399,6 +401,7 @@ export class Gateway {
         }),
         pipelineRegistry: makeGatewayPipelineRegistry(this),
         ...this.egressRunOptions(),
+        ...this.agentmemoryRunOptions(),
       })
     } catch (err) {
       this.unregisterRun(runId)
@@ -506,6 +509,61 @@ export class Gateway {
     }
   }
 
+  /**
+   * Run-options block exposing the agentmemory handle factory. Spread into
+   * `runner.start(...)` alongside `egressRunOptions()` so backends receive
+   * `BackendContext.agentmemory` when the integration is enabled AND the
+   * step's resolved policy permits at least one agentmemory operation.
+   * Returns an empty object when agentmemory is disabled.
+   */
+  agentmemoryRunOptions(): {
+    agentmemoryHandleFactory?: import('@skelm/core').AgentmemoryHandleFactory
+  } {
+    const client = this.agentmemoryClient
+    if (client === null) return {}
+    const defaultProject = this.projectRoot
+    return {
+      agentmemoryHandleFactory: (ctx) => {
+        const eventsBus = ctx.events
+        return createAgentmemoryHandle({
+          client,
+          canUseAgentmemory: ctx.canUseAgentmemory,
+          defaultProject,
+          runId: ctx.runId,
+          stepId: ctx.stepId,
+          ...(eventsBus !== undefined
+            ? { events: (event) => eventsBus.publish(event) }
+            : {}),
+        })
+      },
+    }
+  }
+
+  private async initAgentmemory(): Promise<void> {
+    const cfg = this.config.agentmemory
+    if (!cfg || cfg.enabled !== true) return
+    const url = cfg.url ?? 'http://localhost:3111'
+    const timeoutMs = cfg.timeoutMs ?? 3000
+    let secret: string | undefined
+    if (cfg.secretName !== undefined && this.enforcementInternal !== null) {
+      try {
+        secret = await this.enforcementInternal.secretResolver.resolve(cfg.secretName)
+      } catch {
+        secret = undefined
+      }
+    }
+    this.agentmemoryClient = new AgentmemoryClient({
+      url,
+      timeoutMs,
+      ...(secret !== undefined ? { secret } : {}),
+    })
+  }
+
+  /** True when the gateway has the agentmemory client wired. */
+  get agentmemoryEnabled(): boolean {
+    return this.agentmemoryClient !== null
+  }
+
   async start(): Promise<void> {
     if (this.state !== 'stopped') {
       throw new Error(`cannot start gateway in state ${this.state}`)
@@ -545,6 +603,7 @@ export class Gateway {
         const { MetricsCollector } = await import('@skelm/metrics')
         this.metricsInternal = new MetricsCollector()
       }
+      await this.initAgentmemory()
       // Start the egress proxy before HTTP server
       await this.startEgressProxy()
       if (this.options.enableHttp) {

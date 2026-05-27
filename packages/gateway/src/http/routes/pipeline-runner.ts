@@ -63,6 +63,7 @@ export async function runPipelineSync(
         workflowPath: entry.path,
       }),
       ...gateway.egressRunOptions(),
+          ...gateway.agentmemoryRunOptions(),
     })
     const final = await handle.wait()
     return {

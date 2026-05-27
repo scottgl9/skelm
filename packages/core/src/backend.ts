@@ -357,6 +357,27 @@ export interface AgentmemoryContextBlock {
   readonly tokenEstimate?: number
 }
 
+/** Factory context handed to the gateway's per-step agentmemory factory. */
+export interface AgentmemoryHandleFactoryContext {
+  readonly runId: string
+  readonly stepId: string
+  /** Bound `TrustEnforcer.canUseAgentmemory` for the step's resolved policy. */
+  readonly canUseAgentmemory: (
+    op: import('./permissions.js').AgentmemoryOperation,
+  ) => import('./permissions.js').EnforceDecision
+  /** Optional event bus; the handle publishes permission.denied / agentmemory.error. */
+  readonly events?: { publish(event: unknown): void }
+}
+
+/**
+ * Factory returning a per-step `AgentmemoryHandle`. The gateway constructs
+ * one of these from its `AgentmemoryClient` and hands it through
+ * `RunOptions.agentmemoryHandleFactory`. Undefined disables the integration.
+ */
+export type AgentmemoryHandleFactory = (
+  ctx: AgentmemoryHandleFactoryContext,
+) => AgentmemoryHandle | undefined
+
 /**
  * The pluggable surface for LLM and agent backends. Implementers must set
  * `capabilities` truthfully — a backend that lies about its capabilities

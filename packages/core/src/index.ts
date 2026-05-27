@@ -32,6 +32,7 @@ export { DEFAULT_CONFIG, defineConfig } from './config.js'
 export type {
   SkelmConfig,
   SkelmConfigAgentEntry,
+  SkelmConfigAgentmemory,
   SkelmConfigBackendEntry,
   SkelmConfigBackends,
   SkelmConfigMcpServerEntry,
@@ -58,6 +59,8 @@ export {
 export type {
   AgentmemoryContextBlock,
   AgentmemoryHandle,
+  AgentmemoryHandleFactory,
+  AgentmemoryHandleFactoryContext,
   AgentmemorySearchHit,
   AgentmemorySearchResult,
   AgentRequest,
