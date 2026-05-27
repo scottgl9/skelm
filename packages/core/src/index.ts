@@ -58,11 +58,18 @@ export {
 } from './backend.js'
 export type {
   AgentmemoryContextBlock,
+  AgentmemoryGraphEdge,
+  AgentmemoryGraphNode,
+  AgentmemoryGraphResult,
   AgentmemoryHandle,
   AgentmemoryHandleFactory,
   AgentmemoryHandleFactoryContext,
+  AgentmemoryRecallResult,
+  AgentmemorySaveResult,
   AgentmemorySearchHit,
   AgentmemorySearchResult,
+  AgentmemorySessionsResult,
+  AgentmemorySessionSummary,
   AgentRequest,
   AgentResponse,
   BackendCapabilities,

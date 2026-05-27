@@ -15,6 +15,7 @@ Task-oriented how-to documents. Each guide assumes you have read the [Concepts](
 - [Triggers](./triggers.md) — fire workflows from schedules, webhooks, queues, and external sources.
 - [ACP Sessions](./acp-sessions.md) — resident ACP agents and durable conversation state.
 - [MCP Servers](./mcp-servers.md) — declare and supervise MCP servers as registry citizens.
+- [Agentmemory](./agentmemory.md) — wire the agentmemory microservice for cross-session recall under default-deny permissions.
 
 ## Security and compliance
 

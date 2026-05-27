@@ -23,12 +23,24 @@ export type PermissionDimension =
   | 'fs.write'
   | 'agentmemory'
 
-/** Operations the agentmemory dimension can independently allow. */
-export type AgentmemoryOperation = 'observe' | 'search' | 'session' | 'context'
+/**
+ * Operations the agentmemory dimension can independently allow.
+ *
+ * `recall` gates both the sessions-list and the recent/by-session recall
+ * calls — they are the same read trust decision.
+ */
+export type AgentmemoryOperation =
+  | 'observe'
+  | 'search'
+  | 'session'
+  | 'context'
+  | 'save'
+  | 'recall'
+  | 'graph'
 
 /**
  * Per-operation gate for the agentmemory dimension. Each flag defaults to
- * deny when omitted. `'deny'` blocks all four ops as a quick disable.
+ * deny when omitted. `'deny'` blocks every op as a quick disable.
  */
 export type AgentmemoryPolicy =
   | 'deny'
@@ -37,6 +49,9 @@ export type AgentmemoryPolicy =
       allowSearch?: boolean
       allowSession?: boolean
       allowContext?: boolean
+      allowSave?: boolean
+      allowRecall?: boolean
+      allowGraph?: boolean
     }
 
 /** Network egress policy. */
@@ -81,8 +96,9 @@ export interface AgentPermissions {
   approval?: ApprovalPolicy
   /**
    * Per-operation gate for the agentmemory integration. Default-deny: an
-   * omitted field denies every observe/search/session/context call. See
-   * `@skelm/agentmemory` for the integration that consumes this dimension.
+   * omitted field denies every agentmemory call (observe/search/session/
+   * context/save/recall/graph). See `@skelm/agentmemory` for the integration
+   * that consumes this dimension.
    */
   agentmemory?: AgentmemoryPolicy
 }
@@ -108,6 +124,9 @@ export interface ResolvedAgentmemoryPolicy {
   readonly allowSearch: boolean
   readonly allowSession: boolean
   readonly allowContext: boolean
+  readonly allowSave: boolean
+  readonly allowRecall: boolean
+  readonly allowGraph: boolean
 }
 
 /** Internal canonical shape of a tool matcher used for O(1) lookups. */
@@ -177,6 +196,9 @@ const AGENTMEMORY_DENY: ResolvedAgentmemoryPolicy = Object.freeze({
   allowSearch: false,
   allowSession: false,
   allowContext: false,
+  allowSave: false,
+  allowRecall: false,
+  allowGraph: false,
 })
 
 function intersectAgentmemory(
@@ -192,6 +214,9 @@ function intersectAgentmemory(
       allowSearch: p.allowSearch === true,
       allowSession: p.allowSession === true,
       allowContext: p.allowContext === true,
+      allowSave: p.allowSave === true,
+      allowRecall: p.allowRecall === true,
+      allowGraph: p.allowGraph === true,
     })
     acc =
       acc === null
@@ -201,6 +226,9 @@ function intersectAgentmemory(
             allowSearch: acc.allowSearch && normalized.allowSearch,
             allowSession: acc.allowSession && normalized.allowSession,
             allowContext: acc.allowContext && normalized.allowContext,
+            allowSave: acc.allowSave && normalized.allowSave,
+            allowRecall: acc.allowRecall && normalized.allowRecall,
+            allowGraph: acc.allowGraph && normalized.allowGraph,
           })
   }
   return acc ?? AGENTMEMORY_DENY
@@ -273,15 +301,16 @@ export class TrustEnforcer {
 
   canUseAgentmemory(op: AgentmemoryOperation): EnforceDecision {
     const p = this.policy.agentmemory
-    const allow =
-      op === 'observe'
-        ? p.allowObserve
-        : op === 'search'
-          ? p.allowSearch
-          : op === 'session'
-            ? p.allowSession
-            : p.allowContext
-    if (allow) return { allow: true }
+    const allow: Record<AgentmemoryOperation, boolean> = {
+      observe: p.allowObserve,
+      search: p.allowSearch,
+      session: p.allowSession,
+      context: p.allowContext,
+      save: p.allowSave,
+      recall: p.allowRecall,
+      graph: p.allowGraph,
+    }
+    if (allow[op]) return { allow: true }
     return { allow: false, reason: 'not-in-allowlist', dimension: 'agentmemory' }
   }
 
