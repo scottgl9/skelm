@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-05-26
+
 ### Breaking Changes
 
 - **The CLI now requires a running gateway for every non-exempt command.** `skelm run`, `list`, `describe`, `history`, `audit`, `workspace`, and `secrets` dispatch to the gateway over HTTP instead of executing in-process. The CLI no longer constructs its own `Runner`, `EventBus`, `SqliteRunStore`, `WorkspaceManager`, `ChainAuditWriter`, `FileSecretResolver`, or skill registry; the gateway is the single execution surface and trust boundary.
@@ -32,6 +34,42 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **`Run.waiting` snapshot on the Run record.** While a run is parked at a `wait()` step, the gateway persists a serializable `RunWaiting` snapshot (`stepId`, optional `message`, optional `timeoutMs`, `since`) on the Run. HTTP clients can detect pause from a single `GET /runs/:id`. Cleared on `run.resumed`.
 
 - **`sessionId?: string` promoted to `AgentRequest`.** The structural-typing cast inside the `@skelm/codex` backend is gone; backends can read the session id off the request directly.
+
+### Added
+
+- **Ad-hoc start by path on `POST /runs`.** Submit `{ path: "/abs/workflow.mts", input?: ... }` to start a run without pre-registering the workflow; the `input` alias is also accepted on resume.
+- **Absolute-path trigger dispatch.** Scheduler/trigger entries that reference an on-disk workflow path now start runs through the gateway and honor `SKELM_GATEWAY_URL` for the dispatch target.
+- **`skelm schedule add` accepts a workflow file path** in addition to a registered pipeline id.
+- **Egress proxy wiring on HTTP run paths.** When a gateway is configured with an egress proxy, ad-hoc HTTP-launched runs now flow through it (previously only locally-dispatched runs did).
+- **Skelm builder workflow** with selectable backend (codex, pi-sdk verified against local qwen36); permissions on the builder are self-contained so it can be cloned without pulling in repo-wide defaults.
+- **Resolve directories to a config entrypoint in `skelm run`.** Passing a directory now picks up its `skelm.config.{mts,ts}` / default workflow entry instead of erroring.
+
+### Fixed
+
+- **Gateway WorkspaceManager scoped to the gateway state dir** so workspaces created during a run are visible to subsequent `GET /workspaces` queries.
+- **Tool-class dimensions named in the unsupported-backend refusal**, so the error tells you which class of tool the backend lacks instead of an opaque enum value.
+- **Embedded/ad-hoc gateway discovery isolated** so `gateway stop()` can never delete a persistent installation's `gateway.json`.
+- **Ad-hoc gateway port isolated per state dir** to prevent port collisions and cross-state data access when multiple CLIs run in parallel.
+- **Secrets redacted in the top-level env map** returned by `GET /v1/config`.
+- **Out-of-tree workflow resolution.** `skelm run` now searches `realpath(argv[1])` and `cwd` so workflows that live outside the package's node_modules tree resolve correctly (#225); the resolver also picks up `@skelm/*` packages from those locations (`53f0cea`).
+- **`BackendCapabilityError` passthrough** in `@skelm/vercel-ai` so the typed error reaches the CLI instead of being wrapped in a generic failure (#224).
+- **Typed `BackendError` end-to-end** across CLI, gateway, and `@skelm/agent`, with assorted gateway lifecycle fixes.
+- **`canExec` basename-bypass closed** in `@skelm/core` — the exec policy no longer accepts a permitted basename when invoked via a different absolute path. (Security fix.)
+- **Gateway starts out-of-box without `OPENAI_API_KEY`** set in the environment.
+- **`gateway foreground` SIGTERM exits 0**, and the `gateway install --systemd` path was hardened.
+- **`run` step-error output line surfaces the typed error class** so callers can switch on `error.code` without parsing strings.
+- **`ctx.threads` deduplicates** identical adjacent messages; `SKELM_STATE_DIR` is honored by the CLI run store path.
+- **Built-in backends receive secret resolvers** threaded from the CLI, matching the contract gateway-hosted backends already followed.
+- **Subcommand help returns ok**, so `skelm <cmd> --help` no longer exits non-zero.
+
+### Documentation
+
+- Added an automated-testing section pointing to the `skelm-self-test` harness.
+- Documented the CLI-as-gateway-interface refactor across the relevant guides.
+
+### Tests
+
+- Bulk-converted gateway boot sites to `bootGatewayWithRetry`; un-skipped the interactive `wait()`/resume test; ported the flaky `overlap` and workspace tests to the retry harness.
 
 ## [0.4.3] - 2026-05-22
 
@@ -412,7 +450,8 @@ First public release on npmjs.com. Versions of all published packages are aligne
 
 Pre-public releases distributed via GitHub Packages and git tags. See `git log` for full history.
 
-[Unreleased]: https://github.com/scottgl9/skelm/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/scottgl9/skelm/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/scottgl9/skelm/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/scottgl9/skelm/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/scottgl9/skelm/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/scottgl9/skelm/compare/v0.4.0...v0.4.1
