@@ -27,7 +27,7 @@ features:
     details: Every agent step declares its tools, executables, MCP servers, network egress, and filesystem roots. Anything not listed is denied — and the gateway is the only thing that enforces it.
   - icon: 🧠
     title: Code-first, not config-first
-    details: Pipelines are real `.ts` modules. Refactor with your editor, type-check with `tsc`, version with git, test with vitest. No YAML DSL to learn.
+    details: Pipelines are real `.mts` modules. Refactor with your editor, type-check with `tsc`, version with git, test with vitest. No YAML DSL to learn.
   - icon: 🧩
     title: Backend-agnostic agents
     details: Opencode, ACP (Copilot, Claude Code, Gemini), OpenAI, Anthropic, Pi — swap providers without rewriting a step. Bring your own via the backend SPI.
