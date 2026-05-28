@@ -360,6 +360,19 @@ export class TelegramIntegration extends IntegrationBase {
         }
       }
       while (!stopping) {
+        // Yield to the macrotask queue every iteration. Without this, a
+        // long-poll configuration like `longPollSeconds: 0` paired with a
+        // fetch implementation that resolves on the microtask queue (test
+        // doubles, instant local mocks, or any cached response path) turns
+        // the loop into a microtask-only spin: macrotasks like setTimeout
+        // (used by callers to delay `stop()`) and pending I/O (HTTP request
+        // handlers on the same event loop) never get scheduled, wedging the
+        // host process at 100% CPU. setImmediate is a single macrotask hop
+        // — negligible cost under real Telegram long-polling (where the
+        // round-trip dominates), but it bounds the loop's microtask
+        // monopoly under any synchronously-resolving fetch.
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        if (stopping) break
         abortCtl = new AbortController()
         let updates: TelegramRawUpdate[]
         try {

@@ -339,6 +339,53 @@ describe('TelegramIntegration', () => {
     })
   })
 
+  it('createTriggerSource yields to the event loop between iterations (no microtask starvation)', async () => {
+    // Regression for the s88 wedge: a synchronously-resolving fetch + a
+    // `longPollSeconds: 0` configuration must NOT starve the macrotask
+    // queue. Pre-fix, the poll loop awaited only microtask-resolving
+    // fetches, so callers' setTimeout-based delays (await sleep(N)) and
+    // any concurrent HTTP handlers on the same event loop never ran —
+    // wedging the host gateway at 100% CPU.
+    //
+    // We verify TWO macrotask-dependent observables:
+    //   1. `setTimeout(50ms)` actually fires while the loop is running.
+    //   2. `source.stop()` resolves within a reasonable bound.
+    //
+    // Use a NON-mocked async fetch (returns a fresh Response on every
+    // call) — vi.fn().mockResolvedValue happens to defer via Promise.resolve
+    // which on some Node versions already yields more than a tight
+    // hand-written async function, so we mirror the s88 stub exactly.
+    let calls = 0
+    const handCraftedFetch = (async () => {
+      calls += 1
+      return new Response(JSON.stringify({ ok: true, result: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+    const tg = new TelegramIntegration(makeConfig(), { fetch: handCraftedFetch })
+    await tg.init()
+    const source = tg.createTriggerSource({ dropPending: false, longPollSeconds: 0 })
+
+    source.start({ onMessage: async () => {} })
+
+    // Macrotask-dependent observable #1: setTimeout fires.
+    const macrotaskFired = await Promise.race([
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 30)),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1500)),
+    ])
+    expect(macrotaskFired, 'setTimeout(30ms) must fire while the poll loop is active').toBe(true)
+
+    // Macrotask-dependent observable #2: stop() returns promptly.
+    const stopStart = Date.now()
+    await source.stop()
+    const stopElapsed = Date.now() - stopStart
+    expect(stopElapsed, `source.stop() should resolve quickly; took ${stopElapsed}ms`).toBeLessThan(
+      500,
+    )
+    expect(calls, 'the loop should have made at least one fetch call').toBeGreaterThan(0)
+  })
+
   it('getUpdates passes offset and timeout to the API', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true, result: [] }))
     const tg = new TelegramIntegration(makeConfig(), {
