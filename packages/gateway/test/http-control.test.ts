@@ -27,7 +27,6 @@ describe('Gateway HTTP control surface', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
     }))
 
     try {
@@ -95,7 +94,6 @@ describe('Gateway HTTP control surface', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
     }))
     try {
       const gate = gw.enforcement.approvalGate as SuspendApprovalGate
@@ -126,7 +124,6 @@ describe('Gateway HTTP /runs/:runId/events', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -177,7 +174,6 @@ describe('Gateway HTTP /runs/:runId/events', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -196,7 +192,6 @@ describe('Gateway HTTP DELETE /runs/:runId', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -233,7 +228,6 @@ describe('Gateway HTTP webhook trigger dispatch', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -281,7 +275,6 @@ describe('Gateway HTTP webhook trigger dispatch', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -324,7 +317,6 @@ describe('Gateway HTTP webhook trigger dispatch', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -383,7 +375,6 @@ describe('Gateway HTTP /schedules', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -419,7 +410,6 @@ describe('Gateway HTTP /schedules', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -450,7 +440,6 @@ describe('Gateway HTTP /schedules', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -501,7 +490,6 @@ describe('Gateway HTTP /schedules', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -538,7 +526,6 @@ describe('Gateway HTTP /schedules', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     // Inject a no-op onFire so we can observe FireContext.payload directly.
@@ -580,7 +567,6 @@ describe('Gateway HTTP /schedules', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     gw.managers.triggers.setOnFire(async () => {
@@ -622,7 +608,6 @@ describe('Gateway HTTP /schedules', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -662,7 +647,6 @@ describe('Gateway HTTP /schedules', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -766,7 +750,6 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       loadWorkflow: async () => wf,
       config: {
         registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
@@ -817,7 +800,6 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       loadWorkflow: async () => wf,
       config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     }))
@@ -873,7 +855,6 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       loadWorkflow: async () => wf,
       config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     }))
@@ -924,7 +905,6 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       loadWorkflow: async () => wf,
       config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     }))
@@ -968,7 +948,6 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -993,7 +972,6 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     }))
     try {
@@ -1035,7 +1013,6 @@ describe('Gateway HTTP OpenAI-compat surface', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       loadWorkflow: async () => wf,
       config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     }))
@@ -1070,7 +1047,6 @@ describe('Gateway HTTP OpenAI-compat surface', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -1108,7 +1084,6 @@ describe('Gateway HTTP OpenAI-compat surface', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       loadWorkflow: async () => wf,
       config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
     }))
@@ -1150,7 +1125,6 @@ describe('Gateway HTTP /pipelines', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {
         registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
       },
@@ -1191,7 +1165,6 @@ describe('Gateway HTTP /pipelines', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       loadWorkflow: async () => wf,
       config: {
         registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
@@ -1240,7 +1213,6 @@ describe('Gateway HTTP /pipelines', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       // no loadWorkflow
       config: {
         registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
@@ -1266,7 +1238,6 @@ describe('Gateway HTTP /pipelines', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -1285,7 +1256,6 @@ describe('Gateway HTTP /metrics', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -1303,7 +1273,6 @@ describe('Gateway HTTP /metrics', () => {
       enableHttp: true,
       enableMetrics: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -1328,7 +1297,6 @@ describe('Gateway HTTP /debug breakpoints', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -1453,7 +1421,6 @@ it('DELETE /schedules/:id unregisters a schedule; 404 for unknown', async () => 
     watchRegistries: false,
     enableHttp: true,
     httpPort: port,
-    httpProxyPort: await pickFreePort(),
     config: {},
   }))
   try {

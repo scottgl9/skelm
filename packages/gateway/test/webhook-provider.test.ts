@@ -27,7 +27,6 @@ describe('webhook providers', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -70,7 +69,6 @@ describe('webhook providers', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -145,7 +143,6 @@ describe('webhook providers', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {
@@ -184,7 +181,6 @@ describe('webhook providers', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: await pickFreePort(),
       config: {},
     }))
     try {

@@ -30,39 +30,80 @@ afterEach(async () => {
 
 describe('skelm gateway start --foreground — graceful shutdown', () => {
   it('exits 0 on SIGTERM and removes lock + discovery files', { timeout: 30_000 }, async () => {
-    const port = await pickFreePort()
+    // Subprocess equivalent of bootGatewayWithRetry: pickFreePort releases its
+    // probe socket before the child binds, so under vitest parallelism the
+    // child can lose the port to a sibling worker and exit early with
+    // EADDRINUSE. Retry the spawn on that specific failure (matches the
+    // in-process retry pattern PR #247 added to debug.test.ts).
+    const MAX_ATTEMPTS = 5
+    let started = false
     let stdout = ''
     let stderr = ''
-    // cwd = temp dir so loadSkelmConfig walks up to / without finding the
-    // repo's own skelm.config (and its backend factories).
-    child = spawn(
-      process.execPath,
-      [BIN, 'gateway', 'start', '--foreground', '--http-port', String(port)],
-      {
-        cwd: stateDir,
-        // DEFAULT_CONFIG references the `openai` backend; a dummy key lets it
-        // construct so the gateway can start. The backend is never exercised —
-        // we only start and shut down.
-        env: {
-          ...process.env,
-          SKELM_STATE_DIR: stateDir,
-          OPENAI_API_KEY: 'sk-test-dummy',
-          FORCE_COLOR: '0',
+    let lastFailure = ''
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS && !started; attempt++) {
+      const port = await pickFreePort()
+      stdout = ''
+      stderr = ''
+      // cwd = temp dir so loadSkelmConfig walks up to / without finding the
+      // repo's own skelm.config (and its backend factories).
+      child = spawn(
+        process.execPath,
+        [BIN, 'gateway', 'start', '--foreground', '--http-port', String(port)],
+        {
+          cwd: stateDir,
+          // DEFAULT_CONFIG references the `openai` backend; a dummy key lets it
+          // construct so the gateway can start. The backend is never exercised —
+          // we only start and shut down.
+          env: {
+            ...process.env,
+            SKELM_STATE_DIR: stateDir,
+            OPENAI_API_KEY: 'sk-test-dummy',
+            FORCE_COLOR: '0',
+          },
         },
-      },
-    )
-    child.stdout?.on('data', (d: Buffer) => {
-      stdout += d.toString()
-    })
-    child.stderr?.on('data', (d: Buffer) => {
-      stderr += d.toString()
-    })
+      )
+      child.stdout?.on('data', (d: Buffer) => {
+        stdout += d.toString()
+      })
+      child.stderr?.on('data', (d: Buffer) => {
+        stderr += d.toString()
+      })
 
-    await waitFor(
-      () => stdout.includes('skelm gateway started'),
-      20_000,
-      () => stderr,
-    )
+      // Race the readiness line against an early child exit. If the child
+      // exits before "skelm gateway started", inspect stderr: EADDRINUSE is
+      // the racy case we retry; anything else is a real failure.
+      const earlyExit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+        (resolve) => {
+          child?.once('exit', (code, signal) => resolve({ code, signal }))
+        },
+      )
+      try {
+        await Promise.race([
+          waitFor(
+            () => stdout.includes('skelm gateway started'),
+            20_000,
+            () => stderr,
+          ),
+          earlyExit.then((res) => {
+            throw new Error(
+              `child exited early (code=${String(res.code)}, signal=${String(res.signal)}); stderr:\n${stderr}`,
+            )
+          }),
+        ])
+        started = true
+      } catch (err) {
+        lastFailure = String((err as Error)?.message ?? err)
+        if (!/EADDRINUSE/i.test(lastFailure)) throw err
+        // Best-effort cleanup before the retry.
+        if (child?.exitCode === null && child?.signalCode === null) child.kill('SIGKILL')
+        child = undefined
+      }
+    }
+    if (!started || child === undefined) {
+      throw new Error(
+        `could not start --foreground gateway after ${MAX_ATTEMPTS} attempts: ${lastFailure}`,
+      )
+    }
 
     const exitPromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
       (resolve) => {
