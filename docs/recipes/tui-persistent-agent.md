@@ -23,8 +23,8 @@ tui-assistant/
 The `@skelm/integrations` `tui` source is only the **mechanism**: it bridges a UI
 frontend to the gateway's queue-driver contract. The **UI implementation** lives
 in this example (`tui-frontend.mts`), so it can be built on whatever terminal-UI
-library you like — this one uses Node's built-in `readline` to avoid an extra
-dependency.
+library you like — this one uses [Ink](https://github.com/vadimdemedes/ink), a
+React renderer for the terminal.
 
 ## The agent
 
@@ -93,7 +93,7 @@ export default defineConfig({
   who-can-talk allowlist to set, because there is no remote channel to gate.
 - **Mechanism vs. UI** — the `tui` integration supplies only the bridge between a
   frontend and the gateway. The frontend (`tui-frontend.mts`) is the UI and lives
-  with the example, so you can replace `readline` with a richer terminal-UI
+  with the example (built on Ink), so you can swap in any other terminal-UI
   library without touching skelm.
 
 ## Run it
