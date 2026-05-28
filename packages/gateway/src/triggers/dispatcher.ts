@@ -73,6 +73,13 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         ? (target as Parameters<typeof runPersistentTurn>[0]['agent'])
         : undefined
       if (persistentTarget !== undefined) {
+        // A persistentAgent multiplexes over independent durable sessions
+        // (one per sessionKey), so two queued fires for distinct sessionKeys
+        // are NOT racing the same resource and must not be serialized at
+        // the trigger level. Tell the coordinator to bypass its inflight
+        // gate from here on; same-session ordering is preserved by
+        // runPersistentTurn's per-(workflowId, sessionKey) lock.
+        opts.gateway.managers.triggers.markParallel(ctx.triggerId)
         const turn = await runPersistentTurn({
           gateway: opts.gateway,
           agent: persistentTarget,
