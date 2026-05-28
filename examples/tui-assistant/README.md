@@ -14,9 +14,9 @@ This example demonstrates three things together:
 
 The `@skelm/integrations` `tui` source is only the **mechanism** — it bridges a UI
 frontend to the gateway's queue-driver contract. The **UI itself**
-(`tui-frontend.mts`) lives here, built on Node's `readline` so the example needs
-no extra dependency; swap it for a richer terminal-UI library and nothing else
-changes.
+(`tui-frontend.mts`) lives here, built on [Ink](https://github.com/vadimdemedes/ink)
+(a React renderer for the terminal); because the integration is UI-agnostic you
+could swap it for any other terminal-UI library and nothing else changes.
 
 ## ⚠️ Security — read this first
 
