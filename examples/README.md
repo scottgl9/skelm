@@ -13,6 +13,8 @@ Runnable workflow examples. Each subdirectory is a self-contained workflow you c
 | `approval-workflow/`     | Human-in-the-loop expense approval via `wait()`; auto-approves under $100. |
 | `sprint-planning/`       | Cron-triggered LLM story selection feeding from `code()` capacity calc.    |
 | `agentmemory/`           | Cross-session recall via the agentmemory integration (two-run pattern).    |
+| `telegram-assistant/`    | Persistent agent over Telegram: durable per-chat conversation + agentmemory.|
+| `tui-assistant/`         | Persistent agent over a local terminal UI: durable session + agentmemory.  |
 
 ## Run
 
@@ -29,3 +31,5 @@ node packages/skelm/dist/bin.js run examples/multi-step-pipeline/multi-step.work
 Once `skelm` is installed globally (`npm i -g skelm`), the same commands shorten to `skelm run examples/...`.
 
 `telegram-bot/` is a standalone runner that long-polls the Telegram Bot API and drives the pipeline directly — see [`telegram-bot/README.md`](./telegram-bot/README.md) for the bot token + pi setup.
+
+Trigger-driven examples (`telegram-assistant/`, `tui-assistant/`) run under the gateway: `skelm gateway start` from the example directory. `tui-assistant/` binds to your terminal, so run the gateway in the foreground; you can also exercise its UI alone with `node examples/tui-assistant/drive.mts` (no gateway, no model). See each example's README.
