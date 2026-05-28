@@ -27,6 +27,7 @@ export type {
   TelegramConfig,
   TelegramWebhookEvent,
   TelegramMessageTrigger,
+  TuiConfig,
 } from './types.js'
 
 // Base class

@@ -1,3 +1,5 @@
+import type { RunEvent } from '@skelm/core'
+
 /**
  * Queue trigger driver contract. The coordinator looks up a driver by id
  * from the registered drivers map and starts it with an onMessage callback
@@ -29,6 +31,13 @@ export interface QueueDriver {
    * output, or undefined if the run failed.
    */
   onResult?(payload: unknown, output: unknown): Promise<void> | void
+  /**
+   * Optional hook invoked by the dispatcher for each run-stream event while the
+   * workflow runs, before {@link onResult}. Drivers that surface streaming
+   * output (e.g. render an agent's reply as it's generated) implement this. The
+   * payload argument is the same object passed to onMessage.
+   */
+  onEvent?(payload: unknown, event: RunEvent): Promise<void> | void
 }
 
 /**

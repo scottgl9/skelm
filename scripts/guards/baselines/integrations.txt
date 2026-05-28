@@ -5,6 +5,7 @@ value:IntegrationRegistry
 value:MsGraphIntegration
 value:SlackIntegration
 value:TelegramIntegration
+value:TuiIntegration
 value:createIntegrationPlugin
 value:defineIntegration
 value:deleteWebhook
@@ -21,6 +22,7 @@ value:verifyGitHubSignature
 value:verifyMsGraphClientState
 value:verifySlackSignature
 type:CreateTelegramTriggerSourceOptions
+type:CreateTuiTriggerSourceOptions
 type:DefineIntegrationOptions
 type:DeleteWebhookParams
 type:EmailTrigger
@@ -56,4 +58,10 @@ type:TelegramMessageTrigger
 type:TelegramSendMessageOptions
 type:TelegramTriggerSource
 type:TelegramWebhookEvent
+type:TuiConfig
+type:TuiFrontend
+type:TuiFrontendFactory
+type:TuiFrontendIo
+type:TuiMessageInput
+type:TuiTriggerSource
 type:WebhookConfig

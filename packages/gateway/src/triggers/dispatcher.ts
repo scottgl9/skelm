@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
-import { type BackendRegistry, Runner, isPersistentAgent } from '@skelm/core'
+import { type BackendRegistry, type RunEvent, Runner, isPersistentAgent } from '@skelm/core'
 import { makeGatewayPipelineRegistry } from '../http/routes/utils.js'
 import type { Gateway } from '../lifecycle/gateway.js'
 import { runPersistentTurn } from './persistent-turn.js'
@@ -80,12 +80,32 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         // gate from here on; same-session ordering is preserved by
         // runPersistentTurn's per-(workflowId, sessionKey) lock.
         opts.gateway.managers.triggers.markParallel(ctx.triggerId)
+        // Forward run events to the queue driver live (onEvent) so a frontend
+        // can stream the turn as it's generated, before the final onResult.
+        const evReg = opts.gateway.managers.triggers.get(ctx.triggerId)
+        const evDriver =
+          evReg !== undefined && evReg.spec.kind === 'queue' && ctx.payload !== undefined
+            ? opts.gateway.managers.triggers.getQueueDriver(
+                (evReg.spec as { driver?: string }).driver ?? '',
+              )
+            : undefined
+        const onEvent: ((event: RunEvent) => void) | undefined =
+          evDriver?.onEvent !== undefined
+            ? (event) => {
+                try {
+                  void evDriver.onEvent?.(ctx.payload, event)
+                } catch (err) {
+                  opts.onError?.(err as Error, ctx)
+                }
+              }
+            : undefined
         const turn = await runPersistentTurn({
           gateway: opts.gateway,
           agent: persistentTarget,
           payload: ctx.payload,
           triggerId: ctx.triggerId,
           ...(opts.backends !== undefined && { backends: opts.backends }),
+          ...(onEvent !== undefined && { onEvent }),
         })
         output = turn.output
       } else {

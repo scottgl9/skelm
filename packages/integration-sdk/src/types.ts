@@ -213,3 +213,9 @@ export interface TelegramMessageTrigger {
   entities?: Array<{ type: string; offset: number; length: number }>
   date: number
 }
+
+/** Terminal-UI-specific types. The TUI is local-only and needs no credentials. */
+export interface TuiConfig extends IntegrationConfig {
+  id: 'tui'
+  credentials: Record<string, never>
+}
