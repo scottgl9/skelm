@@ -111,6 +111,25 @@ export interface TriggerRegistration {
    * operator schedule whose id happens to share a `#` separator.
    */
   declared?: boolean
+  /**
+   * When true, `fire()` bypasses the per-trigger inflight gate (and the
+   * overlap policy that depends on it) so concurrent fires dispatch in
+   * parallel rather than being serialized or skipped.
+   *
+   * This is the right behaviour for triggers whose target multiplexes
+   * across independent sub-resources — most notably a `persistentAgent`
+   * trigger, where two fires with different `sessionKey`s are two
+   * independent durable sessions that should be allowed to run at the
+   * same time. Same-session ordering is preserved by
+   * `runPersistentTurn`'s own per-(workflowId, sessionKey) lock, not by
+   * the trigger-level inflight gate.
+   *
+   * Flipped to true lazily by the dispatcher the first time it loads the
+   * workflow and discovers it is a persistent agent. Plain pipeline
+   * triggers remain serial (default false) so `overlap: 'skip' | 'queue'`
+   * keep their previous semantics.
+   */
+  parallel?: boolean
 }
 
 export interface FireContext {
