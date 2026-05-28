@@ -17,6 +17,9 @@ frontend to the gateway's queue-driver contract. The **UI itself**
 (`tui-frontend.mts`) lives here, built on [Ink](https://github.com/vadimdemedes/ink)
 (a React renderer for the terminal); because the integration is UI-agnostic you
 could swap it for any other terminal-UI library and nothing else changes.
+It uses `createElement` instead of JSX so it runs through the existing `.mts`
+loader; moving it to JSX/TSX would require configuring the TypeScript loader for
+`.tsx`.
 
 ## ⚠️ Security — read this first
 
