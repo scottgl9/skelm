@@ -1,42 +1,24 @@
 import { mkdtemp, rm } from 'node:fs/promises'
-import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { pathToFileURL } from 'node:url'
-import { BackendRegistry, code, pipeline, wait } from '@skelm/core'
-import { Gateway, createTriggerDispatcher } from '@skelm/gateway'
+import { code, pipeline, wait } from '@skelm/core'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
+import { bootGatewayWithRetry } from './utils/boot-gateway.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function pickPort(): Promise<number> {
-  return new Promise((res, rej) => {
-    const s = createServer()
-    s.unref()
-    s.once('error', rej)
-    s.listen(0, '127.0.0.1', () => {
-      const a = s.address() as { port: number }
-      s.close(() => res(a.port))
-    })
-  })
-}
-
 async function startGateway() {
   const stateDir = await mkdtemp(join(tmpdir(), 'skelm-wait-test-'))
-  const port = await pickPort()
-  const gw = new Gateway({
+  const { gw, base } = await bootGatewayWithRetry((port) => ({
     stateDir,
     watchRegistries: false,
     enableHttp: true,
     httpPort: port,
     config: {},
-  })
-  await gw.start()
-  const base = `http://127.0.0.1:${port}`
+  }))
   return { gw, stateDir, base }
 }
 
@@ -112,7 +94,7 @@ describe('wait() step — gateway HTTP integration', () => {
   })
 
   it('Run.waiting snapshot is populated while parked and cleared on resume', async () => {
-    const { gw, stateDir, base } = await startGateway()
+    const { gw, stateDir } = await startGateway()
     cleanups.push(async () => {
       await gw.stop()
       await rm(stateDir, { recursive: true, force: true })
