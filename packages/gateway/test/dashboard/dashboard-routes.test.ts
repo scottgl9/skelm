@@ -38,14 +38,12 @@ async function bootGateway(): Promise<{
   store: MemoryRunStore
 }> {
   const port = await pickFreePort()
-  const proxyPort = await pickFreePort()
   const store = new MemoryRunStore()
   const gw = new Gateway({
     stateDir,
     watchRegistries: false,
     enableHttp: true,
     httpPort: port,
-    httpProxyPort: proxyPort,
     runStore: store,
   })
   await gw.start()
@@ -146,13 +144,11 @@ describe('GET /v1/dashboard/*', () => {
 
   it('requires bearer token when auth is configured', async () => {
     const port = await pickFreePort()
-    const proxyPort = await pickFreePort()
     const gw = new Gateway({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: proxyPort,
       token: 'sekret',
       config: {
         server: { host: '127.0.0.1', port, auth: { mode: 'bearer' } },
