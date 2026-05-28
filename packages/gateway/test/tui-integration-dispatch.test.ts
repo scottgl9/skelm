@@ -23,6 +23,7 @@ import { Gateway } from '../src/index.js'
 // drives the source's onEvent hook directly. We don't assert the partial stream
 // here because run events are delivered asynchronously relative to the awaited
 // final output, which makes the exact ordering racy under full-suite load.
+// TODO: #250 stabilize the e2e ordering assertion.
 
 function echoBackend(): SkelmBackend {
   return {
