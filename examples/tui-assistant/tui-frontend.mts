@@ -1,75 +1,117 @@
-import { type Interface as ReadlineInterface, createInterface } from 'node:readline'
 import type { TuiFrontend, TuiFrontendFactory, TuiFrontendIo } from '@skelm/integrations'
+import { Box, Text, render } from 'ink'
+import TextInput from 'ink-text-input'
+import { type ReactElement, createElement, useEffect, useState } from 'react'
 
 /**
- * The terminal-UI frontend for the tui-assistant — the actual UI implementation,
- * which the `tui` integration knows nothing about. It owns the terminal: a
- * scrolling message log, an input prompt, and a "thinking…" status line.
+ * The terminal-UI frontend for the tui-assistant, built on Ink
+ * (https://github.com/vadimdemedes/ink) — a React renderer for the terminal.
+ * The `tui` integration knows nothing about this: it just calls `render` /
+ * `renderPartial` on the {@link TuiFrontend} we return, and we call `io.submit`
+ * when the user enters a line. Swapping this for any other terminal-UI library
+ * (or the plain `readline` version) needs no change to skelm.
  *
- * This implementation uses Node's built-in `readline` so the example has no
- * extra dependency. The integration's `TuiFrontend` contract is library-
- * agnostic, though: swap this factory for one built on a richer terminal-UI
- * package (ink, blessed, @clack/prompts, …) and nothing else changes.
+ * Written with `createElement` rather than JSX so the example needs no JSX build
+ * step — it loads through the same TypeScript loader the gateway uses for the
+ * rest of the config.
  */
 
-interface TerminalFrontendOptions {
+interface InkFrontendOptions {
   banner?: string
   promptLabel?: string
-  input?: NodeJS.ReadableStream & { isTTY?: boolean }
-  output?: NodeJS.WritableStream & { isTTY?: boolean }
-  color?: boolean
 }
 
-const paint =
-  (code: string, on: boolean) =>
-  (s: string): string =>
-    on ? `\x1b[${code}m${s}\x1b[0m` : s
+interface ChatMessage {
+  role: 'you' | 'agent'
+  text: string
+}
 
-export function createTerminalFrontend(options: TerminalFrontendOptions = {}): TuiFrontendFactory {
-  const input = options.input ?? process.stdin
-  const output = options.output ?? process.stdout
+export function createTerminalFrontend(options: InkFrontendOptions = {}): TuiFrontendFactory {
   const promptLabel = options.promptLabel ?? 'you'
-  const color = options.color ?? Boolean(output.isTTY)
   const banner = options.banner
 
-  const bold = paint('1;36', color)
-  const dim = paint('2', color)
-  const agent = paint('36', color)
-  const prompt = paint('1;32', color)
-
   return (io: TuiFrontendIo): TuiFrontend => {
-    const rl: ReadlineInterface = createInterface({
-      input,
-      output,
-      terminal: Boolean(input.isTTY),
-    })
-    const write = (s: string): void => void output.write(`${s}\n`)
-    const showPrompt = (): void => {
-      rl.setPrompt(prompt(`${promptLabel} › `))
-      rl.prompt()
+    // The chat transcript and the in-flight streaming reply live here; the Ink
+    // component reads them and re-renders whenever `notify()` bumps a tick.
+    const messages: ChatMessage[] = []
+    let partial = ''
+    let thinking = false
+    const listeners = new Set<() => void>()
+    const notify = (): void => {
+      for (const l of listeners) l()
     }
 
-    if (banner !== undefined && banner !== '') write(bold(banner))
-    write(dim('Type a message and press Enter. Ctrl-C to exit.'))
-    showPrompt()
+    function App(): ReactElement {
+      const [, setTick] = useState(0)
+      const [value, setValue] = useState('')
+      useEffect(() => {
+        const onChange = (): void => setTick((n) => n + 1)
+        listeners.add(onChange)
+        return () => {
+          listeners.delete(onChange)
+        }
+      }, [])
 
-    rl.on('line', (line) => {
-      const text = line.trim()
-      if (text === '') {
-        showPrompt()
-        return
+      const lines: ReactElement[] = []
+      if (banner !== undefined && banner !== '') {
+        lines.push(createElement(Text, { key: 'banner', bold: true, color: 'cyan' }, banner))
       }
-      write(dim('· thinking…'))
-      io.submit(text)
-    })
+      for (const [i, m] of messages.entries()) {
+        lines.push(
+          createElement(
+            Text,
+            { key: `m${i}`, color: m.role === 'you' ? 'green' : 'cyan' },
+            `${m.role} › ${m.text}`,
+          ),
+        )
+      }
+      if (partial !== '') {
+        lines.push(createElement(Text, { key: 'partial', color: 'cyan' }, `agent › ${partial}`))
+      } else if (thinking) {
+        lines.push(createElement(Text, { key: 'thinking', dimColor: true }, '· thinking…'))
+      }
+
+      const input = createElement(
+        Box,
+        { key: 'input' },
+        createElement(Text, { color: 'green' }, `${promptLabel} › `),
+        createElement(TextInput, {
+          value,
+          onChange: setValue,
+          onSubmit: (text: string) => {
+            const trimmed = text.trim()
+            if (trimmed === '') return
+            messages.push({ role: 'you', text: trimmed })
+            thinking = true
+            setValue('')
+            io.submit(trimmed)
+            notify()
+          },
+        }),
+      )
+
+      return createElement(Box, { flexDirection: 'column' }, ...lines, input)
+    }
+
+    const instance = render(createElement(App))
 
     return {
-      render(reply: string): void {
-        write(agent(`agent › ${reply}`))
-        showPrompt()
+      // `step.partial` events carry the cumulative reply, so each one replaces
+      // the in-flight line; render() commits it to the transcript.
+      renderPartial(text: string): void {
+        partial = text
+        thinking = false
+        notify()
       },
-      close(): void {
-        rl.close()
+      render(reply: string): void {
+        partial = ''
+        thinking = false
+        messages.push({ role: 'agent', text: reply })
+        notify()
+      },
+      async close(): Promise<void> {
+        instance.unmount()
+        await instance.waitUntilExit().catch(() => {})
       },
     }
   }
