@@ -163,6 +163,26 @@ async function uninstallService(args: GatewayArgs, io: MainIO): Promise<MainResu
   return manager === 'systemd' ? uninstallSystemd(io) : uninstallLaunchd(io)
 }
 
+/**
+ * Format the success message printed when `skelm gateway start` (no
+ * `--foreground`) delegates to systemctl/launchctl because a managed unit is
+ * installed. Symmetry with `stopGateway`, which surfaces the delegated command
+ * so operators and the s28 self-test see plainly which manager was invoked.
+ * Pure + exported so the unit-test pinning the contract doesn't need to spawn
+ * a real systemd user service.
+ */
+export function formatDelegatedStartMessage(opts: {
+  manager: 'systemd' | 'launchd'
+  url: string | null
+  logCmd: string
+}): string {
+  const delegated =
+    opts.manager === 'systemd'
+      ? 'systemctl --user start skelm-gateway'
+      : `launchctl kickstart gui/${process.getuid?.() ?? 0}/${LAUNCHD_LABEL}`
+  return `skelm gateway started (${delegated})\n  url: ${opts.url ?? '(pending)'}\n\nTo view logs:  ${opts.logCmd}\nTo stop:       skelm gateway stop\n`
+}
+
 async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> {
   if (args.detach) {
     return detachGateway(args, io)
@@ -203,7 +223,27 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
       const result = runSync(cmd.bin, cmd.args)
       if (result.exitCode === 0) {
         const probe = new Gateway({ stateDir: defaultStateDir() })
-        const deadline = Date.now() + 5_000
+        // systemctl --user start returns as soon as the start job is queued.
+        // The unit may still be "activating" when our process resumes, which
+        // confuses both operators and tooling that immediately probes
+        // `is-active`. Wait for the unit to report `active` (bounded) AND
+        // for discovery to appear before returning, so the success message
+        // truly means "the gateway is ready". 15s is generous enough for
+        // cold starts on machines with a large audit log / many workflows;
+        // override with SKELM_GATEWAY_READY_TIMEOUT_MS for slower hosts.
+        const readyTimeoutMs = (() => {
+          const raw = process.env.SKELM_GATEWAY_READY_TIMEOUT_MS
+          const n = raw === undefined ? Number.NaN : Number.parseInt(raw, 10)
+          return Number.isFinite(n) && n > 0 ? n : 15_000
+        })()
+        const deadline = Date.now() + readyTimeoutMs
+        if (systemdInstalled) {
+          while (Date.now() < deadline) {
+            const active = runSync('systemctl', ['--user', 'is-active', 'skelm-gateway'])
+            if (active.exitCode === 0 && active.stdout.trim() === 'active') break
+            await new Promise((r) => setTimeout(r, 100))
+          }
+        }
         let disc = await readDiscovery(probe.discoveryPath)
         while (disc === null && Date.now() < deadline) {
           await new Promise((r) => setTimeout(r, 100))
@@ -213,7 +253,11 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
           ? 'journalctl --user -u skelm-gateway -f'
           : `tail -f ${defaultStateDir()}/gateway.log`
         io.stdout.write(
-          `skelm gateway started (background service)\n  url: ${disc?.url ?? '(pending)'}\n\nTo view logs:  ${logCmd}\nTo stop:       skelm gateway stop\n`,
+          formatDelegatedStartMessage({
+            manager: systemdInstalled ? 'systemd' : 'launchd',
+            url: disc?.url ?? null,
+            logCmd,
+          }),
         )
         return { exitCode: EXIT.OK }
       }
