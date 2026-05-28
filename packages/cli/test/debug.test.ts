@@ -45,16 +45,14 @@ describe('skelm debug — CLI smoke', () => {
   })
 
   it('add → breakpoints → remove round-trip against a real gateway', async () => {
-    const port = await pickFreePort()
-    const gw = new Gateway({
+    const { gw } = await bootGatewayWithRetry((port) => ({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
       url: `http://127.0.0.1:${port}`,
       config: {},
-    })
-    await gw.start()
+    }))
     try {
       const added = await invoke(['debug', 'add', 'agent-step'])
       expect(added.exitCode).toBe(EXIT.OK)
@@ -76,16 +74,14 @@ describe('skelm debug — CLI smoke', () => {
   })
 
   it('release fires against a paused run and returns the run id', async () => {
-    const port = await pickFreePort()
-    const gw = new Gateway({
+    const { gw } = await bootGatewayWithRetry((port) => ({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
       url: `http://127.0.0.1:${port}`,
       config: {},
-    })
-    await gw.start()
+    }))
     try {
       const pausePromise = gw.breakpoints.pause({
         runId: 'r-cli',
@@ -154,4 +150,36 @@ async function pickFreePort(): Promise<number> {
       srv.close(() => resolve(port))
     })
   })
+}
+
+/**
+ * Boot a Gateway with retry on EADDRINUSE. vitest runs many test files in
+ * parallel; the OS-assigned ephemeral port from pickFreePort() is occasionally
+ * grabbed by a sibling worker between port-pick and Gateway.start()'s bind.
+ * A handful of retries collapse the race window to ~microseconds — mirrors
+ * packages/gateway/test/utils/boot-gateway.ts (which can't be imported here
+ * since this is the CLI package's test suite).
+ */
+async function bootGatewayWithRetry(
+  optionsFactory: (port: number) => ConstructorParameters<typeof Gateway>[0],
+  retries = 5,
+): Promise<{ gw: Gateway; port: number }> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt < retries; attempt++) {
+    const port = await pickFreePort()
+    const gw = new Gateway(optionsFactory(port))
+    try {
+      await gw.start()
+      return { gw, port }
+    } catch (err) {
+      lastErr = err
+      try {
+        await gw.stop()
+      } catch {
+        // ignore
+      }
+      if (!/EADDRINUSE/.test(String((err as Error)?.message ?? err))) throw err
+    }
+  }
+  throw new Error(`bootGatewayWithRetry: exhausted ${retries} retries (${String(lastErr)})`)
 }

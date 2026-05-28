@@ -2,8 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Gateway } from '../src/index.js'
-import { pickFreePort } from './utils/pick-free-port.js'
+import { bootGatewayWithRetry } from './utils/boot-gateway.js'
 
 // Auth-fail sweep across the gateway HTTP route surface. The audit
 // flagged that 14 of 16 route files lacked the documented
@@ -29,19 +28,14 @@ afterEach(async () => {
 
 describe('Gateway auth middleware — uniform 401 on missing/bad token', () => {
   it('every protected route returns 401 without a bearer header', async () => {
-    const port = await pickFreePort()
-    const proxyPort = await pickFreePort()
-    const gw = new Gateway({
+    const { gw, base } = await bootGatewayWithRetry((port) => ({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: proxyPort,
       token: 'sekret',
       config: { server: { host: '127.0.0.1', port, auth: { mode: 'bearer' } } },
-    })
-    await gw.start()
-    const base = `http://127.0.0.1:${port}`
+    }))
     // Representative endpoint per route module. /healthz and /readyz are
     // also auth-gated under bearer mode so health probes should send the
     // token; if you want anonymous probes use an unprotected sidecar.
@@ -82,20 +76,15 @@ describe('Gateway auth middleware — uniform 401 on missing/bad token', () => {
   })
 
   it('a wrong bearer token is also 401 (timing-safe compare)', async () => {
-    const port = await pickFreePort()
-    const proxyPort = await pickFreePort()
-    const gw = new Gateway({
+    const { gw, base } = await bootGatewayWithRetry((port) => ({
       stateDir,
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      httpProxyPort: proxyPort,
       token: 'sekret',
       config: { server: { host: '127.0.0.1', port, auth: { mode: 'bearer' } } },
-    })
-    await gw.start()
+    }))
     try {
-      const base = `http://127.0.0.1:${port}`
       const res = await fetch(`${base}/health`, {
         headers: { authorization: 'Bearer NOT-THE-TOKEN' },
       })
