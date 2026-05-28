@@ -163,14 +163,52 @@ export class TriggerCoordinator {
     return this.registrations.get(id)
   }
 
+  /**
+   * Mark a trigger's fires as parallelisable so they bypass the per-trigger
+   * inflight gate (and the overlap policy that depends on it). Called by the
+   * dispatcher the first time it discovers the registered workflow is a
+   * persistent agent — those fires multiplex over independent durable
+   * sessions and same-session ordering is owned by the per-session lock
+   * inside `runPersistentTurn`, not by this trigger-level gate.
+   *
+   * Also clears any in-flight queued backlog and the inflight flag so the
+   * currently-draining dispatcher loop stops gating subsequent fires.
+   * Idempotent and safe to call from any fire.
+   */
+  markParallel(id: string): void {
+    const reg = this.registrations.get(id)
+    if (reg === undefined) return
+    if (reg.parallel === true) return
+    reg.parallel = true
+    // The current dispatch() still holds reg.inflight = true and may have
+    // queued items. Hand off the queue: drain it via parallel fires (no
+    // gate) and clear inflight so future fire() calls don't wait either.
+    const queued = this.queues.get(id)
+    if (queued !== undefined && queued.length > 0) {
+      this.queues.set(id, [])
+      for (const ctx of queued) {
+        void this.fire(id, undefined, ctx.payload).catch(() => undefined)
+      }
+    }
+    reg.inflight = false
+  }
+
   register(
     spec: TriggerSpec,
     overlap?: OverlapPolicy,
     options: { input?: unknown; declared?: boolean; maxQueueDepth?: number } = {},
   ): TriggerRegistration {
+    // Queue triggers default to `overlap: 'queue'` rather than the global
+    // `'skip'` default: dropping messages just because the previous fire is
+    // still in flight is a silent data-loss bug for queue-fed sources
+    // (e.g. an InMemoryQueueDriver burst, a Kafka consumer). Other trigger
+    // kinds (cron / interval / webhook) keep the original 'skip' default
+    // so a slow pipeline doesn't pile up backlog when caller didn't ask.
+    const effectiveOverlap: OverlapPolicy =
+      overlap ?? this.opts.defaultOverlap ?? (spec.kind === 'queue' ? 'queue' : 'skip')
     const reg: TriggerRegistration = {
       spec,
-      overlap: overlap ?? this.opts.defaultOverlap ?? 'skip',
+      overlap: effectiveOverlap,
       ...(options.input !== undefined && { input: options.input }),
       fired: 0,
       inflight: false,
@@ -409,6 +447,24 @@ export class TriggerCoordinator {
       workflowId: reg.spec.workflowId,
       firedAt: (when ?? new Date()).toISOString(),
       ...(effectivePayload !== undefined && { payload: effectivePayload }),
+    }
+    // Parallel triggers bypass the per-trigger inflight gate entirely:
+    // they multiplex over independent sub-resources (e.g. a persistentAgent
+    // trigger keys by sessionKey), so serializing at the trigger level
+    // would coalesce or drop fires that actually target distinct sessions.
+    // Same-session ordering, when required, is owned by the dispatched
+    // workflow itself (runPersistentTurn's per-(workflowId, sessionKey)
+    // lock), not by this trigger-level gate.
+    if (reg.parallel === true) {
+      reg.lastFiredAt = ctx.firedAt
+      reg.fired += 1
+      try {
+        await this.opts.onFire(ctx)
+      } catch (err) {
+        reg.lastError = (err as Error).message
+        this.opts.onFireError?.(reg.spec.id, err)
+      }
+      return 'dispatched'
     }
     // Check-and-set inflight atomically. JS is single-threaded so concurrent
     // fire() calls cannot interleave between the read on the next line and
