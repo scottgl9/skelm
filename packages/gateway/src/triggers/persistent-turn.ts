@@ -11,6 +11,7 @@
 import {
   type BackendRegistry,
   type PersistentAgent,
+  type RunEvent,
   Runner,
   agent,
   createSessionRecord,
@@ -38,6 +39,8 @@ export interface RunPersistentTurnOptions {
   payload: unknown
   triggerId: string
   backends?: BackendRegistry
+  /** Forwarded to the runner so callers observe run events as the turn streams. */
+  onEvent?: (event: RunEvent) => void
 }
 
 /** Serialize per session key so two fires for the same chat don't race the
@@ -132,6 +135,7 @@ export async function runPersistentTurn(
           ...gateway.defaultPermissionRunOptions(),
           ...gateway.egressRunOptions(),
           ...gateway.agentmemoryRunOptions(),
+          ...(opts.onEvent !== undefined && { onEvent: opts.onEvent }),
         },
       )
       const result = await handle.wait()

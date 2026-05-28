@@ -21,4 +21,5 @@ type:SlackWebhookEvent
 type:TelegramConfig
 type:TelegramMessageTrigger
 type:TelegramWebhookEvent
+type:TuiConfig
 type:WebhookConfig

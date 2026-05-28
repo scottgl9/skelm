@@ -26,6 +26,7 @@ export type {
   TelegramConfig,
   TelegramWebhookEvent,
   TelegramMessageTrigger,
+  TuiConfig,
 } from '@skelm/integration-sdk'
 
 export {
@@ -78,6 +79,15 @@ export {
   type TelegramSendMessageOptions,
   type TelegramTriggerSource,
 } from './telegram.js'
+export {
+  TuiIntegration,
+  type CreateTuiTriggerSourceOptions,
+  type TuiFrontend,
+  type TuiFrontendFactory,
+  type TuiFrontendIo,
+  type TuiMessageInput,
+  type TuiTriggerSource,
+} from './tui.js'
 
 // Integration registry
 export { IntegrationRegistry } from './registry.js'
