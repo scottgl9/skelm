@@ -11,7 +11,6 @@
 // gateway restarts. There is no resident in-process loop; triggers drive turns.
 // See `docs/concepts/persistent-workflows.md`.
 
-import type { AgentDefinition } from './backend.js'
 import { normalizePipelineTrigger } from './builders.js'
 import type { AgentPermissions } from './permissions.js'
 import type { Context, PipelineTrigger, Step } from './types.js'
@@ -26,8 +25,19 @@ export interface PersistentWorkflowAgentDef<TPayload = unknown> {
   model?: string
   /** System prompt prepended to every turn. */
   system?: string
-  /** AGENTS.md/SOUL.md-style definition, threaded to the backend each turn. */
-  agentDef?: AgentDefinition
+  /**
+   * Path to a directory holding `AGENTS.md` (required) + optional `SOUL.md`,
+   * resolved against the workflow file's directory. Loaded and threaded to the
+   * terminal turn each fire, same as an `agent()` step's `agentDef`.
+   */
+  agentDef?: string
+  /**
+   * `extend` (default) keeps skelm's built-in default sections; `replace` drops
+   * them and uses only AGENTS.md/SOUL.md + `system`. Mirrors `agent()`.
+   */
+  systemPromptMode?: 'extend' | 'replace'
+  /** When `systemPromptMode === 'replace'`, still inject AGENTS.md/SOUL.md (default true). */
+  systemPromptIncludeAgentDef?: boolean
   /**
    * Permissions for the terminal turn. MAY set `requestUnrestricted: true` to
    * ask for a full bypass — inert unless the operator also grants this

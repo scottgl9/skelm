@@ -20,6 +20,7 @@ import { Gateway, InMemoryQueueDriver, createTriggerDispatcher } from '../src/in
 interface SeenTurn {
   prompt: string
   system?: string
+  agentDef?: { name: string; instructions: string; soul?: string }
   unrestricted?: boolean
   allowedExecutables?: string[]
 }
@@ -44,6 +45,7 @@ function echoBackend(seen: SeenTurn[]): SkelmBackend {
       seen.push({
         prompt: typeof request.prompt === 'string' ? request.prompt : '',
         ...(request.system !== undefined && { system: request.system }),
+        ...(request.agentDef !== undefined && { agentDef: request.agentDef }),
         unrestricted: context.permissions?.unrestricted === true,
         allowedExecutables: [...(context.permissions?.allowedExecutables ?? [])],
       })
@@ -402,6 +404,33 @@ describe('persistent-workflow dispatch', () => {
     await new Promise((r) => setTimeout(r, 80))
 
     expect(seen[0]?.allowedExecutables).toEqual(['git'])
+    await gw.stop()
+  })
+
+  it('loads agent.agentDef (AGENTS.md/SOUL.md) relative to the workflow file and threads it to the turn', async () => {
+    const seen: SeenTurn[] = []
+    const audit: AuditEntry[] = []
+    // agentDef resolves against the workflow file's directory (workflows/).
+    const agentDir = join(projectRoot, 'workflows', 'agents', 'assistant')
+    await fs.mkdir(agentDir, { recursive: true })
+    await fs.writeFile(join(agentDir, 'AGENTS.md'), 'Be a meticulous assistant.', 'utf8')
+    await fs.writeFile(join(agentDir, 'SOUL.md'), 'You are unflappably calm.', 'utf8')
+
+    const bot = persistentWorkflow<{ chatId: string; text: string }>({
+      id: 'bot',
+      agent: { backend: 'echo', agentDef: './agents/assistant', sessionKey: (p) => p.chatId },
+    })
+    const gw = await bootGateway({ seen, audit, workflowModule: { default: bot } })
+    const driver = wireQueue(gw)
+    driver.push({ chatId: 'c1', text: 'hi' })
+    await new Promise((r) => setTimeout(r, 80))
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.agentDef).toEqual({
+      name: 'assistant',
+      instructions: 'Be a meticulous assistant.',
+      soul: 'You are unflappably calm.',
+    })
     await gw.stop()
   })
 })
