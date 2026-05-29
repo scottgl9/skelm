@@ -151,6 +151,9 @@ function createDefaultPolicy(cwd: string, agentDefRoot: string): ResolvedPolicy 
     allowedExecutables: new Set<string>(),
     allowedMcpServers: new Set<string>(),
     allowedSkills: new Set<string>(),
+    // Delegation is default-deny even in the permissive local default: an agent
+    // with no declared policy cannot trigger other privileged runs.
+    allowedAgents: Object.freeze({ exact: new Set<string>(), prefixes: [], star: false }),
     allowedSecrets: new Set<string>(),
     networkEgress: 'deny',
     fsRead: roots,
@@ -242,11 +245,20 @@ async function runAgentLoop(
     fetch: ctx.fetch,
     secrets: req.secrets,
     signal: ctx.signal,
+    delegate: ctx.delegate,
     events: ctx.permissions
       ? {
-          publish: () => {
-            /* audit handled by runner */
+          // Tool.call / tool.result auditing is handled by the runner's MCP
+          // subscription; forward only permission denials to the run bus so a
+          // denied native-tool action (delegation, exec, fs, …) stays
+          // observable and auditable, matching createPolicyFetch.
+          publish: (ev: unknown) => {
+            if ((ev as { type?: string }).type === 'permission.denied') {
+              ctx.events?.publish(ev)
+            }
           },
+          ...(ctx.runId !== undefined && { runId: ctx.runId }),
+          ...(ctx.stepId !== undefined && { stepId: ctx.stepId }),
         }
       : undefined,
   }

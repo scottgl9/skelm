@@ -204,6 +204,7 @@ type:ContentPart
 type:Context
 type:CronTriggerConfig
 type:CustomTriggerConfig
+type:DelegateResult
 type:DescribedStep
 type:DiscordInteraction
 type:DiscordMessage
