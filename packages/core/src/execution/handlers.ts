@@ -29,7 +29,12 @@ import type {
   PermissionDimension,
   ResolvedPolicy,
 } from '../permissions.js'
-import { TrustEnforcer, createPolicyFetch, resolvePermissions } from '../permissions.js'
+import {
+  TrustEnforcer,
+  createPolicyFetch,
+  intersectResolvedPolicies,
+  resolvePermissions,
+} from '../permissions.js'
 import { MemoryRunStore } from '../run-store.js'
 import {
   adoptLastStepOutput,
@@ -218,12 +223,17 @@ async function runCodeStep(
     )
     const secretsAccessor = createSecretsAccessor(resolvedSecrets)
 
-    const policy = resolvePermissions(
+    const resolvedPolicy = resolvePermissions(
       runtime?.defaultPermissions,
       applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
       runtime?.permissionProfiles ?? {},
       { grantUnrestricted: runtime?.unrestrictedGrant === true },
     )
+    // Bound a delegated child step to the delegating agent's grant.
+    const policy =
+      runtime?.delegationCeiling !== undefined
+        ? intersectResolvedPolicies(runtime.delegationCeiling, resolvedPolicy)
+        : resolvedPolicy
     emitBypassIfUnrestricted(policy, events, ctx.run.runId, step.id)
     const enforcer = new TrustEnforcer(policy)
 
@@ -429,7 +439,7 @@ async function runAgentStep(
     // step.mcp functions receive ctx.secrets, matching the contract that
     // runCodeStep and runLlmStep already implement. Without this ordering
     // agent steps see no secrets in their user-supplied callbacks.
-    const policy =
+    const declaredPolicy =
       step.permissions !== undefined || step.mcp !== undefined || preparedWorkspace !== undefined
         ? resolvePermissions(
             runtime?.defaultPermissions,
@@ -438,6 +448,15 @@ async function runAgentStep(
             { grantUnrestricted: runtime?.unrestrictedGrant === true },
           )
         : undefined
+    // Bound a delegated child agent step to the delegating agent's grant. A
+    // child that declares no policy would otherwise fall back to the backend's
+    // permissive default and escape the ceiling, so cap it at the ceiling.
+    const policy =
+      runtime?.delegationCeiling !== undefined
+        ? declaredPolicy === undefined
+          ? runtime.delegationCeiling
+          : intersectResolvedPolicies(runtime.delegationCeiling, declaredPolicy)
+        : declaredPolicy
     if (policy !== undefined) emitBypassIfUnrestricted(policy, events, ctx.run.runId, step.id)
     const resolvedSecrets = await resolveDeclaredSecrets(
       step,

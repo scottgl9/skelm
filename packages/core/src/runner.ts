@@ -29,7 +29,12 @@ import { runStepWithRetry } from './execution/handlers.js'
 import type { ExecutionRuntime } from './execution/runtime.js'
 import { extractJsonFromText, tryParseJson } from './json-utils.js'
 import { createMcpHost } from './mcp/host.js'
-import type { AgentPermissions, NetworkPolicy, PermissionDimension } from './permissions.js'
+import type {
+  AgentPermissions,
+  NetworkPolicy,
+  PermissionDimension,
+  ResolvedPolicy,
+} from './permissions.js'
 import { TrustEnforcer, createPolicyFetch, resolvePermissions } from './permissions.js'
 import {
   type ArtifactStore,
@@ -194,6 +199,23 @@ export interface RunOptions {
    * When omitted, invoke() steps throw InvokePipelineNotFoundError.
    */
   pipelineRegistry?: (pipelineId: string) => Pipeline | undefined | Promise<Pipeline | undefined>
+  /**
+   * Upper bound applied to every agent step's resolved policy. Set by the
+   * delegation path when this run is a delegated child — it is the delegating
+   * agent's resolved policy. Resolved policies are intersected with it so a
+   * delegated child can never exceed the parent. Omitted for top-level runs.
+   */
+  delegationCeiling?: ResolvedPolicy
+  /**
+   * Pipeline ids already on the delegation chain (oldest first). The runner
+   * seeds this with the running pipeline id when absent; the delegation path
+   * appends each target and rejects a target already present (cycle).
+   */
+  delegationStack?: readonly string[]
+  /** Number of delegations taken to reach this run; 0 (default) at top level. */
+  delegationDepth?: number
+  /** Cap on delegation depth; defaults to DEFAULT_MAX_DELEGATION_DEPTH. */
+  maxDelegationDepth?: number
 }
 
 export class BackendChainExhaustedError extends Error {
@@ -830,6 +852,14 @@ export async function runPipeline<TInput, TOutput>(
           }),
           ...(options.pipelineRegistry !== undefined && {
             pipelineRegistry: options.pipelineRegistry,
+          }),
+          ...(options.delegationCeiling !== undefined && {
+            delegationCeiling: options.delegationCeiling,
+          }),
+          delegationStack: options.delegationStack ?? [pipeline.id],
+          delegationDepth: options.delegationDepth ?? 0,
+          ...(options.maxDelegationDepth !== undefined && {
+            maxDelegationDepth: options.maxDelegationDepth,
           }),
           currentWorkspace,
           ...(pipeline.baseDir !== undefined && { pipelineBaseDir: pipeline.baseDir }),

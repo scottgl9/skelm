@@ -1,6 +1,6 @@
 import type { AgentmemoryHandleFactory } from '../backend.js'
 import type { ApprovalGate, SecretResolver } from '../enforcement/index.js'
-import type { AgentPermissions, NetworkPolicy } from '../permissions.js'
+import type { AgentPermissions, NetworkPolicy, ResolvedPolicy } from '../permissions.js'
 import type { RunStore, StateStore } from '../run-store.js'
 import type { Skill } from '../skills.js'
 import type { Context, Pipeline, RunStatus } from '../types.js'
@@ -39,6 +39,23 @@ export interface ExecutionRuntime {
   readonly pipelineRegistry?: (
     pipelineId: string,
   ) => Pipeline | undefined | Promise<Pipeline | undefined>
+  /**
+   * Upper bound on every agent step's resolved policy in this run. Set when the
+   * run was started as a delegated child: it is the delegating agent's resolved
+   * policy, and `resolvePermissions` results are intersected with it so a child
+   * can never exceed the parent that delegated to it. Undefined for top-level runs.
+   */
+  readonly delegationCeiling?: ResolvedPolicy
+  /**
+   * Pipeline ids currently on the active delegation chain (oldest first),
+   * seeded with the top-level pipeline id. A delegation whose target already
+   * appears here is a cycle and is refused.
+   */
+  readonly delegationStack?: readonly string[]
+  /** Number of delegations already taken to reach this run (0 at top level). */
+  readonly delegationDepth?: number
+  /** Cap on `delegationDepth`; defaults to `DEFAULT_MAX_DELEGATION_DEPTH`. */
+  readonly maxDelegationDepth?: number
   readonly currentWorkspace: Context['workspace']
   /**
    * Directory used to resolve relative paths declared on steps. Mirrors
