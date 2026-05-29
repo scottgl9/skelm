@@ -10,6 +10,9 @@ This example demonstrates these things together:
 - **Persistent workflow** (`persistentWorkflow()`) with a `code()` preamble step
   feeding a per-chat session-keyed terminal agent (`agent.sessionKey`).
 - **Agentmemory** wired in for long-term recall across sessions.
+- A **file-based persona** via `agent.agentDef: './agents/assistant'` — its
+  `AGENTS.md` (instructions) and `SOUL.md` (voice) extend the system prompt instead
+  of an inline `system` string.
 - The **operator-gated unrestricted bypass** — a freewheeling assistant with full
   shell/network/filesystem access.
 

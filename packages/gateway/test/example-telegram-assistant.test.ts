@@ -18,6 +18,8 @@ describe('examples/telegram-assistant', () => {
     expect(wf.id).toBe('telegram-assistant')
     expect(wf.steps?.[0]?.id).toBe('prepare')
     expect(wf.agent.sessionKey({ chatId: 'c1' } as never)).toBe('c1')
+    // Persona lives in AGENTS.md/SOUL.md, loaded relative to the workflow file.
+    expect(wf.agent.agentDef).toBe('./agents/assistant')
     expect(wf.triggers?.[0]).toMatchObject({ kind: 'queue', sourceId: 'telegram' })
     // Requests the bypass (inert until the config grants the id).
     expect(wf.agent.permissions?.requestUnrestricted).toBe(true)
