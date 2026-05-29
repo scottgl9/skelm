@@ -1,5 +1,6 @@
-import { rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
@@ -28,6 +29,7 @@ afterAll(async () => {
 
 const FIXTURES_DIR = fileURLToPath(new URL('./fixtures/', import.meta.url))
 const PROJECT_FIXTURE_DIR = join(FIXTURES_DIR, 'project')
+const TRIGGERED_FIXTURE_DIR = join(FIXTURES_DIR, 'triggered')
 
 describe('parseArgv', () => {
   it('returns help when no args', () => {
@@ -382,6 +384,33 @@ describe('main — integration', () => {
       expect(cleaned.exitCode).toBe(EXIT.OK)
       expect(cleaned.stdout).toContain('cleaned alpha-workflow/main')
     })
+  })
+
+  it('activates a triggered project directory and exits without waiting', async () => {
+    const { stdout, stderr, exitCode } = await invoke(['run', TRIGGERED_FIXTURE_DIR])
+    expect(exitCode).toBe(EXIT.OK)
+    expect(stderr).toContain('activated')
+    expect(stderr).toContain('cli-activate-fixture')
+    expect(stderr).toMatch(/trigger .* armed/)
+    // Fire-and-forget: the gateway owns the workflow now, no run output streams.
+    expect(stdout).toBe('')
+  })
+
+  it('refuses to activate a project outside the gateway trusted roots', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'skelm-cli-outside-'))
+    await writeFile(
+      join(outside, 'skelm.config.mts'),
+      'export default { triggerSources: [{ id: "x", driver: { start() {}, stop() {} } }] }',
+      'utf8',
+    )
+    await writeFile(join(outside, 'a.workflow.mts'), 'export default {}', 'utf8')
+    try {
+      const { exitCode, stderr } = await invoke(['run', outside])
+      expect(exitCode).toBe(EXIT.CLI_ERROR)
+      expect(stderr).toMatch(/outside the gateway/)
+    } finally {
+      await rm(outside, { recursive: true, force: true })
+    }
   })
 })
 
