@@ -9,6 +9,7 @@ export interface ParsedArgv {
     | 'run'
     | 'init'
     | 'list'
+    | 'stop'
     | 'describe'
     | 'history'
     | 'workspace'
@@ -51,6 +52,9 @@ export function parseArgv(argv: readonly string[]): ParsedArgv {
   }
   if (first === 'list') {
     return parseSubcommand('list', argv.slice(1))
+  }
+  if (first === 'stop') {
+    return parseSubcommand('stop', argv.slice(1))
   }
   if (first === 'describe') {
     return parseSubcommand('describe', argv.slice(1))
@@ -99,6 +103,7 @@ function parseSubcommand(
     | 'run'
     | 'init'
     | 'list'
+    | 'stop'
     | 'describe'
     | 'history'
     | 'workspace'
