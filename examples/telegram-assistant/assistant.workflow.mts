@@ -42,12 +42,10 @@ export default persistentWorkflow<TelegramMessageInput>({
   ],
   agent: {
     backend: 'pi',
-    system: [
-      'You are a capable personal assistant chatting over Telegram.',
-      'You have full access to the shell, network, and filesystem of the machine',
-      'you run on — use it to actually accomplish what the user asks, then report',
-      'back concisely. Answer in plain text (no Markdown). Keep replies short.',
-    ].join(' '),
+    // The assistant's persona + operating instructions live in
+    // agents/assistant/{SOUL,AGENTS}.md, resolved relative to this file. Prefer
+    // this over an inline `system` string once a persona grows past a sentence.
+    agentDef: './agents/assistant',
     // Requests the full bypass; only takes effect because skelm.config.ts grants
     // 'telegram-assistant'. The agentmemory ops are declared too so this stays a
     // good template even if the grant is removed and default-deny re-applies.

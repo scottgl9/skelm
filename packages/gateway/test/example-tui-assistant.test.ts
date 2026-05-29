@@ -19,6 +19,8 @@ describe('examples/tui-assistant', () => {
     // Minimal shape: no preamble steps, just the terminal agent.
     expect(wf.steps).toBeUndefined()
     expect(wf.agent.sessionKey({ sessionId: 's1' } as never)).toBe('s1')
+    // Persona lives in AGENTS.md/SOUL.md, loaded relative to the workflow file.
+    expect(wf.agent.agentDef).toBe('./agents/assistant')
     expect(wf.triggers?.[0]).toMatchObject({ kind: 'queue', sourceId: 'tui' })
     // Requests the bypass (inert until the config grants the id).
     expect(wf.agent.permissions?.requestUnrestricted).toBe(true)

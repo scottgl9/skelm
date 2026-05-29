@@ -11,6 +11,9 @@ This example demonstrates these things together:
 - **Persistent workflow** (`persistentWorkflow()`) with a per-session
   `agent.sessionKey` and no preamble steps.
 - **Agentmemory** wired in for long-term recall across sessions.
+- A **file-based persona** via `agent.agentDef: './agents/assistant'` — its
+  `AGENTS.md` (instructions) and `SOUL.md` (voice) extend the system prompt instead
+  of an inline `system` string.
 - The **operator-gated unrestricted bypass** — a freewheeling assistant with full
   shell/network/filesystem access.
 
