@@ -11,6 +11,7 @@ import {
   BackendTimeoutError,
   PermissionDeniedError,
   loadSkillBodies,
+  resolvePermissions,
 } from '@skelm/core'
 import type {
   AgentRequest,
@@ -18,7 +19,6 @@ import type {
   BackendCapabilities,
   BackendContext,
   McpServerConfig,
-  ResolvedPolicy,
   SkelmBackend,
 } from '@skelm/core'
 import { OpencodeClientWrapper } from './client.js'
@@ -71,7 +71,8 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
 
     async run(request: AgentRequest, context: BackendContext): Promise<AgentResponse> {
       // Validate permissions at skelm layer BEFORE forwarding to opencode
-      const policy = context.permissions ?? request.permissions ?? createEmptyPolicy()
+      const policy =
+        context.permissions ?? request.permissions ?? resolvePermissions(undefined, undefined)
 
       const permissionResult = validatePermissions(policy, {
         // We don't have direct access to requested tools in AgentRequest
@@ -181,40 +182,4 @@ async function injectSkills(req: AgentRequest, ctx: BackendContext): Promise<Age
   if (req.system !== undefined) systemParts.push(req.system)
   systemParts.push(...skillParts)
   return { ...req, system: systemParts.join('\n\n---\n\n') }
-}
-
-/**
- * Create an empty policy for when no permissions are specified
- */
-function createEmptyPolicy(): ResolvedPolicy {
-  return {
-    allowedTools: {
-      exact: new Set(),
-      prefixes: [],
-      star: false,
-    },
-    deniedTools: {
-      exact: new Set(),
-      prefixes: [],
-      star: false,
-    },
-    allowedExecutables: new Set(),
-    allowedMcpServers: new Set(),
-    allowedSkills: new Set(),
-    allowedAgents: { exact: new Set(), prefixes: [], star: false },
-    allowedSecrets: new Set(),
-    networkEgress: 'deny',
-    fsRead: new Set(),
-    fsWrite: new Set(),
-    approval: null,
-    agentmemory: {
-      allowObserve: false,
-      allowSearch: false,
-      allowSession: false,
-      allowContext: false,
-      allowSave: false,
-      allowRecall: false,
-      allowGraph: false,
-    },
-  }
 }
