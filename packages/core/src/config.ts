@@ -207,6 +207,18 @@ export function defineConfig(config: SkelmConfig): SkelmConfig {
   return Object.freeze({ ...config })
 }
 
+/**
+ * Candidate `skelm.config.*` basenames, in resolution order. Shared so the CLI
+ * (directory entrypoint resolution) and the gateway (runtime project
+ * activation) probe for the config file the same way and never drift.
+ */
+export const CONFIG_FILENAMES = [
+  'skelm.config.mts',
+  'skelm.config.ts',
+  'skelm.config.js',
+  'skelm.config.mjs',
+] as const
+
 /** Default configuration used when no skelm.config.ts is found. */
 export const DEFAULT_CONFIG: SkelmConfig = Object.freeze({
   backends: {

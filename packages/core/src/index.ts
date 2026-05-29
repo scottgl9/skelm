@@ -28,7 +28,7 @@ export type {
 
 export { createAnthropicBackend } from './anthropic/index.js'
 export type { AnthropicBackendOptions } from './anthropic/index.js'
-export { DEFAULT_CONFIG, defineConfig } from './config.js'
+export { CONFIG_FILENAMES, DEFAULT_CONFIG, defineConfig } from './config.js'
 export type {
   SkelmConfig,
   SkelmConfigAgentEntry,
