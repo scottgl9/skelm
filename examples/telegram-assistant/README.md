@@ -44,8 +44,18 @@ export TELEGRAM_ALLOWED_CHAT_IDS=<your-chat-id>   # strongly recommended
 # Optional: a running @skelm/agentmemory server (default http://localhost:3111)
 export SKELM_AGENTMEMORY=0                          # set to disable agentmemory
 
-skelm gateway start                                 # foreground; Ctrl-C drains
+skelm gateway start --detach                        # a gateway, once
+skelm run examples/telegram-assistant/              # activate: registers the
+                                                    # Telegram source + workflow,
+                                                    # then exits — the gateway owns it
 ```
+
+`skelm run` activates the project on the gateway (registers the Telegram trigger
+source, the Pi backend, the workflow, and the operator grant) and exits; the
+gateway then long-polls Telegram and drives a turn per message. Use `skelm list`
+to see it running and `skelm stop telegram-assistant` to stop it. (The directory
+must be within the gateway's trusted project root; see
+[activation](../../docs/reference/http.md#projects).)
 
 Message the bot. It replies, remembers the conversation (message it again — it
 has context), and the thread survives a gateway restart. Ask it to do something
