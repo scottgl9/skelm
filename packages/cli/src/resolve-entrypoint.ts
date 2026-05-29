@@ -1,14 +1,8 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { CONFIG_FILENAMES } from '@skelm/core'
 import { loadSkelmConfig } from './load-config.js'
 import { CliError } from './load-workflow.js'
-
-const CONFIG_FILENAMES = [
-  'skelm.config.mts',
-  'skelm.config.ts',
-  'skelm.config.js',
-  'skelm.config.mjs',
-]
 
 // index.* is tried before the single-file scan so a project can keep
 // several workflow files in one directory and still declare a canonical

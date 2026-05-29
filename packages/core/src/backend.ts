@@ -628,6 +628,22 @@ export class BackendRegistry {
     this.backends.set(backend.id, backend)
   }
 
+  has(id: BackendId): boolean {
+    return this.backends.has(id)
+  }
+
+  /**
+   * Idempotent register: adds the backend if its id is free, otherwise leaves
+   * the existing entry untouched. Used when a runtime-activated project's
+   * backends are absorbed into a running gateway — an already-trusted id is
+   * never silently replaced by a later config.
+   */
+  registerIfAbsent(backend: SkelmBackend): 'registered' | 'exists' {
+    if (this.backends.has(backend.id)) return 'exists'
+    this.backends.set(backend.id, backend)
+    return 'registered'
+  }
+
   /** Pick a backend by id, falling back to first one that has `prompt`. */
   resolveForLlm(opts: { backendId?: BackendId | undefined }): SkelmBackend {
     if (opts.backendId !== undefined) {
