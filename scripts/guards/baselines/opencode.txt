@@ -4,7 +4,6 @@ value:buildPermissionAuditEntry
 value:createOpencodeBackend
 value:createOpencodeBackendFromConfig
 value:createOpencodeProvider
-value:mapOpencodePermissionsToSkelm
 value:mapSkelmPermissionsToOpencode
 value:validatePermissions
 type:BackendAuthenticationError
