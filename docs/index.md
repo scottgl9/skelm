@@ -30,7 +30,7 @@ features:
     details: Pipelines are real `.mts` modules. Refactor with your editor, type-check with `tsc`, version with git, test with vitest. No YAML DSL to learn.
   - icon: 🧩
     title: Backend-agnostic agents
-    details: Opencode, ACP (Copilot, Claude Code, Gemini), OpenAI, Anthropic, Pi — swap providers without rewriting a step. Bring your own via the backend SPI.
+    details: Opencode, ACP (Copilot, Claude Code), OpenAI, Anthropic, Pi — swap providers without rewriting a step. Bring your own via the backend SPI.
   - icon: 📚
     title: Skills-first capability model
     details: Package procedural knowledge — playbooks, API recipes, internal know-how — as Skills the agent loads on demand. MCP servers plug in as first-class registry citizens alongside them when you need live tools.

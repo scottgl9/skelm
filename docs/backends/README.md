@@ -142,7 +142,7 @@ For `agent()` you want a coding-agent backend that can drive multi-turn tool use
 - **`@skelm/pi` SDK** (`createPiSdkBackend`) — native enforcement of the skelm permission policy; pi resolves the underlying model from its own settings (`~/.pi/auth.json`, `~/.pi/models.json`).
 - **`@skelm/opencode`** (`createOpencodeBackendFromConfig`) — native enforcement; reaches the opencode agent service.
 - **`@skelm/codex`** (`createCodexBackend`) — OpenAI Codex via the official `@openai/codex-sdk`. Wrapped tool enforcement: Codex enforces its sandbox in-process; skelm validates the policy at the boundary, pins the workspace, and audits per-event. MCP servers are injected via Codex's `config.mcp_servers`, and skill bodies are concatenated into the system prompt.
-- **ACP backends** (`createAcpBackend`) — works with any agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com) (Copilot, Claude Code, Gemini CLI, opencode). Tool enforcement is **advisory** — the subprocess can ignore the allowlist; skelm logs the violation but cannot prevent it.
+- **ACP backends** (`createAcpBackend`) — works with any agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com) (Copilot, Claude Code, opencode). Tool enforcement is **advisory** — the subprocess can ignore the allowlist; skelm logs the violation but cannot prevent it.
 - **`@skelm/vercel-ai`** (`createVercelAiBackend`) — wrap any Vercel AI SDK model (`@ai-sdk/openai`, `@ai-sdk/anthropic`, etc.) and reuse Vercel `tool({…})` definitions under skelm's permission policy. Tools are filtered by `allowedTools` and each `execute` is re-checked at call time. Streaming and MCP not yet supported.
 
 Per-backend pages cover configuration in detail:
