@@ -23,9 +23,17 @@ export {
   endMemoryTurn,
   extractPromptText,
   recordMemoryTurn,
+  runWithMemoryTurns,
   startMemoryTurn,
 } from './lifecycle.js'
-export type { MemoryTurnInit, MemoryTurnRecord, MemoryTurnResult } from './lifecycle.js'
+export type {
+  MemoryTurnInit,
+  MemoryTurnRecord,
+  MemoryTurnResult,
+  RunWithMemoryInnerParams,
+  RunWithMemoryInnerResult,
+  RunWithMemoryOptions,
+} from './lifecycle.js'
 
 export type {
   AgentmemoryHookType,

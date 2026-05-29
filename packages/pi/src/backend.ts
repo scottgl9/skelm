@@ -7,13 +7,7 @@
 // Pi does NOT speak ACP; this backend uses the native pi RPC protocol
 // documented in @earendil-works/pi-coding-agent/docs/rpc.md.
 
-import {
-  deriveSessionId,
-  endMemoryTurn,
-  extractPromptText as extractPromptTextForMemory,
-  recordMemoryTurn,
-  startMemoryTurn,
-} from '@skelm/agentmemory'
+import { runWithMemoryTurns } from '@skelm/agentmemory'
 import {
   PermissionDeniedError,
   createConcurrencySemaphore,
@@ -117,18 +111,7 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
       }
       await acquire()
 
-      const memorySessionId = deriveSessionId(request, {
-        ...(context.runId !== undefined && { runId: context.runId }),
-        ...(context.stepId !== undefined && { stepId: context.stepId }),
-      })
       const memoryProject = request.cwd ?? options.cwd ?? process.cwd()
-      const memoryTurn = await startMemoryTurn(context.agentmemory, {
-        sessionId: memorySessionId,
-        project: memoryProject,
-        cwd: memoryProject,
-        promptText: extractPromptTextForMemory(request.prompt),
-      })
-
       const client = new PiRpcClient({
         command: options.command ?? 'pi',
         ...(options.provider !== undefined && { provider: options.provider }),
@@ -147,32 +130,34 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
 
       try {
         await client.start()
-
-        const skillBodies = await loadSkillBodies(request, context)
-        const basePrompt = buildPrompt(request, skillBodies)
-        const prompt =
-          memoryTurn.recallPrefix.length > 0
-            ? `${memoryTurn.recallPrefix}${basePrompt}`
-            : basePrompt
-        const result = await client.prompt(prompt, options.timeout ?? 300_000)
-
-        await recordMemoryTurn(context.agentmemory, {
-          sessionId: memoryTurn.sessionId,
-          project: memoryProject,
-          cwd: memoryProject,
-          resultText: result.text,
-        })
-
-        return {
-          text: result.text,
-          stopReason: result.stopReason,
-          ...(result.usage !== undefined && {
-            usage: {
-              inputTokens: result.usage.inputTokens,
-              outputTokens: result.usage.outputTokens,
-            },
-          }),
-        }
+        return await runWithMemoryTurns<AgentResponse>(
+          {
+            handle: context.agentmemory,
+            ...(context.runId !== undefined && { runId: context.runId }),
+            ...(context.stepId !== undefined && { stepId: context.stepId }),
+            project: memoryProject,
+          },
+          request,
+          async ({ recallPrefix }) => {
+            const skillBodies = await loadSkillBodies(request, context)
+            const basePrompt = buildPrompt(request, skillBodies)
+            const prompt = recallPrefix.length > 0 ? `${recallPrefix}${basePrompt}` : basePrompt
+            const result = await client.prompt(prompt, options.timeout ?? 300_000)
+            return {
+              result: {
+                text: result.text,
+                stopReason: result.stopReason,
+                ...(result.usage !== undefined && {
+                  usage: {
+                    inputTokens: result.usage.inputTokens,
+                    outputTokens: result.usage.outputTokens,
+                  },
+                }),
+              },
+              resultText: result.text,
+            }
+          },
+        )
       } catch (err) {
         if (err instanceof Error) {
           if (err.message.includes('ENOENT') || err.message.includes('EACCES')) {
@@ -189,7 +174,6 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
       } finally {
         context.signal.removeEventListener('abort', onAbort)
         await client.stop()
-        await endMemoryTurn(context.agentmemory, memoryTurn.sessionId)
         release()
       }
     },

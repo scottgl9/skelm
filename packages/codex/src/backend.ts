@@ -1,13 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  deriveSessionId,
-  endMemoryTurn,
-  extractPromptText as extractPromptTextHelper,
-  recordMemoryTurn,
-  startMemoryTurn,
-} from '@skelm/agentmemory'
+import { runWithMemoryTurns } from '@skelm/agentmemory'
 import {
   BackendConfigError,
   buildSystemPromptFromRequest,
@@ -84,17 +78,7 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
     ...(options.label !== undefined && { label: options.label }),
 
     async run(request: AgentRequest, context: BackendContext): Promise<AgentResponse> {
-      const sessionIdForMemory = deriveSessionId(request, {
-        ...(context.runId !== undefined && { runId: context.runId }),
-        ...(context.stepId !== undefined && { stepId: context.stepId }),
-      })
       const memoryProject = request.cwd ?? process.cwd()
-      const memoryTurn = await startMemoryTurn(context.agentmemory, {
-        sessionId: sessionIdForMemory,
-        project: memoryProject,
-        cwd: memoryProject,
-        promptText: extractPromptTextHelper(request.prompt),
-      })
       // When neither the request nor the context carries a resolved policy,
       // synthesize an empty-deny ResolvedPolicy from `resolvePermissions(
       // undefined, undefined)`. This matches the documented default-deny
@@ -129,97 +113,96 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
       // Compose the system prompt via @skelm/core's shared builder so
       // systemPromptMode / systemPromptIncludeAgentDef take effect here.
       const baseSystemPrompt = await composeSystemPrompt(request, context, options.model)
-      const systemPrompt =
-        memoryTurn.recallPrefix.length > 0
-          ? baseSystemPrompt === undefined
-            ? memoryTurn.recallPrefix
-            : `${memoryTurn.recallPrefix}${baseSystemPrompt}`
-          : baseSystemPrompt
-      // Codex SDK accepts string OR Array<{type:'text'}|{type:'local_image',path}>.
-      // For image-bearing prompts we materialize each image to a temp file
-      // (Codex requires filesystem paths, not data URLs) and clean up after
-      // the turn. Pure-text prompts keep the prior compact "<system>\n\n---\n\n<text>" shape.
-      const imageRoots: string[] = []
-      const userPrompt:
-        | string
-        | Array<{ type: 'text'; text: string } | { type: 'local_image'; path: string }> =
-        typeof request.prompt === 'string' || extractImageParts(request.prompt).length === 0
-          ? (() => {
-              const promptText = extractPromptText(request.prompt)
-              return systemPrompt === undefined
-                ? promptText
-                : `${systemPrompt}\n\n---\n\n${promptText}`
-            })()
-          : buildCodexMultimodalInput(request.prompt, systemPrompt, imageRoots)
 
-      // Build the thread (resume vs fresh) honoring per-step sandbox/approval.
-      const threadOpts = buildThreadOptions(options, {
-        sandboxMode: mapped.sandboxMode,
-        approvalPolicy: mapped.approvalPolicy,
-        networkAccessEnabled: mapped.networkAccessEnabled,
-        webSearchEnabled: mapped.webSearchEnabled,
-        webSearchMode: mapped.webSearchMode,
-        ...(mapped.workingDirectory !== undefined && {
-          workingDirectory: mapped.workingDirectory,
-        }),
-        ...(mapped.additionalDirectories !== undefined && {
-          additionalDirectories: mapped.additionalDirectories,
-        }),
-      })
+      return await runWithMemoryTurns<AgentResponse>(
+        {
+          handle: context.agentmemory,
+          ...(context.runId !== undefined && { runId: context.runId }),
+          ...(context.stepId !== undefined && { stepId: context.stepId }),
+          project: memoryProject,
+        },
+        request,
+        async ({ recallPrefix }) => {
+          const systemPrompt =
+            recallPrefix.length > 0
+              ? baseSystemPrompt === undefined
+                ? recallPrefix
+                : `${recallPrefix}${baseSystemPrompt}`
+              : baseSystemPrompt
+          // Codex SDK accepts string OR Array<{type:'text'}|{type:'local_image',path}>.
+          // For image-bearing prompts we materialize each image to a temp file
+          // (Codex requires filesystem paths, not data URLs) and clean up after
+          // the turn. Pure-text prompts keep the prior compact "<system>\n\n---\n\n<text>" shape.
+          const imageRoots: string[] = []
+          const userPrompt:
+            | string
+            | Array<{ type: 'text'; text: string } | { type: 'local_image'; path: string }> =
+            typeof request.prompt === 'string' || extractImageParts(request.prompt).length === 0
+              ? (() => {
+                  const promptText = extractPromptText(request.prompt)
+                  return systemPrompt === undefined
+                    ? promptText
+                    : `${systemPrompt}\n\n---\n\n${promptText}`
+                })()
+              : buildCodexMultimodalInput(request.prompt, systemPrompt, imageRoots)
 
-      const sessionId = readSessionId(request)
-      const thread =
-        sessionId !== undefined
-          ? codex.resumeThread(sessionId, threadOpts)
-          : codex.startThread(threadOpts)
+          const threadOpts = buildThreadOptions(options, {
+            sandboxMode: mapped.sandboxMode,
+            approvalPolicy: mapped.approvalPolicy,
+            networkAccessEnabled: mapped.networkAccessEnabled,
+            webSearchEnabled: mapped.webSearchEnabled,
+            webSearchMode: mapped.webSearchMode,
+            ...(mapped.workingDirectory !== undefined && {
+              workingDirectory: mapped.workingDirectory,
+            }),
+            ...(mapped.additionalDirectories !== undefined && {
+              additionalDirectories: mapped.additionalDirectories,
+            }),
+          })
 
-      // Compose abort: the runner-supplied `context.signal` AND the
-      // backend's `timeoutMs` (defensive ceiling). The SDK honors a single
-      // AbortSignal on TurnOptions natively.
-      const turnSignal = composeAbortSignal(context.signal, options.timeoutMs ?? 300_000)
-      // The SDK writes outputSchema verbatim to the --output-schema file, and
-      // the OpenAI structured-output API requires strict JSON Schema
-      // (additionalProperties:false + required). Convert the step's schema here
-      // rather than handing the SDK a raw standard-schema object.
-      const codexOutputSchema = await toCodexOutputSchema(request.outputSchema)
-      const { events } = await thread.runStreamed(userPrompt, {
-        ...(codexOutputSchema !== undefined && { outputSchema: codexOutputSchema }),
-        signal: turnSignal.signal,
-      })
+          const sessionId = readSessionId(request)
+          const thread =
+            sessionId !== undefined
+              ? codex.resumeThread(sessionId, threadOpts)
+              : codex.startThread(threadOpts)
 
-      let result: Awaited<ReturnType<typeof consumeStream>>
-      try {
-        result = await consumeStream(events, {
-          ...(context.onPartial !== undefined && { onText: context.onPartial }),
-        })
-      } finally {
-        turnSignal.cancel()
-        cleanupTempImageRoots(imageRoots)
-      }
+          const turnSignal = composeAbortSignal(context.signal, options.timeoutMs ?? 300_000)
+          const codexOutputSchema = await toCodexOutputSchema(request.outputSchema)
+          const { events } = await thread.runStreamed(userPrompt, {
+            ...(codexOutputSchema !== undefined && { outputSchema: codexOutputSchema }),
+            signal: turnSignal.signal,
+          })
 
-      const response: AgentResponse = {
-        text: result.finalText,
-        stopReason: result.stopReason,
-      }
-      if (result.usage !== undefined) {
-        response.usage = {
-          ...(result.usage.inputTokens !== undefined && { inputTokens: result.usage.inputTokens }),
-          ...(result.usage.outputTokens !== undefined && {
-            outputTokens: result.usage.outputTokens,
-          }),
-          ...(result.usage.reasoningTokens !== undefined && {
-            reasoningTokens: result.usage.reasoningTokens,
-          }),
-        }
-      }
-      await recordMemoryTurn(context.agentmemory, {
-        sessionId: memoryTurn.sessionId,
-        project: memoryProject,
-        cwd: memoryProject,
-        resultText: response.text ?? '',
-      })
-      await endMemoryTurn(context.agentmemory, memoryTurn.sessionId)
-      return response
+          let result: Awaited<ReturnType<typeof consumeStream>>
+          try {
+            result = await consumeStream(events, {
+              ...(context.onPartial !== undefined && { onText: context.onPartial }),
+            })
+          } finally {
+            turnSignal.cancel()
+            cleanupTempImageRoots(imageRoots)
+          }
+
+          const response: AgentResponse = {
+            text: result.finalText,
+            stopReason: result.stopReason,
+          }
+          if (result.usage !== undefined) {
+            response.usage = {
+              ...(result.usage.inputTokens !== undefined && {
+                inputTokens: result.usage.inputTokens,
+              }),
+              ...(result.usage.outputTokens !== undefined && {
+                outputTokens: result.usage.outputTokens,
+              }),
+              ...(result.usage.reasoningTokens !== undefined && {
+                reasoningTokens: result.usage.reasoningTokens,
+              }),
+            }
+          }
+          return { result: response, resultText: response.text ?? '' }
+        },
+      )
     },
   }
 
