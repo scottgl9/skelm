@@ -23,7 +23,7 @@ skelm is a TypeScript framework for authoring and running **workflows** — type
 
 - **TypeScript-native** — Real `.mts` modules, no DSL or JSON config
 - **Default-deny security** — Every permission must be explicitly declared
-- **Multi-backend agents** — First-party agent, Pi, Opencode (native or ACP), Codex, Vercel AI, ACP (Copilot, Claude Code, Gemini), Anthropic, OpenAI
+- **Multi-backend agents** — First-party agent, Pi, Opencode (native or ACP), Codex, Vercel AI, ACP (Copilot, Claude Code), Anthropic, OpenAI
 - **Multimodal prompts** — `llm()` and `agent()` accept image content parts; vision routed through vision-capable backends, denied at step start for the rest. Pair with `ctx.artifacts` to persist screenshots and other binary evidence on the run record
 - **MCP-native** — Model Context Protocol servers lifecycle-managed by the gateway
 - **Skill support** — Reusable `SKILL.md` capability bundles injected into agent system prompts; permission-gated via `allowedSkills`; auto-discovered from `skills/**/SKILL.md` by the gateway registry
@@ -76,7 +76,7 @@ skelm supports multiple AI backends through pluggable adapters. Choose the one t
 | **Opencode** | `@skelm/opencode` | Open-source coding agent backend (native; ACP transport also supported) |
 | **Codex** | `@skelm/codex` | OpenAI Codex via the official `@openai/codex-sdk` — sandbox-aware (`read-only` / `workspace-write`), MCP + skills injection, streaming, thread resumption |
 | **Vercel AI** | `@skelm/vercel-ai` | Vercel AI SDK with streaming support |
-| **ACP** | Built-in | GitHub Copilot, Claude Code, Gemini via ACP (Opencode also available as native — see above) |
+| **ACP** | Built-in | GitHub Copilot, Claude Code via ACP (Opencode also available as native — see above) |
 
 See [Backend documentation](./docs/backends/README.md) for setup guides, and [Codex backend](./docs/backends/codex.md) for OpenAI Codex specifically. Codex authenticates via the host `codex` CLI (`codex login`) or `CODEX_API_KEY`; skelm validates permissions at the boundary while Codex enforces its sandbox in-process.
 

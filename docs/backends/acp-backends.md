@@ -1,6 +1,6 @@
 # ACP backends
 
-[Agent Client Protocol](https://agentclientprotocol.com) (ACP) backends spawn a subprocess that speaks ACP over stdio. They are the broadest-compatibility option in skelm: any agent that exposes an ACP mode (Copilot, Claude Code, Gemini CLI, opencode) plugs in with one config block.
+[Agent Client Protocol](https://agentclientprotocol.com) (ACP) backends spawn a subprocess that speaks ACP over stdio. They are the broadest-compatibility option in skelm: any agent that exposes an ACP mode (Copilot, Claude Code, opencode) plugs in with one config block.
 
 > **Status:** stable for development workflows.
 
@@ -45,16 +45,18 @@ backends: {
 }
 ```
 
-For more than one ACP-flavoured backend in the same project — e.g. one Copilot and one Gemini — register them via `instances:` so each gets its own id:
+For more than one ACP-flavoured backend in the same project — e.g. one Copilot and one Claude Code — register them via `instances:` so each gets its own id:
 
 ```ts
 import { defineConfig, createAcpBackend } from 'skelm'
 
 export default defineConfig({
   instances: [
-    createAcpBackend({ id: 'claude-code-acp', command: 'claude',  args: ['--acp'] }),
-    createAcpBackend({ id: 'gemini-acp',      command: 'gemini',  args: ['--acp'] }),
-    createAcpBackend({ id: 'opencode-acp',    command: 'opencode', args: ['acp']  }),
+    createAcpBackend({ id: 'copilot-acp',     command: 'copilot', args: ['--acp'] }),
+    // Claude Code has no native ACP mode; the @zed-industries/claude-code-acp
+    // adapter makes the `claude` CLI speak ACP over stdio.
+    createAcpBackend({ id: 'claude-code-acp', command: 'npx', args: ['-y', '@zed-industries/claude-code-acp'] }),
+    createAcpBackend({ id: 'opencode-acp',    command: 'opencode', args: ['acp'] }),
   ],
 })
 ```
@@ -65,7 +67,6 @@ export default defineConfig({
 |----------------------|-----------------------------------------------------------|
 | GitHub Copilot       | Editor sign-in or `GH_TOKEN` (depends on copilot version) |
 | Claude Code          | `ANTHROPIC_API_KEY` or `claude` editor login              |
-| Gemini CLI           | `GOOGLE_API_KEY` (or whatever `gemini --acp` consumes)    |
 | opencode (ACP mode)  | `OPENCODE_API_KEY`                                        |
 
 Skelm doesn't touch any of these — they're consumed by the subprocess.
