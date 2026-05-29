@@ -3,7 +3,7 @@ import type { TuiConfig } from '@skelm/integration-sdk'
 
 /**
  * Flat shape emitted per inbound line, suitable as a pipeline input or a
- * persistent-agent payload. `sessionId` is the natural `sessionKey` so a TUI
+ * persistent-workflow payload. `sessionId` is the natural `sessionKey` so a TUI
  * session is one durable conversation.
  */
 export interface TuiMessageInput {
@@ -69,7 +69,7 @@ export interface CreateTuiTriggerSourceOptions {
   from?: string
   /**
    * If true, the source's `onResult` forwards `output.reply` to the frontend's
-   * `render`. Default: true. A persistent agent / pipeline returns
+   * `render`. Default: true. A persistent workflow / pipeline returns
    * `{ reply: string }` for the default behavior to apply.
    */
   postReply?: boolean
@@ -112,7 +112,7 @@ export class TuiIntegration extends IntegrationBase {
    *
    * Register the returned object as a triggerSource in `skelm.config.ts`, then
    * have a workflow declare `triggers: [{ kind: 'queue', sourceId: '<id>' }]`
-   * (or a persistent agent with `sessionKey: (m) => m.sessionId`). When the
+   * (or a persistent workflow with `agent.sessionKey: (m) => m.sessionId`). When the
    * gateway starts the source it builds the frontend; each `io.submit(line)`
    * fires the workflow with a flat {@link TuiMessageInput}, and (when
    * `postReply` is on) each `output.reply` is rendered back via the frontend.

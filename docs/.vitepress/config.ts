@@ -71,7 +71,7 @@ export default defineConfig({
           items: [
             { text: 'Overview', link: '/concepts/' },
             { text: 'Permissions', link: '/concepts/permissions' },
-            { text: 'Persistent Agents', link: '/concepts/persistent-agents' },
+            { text: 'Persistent Workflows', link: '/concepts/persistent-workflows' },
             { text: 'Coding Agents', link: '/concepts/coding-agents' },
             { text: 'System Prompt', link: '/concepts/system-prompt' },
             { text: 'Registries', link: '/concepts/registries' },
@@ -83,8 +83,8 @@ export default defineConfig({
           text: 'Recipes',
           items: [
             { text: 'All Recipes', link: '/recipes/' },
-            { text: 'Telegram Persistent Agent', link: '/recipes/telegram-persistent-agent' },
-            { text: 'TUI Persistent Agent', link: '/recipes/tui-persistent-agent' },
+            { text: 'Telegram Persistent Workflow', link: '/recipes/telegram-persistent-workflow' },
+            { text: 'TUI Persistent Workflow', link: '/recipes/tui-persistent-workflow' },
             { text: 'Coding Agent on Chat', link: '/recipes/coding-agent-on-chat' },
             { text: 'Ticket to PR', link: '/recipes/ticket-to-pr' },
             { text: 'Email Triage', link: '/recipes/email-triage' },

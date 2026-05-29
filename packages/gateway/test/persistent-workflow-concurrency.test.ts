@@ -1,8 +1,8 @@
-// Regression: a persistent-agent trigger must not serialize fires across
+// Regression: a persistent-workflow trigger must not serialize fires across
 // distinct sessionKeys. Two back-to-back queue pushes with different chatIds
 // target independent durable sessions, so both turns must run; only same-
 // session fires need to serialize (and that ordering is guarded by the
-// per-session lock inside runPersistentTurn).
+// per-session lock inside runPersistentWorkflowTurn).
 //
 // Pre-fix behaviour: TriggerCoordinator.fire() observes inflight=true on the
 // second push and, under the default overlap='skip', drops it on the floor —
@@ -12,7 +12,7 @@ import { promises as fs } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BackendRegistry, type SkelmBackend, persistentAgent } from '@skelm/core'
+import { BackendRegistry, type SkelmBackend, persistentWorkflow } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Gateway, InMemoryQueueDriver } from '../src/index.js'
 
@@ -73,16 +73,14 @@ async function waitFor(
   throw new Error(message)
 }
 
-describe('persistent-agent dispatch concurrency', () => {
+describe('persistent-workflow dispatch concurrency', () => {
   it('runs two back-to-back fires with distinct sessionKeys concurrently', async () => {
     const seen: SeenTurn[] = []
     const registry = new BackendRegistry()
     registry.register(slowEchoBackend(seen))
-    const bot = persistentAgent<{ chatId: string; text: string }>({
+    const bot = persistentWorkflow<{ chatId: string; text: string }>({
       id: 'bot',
-      backend: 'slow-echo',
-      sessionKey: (p) => p.chatId,
-      promptOf: (p) => p.text,
+      agent: { backend: 'slow-echo', sessionKey: (p) => p.chatId },
     })
     const gw = new Gateway({
       stateDir,
@@ -144,11 +142,9 @@ describe('persistent-agent dispatch concurrency', () => {
         return { text: `echo:${prompt}` }
       },
     })
-    const bot = persistentAgent<{ chatId: string; text: string }>({
+    const bot = persistentWorkflow<{ chatId: string; text: string }>({
       id: 'bot',
-      backend: 'serial-echo',
-      sessionKey: (p) => p.chatId,
-      promptOf: (p) => p.text,
+      agent: { backend: 'serial-echo', sessionKey: (p) => p.chatId },
     })
     const gw = new Gateway({
       stateDir,

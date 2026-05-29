@@ -189,17 +189,22 @@ export type { TestResult } from './builders.js'
 export {
   defaultPromptOf,
   defaultReplyOf,
-  isPersistentAgent,
-  persistentAgent,
-} from './persistent-agent.js'
-export type { PersistentAgent, PersistentAgentDef } from './persistent-agent.js'
+  isPersistentWorkflow,
+  PERSISTENT_TURN_STEP_ID,
+  persistentWorkflow,
+} from './persistent-workflow.js'
+export type {
+  PersistentWorkflow,
+  PersistentWorkflowAgentDef,
+  PersistentWorkflowDef,
+} from './persistent-workflow.js'
 export {
   createSessionRecord,
   loadSession,
-  PERSISTENT_AGENT_NAMESPACE,
+  PERSISTENT_WORKFLOW_NAMESPACE,
   saveSession,
-} from './persistent-agent-store.js'
-export type { PersistentSessionRecord } from './persistent-agent-store.js'
+} from './persistent-workflow-store.js'
+export type { PersistentSessionRecord } from './persistent-workflow-store.js'
 export {
   ExecConfigError,
   InvokePipelineNotFoundError,

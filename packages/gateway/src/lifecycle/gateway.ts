@@ -178,7 +178,7 @@ export class Gateway {
   }
 
   /**
-   * Whether a workflow / persistent-agent id is granted the unrestricted
+   * Whether a workflow / persistent-workflow id is granted the unrestricted
    * permission bypass. The grant is operator-side only — the union of
    * `config.defaults.unrestrictedGrants` and the comma-separated env var
    * `SKELM_UNRESTRICTED_WORKFLOWS`. An author's `requestUnrestricted` is inert

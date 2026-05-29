@@ -328,16 +328,18 @@ telegram.createTriggerSource({
 })
 ```
 
-## Triggers that drive a persistent agent
+## Triggers that drive a persistent workflow
 
-A trigger's `workflowId` can resolve to a [persistent agent](/concepts/persistent-agents) instead of a pipeline. The declaration is identical — a persistent agent exposes the same `triggers` array — but the gateway routes the fire to a single durable conversational *turn* rather than a fresh pipeline run:
+A trigger's `workflowId` can resolve to a [persistent workflow](/concepts/persistent-workflows) instead of a plain pipeline. The declaration is identical — a persistent workflow exposes the same `triggers` array — but the gateway routes the fire through any preamble steps and then to a single durable conversational *turn* rather than a fresh stateless run:
 
 ```ts
-export default persistentAgent({
+export default persistentWorkflow({
   id: 'support-bot',
-  backend: 'pi',
   triggers: [{ kind: 'queue', sourceId: 'telegram' }],
-  sessionKey: (msg) => msg.chatId,
+  agent: {
+    backend: 'pi',
+    sessionKey: (msg) => msg.chatId,
+  },
 })
 ```
 
