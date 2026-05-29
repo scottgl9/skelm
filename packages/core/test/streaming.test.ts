@@ -68,6 +68,40 @@ describe('streaming output — step.partial events', () => {
     expect(partialDeltas).toEqual(chunks)
   })
 
+  it('delivers step.partial (and lifecycle) events to the onEvent run option', async () => {
+    // Regression: the gateway plumbs a queue driver's onEvent hook into
+    // runner.start({ onEvent }) (e.g. a TUI frontend streaming a turn), but the
+    // option was never consumed — so streaming frontends received nothing. The
+    // onEvent listener must be subscribed to the run's bus without the caller
+    // having to own the whole `events` bus.
+    const chunks = ['Hel', 'lo ', 'wor', 'ld']
+    const registry = new BackendRegistry()
+    registry.register(streamingLlmBackend(chunks))
+
+    const received: RunEvent[] = []
+    const wf = pipeline({
+      id: 'onevent-stream',
+      steps: [llm({ id: 'stream-step', backend: 'streaming-llm', prompt: 'say hello' })],
+    })
+
+    const run = await runPipeline(
+      wf,
+      {},
+      {
+        backends: registry,
+        // No `events` bus supplied — onEvent must still be wired to the bus the
+        // runner creates internally.
+        onEvent: (ev) => received.push(ev),
+      },
+    )
+
+    expect(run.status).toBe('completed')
+    const partials = received.filter((e) => e.type === 'step.partial').map((e) => e.delta)
+    expect(partials).toEqual(chunks)
+    // onEvent sees the full lifecycle, not just partials.
+    expect(received.some((e) => e.type === 'run.completed')).toBe(true)
+  })
+
   it('llm() step without events bus does not emit step.partial events', async () => {
     const chunks = ['Hello', ' ', 'world', '!']
     const registry = new BackendRegistry()

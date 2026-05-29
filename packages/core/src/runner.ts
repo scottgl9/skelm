@@ -24,7 +24,7 @@ import {
   serializeError,
 } from './errors.js'
 export { ApprovalDeniedError } from './errors.js'
-import { EventBus } from './events.js'
+import { EventBus, type EventListener } from './events.js'
 import { runStepWithRetry } from './execution/handlers.js'
 import type { ExecutionRuntime } from './execution/runtime.js'
 import { extractJsonFromText, tryParseJson } from './json-utils.js'
@@ -74,6 +74,15 @@ export interface RunOptions {
   signal?: AbortSignal
   /** Optional event bus to publish run events to; one is created if omitted. */
   events?: EventBus
+  /**
+   * Optional listener invoked for every run event as it is published, live.
+   * Unlike `events` (which lets the caller own the whole bus), this subscribes a
+   * single listener to the run's bus without replacing it — used by the gateway
+   * to stream a run's events to a queue driver's `onEvent` hook (e.g. a TUI
+   * frontend rendering step.partial deltas as the turn is generated). Without
+   * this the option was silently ignored and streaming frontends saw nothing.
+   */
+  onEvent?: EventListener
   /** Optional backend registry; required if any step references a backend. */
   backends?: BackendRegistry
   /** Optional durable run store that persists events and final run records. */
@@ -446,6 +455,10 @@ export async function runPipeline<TInput, TOutput>(
   const startedAt = Date.now()
   const runId = options.runId ?? generateRunId()
   const events = options.events ?? new EventBus()
+  // Subscribe the caller's live listener (if any) to the run's bus. This is how
+  // a queue driver's onEvent hook receives step.partial / lifecycle events as
+  // the turn streams — see RunOptions.onEvent.
+  if (options.onEvent !== undefined) events.subscribe(options.onEvent)
   const store = options.store
   const stateStore = options.stateStore ?? options.store ?? defaultStateStore
   const threadHost = createThreadHost(stateStore)
