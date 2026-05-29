@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { bootGatewayWithRetry } from './utils/boot-gateway.js'
 
@@ -139,6 +139,30 @@ describe('POST /v1/projects/activate', () => {
         gw.managers.triggers.list().filter((r) => r.spec.workflowId === 'echo-assistant'),
       ).toHaveLength(1)
     } finally {
+      await gw.stop()
+    }
+  })
+
+  it('reloads on the first activation (new grant) but not on a no-change refresh', async () => {
+    const proj = join(projectRoot, 'proj')
+    await writeProject(proj)
+    const { gw, base } = await boot()
+    const reload = vi.spyOn(gw, 'reload')
+    try {
+      const activate = () =>
+        fetch(`${base}/v1/projects/activate`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ dir: proj }),
+        })
+      await activate()
+      expect(reload).toHaveBeenCalledTimes(1) // grant 'echo-assistant' went live
+      await activate()
+      // Refresh adds no grant and adopts no agentmemory → no reload cycle.
+      expect(reload).toHaveBeenCalledTimes(1)
+      expect(gw.isUnrestrictedGranted('echo-assistant')).toBe(true)
+    } finally {
+      reload.mockRestore()
       await gw.stop()
     }
   })

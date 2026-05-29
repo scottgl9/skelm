@@ -69,6 +69,17 @@ export async function classifyRunTarget(
       }
     }
     if ((config.triggerSources?.length ?? 0) > 0) return { mode: 'activate', dir: abs }
+    // No trigger sources, but the entrypoint may still be a persistent workflow
+    // driven by a cron/webhook trigger. Deciding that requires the module's
+    // exported shape, so we import it here, in the CLI process.
+    //
+    // CAVEAT: this runs the entrypoint module's TOP-LEVEL side effects (network
+    // calls, file writes, etc.) client-side, before the gateway sees anything.
+    // The Telegram/TUI examples never reach here (they take the triggerSources
+    // path above); a project that pairs a side-effecting entrypoint with a
+    // persistentWorkflow and no triggerSources should keep those effects inside
+    // the workflow body, not at module scope. (A static shape check that avoids
+    // executing the module would remove this caveat but needs a parser.)
     const entry = await resolveWorkflowPath(workflowPath, cwd)
     try {
       const mod = await loadTsModule(entry)

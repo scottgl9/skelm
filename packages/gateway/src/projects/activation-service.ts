@@ -216,16 +216,23 @@ export class ProjectActivationService {
           ? 'adopted'
           : 'skipped'
 
-    const nextConfig: SkelmConfig = {
-      ...current,
-      defaults: {
-        ...current.defaults,
-        unrestrictedGrants: [...currentGrants, ...grantsAbsorbed],
-      },
-      ...(agentmemory === 'adopted' && { agentmemory: dirConfig.agentmemory }),
+    // Only reload when the merge actually changes the running config — a new
+    // grant (enforcement must be rebuilt) or an adopted agentmemory block.
+    // A refresh that adds neither is a no-op; reloading would spin the registry
+    // refresh + onReload cycle for nothing. Triggers and backends are wired
+    // above independently of reload, so skipping it here is safe.
+    if (grantsAbsorbed.length > 0 || agentmemory === 'adopted') {
+      const nextConfig: SkelmConfig = {
+        ...current,
+        defaults: {
+          ...current.defaults,
+          unrestrictedGrants: [...currentGrants, ...grantsAbsorbed],
+        },
+        ...(agentmemory === 'adopted' && { agentmemory: dirConfig.agentmemory }),
+      }
+      await this.gateway.reload(nextConfig)
+      if (agentmemory === 'adopted') await this.gateway.reinitAgentmemory()
     }
-    await this.gateway.reload(nextConfig)
-    if (agentmemory === 'adopted') await this.gateway.reinitAgentmemory()
 
     this.active.add(realDir)
 
