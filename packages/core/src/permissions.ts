@@ -25,6 +25,24 @@ export type PermissionDimension =
   | 'delegation'
 
 /**
+ * Every permission dimension, used for forensic enumeration (audit log
+ * fan-out under unrestricted bypass) and for guards that need to assert
+ * coverage across the dimension set.
+ */
+export const ALL_PERMISSION_DIMENSIONS = [
+  'tool',
+  'executable',
+  'mcp',
+  'skill',
+  'secret',
+  'network',
+  'fs.read',
+  'fs.write',
+  'agentmemory',
+  'delegation',
+] as const satisfies readonly PermissionDimension[]
+
+/**
  * Operations the agentmemory dimension can independently allow.
  *
  * `recall` gates both the sessions-list and the recent/by-session recall

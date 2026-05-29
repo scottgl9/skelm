@@ -95,7 +95,7 @@ describe('agentmemory capability gate (plan §1.2)', () => {
     })
     const run = await runPipeline(workflow, undefined, {
       backends: registry,
-      grantUnrestricted: true,
+      unrestrictedGrant: true,
     })
     expect(run.status).toBe('completed')
   })
