@@ -46,7 +46,10 @@ describe('delegation bounding — child cannot exceed parent', () => {
         }),
       ],
     })
-    const ceiling = resolvePermissions(undefined, { allowedExecutables: ['rg'] })
+    const ceiling = resolvePermissions(undefined, {
+      allowedExecutables: ['rg'],
+      delegation: ['risky'],
+    })
     const result = await runDelegation(
       'risky',
       undefined,
@@ -93,7 +96,7 @@ describe('delegation bounding — child cannot exceed parent', () => {
 
     const ceiling = resolvePermissions(undefined, {
       allowedTools: ['safe.*'],
-      delegation: ['team.*'],
+      delegation: ['specialist', 'team.*'],
     })
     const result = await runDelegation(
       'specialist',
