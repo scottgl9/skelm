@@ -32,6 +32,7 @@ import { registerRunRoutes } from './routes/runs.js'
 import { registerScheduleRoutes } from './routes/schedules.js'
 import { registerSecretRoutes } from './routes/secrets.js'
 import { registerSessionRoutes } from './routes/sessions.js'
+import { registerTuiRoutes } from './routes/tui.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
 import { registerWorkspaceRoutes } from './routes/workspaces.js'
 
@@ -55,6 +56,7 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
   registerRunRoutes(router, gateway)
   registerPipelineRoutes(router, gateway)
   registerProjectRoutes(router, gateway)
+  registerTuiRoutes(router, gateway)
   registerScheduleRoutes(router, gateway)
   registerOpenAIRoutes(router, gateway)
   registerDashboardRoutes(router, gateway)

@@ -62,6 +62,17 @@ describe('classifyRunTarget', () => {
     expect(target).toEqual({ mode: 'one-shot', file: entry })
   })
 
+  it('routes a directory with a tui-transport trigger source to tui mode', async () => {
+    await writeFile(
+      join(dir, 'skelm.config.mts'),
+      'export default { triggerSources: [{ id: "tui", driver: { transport: "tui", start() {}, stop() {} } }] }',
+      'utf8',
+    )
+    await writeFile(join(dir, 'chat.workflow.mts'), 'export default {}', 'utf8')
+    const target = await classifyRunTarget(dir)
+    expect(target).toEqual({ mode: 'tui', dir, sourceId: 'tui' })
+  })
+
   it('one-shots a plain directory with a single workflow file and no config', async () => {
     const entry = join(dir, 'only.workflow.mts')
     await writeFile(entry, 'export default {}', 'utf8')
