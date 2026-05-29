@@ -42,19 +42,26 @@ exported pipeline, and executes it with the runner.
 | `--input-stdin`  | Read input JSON from stdin                          |
 | `--events <fmt>` | `human` (default), `json`, or `none`                |
 
-When the argument is a **directory**, the CLI resolves it to a single workflow
-file, in order:
+When the argument is a **directory**, `skelm run` behaves one of two ways:
 
-1. A `skelm.config.*` file in the directory whose `entrypoint` field names the
-   workflow (resolved relative to that directory) — see
-   [config reference](./config.md#entrypoint).
-2. An `index.workflow.{mts,ts}` or `index.pipeline.{mts,ts}` in the directory.
-3. The single `*.workflow.{mts,ts}` / `*.pipeline.{mts,ts}` file, if exactly one
-   exists.
+- **Triggered / persistent project** — if the directory's `skelm.config.*`
+  declares `triggerSources`, or its entrypoint is a `persistentWorkflow()`, the
+  CLI **activates** the project on the gateway (`POST /v1/projects/activate`):
+  the gateway imports the config, registers the trigger sources + backends +
+  workflow, arms the triggers, and takes ownership. The CLI prints a summary and
+  **exits** — the workflow keeps running on the gateway, driven by its triggers.
+  Re-running is an idempotent refresh. A project outside the gateway's trusted
+  roots is refused (exit `1`); see [activate](./http.md#projects).
 
-If a directory has neither a declared entrypoint nor an unambiguous workflow
-file, `skelm run` exits `1` (CLI error). Resolution happens client-side; the
-gateway always receives a concrete file path.
+- **One-shot pipeline** — otherwise the CLI resolves the directory to a single
+  workflow file and runs it inline, waiting for completion, in order:
+  1. A `skelm.config.*` `entrypoint` field — see [config](./config.md#entrypoint).
+  2. An `index.workflow.{mts,ts}` or `index.pipeline.{mts,ts}`.
+  3. The single `*.workflow.{mts,ts}` / `*.pipeline.{mts,ts}` file, if exactly one
+     exists.
+
+  If a directory has neither a declared entrypoint nor an unambiguous workflow
+  file, `skelm run` exits `1` (CLI error).
 
 ```bash
 skelm run builder --input '{"spec":"a workflow that summarizes a GitHub issue"}'

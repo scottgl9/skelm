@@ -8,6 +8,8 @@ import {
   WaitTimeoutError,
 } from '@skelm/core'
 import type { Run } from '@skelm/core'
+import { activateProject } from './activate.js'
+import { classifyRunTarget } from './classify-run-target.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import {
   type SseEvent,
@@ -19,7 +21,6 @@ import {
 import type { MainIO } from './internal/io.js'
 import { safeForTty } from './internal/safe-text.js'
 import { CliError } from './load-workflow.js'
-import { resolveWorkflowPath } from './resolve-entrypoint.js'
 
 export interface RunCommandArgs {
   workflowPath: string
@@ -72,10 +73,15 @@ export async function runCommand(
   let input: unknown
   let absPath: string
   try {
+    // A triggered/persistent project directory is activated on the gateway and
+    // owned there; the CLI prints a summary and exits. A file (or a plain
+    // pipeline directory) is a one-shot run the CLI streams and waits on.
+    const target = await classifyRunTarget(workflowPath)
+    if (target.mode === 'activate') {
+      return activateProject(target.dir, io as MainIO)
+    }
     input = await resolveInput(args, io.stdin)
-    // A directory arg resolves to its declared/conventional entrypoint here,
-    // client-side; the gateway always receives a concrete file path.
-    absPath = await resolveWorkflowPath(workflowPath)
+    absPath = target.file
   } catch (err) {
     if (err instanceof CliError) {
       io.stderr.write(`error: ${err.message}\n`)
