@@ -287,6 +287,7 @@ export type {
   WorkspaceSummary,
 } from './workspace.js'
 export {
+  ALL_AGENTMEMORY_OPS,
   createPolicyFetch,
   intersectResolvedPolicies,
   resolvePermissions,

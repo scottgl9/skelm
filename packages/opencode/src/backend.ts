@@ -48,6 +48,10 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
     // `vision: false` via the second capability block above if a deployment
     // pins a known text-only model.
     vision: options.vision ?? true,
+    // run() wires the agentmemory turn lifecycle (startMemoryTurn /
+    // recordMemoryTurn / endMemoryTurn). Required for the runtime
+    // capability gate to allow agentmemory-permitted steps to dispatch here.
+    agentmemory: true,
   }
 
   // Single client instance per backend — server started on first call and

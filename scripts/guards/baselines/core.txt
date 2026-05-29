@@ -1,3 +1,4 @@
+value:ALL_AGENTMEMORY_OPS
 value:AcpClient
 value:AcpProtocolError
 value:AgentDefinitionError

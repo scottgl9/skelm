@@ -38,6 +38,10 @@ export function createVercelAiBackend(options: VercelAiBackendOptions): SkelmBac
     // depends on the model. Declared true here — pair with an image-capable
     // model (e.g. openai('gpt-4o-mini'), anthropic('claude-3-5-sonnet-latest')).
     vision: true,
+    // run() wires the agentmemory turn lifecycle (see ./run.ts). Required
+    // for the runtime capability gate to allow agentmemory-permitted
+    // steps to dispatch here.
+    agentmemory: true,
   }
 
   const { acquire, release } = createConcurrencySemaphore(options.maxConcurrent ?? 4)

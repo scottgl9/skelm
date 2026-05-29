@@ -72,6 +72,10 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
     // actually process images is up to the model — non-vision models will
     // surface a provider error that propagates as a step failure.
     vision: options.vision ?? true,
+    // run() wires the agentmemory turn lifecycle. Required for the
+    // runtime capability gate to allow agentmemory-permitted steps to
+    // dispatch here.
+    agentmemory: true,
   }
 
   const backend: SkelmBackend = {
