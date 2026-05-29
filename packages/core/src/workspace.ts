@@ -113,6 +113,46 @@ export class WorkspaceManager {
     await rm(this.persistentPath(pipelineId, name), { recursive: true, force: true })
   }
 
+  /**
+   * Sweep the ephemeral workspace base for orphaned skelm directories whose
+   * metadata.lastAccessAt is older than `staleAfterMs`. A directory is only
+   * touched when it contains a .skelm/workspace.json metadata file with
+   * `mode: 'ephemeral'`; anything else in the base (the operator's other
+   * tmp files when the default `tmpdir()` is used) is left alone.
+   *
+   * Called by the gateway after recoverInterruptedRuns() so orphaned
+   * workspaces from crashed runs do not accumulate disk. Safe to call any
+   * time — it never reaps a directory whose metadata cannot be parsed or
+   * whose lastAccessAt is within the grace window.
+   */
+  async reapStaleEphemeralWorkspaces(
+    opts: {
+      staleAfterMs?: number
+    } = {},
+  ): Promise<{ reaped: readonly string[] }> {
+    const base = resolvePath(this.options.ephemeralBase ?? tmpdir())
+    const staleAfterMs = opts.staleAfterMs ?? 24 * 60 * 60 * 1000
+    const cutoff = Date.now() - staleAfterMs
+    const reaped: string[] = []
+    let entries: string[]
+    try {
+      entries = await readdir(base)
+    } catch (err) {
+      if (isMissing(err)) return { reaped: [] }
+      throw err
+    }
+    for (const name of entries) {
+      const path = join(base, name)
+      const metadata = await readMetadata(path)
+      if (!metadata) continue
+      if (metadata.mode !== 'ephemeral') continue
+      if (metadata.lastAccessAt > cutoff) continue
+      await rm(path, { recursive: true, force: true }).catch(() => {})
+      reaped.push(path)
+    }
+    return { reaped }
+  }
+
   private async preparePersistent(
     pipelineId: string,
     workspace: Extract<WorkspaceConfig, { mode: 'persistent' }>,
