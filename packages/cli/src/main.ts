@@ -18,6 +18,7 @@ import { logsCommand } from './logs.js'
 import { runCommand } from './run.js'
 import { scheduleCommand } from './schedule.js'
 import { sessionsCommand } from './sessions.js'
+import { stopCommand } from './stop.js'
 import { validateCommand } from './validate.js'
 import { workspaceCommand } from './workspace.js'
 
@@ -69,6 +70,17 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
       case 'list': {
         const result = await listCommand(
           { json: parsed.flags.json === true, all: parsed.flags.all === true },
+          io,
+        )
+        return { exitCode: result.exitCode }
+      }
+      case 'stop': {
+        const result = await stopCommand(
+          {
+            ...(typeof parsed.positional[0] === 'string' && { id: parsed.positional[0] }),
+            cancelInflight: parsed.flags['cancel-inflight'] === true,
+            json: parsed.flags.json === true,
+          },
           io,
         )
         return { exitCode: result.exitCode }

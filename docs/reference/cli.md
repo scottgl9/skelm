@@ -77,6 +77,17 @@ Pass `--all` to instead list the pipelines the gateway has *discovered*
 (registry + glob), regardless of whether anything is running. `--json` emits the
 raw payload for either view.
 
+### `skelm stop <workflow-id> [--cancel-inflight] [--json]`
+
+Deactivate a workflow on the gateway: unregister its triggers (its queue driver
+stops — e.g. Telegram polling halts) and drop its registration so a reload will
+not re-arm it. Persisted sessions are kept, so re-running `skelm run <dir>`
+resumes the conversation. Pass `--cancel-inflight` to also cancel its running
+turns. Exits `1` if the workflow has no live triggers.
+
+This is **not** `skelm gateway stop` (which stops the whole gateway process) nor
+`skelm schedule stop <trigger-id>` (which removes a single trigger).
+
 ### `skelm describe <pipeline> [--json | --format mermaid]`
 
 Print a structural description of a pipeline (steps, edges, permissions).

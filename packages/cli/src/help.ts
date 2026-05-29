@@ -1,8 +1,9 @@
 export const HELP_TEXT = `skelm — agentic and deterministic workflows in TypeScript
 
 Usage:
-  skelm run <workflow.ts> [flags]
-  skelm list [--json]
+  skelm run <workflow.ts | directory> [flags]
+  skelm list [--all] [--json]
+  skelm stop <workflow-id> [--cancel-inflight] [--json]
   skelm describe <workflow> [--json | --format mermaid]
   skelm history [--workflow <id>] [--last <n>] [--run <id>] [--events] [--json]
   skelm workspace <list|show|clean> [args]
@@ -142,10 +143,21 @@ Init flags:
   --force                 Allow scaffolding into a non-empty directory
 `,
   list: `Usage:
-  skelm list [--json]
+  skelm list [--all] [--json]
 
 List flags:
-  --json                  Write discovered workflows as JSON
+  --all                   List discovered pipelines instead of the running view
+  --json                  Write the listing as JSON
+`,
+  stop: `Usage:
+  skelm stop <workflow-id> [--cancel-inflight] [--json]
+
+Stop flags:
+  --cancel-inflight       Also cancel the workflow's in-flight turns
+  --json                  Write the result as JSON
+
+Deactivates a workflow on the gateway (unregisters its triggers; sessions are
+kept). Distinct from \`skelm gateway stop\`, which stops the whole gateway.
 `,
   describe: `Usage:
   skelm describe <workflow> [--json | --format mermaid]
