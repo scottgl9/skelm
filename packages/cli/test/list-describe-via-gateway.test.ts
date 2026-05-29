@@ -31,11 +31,17 @@ afterAll(async () => {
 })
 
 describe('skelm list / describe — via gateway with projectRoot', () => {
-  it('list surfaces workflows from the gateway registry', async () => {
-    const { stdout, exitCode } = await invoke(['list'])
+  it('list --all surfaces discovered workflows from the gateway registry', async () => {
+    const { stdout, exitCode } = await invoke(['list', '--all'])
     expect(exitCode).toBe(EXIT.OK)
     expect(stdout).toContain('alpha-workflow')
     expect(stdout).toContain('graph-workflow')
+  })
+
+  it('list (running view) reports nothing running when no triggers are armed', async () => {
+    const { stdout, exitCode } = await invoke(['list'])
+    expect(exitCode).toBe(EXIT.OK)
+    expect(stdout).toContain('No workflows running')
   })
 
   it('describe <id> renders the gateway-side step graph', async () => {
