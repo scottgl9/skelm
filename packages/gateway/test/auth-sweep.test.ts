@@ -50,6 +50,8 @@ describe('Gateway auth middleware — uniform 401 on missing/bad token', () => {
       { name: 'readyz', method: 'GET', path: '/readyz' },
       { name: 'metrics', method: 'GET', path: '/metrics' },
       { name: 'projects', method: 'POST', path: '/v1/projects/activate' },
+      { name: 'active', method: 'GET', path: '/v1/active' },
+      { name: 'deactivate', method: 'POST', path: '/v1/workflows/x/deactivate' },
       { name: 'runs', method: 'GET', path: '/runs' },
       { name: 'schedules', method: 'GET', path: '/schedules' },
       { name: 'sessions', method: 'GET', path: '/sessions' },

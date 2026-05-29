@@ -5,6 +5,8 @@ import { pathToFileURL } from 'node:url'
 import {
   BackendRegistry,
   CONFIG_FILENAMES,
+  PERSISTENT_WORKFLOW_NAMESPACE,
+  type PersistentSessionRecord,
   type SkelmConfig,
   isPersistentWorkflow,
   pickExport,
@@ -52,6 +54,42 @@ export interface ActivationResult {
   message?: string
 }
 
+export interface TriggerView {
+  id: string
+  workflowId: string
+  kind: string
+  driver?: string
+  fired: number
+  lastFiredAt?: string
+  inflight: boolean
+  lastError?: string
+}
+
+export interface RunningRun {
+  runId: string
+  pipelineId: string
+  triggerId?: string
+  status: string
+  startedAt: number
+}
+
+export interface ActiveView {
+  persistentWorkflows: {
+    workflowId: string
+    triggers: TriggerView[]
+    sessions: { count: number; lastUpdatedAt: number | null }
+  }[]
+  triggers: TriggerView[]
+  runsInFlight: RunningRun[]
+}
+
+export interface DeactivationResult {
+  deactivated: true
+  id: string
+  triggersRemoved: string[]
+  runsCancelled: string[]
+}
+
 /**
  * Owns runtime project activation: `skelm run <dir>` for a triggered/persistent
  * project lands here via POST /v1/projects/activate. The gateway dynamically
@@ -69,6 +107,9 @@ export interface ActivationResult {
 export class ProjectActivationService {
   /** Realpath'd dirs activated this gateway lifetime — a re-run is a refresh. */
   private readonly active = new Set<string>()
+  /** Declared ids of persistent workflows activated this lifetime, so the
+   *  running view lists them before their first fire sets `parallel`. */
+  private readonly persistentIds = new Set<string>()
 
   constructor(private readonly gateway: Gateway) {}
 
@@ -147,11 +188,9 @@ export class ProjectActivationService {
       const id = wf.id
       const real = await service.resolveSourcePath(file)
       await service.upsert({ id, sourcePath: real, sourceKind: 'path' })
-      workflows.push({
-        id,
-        path: real,
-        kind: isPersistentWorkflow(wf) ? 'persistent-workflow' : 'pipeline',
-      })
+      const persistent = isPersistentWorkflow(wf)
+      if (persistent) this.persistentIds.add(id)
+      workflows.push({ id, path: real, kind: persistent ? 'persistent-workflow' : 'pipeline' })
       for (const [i, t] of (wf.triggers ?? []).entries()) {
         triggers.push(this.armTrigger(id, t, i))
       }
@@ -249,6 +288,101 @@ export class ProjectActivationService {
       armed: reg.lastError === undefined,
       ...(reg.lastError !== undefined && { lastError: reg.lastError }),
     }
+  }
+
+  /**
+   * A ps-like view of what the gateway is currently running: every trigger
+   * registration grouped by workflow, the persistent-workflow session counts,
+   * and the in-flight runs. Backs `skelm list`.
+   */
+  async activeView(): Promise<ActiveView> {
+    const triggers: TriggerView[] = this.gateway.managers.triggers.list().map((r) => ({
+      id: r.spec.id,
+      workflowId: r.spec.workflowId,
+      kind: r.spec.kind,
+      ...(r.spec.kind === 'queue' && { driver: r.spec.driver }),
+      fired: r.fired,
+      ...(r.lastFiredAt !== undefined && { lastFiredAt: r.lastFiredAt }),
+      inflight: r.inflight,
+      ...(r.lastError !== undefined && { lastError: r.lastError }),
+    }))
+
+    const sessions = new Map<string, { count: number; lastUpdatedAt: number }>()
+    for await (const entry of this.gateway.runStore.listState(PERSISTENT_WORKFLOW_NAMESPACE)) {
+      const rec = entry.value as PersistentSessionRecord
+      if (typeof rec?.workflowId !== 'string') continue
+      const cur = sessions.get(rec.workflowId) ?? { count: 0, lastUpdatedAt: 0 }
+      cur.count += 1
+      cur.lastUpdatedAt = Math.max(cur.lastUpdatedAt, rec.updatedAt ?? 0)
+      sessions.set(rec.workflowId, cur)
+    }
+
+    const runsInFlight: RunningRun[] = []
+    for await (const run of this.gateway.runStore.listRuns({ status: 'running' })) {
+      runsInFlight.push({
+        runId: run.runId,
+        pipelineId: run.pipelineId,
+        ...(run.triggerId !== undefined && { triggerId: run.triggerId }),
+        status: run.status,
+        startedAt: run.startedAt,
+      })
+    }
+
+    // A workflow is "persistent" when it was activated as one, multiplexes
+    // parallel fires (set on first persistent fire), or already has durable
+    // sessions. The activation-time set means the list view shows a persistent
+    // workflow immediately, before its first fire.
+    const persistentIds = new Set<string>([...this.persistentIds, ...sessions.keys()])
+    for (const r of this.gateway.managers.triggers.list()) {
+      if (r.parallel === true) persistentIds.add(r.spec.workflowId)
+    }
+    const persistentWorkflows = [...persistentIds].map((workflowId) => {
+      const s = sessions.get(workflowId)
+      return {
+        workflowId,
+        triggers: triggers.filter((t) => t.workflowId === workflowId),
+        sessions: {
+          count: s?.count ?? 0,
+          lastUpdatedAt: s !== undefined ? s.lastUpdatedAt : null,
+        },
+      }
+    })
+
+    return { persistentWorkflows, triggers, runsInFlight }
+  }
+
+  /**
+   * Deactivate a workflow: unregister every trigger for it (stopping its queue
+   * driver — e.g. Telegram polling halts), drop its registration so a later
+   * reload does not re-arm it, and optionally cancel its in-flight turns.
+   * Persisted sessions are left intact so a re-activation resumes the
+   * conversation. 404 when the workflow has no live triggers.
+   */
+  async deactivate(
+    id: string,
+    opts: { cancelInflight?: boolean } = {},
+  ): Promise<DeactivationResult> {
+    const regs = this.gateway.managers.triggers.list().filter((r) => r.spec.workflowId === id)
+    if (regs.length === 0) {
+      throw new ProjectActivationError(404, `no active workflow ${id}`)
+    }
+    const triggersRemoved: string[] = []
+    for (const r of regs) {
+      this.gateway.managers.triggers.unregister(r.spec.id)
+      triggersRemoved.push(r.spec.id)
+    }
+    await this.gateway.getWorkflowRegistrationService().remove(id)
+    this.persistentIds.delete(id)
+
+    const runsCancelled: string[] = []
+    if (opts.cancelInflight === true) {
+      for await (const run of this.gateway.runStore.listRuns({ status: 'running' })) {
+        if (run.pipelineId === id && this.gateway.cancel(run.runId, 'workflow deactivated')) {
+          runsCancelled.push(run.runId)
+        }
+      }
+    }
+    return { deactivated: true, id, triggersRemoved, runsCancelled }
   }
 }
 
