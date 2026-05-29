@@ -1,10 +1,4 @@
-import {
-  deriveSessionId,
-  endMemoryTurn,
-  extractPromptText,
-  recordMemoryTurn,
-  startMemoryTurn,
-} from '@skelm/agentmemory'
+import { runWithMemoryTurns } from '@skelm/agentmemory'
 import { BackendCapabilityError, combineSignals } from '@skelm/core'
 import type { AgentRequest, AgentResponse, BackendContext } from '@skelm/core'
 import { type ModelMessage, Output, generateText, stepCountIs, streamText } from 'ai'
@@ -39,26 +33,9 @@ export async function vercelAiRun(
   })
   const tools = applyPolicyToTools(options.tools, policy)
 
-  const memorySessionId = deriveSessionId(request, {
-    ...(context.runId !== undefined && { runId: context.runId }),
-    ...(context.stepId !== undefined && { stepId: context.stepId }),
-  })
   const memoryProject = request.cwd ?? process.cwd()
-  const memoryTurn = await startMemoryTurn(context.agentmemory, {
-    sessionId: memorySessionId,
-    project: memoryProject,
-    cwd: memoryProject,
-    promptText: extractPromptText(request.prompt),
-  })
-
   const skillBodies = await loadSkillBodies(request, context)
   const baseSystem = buildSystemContent(options.systemPrompt, request, skillBodies)
-  const system =
-    memoryTurn.recallPrefix.length > 0
-      ? baseSystem === undefined
-        ? memoryTurn.recallPrefix
-        : `${memoryTurn.recallPrefix}${baseSystem}`
-      : baseSystem
 
   const timeout = options.timeout ?? 300_000
   const timeoutCtl = new AbortController()
@@ -75,6 +52,60 @@ export async function vercelAiRun(
       : { messages: mapMessages([{ role: 'user', content: request.prompt }]) }
 
   try {
+    return await runWithMemoryTurns<AgentResponse>(
+      {
+        handle: context.agentmemory,
+        ...(context.runId !== undefined && { runId: context.runId }),
+        ...(context.stepId !== undefined && { stepId: context.stepId }),
+        project: memoryProject,
+      },
+      request,
+      async ({ recallPrefix }) => {
+        const system =
+          recallPrefix.length > 0
+            ? baseSystem === undefined
+              ? recallPrefix
+              : `${recallPrefix}${baseSystem}`
+            : baseSystem
+        const response = await dispatchVercelAi({
+          options,
+          request,
+          context,
+          system,
+          tools,
+          promptOrMessages,
+          maxTurns,
+          signal,
+        })
+        return { result: response, resultText: response.text ?? '' }
+      },
+    )
+  } catch (err) {
+    if (timeoutCtl.signal.aborted) {
+      throw new VercelAiBackendTimeoutError(`vercel-ai run timed out after ${timeout}ms`, err)
+    }
+    if (err instanceof BackendCapabilityError) throw err
+    if (err instanceof VercelAiBackendError) throw err
+    throw new VercelAiBackendError(`vercel-ai agent run failed: ${(err as Error).message}`, err)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+interface DispatchParams {
+  options: VercelAiBackendOptions
+  request: AgentRequest
+  context: BackendContext
+  system: string | undefined
+  tools: ReturnType<typeof applyPolicyToTools>
+  promptOrMessages: { prompt: string } | { messages: ModelMessage[] }
+  maxTurns: number
+  signal: AbortSignal
+}
+
+async function dispatchVercelAi(p: DispatchParams): Promise<AgentResponse> {
+  const { options, request, context, system, tools, promptOrMessages, maxTurns, signal } = p
+  {
     // When the step declares an `output` schema, route through the AI SDK's
     // `Output.object({ schema })` adapter so the underlying provider uses
     // its native structured-output mode (function-calling /
@@ -145,12 +176,6 @@ export async function vercelAiRun(
       } else {
         response.text = fullText
       }
-      await recordMemoryTurn(context.agentmemory, {
-        sessionId: memoryTurn.sessionId,
-        project: memoryProject,
-        cwd: memoryProject,
-        resultText: response.text ?? '',
-      })
       return response
     }
 
@@ -194,23 +219,6 @@ export async function vercelAiRun(
     } else {
       response.text = result.text
     }
-    await recordMemoryTurn(context.agentmemory, {
-      sessionId: memoryTurn.sessionId,
-      project: memoryProject,
-      cwd: memoryProject,
-      resultText: response.text ?? '',
-    })
     return response
-  } catch (err) {
-    if (timeoutCtl.signal.aborted) {
-      throw new VercelAiBackendTimeoutError(`vercel-ai run timed out after ${timeout}ms`, err)
-    }
-    // Re-throw BackendCapabilityError without wrapping (e.g., vision allowlist rejections)
-    if (err instanceof BackendCapabilityError) throw err
-    if (err instanceof VercelAiBackendError) throw err
-    throw new VercelAiBackendError(`vercel-ai agent run failed: ${(err as Error).message}`, err)
-  } finally {
-    clearTimeout(timer)
-    await endMemoryTurn(context.agentmemory, memoryTurn.sessionId)
   }
 }
