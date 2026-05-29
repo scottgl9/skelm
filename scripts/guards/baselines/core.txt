@@ -51,6 +51,7 @@ value:NoopAuditWriter
 value:NotImplementedError
 value:PERSISTENT_TURN_STEP_ID
 value:PERSISTENT_WORKFLOW_NAMESPACE
+value:PersistentSessionLockedError
 value:PROTOCOL_VERSION
 value:PermissionDeniedError
 value:PermissionResolver
@@ -86,6 +87,7 @@ value:VERSION
 value:WaitTimeoutError
 value:WebhookTrigger
 value:WorkspaceManager
+value:acquireSession
 value:agent
 value:assertEgressEnforceable
 value:branch
@@ -144,6 +146,7 @@ value:persistentWorkflow
 value:pickExport
 value:pipeline
 value:pipelineStep
+value:releaseSession
 value:resolvePermissions
 value:runPipeline
 value:saveSession

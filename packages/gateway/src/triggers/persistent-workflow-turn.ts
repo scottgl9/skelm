@@ -18,12 +18,13 @@ import {
   type PersistentWorkflow,
   type RunEvent,
   Runner,
+  acquireSession,
   agent,
   createSessionRecord,
   defaultPromptOf,
   defaultReplyOf,
-  loadSession,
   pipeline,
+  releaseSession,
   saveSession,
 } from '@skelm/core'
 import type { Gateway } from '../lifecycle/gateway.js'
@@ -92,9 +93,14 @@ export async function runPersistentWorkflowTurn(
   const lockKey = `${wf.id}::${sessionKey}`
 
   return withSessionLock(lockKey, async () => {
-    const rec =
-      (await loadSession(gateway.runStore, wf.id, sessionKey)) ??
-      createSessionRecord(wf.id, sessionKey)
+    // In-process lock above serializes within ONE gateway; the durable
+    // acquireSession() below is the multi-process safety net (rejects when
+    // another gateway replica already holds the session). The ownerId is
+    // stable across reruns from the same gateway process so a crash recovery
+    // can release without churning the cas.
+    const ownerId = `gateway:${process.pid}`
+    const acquired = await acquireSession(gateway.runStore, wf.id, sessionKey, ownerId)
+    const rec = acquired ?? createSessionRecord(wf.id, sessionKey)
     const history = Array.isArray(rec.conversation) ? (rec.conversation as TurnMessage[]) : []
 
     const historyBlock = renderHistory(history)
@@ -189,6 +195,11 @@ export async function runPersistentWorkflowTurn(
       return { output: (a.reply ?? defaultReplyOf)(text) }
     } finally {
       gateway.unregisterRun(runId)
+      // Release the durable advisory lock on every exit path. A finally
+      // here covers thrown runs (preamble failure, abort, internal error)
+      // as well as completion — a stuck `active` flag would otherwise
+      // block subsequent fires until an operator cleared it manually.
+      await releaseSession(gateway.runStore, wf.id, sessionKey, ownerId).catch(() => {})
     }
   })
 }
