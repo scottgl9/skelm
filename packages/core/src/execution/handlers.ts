@@ -720,6 +720,34 @@ async function runAgentStep(
               timeoutMs,
             )
           : undefined
+      // Fail-fast at step start when the resolved policy EXPLICITLY
+      // permits any agentmemory op but the chosen backend does not
+      // advertise the capability. Silent no-op was the prior failure
+      // mode and masked backends that simply forgot to wire the
+      // integration — the gateway alone could not catch this because it
+      // doesn't know the backend. We check `policy.agentmemory` flags
+      // directly so that an operator-granted `unrestricted` bypass
+      // (which short-circuits TrustEnforcer.canUseAgentmemory) does NOT
+      // trip the gate — bypass means "trust the run", not "this step
+      // deliberately opted into agentmemory".
+      if (policy !== undefined && backend.capabilities.agentmemory !== true) {
+        const am = policy.agentmemory
+        const explicitlyGranted =
+          am.allowObserve ||
+          am.allowSearch ||
+          am.allowSession ||
+          am.allowContext ||
+          am.allowSave ||
+          am.allowRecall ||
+          am.allowGraph
+        if (explicitlyGranted) {
+          throw new BackendCapabilityError(
+            `backend ${backend.id} does not declare capabilities.agentmemory but the step's resolved policy permits at least one agentmemory op. Either pick a backend that wires the agentmemory handle, or remove the agentmemory grant from the step's permissions.`,
+            backend.id,
+            'agentmemory',
+          )
+        }
+      }
       const agentmemoryHandle =
         runtime?.agentmemoryHandleFactory !== undefined && policy !== undefined
           ? runtime.agentmemoryHandleFactory({

@@ -7,6 +7,7 @@ import {
   createAgentmemoryHandle,
 } from '@skelm/agentmemory'
 import {
+  ALL_AGENTMEMORY_OPS,
   type AgentPermissions,
   type ApprovalGate,
   type AuditWriter,
@@ -65,17 +66,9 @@ export type {
   GatewayState,
 } from './gateway-types.js'
 
-// Every agentmemory op, used to decide whether a step opted into the
-// integration at all. Keep in sync with `AgentmemoryOperation` in core.
-const AGENTMEMORY_OPS = [
-  'observe',
-  'search',
-  'session',
-  'context',
-  'save',
-  'recall',
-  'graph',
-] as const
+// Re-exported under the local name for site readability; the canonical
+// list lives in @skelm/core/permissions (ALL_AGENTMEMORY_OPS).
+const AGENTMEMORY_OPS = ALL_AGENTMEMORY_OPS
 
 /**
  * Long-running gateway lifecycle. Phase 2 wired the lockfile, discovery

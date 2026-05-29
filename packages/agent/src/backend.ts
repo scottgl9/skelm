@@ -211,6 +211,10 @@ function baseCapabilities(vision: boolean): BackendCapabilities {
     skills: true,
     modelSelection: true,
     toolPermissions: 'native',
+    // run() wires observe / smartSearch / session lifecycle into the
+    // agent loop. Required for the runtime capability gate to allow
+    // agentmemory-permitted steps to dispatch here.
+    agentmemory: true,
   }
 }
 

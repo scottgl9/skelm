@@ -40,6 +40,21 @@ export type AgentmemoryOperation =
   | 'graph'
 
 /**
+ * Single source of truth for the agentmemory op set. Iterating this is
+ * how the runner asks "does this resolved policy permit any agentmemory
+ * op?" and how the gateway decides whether to hand the step a handle.
+ */
+export const ALL_AGENTMEMORY_OPS = [
+  'observe',
+  'search',
+  'session',
+  'context',
+  'save',
+  'recall',
+  'graph',
+] as const satisfies readonly AgentmemoryOperation[]
+
+/**
  * Per-operation gate for the agentmemory dimension. Each flag defaults to
  * deny when omitted. `'deny'` blocks every op as a quick disable.
  */

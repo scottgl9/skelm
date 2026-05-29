@@ -41,6 +41,15 @@ export interface BackendCapabilities {
    * declaring `true` if image handling is not wired through.
    */
   vision?: boolean
+  /**
+   * Backend wires `BackendContext.agentmemory` through its run path
+   * (observe / search / session lifecycle calls). When omitted or false,
+   * the runner refuses a step whose resolved policy permits any
+   * agentmemory op — silently no-oping was the prior failure mode and
+   * masked backends that forgot the integration. Set this to `true` only
+   * after the backend's run() actually calls the handle.
+   */
+  agentmemory?: boolean
 }
 
 /**
