@@ -7,7 +7,7 @@ import {
   type ApprovalRequest,
   AutoApproveGate,
 } from '../src/enforcement/index.js'
-import { TrustEnforcer, resolvePermissions } from '../src/permissions.js'
+import { TrustEnforcer, intersectResolvedPolicies, resolvePermissions } from '../src/permissions.js'
 import { runPipeline } from '../src/runner.js'
 
 describe('resolvePermissions — default-deny', () => {
@@ -316,5 +316,125 @@ describe('runPipeline — approval gate', () => {
       approvalGate: new AutoApproveGate(),
     })
     expect(run.status).toBe('completed')
+  })
+})
+
+describe('delegation dimension — canDelegate', () => {
+  it('denies every target when delegation is omitted (default-deny)', () => {
+    const enforcer = new TrustEnforcer(resolvePermissions(undefined, undefined))
+    const decision = enforcer.canDelegate('any.agent')
+    expect(decision.allow).toBe(false)
+    if (!decision.allow) {
+      expect(decision.dimension).toBe('delegation')
+      expect(decision.reason).toBe('not-in-allowlist')
+    }
+  })
+
+  it('allows only allowlisted ids, by exact id, prefix, and star', () => {
+    const exact = new TrustEnforcer(resolvePermissions(undefined, { delegation: ['research.agent'] }))
+    expect(exact.canDelegate('research.agent').allow).toBe(true)
+    expect(exact.canDelegate('other.agent').allow).toBe(false)
+
+    const prefix = new TrustEnforcer(resolvePermissions(undefined, { delegation: ['team.*'] }))
+    expect(prefix.canDelegate('team.writer').allow).toBe(true)
+    expect(prefix.canDelegate('rogue.writer').allow).toBe(false)
+
+    const star = new TrustEnforcer(resolvePermissions(undefined, { delegation: ['*'] }))
+    expect(star.canDelegate('whatever.agent').allow).toBe(true)
+  })
+
+  it('intersects delegation allowlists; a step cannot widen the project default', () => {
+    const policy = resolvePermissions(
+      { delegation: ['a.agent', 'b.agent'] },
+      { delegation: ['b.agent', 'c.agent'] },
+    )
+    const enforcer = new TrustEnforcer(policy)
+    expect(enforcer.canDelegate('b.agent').allow).toBe(true)
+    expect(enforcer.canDelegate('a.agent').allow).toBe(false)
+    expect(enforcer.canDelegate('c.agent').allow).toBe(false)
+  })
+
+  it('unrestricted bypass allows any delegation target', () => {
+    const policy = resolvePermissions(undefined, { requestUnrestricted: true }, {}, {
+      grantUnrestricted: true,
+    })
+    expect(new TrustEnforcer(policy).canDelegate('anything').allow).toBe(true)
+  })
+})
+
+describe('intersectResolvedPolicies — child bounded by parent ceiling', () => {
+  it('caps a child that declares more than the parent grants', () => {
+    const ceiling = resolvePermissions(undefined, {
+      allowedTools: ['a.*'],
+      allowedExecutables: ['rg'],
+      fsRead: ['/data'],
+      networkEgress: { allowHosts: ['api.example.com'] },
+    })
+    const child = resolvePermissions(undefined, {
+      allowedTools: ['*'],
+      allowedExecutables: ['rg', 'bash'],
+      fsRead: ['/data', '/etc'],
+      networkEgress: 'allow',
+    })
+    const bounded = new TrustEnforcer(intersectResolvedPolicies(ceiling, child))
+    expect(bounded.canCallTool('a.read').allow).toBe(true)
+    expect(bounded.canCallTool('b.read').allow).toBe(false)
+    expect(bounded.canExec('rg').allow).toBe(true)
+    expect(bounded.canExec('bash').allow).toBe(false)
+    expect(bounded.canRead('/data/x').allow).toBe(true)
+    expect(bounded.canRead('/etc/passwd').allow).toBe(false)
+    expect(bounded.canFetch('api.example.com').allow).toBe(true)
+    expect(bounded.canFetch('evil.com').allow).toBe(false)
+  })
+
+  it('unions denylists down the chain', () => {
+    const ceiling = resolvePermissions(undefined, { allowedTools: ['*'], deniedTools: ['x.danger'] })
+    const child = resolvePermissions(undefined, { allowedTools: ['*'], deniedTools: ['y.danger'] })
+    const bounded = new TrustEnforcer(intersectResolvedPolicies(ceiling, child))
+    expect(bounded.canCallTool('x.danger').allow).toBe(false)
+    expect(bounded.canCallTool('y.danger').allow).toBe(false)
+    expect(bounded.canCallTool('z.safe').allow).toBe(true)
+  })
+
+  it('caps the child delegation allowlist so re-delegation cannot widen', () => {
+    const ceiling = resolvePermissions(undefined, { delegation: ['team.*'] })
+    const child = resolvePermissions(undefined, { delegation: ['*'] })
+    const bounded = new TrustEnforcer(intersectResolvedPolicies(ceiling, child))
+    expect(bounded.canDelegate('team.writer').allow).toBe(true)
+    expect(bounded.canDelegate('outsider.agent').allow).toBe(false)
+  })
+
+  it('a restricted parent caps a child that independently earned unrestricted', () => {
+    const ceiling = resolvePermissions(undefined, { allowedTools: ['a.*'] })
+    const childUnrestricted = resolvePermissions(undefined, { requestUnrestricted: true }, {}, {
+      grantUnrestricted: true,
+    })
+    const bounded = intersectResolvedPolicies(ceiling, childUnrestricted)
+    expect(bounded.unrestricted).toBe(false)
+    expect(new TrustEnforcer(bounded).canCallTool('b.read').allow).toBe(false)
+  })
+
+  it('an unrestricted parent empowers the child (parent-empowers-child)', () => {
+    const ceilingUnrestricted = resolvePermissions(undefined, { requestUnrestricted: true }, {}, {
+      grantUnrestricted: true,
+    })
+    const child = resolvePermissions(undefined, { allowedTools: ['a.*'] })
+    const bounded = intersectResolvedPolicies(ceilingUnrestricted, child)
+    expect(bounded.unrestricted).toBe(true)
+    expect(new TrustEnforcer(bounded).canExec('anything').allow).toBe(true)
+  })
+
+  it('unions approval gating so it only tightens down the chain', () => {
+    const ceiling = resolvePermissions(undefined, {
+      allowedTools: ['*'],
+      approval: { on: ['fs.write'], rememberFor: 1000 },
+    })
+    const child = resolvePermissions(undefined, {
+      allowedTools: ['*'],
+      approval: { on: ['network'], rememberFor: 500 },
+    })
+    const bounded = intersectResolvedPolicies(ceiling, child)
+    expect(bounded.approval?.on).toEqual(expect.arrayContaining(['fs.write', 'network']))
+    expect(bounded.approval?.rememberFor).toBe(500)
   })
 })
