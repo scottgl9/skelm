@@ -9,6 +9,17 @@ class CapturingAuditWriter implements AuditWriter {
   }
 }
 
+class SlowAuditWriter implements AuditWriter {
+  events: AuditEvent[] = []
+  pendingWrites = 0
+  async write(e: AuditEvent): Promise<void> {
+    this.pendingWrites++
+    await new Promise((r) => setTimeout(r, 10))
+    this.events.push(e)
+    this.pendingWrites--
+  }
+}
+
 const tick = (): Promise<void> => new Promise((r) => setImmediate(r))
 
 describe('SuspendApprovalGate', () => {
@@ -136,5 +147,24 @@ describe('SuspendApprovalGate', () => {
     await tick()
     gate.approve('rE:sE', 'alice')
     await expect(p).resolves.toMatchObject({ approved: true })
+  })
+
+  // Plan §4.2: audit-then-resolve ordering on the resolution path.
+  // The approval promise must NOT settle before the durable
+  // 'approval.resolved' audit row has been flushed, so a crash between
+  // resolve() and the audit write completing cannot leave forensics
+  // with a 'requested' event and no matching 'resolved' event.
+  it('awaits the audit write before resolving the approval promise', async () => {
+    const slow = new SlowAuditWriter()
+    const gate = new SuspendApprovalGate({ auditWriter: slow })
+    const p = gate.request({ runId: 'r-slow', stepId: 's', action: 'a', context: {} })
+    await tick()
+    gate.approve('r-slow:s', 'alice')
+    const decision = await p
+    // By the time the promise settled, the audit writer must have
+    // flushed the resolved event (no in-flight writes from the
+    // resolution path).
+    expect(decision.approved).toBe(true)
+    expect(slow.events.some((e) => e.action === 'approval.resolved')).toBe(true)
   })
 })
