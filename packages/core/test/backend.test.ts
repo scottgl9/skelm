@@ -14,6 +14,29 @@ describe('BackendRegistry', () => {
     expect(() => reg.register(b)).toThrow(/already registered/)
   })
 
+  it('has reflects whether an id is registered', () => {
+    const reg = new BackendRegistry()
+    expect(reg.has('foo')).toBe(false)
+    reg.register(fixtureBackend({ id: 'foo', respond: () => ({ text: 'a' }) }))
+    expect(reg.has('foo')).toBe(true)
+  })
+
+  it('registerIfAbsent adds a new id and reports "registered"', () => {
+    const reg = new BackendRegistry()
+    const a = fixtureBackend({ id: 'foo', respond: () => ({ text: 'a' }) })
+    expect(reg.registerIfAbsent(a)).toBe('registered')
+    expect(reg.resolveForLlm({ backendId: 'foo' })).toBe(a)
+  })
+
+  it('registerIfAbsent leaves an existing id untouched and reports "exists"', () => {
+    const reg = new BackendRegistry()
+    const a = fixtureBackend({ id: 'foo', respond: () => ({ text: 'a' }) })
+    const b = fixtureBackend({ id: 'foo', respond: () => ({ text: 'b' }) })
+    reg.register(a)
+    expect(reg.registerIfAbsent(b)).toBe('exists')
+    expect(reg.resolveForLlm({ backendId: 'foo' })).toBe(a)
+  })
+
   it('resolveForLlm returns the backend by id', () => {
     const reg = new BackendRegistry()
     const a = fixtureBackend({ id: 'a', respond: () => ({ text: 'A' }) })

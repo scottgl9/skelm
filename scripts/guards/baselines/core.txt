@@ -17,6 +17,7 @@ value:BackendRegistry
 value:BackendSessionError
 value:BackendUnavailableError
 value:BackendUpstreamError
+value:CONFIG_FILENAMES
 value:CronTrigger
 value:CustomTrigger
 value:DEFAULT_ARTIFACT_QUOTA_BYTES
