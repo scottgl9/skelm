@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline'
 import { requestActivation } from './activate.js'
+import type { TuiFrontendFactoryLike, TuiFrontendLike } from './classify-run-target.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { fetchHttp, openSse, requireGateway } from './internal/gateway-client.js'
 import type { MainIO } from './internal/io.js'
@@ -8,7 +9,15 @@ export interface TuiCommandArgs {
   dir: string
   sourceId: string
   sessionId?: string
+  /** Project-supplied terminal UI; when absent, a plain readline host is used. */
+  frontend?: TuiFrontendFactoryLike
 }
+
+/** A single turn: submit `text`, stream partials to `onPartial`, resolve the reply. */
+export type TurnFn = (
+  text: string,
+  onPartial: (cumulative: string) => void,
+) => Promise<string | null>
 
 interface GatewayClient {
   discovery: { url: string }
@@ -44,26 +53,102 @@ export async function tuiCommand(
   io.stderr.write(
     `> ${activation.project.dir} — chat session "${sessionId}" (Ctrl-C / Ctrl-D to exit)\n`,
   )
+  const turn: TurnFn = (text, onPartial) =>
+    runTurn(args.sourceId, sessionId, text, client, io, onPartial)
   try {
-    await chatLoop(args.sourceId, sessionId, client, io)
+    if (args.frontend !== undefined) {
+      await hostFrontend(args.frontend, sessionId, turn)
+    } else {
+      await chatLoop(turn, io)
+    }
   } finally {
     if (workflowId !== undefined) await deactivate(workflowId, client, io)
   }
   return { exitCode: EXIT.OK }
 }
 
-async function chatLoop(
-  sourceId: string,
+/**
+ * Host a project-supplied terminal UI (e.g. Ink). The frontend owns input and
+ * calls `io.submit(text)` per line; the host runs each turn serially, streaming
+ * partials to `frontend.renderPartial` and committing the reply with
+ * `frontend.render`. Resolves when the user exits (SIGINT) and the UI tears down.
+ */
+async function hostFrontend(
+  factory: TuiFrontendFactoryLike,
   sessionId: string,
-  client: GatewayClient,
-  io: MainIO,
+  turn: TurnFn,
 ): Promise<void> {
+  const host = createFrontendHost(factory, sessionId, turn)
+  await new Promise<void>((resolve) => {
+    const onSig = (): void => resolve()
+    process.once('SIGINT', onSig)
+  })
+  await host.idle()
+  await host.ui.close?.()
+}
+
+/**
+ * Wire a frontend factory to a turn runner. Exposed for testing without a TTY:
+ * pass a fake factory whose `io.submit` is called programmatically and assert on
+ * the recorded `render` / `renderPartial` calls. Turns run one at a time;
+ * lines submitted while a turn is in flight queue behind it.
+ */
+export function createFrontendHost(
+  factory: TuiFrontendFactoryLike,
+  sessionId: string,
+  turn: TurnFn,
+): { ui: TuiFrontendLike; idle: () => Promise<void> } {
+  let seq = 0
+  let active = 0
+  const queue: string[] = []
+  const idleWaiters: Array<() => void> = []
+
+  const settleIdle = (): void => {
+    if (active === 0 && queue.length === 0) {
+      for (const w of idleWaiters.splice(0)) w()
+    }
+  }
+
+  const process = async (text: string): Promise<void> => {
+    active += 1
+    seq += 1
+    const payload = { sessionId, from: 'you', text, seq }
+    try {
+      const reply = await turn(text, (cumulative) => ui.renderPartial?.(cumulative))
+      ui.render(reply ?? '', payload)
+    } finally {
+      active -= 1
+      const next = queue.shift()
+      if (next !== undefined) void process(next)
+      else settleIdle()
+    }
+  }
+
+  const ui: TuiFrontendLike = factory({
+    submit: (text: string): void => {
+      const trimmed = text.trim()
+      if (trimmed === '') return
+      if (active > 0) queue.push(trimmed)
+      else void process(trimmed)
+    },
+  })
+
+  return {
+    ui,
+    idle: () =>
+      active === 0 && queue.length === 0
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => idleWaiters.push(resolve)),
+  }
+}
+
+async function chatLoop(turn: TurnFn, io: MainIO): Promise<void> {
   const rl = createInterface({ input: io.stdin })
   try {
     for await (const line of rl) {
       const text = line.trim()
       if (text.length === 0) continue
-      const reply = await runTurn(sourceId, sessionId, text, client, io)
+      const reply = await turn(text, () => {})
       if (reply !== null) io.stdout.write(`${reply}\n`)
     }
   } finally {

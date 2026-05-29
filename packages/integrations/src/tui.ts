@@ -35,6 +35,12 @@ export interface TuiFrontendIo {
 export interface TuiFrontend {
   /** Render a reply the workflow posted back for `payload`. */
   render(reply: string, payload: TuiMessageInput): void
+  /**
+   * Render the in-flight reply as it streams. The CLI host calls this with the
+   * cumulative text as `step.partial` deltas arrive; the final `render` commits
+   * it. Optional — a frontend that doesn't stream simply omits it.
+   */
+  renderPartial?(text: string): void
   /** Tear down the UI on shutdown. */
   close?(): void | Promise<void>
 }
