@@ -10,13 +10,16 @@ value:ApprovalDeniedError
 value:ArtifactQuotaExceededError
 value:AutoApproveGate
 value:AutoDenyGate
+value:BackendAuthenticationError
 value:BackendCapabilityError
 value:BackendChainExhaustedError
 value:BackendConfigError
 value:BackendNetworkError
 value:BackendNotFoundError
+value:BackendRateLimitError
 value:BackendRegistry
 value:BackendSessionError
+value:BackendTimeoutError
 value:BackendUnavailableError
 value:BackendUpstreamError
 value:CONFIG_FILENAMES

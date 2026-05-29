@@ -22,8 +22,6 @@ export type {
   MappedPermissions,
 } from './types.js'
 
-export type {
-  BackendAuthenticationError,
-  BackendRateLimitError,
-  BackendTimeoutError,
-} from './backend.js'
+// Backend* error classes (Authentication / RateLimit / Timeout) are now
+// owned by @skelm/core — import them from there:
+//   import { BackendAuthenticationError } from '@skelm/core'
