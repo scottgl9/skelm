@@ -31,7 +31,10 @@ import type { OpencodeBackendOptions } from './types.js'
  */
 export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBackend {
   const capabilities: BackendCapabilities = {
-    prompt: true,
+    // Opencode is an agent runtime (subprocess); it does not implement
+    // single-shot `infer()`. Like ACP, advertise prompt:false so the
+    // backend-contract gate stays consistent with the actual surface.
+    prompt: false,
     streaming: true,
     sessionLifecycle: true,
     mcp: true,
