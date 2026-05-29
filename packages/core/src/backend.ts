@@ -292,6 +292,15 @@ export interface BackendContext {
    * rather than throwing. Undefined disables every agentmemory hook silently.
    */
   agentmemory?: AgentmemoryHandle
+  /**
+   * Hand off to another agent/pipeline by id and collect its result. Present
+   * only when the runtime can resolve pipelines (a `pipelineRegistry` is wired)
+   * AND the step has a resolved policy. Backends expose this to the agent as a
+   * `delegate` tool, gated by `TrustEnforcer.canDelegate`. The runtime bounds
+   * the child to this step's resolved policy and refuses cycles / excess depth.
+   * Undefined disables delegation for the step.
+   */
+  delegate?: (agentId: string, input: unknown) => Promise<DelegateResult>
 }
 
 /** Structured result returned to a delegating agent by the `delegate` tool. */
