@@ -331,7 +331,9 @@ describe('delegation dimension — canDelegate', () => {
   })
 
   it('allows only allowlisted ids, by exact id, prefix, and star', () => {
-    const exact = new TrustEnforcer(resolvePermissions(undefined, { delegation: ['research.agent'] }))
+    const exact = new TrustEnforcer(
+      resolvePermissions(undefined, { delegation: ['research.agent'] }),
+    )
     expect(exact.canDelegate('research.agent').allow).toBe(true)
     expect(exact.canDelegate('other.agent').allow).toBe(false)
 
@@ -355,9 +357,14 @@ describe('delegation dimension — canDelegate', () => {
   })
 
   it('unrestricted bypass allows any delegation target', () => {
-    const policy = resolvePermissions(undefined, { requestUnrestricted: true }, {}, {
-      grantUnrestricted: true,
-    })
+    const policy = resolvePermissions(
+      undefined,
+      { requestUnrestricted: true },
+      {},
+      {
+        grantUnrestricted: true,
+      },
+    )
     expect(new TrustEnforcer(policy).canDelegate('anything').allow).toBe(true)
   })
 })
@@ -388,7 +395,10 @@ describe('intersectResolvedPolicies — child bounded by parent ceiling', () => 
   })
 
   it('unions denylists down the chain', () => {
-    const ceiling = resolvePermissions(undefined, { allowedTools: ['*'], deniedTools: ['x.danger'] })
+    const ceiling = resolvePermissions(undefined, {
+      allowedTools: ['*'],
+      deniedTools: ['x.danger'],
+    })
     const child = resolvePermissions(undefined, { allowedTools: ['*'], deniedTools: ['y.danger'] })
     const bounded = new TrustEnforcer(intersectResolvedPolicies(ceiling, child))
     expect(bounded.canCallTool('x.danger').allow).toBe(false)
@@ -406,18 +416,28 @@ describe('intersectResolvedPolicies — child bounded by parent ceiling', () => 
 
   it('a restricted parent caps a child that independently earned unrestricted', () => {
     const ceiling = resolvePermissions(undefined, { allowedTools: ['a.*'] })
-    const childUnrestricted = resolvePermissions(undefined, { requestUnrestricted: true }, {}, {
-      grantUnrestricted: true,
-    })
+    const childUnrestricted = resolvePermissions(
+      undefined,
+      { requestUnrestricted: true },
+      {},
+      {
+        grantUnrestricted: true,
+      },
+    )
     const bounded = intersectResolvedPolicies(ceiling, childUnrestricted)
     expect(bounded.unrestricted).toBe(false)
     expect(new TrustEnforcer(bounded).canCallTool('b.read').allow).toBe(false)
   })
 
   it('an unrestricted parent empowers the child (parent-empowers-child)', () => {
-    const ceilingUnrestricted = resolvePermissions(undefined, { requestUnrestricted: true }, {}, {
-      grantUnrestricted: true,
-    })
+    const ceilingUnrestricted = resolvePermissions(
+      undefined,
+      { requestUnrestricted: true },
+      {},
+      {
+        grantUnrestricted: true,
+      },
+    )
     const child = resolvePermissions(undefined, { allowedTools: ['a.*'] })
     const bounded = intersectResolvedPolicies(ceilingUnrestricted, child)
     expect(bounded.unrestricted).toBe(true)

@@ -307,7 +307,10 @@ function intersectResolvedMatchers(
   return Object.freeze({ exact, prefixes: Object.freeze(prefixes), star: false })
 }
 
-function unionResolvedMatchers(a: ResolvedToolMatcher, b: ResolvedToolMatcher): ResolvedToolMatcher {
+function unionResolvedMatchers(
+  a: ResolvedToolMatcher,
+  b: ResolvedToolMatcher,
+): ResolvedToolMatcher {
   const prefixes = [...a.prefixes]
   for (const p of b.prefixes) {
     if (!prefixes.includes(p)) prefixes.push(p)

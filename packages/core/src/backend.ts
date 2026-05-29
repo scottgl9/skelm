@@ -294,6 +294,18 @@ export interface BackendContext {
   agentmemory?: AgentmemoryHandle
 }
 
+/** Structured result returned to a delegating agent by the `delegate` tool. */
+export interface DelegateResult {
+  /** Whether the delegated child run reached a terminal completed state. */
+  readonly status: 'completed' | 'failed'
+  /** The child run id, for correlation in audit / events. */
+  readonly runId: string
+  /** The child's final output (present when `status === 'completed'`). */
+  readonly output?: unknown
+  /** A human-readable failure summary (present when `status === 'failed'`). */
+  readonly error?: string
+}
+
 /**
  * Minimal interface backends consume; the concrete implementation lives in
  * `@skelm/agentmemory` and is wired by the gateway. Method bodies must be
