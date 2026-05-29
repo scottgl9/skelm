@@ -79,6 +79,10 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
     // therefore keep toolPermissions: 'unsupported' and refuse below when a
     // caller hands us a non-network-only policy (defense-in-depth).
     toolPermissions: 'unsupported',
+    // run() wires the agentmemory turn lifecycle. Required for the
+    // runtime capability gate to allow agentmemory-permitted steps to
+    // dispatch here.
+    agentmemory: true,
   }
 
   const { acquire, release } = createConcurrencySemaphore(options.maxConcurrent ?? 4)
