@@ -37,6 +37,8 @@ In production the **gateway** owns the canonical instances and hands them to eve
 
 Beyond the core dimensions (tools, executables, MCP servers, skills, secrets, network, filesystem, approval), the `agentmemory` dimension gates the optional [agentmemory integration](/guides/agentmemory) per operation — `observe`/`search`/`session`/`context`/`save`/`recall`/`graph`, or the `'deny'` shorthand. It follows every rule above: omitted ⇒ deny (proven by `packages/core/test/security/agentmemory-default-deny.test.ts`), intersection-only composition, and the gateway hands a step no memory handle at all unless its policy grants an op.
 
+The `delegation` dimension gates agent-to-agent [delegation](/concepts/delegation): which agents/pipelines an agent may hand off to via the `delegate` tool. It is matched like `allowedTools` (exact ids, `foo.*` prefixes, or `*`) and follows every rule above — omitted ⇒ deny (proven by `packages/core/test/security/delegation-default-deny.test.ts`), intersection-only composition. Critically, a delegated child's *entire* resolved policy is intersected with the delegating agent's, so delegation can only ever narrow authority down the chain. See [Delegation](/concepts/delegation).
+
 ## The unrestricted bypass (freewheeling agents)
 
 Some use cases — a personal chat assistant you talk to over Telegram, a [persistent workflow](/concepts/persistent-workflows) behaving like a freewheeling shell — want a full bypass of default-deny rather than an exhaustive allow-list. skelm supports this **only as an explicit, operator-gated, audited opt-in**. It never weakens default-deny for anything that does not opt in.
