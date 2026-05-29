@@ -90,8 +90,14 @@ export interface CreateTuiTriggerSourceOptions {
 export interface CreateRemoteTuiTriggerSourceOptions {
   /** Display name of the local user. Default: `'you'`. */
   from?: string
-  /** Per-turn reply timeout in ms. Default: 120_000. */
-  replyTimeoutMs?: number
+  /** Timeout (ms) for the turn's run to start before submit rejects. Default: 30_000. */
+  startTimeoutMs?: number
+  /**
+   * UI frontend factory the CLI host should render. The gateway never invokes
+   * it (this source is headless); it's carried here so a project can declare its
+   * terminal UI in `skelm.config.*` and `skelm run` picks it up over the bridge.
+   */
+  frontend?: TuiFrontendFactory
 }
 
 /**
@@ -100,30 +106,35 @@ export interface CreateRemoteTuiTriggerSourceOptions {
  * terminal UI lives in the `skelm run` CLI process. The gateway registers this
  * as the project's queue driver; the CLI POSTs each user line to
  * `/v1/tui/:sourceId/submit`, which calls {@link submit} here. submit fires the
- * workflow with a {@link TuiMessageInput} and resolves with the turn's reply,
- * correlated by the per-source `seq` echoed back through {@link onResult}.
+ * workflow and resolves with the turn's `runId` (captured from the first run
+ * event); the CLI then tails `/runs/:runId/stream` for partials and the reply.
  */
 export interface RemoteTuiTriggerSource extends TuiTriggerSource {
   /** Discriminator the gateway uses to tag this source as CLI-hosted. */
   readonly transport: 'tui'
-  /** Inject one user line and resolve with the workflow's reply. */
-  submit(input: { sessionId: string; text: string; from?: string }): Promise<{ reply: string }>
+  /** Optional UI frontend factory for the CLI host to render. */
+  readonly frontend?: TuiFrontendFactory
+  /** Receives every run event for the fired turn; used to capture the runId. */
+  onEvent(payload: unknown, event: unknown): void
+  /** Inject one user line; resolves with the turn's runId once the run starts. */
+  submit(input: { sessionId: string; text: string; from?: string }): Promise<{ runId: string }>
 }
 
 export function createRemoteTriggerSource(
   options: CreateRemoteTuiTriggerSourceOptions = {},
 ): RemoteTuiTriggerSource {
   const defaultFrom = options.from ?? 'you'
-  const replyTimeoutMs = options.replyTimeoutMs ?? 120_000
+  const startTimeoutMs = options.startTimeoutMs ?? 30_000
   let onMessage: ((payload?: unknown) => Promise<void>) | null = null
   let seq = 0
   const pending = new Map<
     number,
-    { resolve: (r: { reply: string }) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
+    { resolve: (r: { runId: string }) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
   >()
 
   return {
     transport: 'tui',
+    ...(options.frontend !== undefined && { frontend: options.frontend }),
     start({ onMessage: fn }): void {
       onMessage = fn
       seq = 0
@@ -136,21 +147,23 @@ export function createRemoteTriggerSource(
       }
       pending.clear()
     },
-    onResult(payload: unknown, output: unknown): void {
+    onEvent(payload: unknown, event: unknown): void {
+      // The first event for a turn carries its runId; hand it to the waiting
+      // submit so the CLI can subscribe to the run stream for partials + reply.
       const s = (payload as { seq?: unknown } | undefined)?.seq
-      if (typeof s !== 'number') return
+      const runId = (event as { runId?: unknown } | undefined)?.runId
+      if (typeof s !== 'number' || typeof runId !== 'string') return
       const entry = pending.get(s)
       if (entry === undefined) return
       clearTimeout(entry.timer)
       pending.delete(s)
-      const reply = (output as { reply?: unknown } | undefined)?.reply
-      entry.resolve({ reply: typeof reply === 'string' ? reply : '' })
+      entry.resolve({ runId })
     },
     async submit(input: {
       sessionId: string
       text: string
       from?: string
-    }): Promise<{ reply: string }> {
+    }): Promise<{ runId: string }> {
       if (onMessage === null) throw new Error('tui source not started')
       seq += 1
       const mySeq = seq
@@ -160,16 +173,26 @@ export function createRemoteTriggerSource(
         text: input.text,
         seq: mySeq,
       }
-      const result = new Promise<{ reply: string }>((resolve, reject) => {
+      const runId = new Promise<{ runId: string }>((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(mySeq)
-          reject(new Error('tui turn timed out'))
-        }, replyTimeoutMs)
+          reject(new Error('tui turn did not start'))
+        }, startTimeoutMs)
         timer.unref?.()
         pending.set(mySeq, { resolve, reject, timer })
       })
-      await onMessage(payload)
-      return result
+      // Fire without awaiting: a non-parallel trigger blocks onMessage until the
+      // run completes, but we resolve on the first event (run start) so the CLI
+      // can tail live partials.
+      void Promise.resolve(onMessage(payload)).catch((err: unknown) => {
+        const entry = pending.get(mySeq)
+        if (entry !== undefined) {
+          clearTimeout(entry.timer)
+          pending.delete(mySeq)
+          entry.reject(err instanceof Error ? err : new Error(String(err)))
+        }
+      })
+      return runId
     },
   }
 }

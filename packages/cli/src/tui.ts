@@ -1,7 +1,7 @@
 import { createInterface } from 'node:readline'
-import { type ActivationResponse, requestActivation } from './activate.js'
+import { requestActivation } from './activate.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
-import { fetchHttp, requireGateway } from './internal/gateway-client.js'
+import { fetchHttp, openSse, requireGateway } from './internal/gateway-client.js'
 import type { MainIO } from './internal/io.js'
 
 export interface TuiCommandArgs {
@@ -18,9 +18,9 @@ interface GatewayClient {
 /**
  * `skelm run <tui-dir>`: activate the project on the gateway, then host the
  * terminal chat in THIS process. Each line is POSTed to
- * `/v1/tui/:sourceId/submit`; the workflow runs a turn gateway-side and its
- * reply is printed here. On EOF / Ctrl-C the workflow is deactivated (its
- * durable conversation is kept) and the CLI exits.
+ * `/v1/tui/:sourceId/submit`, which returns the turn's runId; the CLI tails
+ * `/runs/:runId/stream` for partials and the final reply. On EOF / Ctrl-C the
+ * workflow is deactivated (its durable conversation is kept) and the CLI exits.
  */
 export async function tuiCommand(
   args: TuiCommandArgs,
@@ -63,7 +63,7 @@ async function chatLoop(
     for await (const line of rl) {
       const text = line.trim()
       if (text.length === 0) continue
-      const reply = await submit(sourceId, sessionId, text, client, io)
+      const reply = await runTurn(sourceId, sessionId, text, client, io)
       if (reply !== null) io.stdout.write(`${reply}\n`)
     }
   } finally {
@@ -71,14 +71,20 @@ async function chatLoop(
   }
 }
 
-async function submit(
+/**
+ * Submit one line and follow the turn's run stream. Calls `onPartial` with the
+ * cumulative reply as `step.partial` deltas arrive, and resolves with the final
+ * reply text (or null on failure).
+ */
+export async function runTurn(
   sourceId: string,
   sessionId: string,
   text: string,
   client: GatewayClient,
   io: MainIO,
+  onPartial?: (cumulative: string) => void,
 ): Promise<string | null> {
-  const res = await fetchHttp(
+  const submitRes = await fetchHttp(
     `${client.discovery.url}/v1/tui/${encodeURIComponent(sourceId)}/submit`,
     {
       method: 'POST',
@@ -87,12 +93,49 @@ async function submit(
     },
     io,
   )
-  if (res === null || !res.ok) {
+  if (submitRes === null || !submitRes.ok) {
     io.stderr.write('> turn failed\n')
     return null
   }
-  const body = (await res.json()) as { reply?: unknown }
-  return typeof body.reply === 'string' ? body.reply : ''
+  const { runId } = (await submitRes.json()) as { runId: string }
+
+  let acc = ''
+  let reply: string | null = null
+  try {
+    for await (const ev of openSse(
+      `${client.discovery.url}/runs/${runId}/stream`,
+      client.headers,
+    )) {
+      if (ev.event === 'ping') continue
+      const data = ev.data as { type?: string; delta?: string; output?: { reply?: unknown } }
+      const type = ev.event !== 'message' ? ev.event : (data?.type ?? 'message')
+      if (type === 'step.partial' && typeof data?.delta === 'string') {
+        acc += data.delta
+        onPartial?.(acc)
+      } else if (type === 'run.completed') {
+        const out = data?.output?.reply
+        reply = typeof out === 'string' ? out : acc
+        break
+      } else if (type === 'run.failed' || type === 'run.cancelled') {
+        break
+      }
+    }
+  } catch {
+    // Stream interrupted — fall back to the final run state below.
+  }
+
+  if (reply === null) {
+    const stateRes = await fetchHttp(
+      `${client.discovery.url}/runs/${runId}`,
+      { headers: client.headers },
+      io,
+    )
+    if (stateRes?.ok) {
+      const run = (await stateRes.json()) as { output?: { reply?: unknown } }
+      if (typeof run.output?.reply === 'string') reply = run.output.reply
+    }
+  }
+  return reply ?? acc
 }
 
 async function deactivate(workflowId: string, client: GatewayClient, io: MainIO): Promise<void> {

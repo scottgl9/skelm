@@ -1,11 +1,11 @@
 // Inline headless TUI driver (mirrors @skelm/integrations createRemoteTriggerSource)
 // so the fixture imports nothing — the test loader resolves bare workspace
-// specifiers inconsistently from fixture paths. The real example uses the
-// published createRemoteTriggerSource(); this is just enough to exercise the
-// CLI host + gateway submit route end to end.
+// specifiers inconsistently from fixture paths. submit fires the turn and
+// resolves with the runId captured from the first run event; the CLI then tails
+// /runs/:runId/stream for the reply.
 let onMessage: ((p: unknown) => Promise<void>) | null = null
 let seq = 0
-const pending = new Map<number, (r: { reply: string }) => void>()
+const pending = new Map<number, (r: { runId: string }) => void>()
 
 const driver = {
   transport: 'tui' as const,
@@ -16,21 +16,23 @@ const driver = {
   stop() {
     onMessage = null
   },
-  onResult(payload: unknown, output: unknown) {
+  onEvent(payload: unknown, event: unknown) {
     const s = (payload as { seq?: number }).seq
-    if (typeof s !== 'number') return
+    const runId = (event as { runId?: unknown }).runId
+    if (typeof s !== 'number' || typeof runId !== 'string') return
     const resolve = pending.get(s)
     if (resolve === undefined) return
     pending.delete(s)
-    const reply = (output as { reply?: unknown }).reply
-    resolve({ reply: typeof reply === 'string' ? reply : '' })
+    resolve({ runId })
   },
-  async submit(input: { sessionId: string; text: string }): Promise<{ reply: string }> {
+  async submit(input: { sessionId: string; text: string }): Promise<{ runId: string }> {
     if (onMessage === null) throw new Error('not started')
     seq += 1
     const mySeq = seq
-    const result = new Promise<{ reply: string }>((resolve) => pending.set(mySeq, resolve))
-    await onMessage({ sessionId: input.sessionId, from: 'you', text: input.text, seq: mySeq })
+    const result = new Promise<{ runId: string }>((resolve) => pending.set(mySeq, resolve))
+    void Promise.resolve(
+      onMessage({ sessionId: input.sessionId, from: 'you', text: input.text, seq: mySeq }),
+    ).catch(() => {})
     return result
   },
 }

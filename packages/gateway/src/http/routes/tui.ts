@@ -10,15 +10,15 @@ interface SubmitBody {
 
 interface RemoteTuiDriver {
   transport?: string
-  submit?(input: { sessionId: string; text: string; from?: string }): Promise<{ reply: string }>
+  submit?(input: { sessionId: string; text: string; from?: string }): Promise<{ runId: string }>
 }
 
 /**
  * POST /v1/tui/:sourceId/submit — inject one user line into a CLI-hosted TUI
- * session and return the workflow's reply. The terminal UI lives in the
+ * session and return the turn's `{ runId }`. The terminal UI lives in the
  * `skelm run` process; this drives the gateway-side headless TUI source
- * (createRemoteTriggerSource) which fires the persistent workflow and returns
- * the turn's reply.
+ * (createRemoteTriggerSource) which fires the workflow and reports the runId so
+ * the CLI can tail `/runs/:runId/stream` for partials and the final reply.
  */
 export function registerTuiRoutes(router: Router, gateway: Gateway): void {
   router.post(

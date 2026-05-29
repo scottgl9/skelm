@@ -162,29 +162,32 @@ describe('TuiIntegration (mechanism)', () => {
 })
 
 describe('createRemoteTriggerSource', () => {
-  it('submit fires onMessage with a TuiMessageInput and resolves when onResult echoes the seq', async () => {
+  it('submit fires onMessage and resolves with the runId from the first run event', async () => {
     const src = createRemoteTriggerSource()
     const fired: TuiMessageInput[] = []
     src.start({
       onMessage: async (p) => {
         fired.push(p as TuiMessageInput)
-        // Simulate the gateway running the turn and the dispatcher calling onResult.
-        src.onResult(p, { reply: `echo: ${(p as TuiMessageInput).text}` })
+        // Simulate the dispatcher forwarding the first run event to onEvent.
+        src.onEvent(p, { type: 'run.started', runId: 'run-1', at: 0 })
       },
     })
-    const { reply } = await src.submit({ sessionId: 's1', text: 'hi' })
-    expect(reply).toBe('echo: hi')
+    const { runId } = await src.submit({ sessionId: 's1', text: 'hi' })
+    expect(runId).toBe('run-1')
     expect(fired[0]).toMatchObject({ sessionId: 's1', text: 'hi', from: 'you', seq: 1 })
   })
 
-  it('exposes the tui transport marker', () => {
-    expect(createRemoteTriggerSource().transport).toBe('tui')
+  it('exposes the tui transport marker and an optional frontend', () => {
+    const factory = () => ({ render: () => {} })
+    const src = createRemoteTriggerSource({ frontend: factory })
+    expect(src.transport).toBe('tui')
+    expect(src.frontend).toBe(factory)
   })
 
-  it('rejects when no reply arrives within the timeout', async () => {
-    const src = createRemoteTriggerSource({ replyTimeoutMs: 10 })
+  it('rejects when the run never starts within the timeout', async () => {
+    const src = createRemoteTriggerSource({ startTimeoutMs: 10 })
     src.start({ onMessage: async () => {} })
-    await expect(src.submit({ sessionId: 's', text: 'x' })).rejects.toThrow(/timed out/)
+    await expect(src.submit({ sessionId: 's', text: 'x' })).rejects.toThrow(/did not start/)
   })
 
   it('stop rejects pending submits', async () => {
