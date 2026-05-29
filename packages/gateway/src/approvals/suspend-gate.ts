@@ -75,6 +75,10 @@ export class SuspendApprovalGate implements ApprovalGate {
       }
       if (this.opts.timeoutMs !== undefined) {
         entry.timer = setTimeout(() => {
+          // Plan §4.2: await the audit write before the run observes the
+          // timeout, so a crash between reject() and the audit flush
+          // can't leave a decision off the durable record. The same
+          // pattern is applied to the deliver() path.
           this.pending.delete(id)
           void this.persist()
           void this.audit({
@@ -87,8 +91,9 @@ export class SuspendApprovalGate implements ApprovalGate {
               requestedAction: req.action,
               timeoutMs: this.opts.timeoutMs,
             },
+          }).finally(() => {
+            reject(new Error(`approval ${id} timed out after ${this.opts.timeoutMs}ms`))
           })
-          reject(new Error(`approval ${id} timed out after ${this.opts.timeoutMs}ms`))
         }, this.opts.timeoutMs)
         entry.timer.unref?.()
       }
@@ -130,6 +135,12 @@ export class SuspendApprovalGate implements ApprovalGate {
     if (entry.timer !== undefined) clearTimeout(entry.timer)
     this.pending.delete(id)
     void this.persist()
+    // Plan §4.2: chain the resolve() onto audit completion so the durable
+    // decision row is flushed before any downstream step observes the
+    // approval. Without this, a crash between resolve() and the audit
+    // write completing would lose the row — forensics would see
+    // 'approval.requested' with no matching 'approval.resolved' and an
+    // operator couldn't tell whether the approval ever happened.
     void this.audit({
       runId: entry.request.runId,
       actor: decision.approver ?? 'unknown',
@@ -141,8 +152,9 @@ export class SuspendApprovalGate implements ApprovalGate {
         approved: decision.approved,
         ...(decision.reason !== undefined && { reason: decision.reason }),
       },
+    }).finally(() => {
+      entry.resolve(decision)
     })
-    entry.resolve(decision)
     return true
   }
 
@@ -150,6 +162,10 @@ export class SuspendApprovalGate implements ApprovalGate {
   drain(reason = 'gateway stopping'): void {
     for (const [id, entry] of this.pending) {
       if (entry.timer !== undefined) clearTimeout(entry.timer)
+      // Same audit-then-reject ordering as deliver()/timeout: ensure the
+      // 'approval.cancelled' row hits disk before the awaiting promise
+      // is settled, so a fast crash during drain still leaves a complete
+      // forensic record for the operator.
       void this.audit({
         runId: entry.request.runId,
         actor: 'gateway',
@@ -160,8 +176,9 @@ export class SuspendApprovalGate implements ApprovalGate {
           requestedAction: entry.request.action,
           reason,
         },
+      }).finally(() => {
+        entry.reject(new Error(`approval ${id} cancelled: ${reason}`))
       })
-      entry.reject(new Error(`approval ${id} cancelled: ${reason}`))
     }
     this.pending.clear()
     void this.persist()
