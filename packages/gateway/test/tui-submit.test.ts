@@ -32,7 +32,7 @@ describe('POST /v1/tui/:sourceId/submit', () => {
     const src = createRemoteTriggerSource()
     gw.managers.triggers.registerQueueDriver('tui', src)
     src.start({
-      onMessage: async (p) => src.onResult(p, { reply: `echo: ${(p as { text: string }).text}` }),
+      onMessage: async (p) => src.onEvent(p, { type: 'run.started', runId: 'run-x', at: 0 }),
     })
     try {
       const res = await fetch(`${base}/v1/tui/tui/submit`, {
@@ -41,7 +41,7 @@ describe('POST /v1/tui/:sourceId/submit', () => {
         body: JSON.stringify({ sessionId: 's1', text: 'hi' }),
       })
       expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ reply: 'echo: hi' })
+      expect(await res.json()).toEqual({ runId: 'run-x' })
 
       const unknown = await fetch(`${base}/v1/tui/nope/submit`, {
         method: 'POST',
