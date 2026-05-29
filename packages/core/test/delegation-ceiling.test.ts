@@ -119,6 +119,8 @@ describe('delegationCeiling — child bounded by parent', () => {
     })
     const run = await runPipeline(wf, undefined, { backends: registry })
     expect(run.status).toBe('completed')
-    expect(new TrustEnforcer(sink.policy as ResolvedPolicy).canCallTool('anything').allow).toBe(true)
+    expect(new TrustEnforcer(sink.policy as ResolvedPolicy).canCallTool('anything').allow).toBe(
+      true,
+    )
   })
 })

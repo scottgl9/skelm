@@ -5,12 +5,16 @@ import {
   BackendNotFoundError,
   type BackendRegistry,
   type ContentPart,
+  type DelegateResult,
   type SkelmBackend,
 } from '../backend.js'
 import { type ApprovalGate, EnvSecretResolver } from '../enforcement/index.js'
 import {
   ApprovalDeniedError,
   BranchExhaustionError,
+  DEFAULT_MAX_DELEGATION_DEPTH,
+  DelegationCycleError,
+  DelegationDepthError,
   InvokePipelineNotFoundError,
   PermissionDeniedError,
   RunCancelledError,
@@ -1106,6 +1110,14 @@ async function runInvokeStep(
     ...(runtime?.skillSource !== undefined && { skillSource: runtime.skillSource }),
     ...(runtime?.secretResolver !== undefined && { secretResolver: runtime.secretResolver }),
     ...(runtime?.pipelineRegistry !== undefined && { pipelineRegistry: runtime.pipelineRegistry }),
+    ...(runtime?.delegationCeiling !== undefined && {
+      delegationCeiling: runtime.delegationCeiling,
+    }),
+    ...(runtime?.delegationStack !== undefined && { delegationStack: runtime.delegationStack }),
+    ...(runtime?.delegationDepth !== undefined && { delegationDepth: runtime.delegationDepth }),
+    ...(runtime?.maxDelegationDepth !== undefined && {
+      maxDelegationDepth: runtime.maxDelegationDepth,
+    }),
     ...(waitForInput !== undefined && { waitForInput }),
   })
   if (nestedRun.status === 'completed') {
@@ -1150,6 +1162,14 @@ async function runPipelineStep(
     ...(runtime?.skillSource !== undefined && { skillSource: runtime.skillSource }),
     ...(runtime?.secretResolver !== undefined && { secretResolver: runtime.secretResolver }),
     ...(runtime?.pipelineRegistry !== undefined && { pipelineRegistry: runtime.pipelineRegistry }),
+    ...(runtime?.delegationCeiling !== undefined && {
+      delegationCeiling: runtime.delegationCeiling,
+    }),
+    ...(runtime?.delegationStack !== undefined && { delegationStack: runtime.delegationStack }),
+    ...(runtime?.delegationDepth !== undefined && { delegationDepth: runtime.delegationDepth }),
+    ...(runtime?.maxDelegationDepth !== undefined && {
+      maxDelegationDepth: runtime.maxDelegationDepth,
+    }),
     ...(waitForInput !== undefined && { waitForInput }),
   })
   if (nestedRun.status === 'completed') {
@@ -1164,4 +1184,87 @@ async function runPipelineStep(
     nestedRun.error,
     `pipelineStep(${step.id}): nested pipeline "${step.pipeline.id}" did not complete`,
   )
+}
+
+/** Caller context the runtime binds into a delegating agent's `delegate` callback. */
+export interface DelegationCaller {
+  readonly runId: string
+  readonly stepId: string
+  readonly signal: AbortSignal
+  /**
+   * The delegating agent's resolved policy — becomes the child run's
+   * `delegationCeiling`, so the child can never exceed the parent.
+   */
+  readonly ceiling: ResolvedPolicy
+}
+
+/**
+ * Run another pipeline (a one-agent pipeline is the "named agent") as a
+ * delegated child of the calling agent. Mirrors {@link runInvokeStep}: it
+ * resolves the target via the runtime's `pipelineRegistry` and runs it with the
+ * same runtime wiring, plus a delegation ceiling, an extended call-stack, and an
+ * incremented depth so the child is bounded and runaway chains are refused.
+ *
+ * Throws {@link DelegationDepthError} / {@link DelegationCycleError} /
+ * {@link InvokePipelineNotFoundError} before any child run starts; returns a
+ * {@link DelegateResult} once the child reaches a terminal state. Permission
+ * enforcement for *whether* the caller may delegate to `agentId` happens in the
+ * `delegate` tool via `TrustEnforcer.canDelegate`, before this is invoked.
+ */
+export async function runDelegation(
+  agentId: string,
+  input: unknown,
+  caller: DelegationCaller,
+  runtime: ExecutionRuntime,
+  backends: BackendRegistry | undefined,
+  events?: EventBus,
+): Promise<DelegateResult> {
+  const stack = runtime.delegationStack ?? []
+  const depth = runtime.delegationDepth ?? 0
+  const maxDepth = runtime.maxDelegationDepth ?? DEFAULT_MAX_DELEGATION_DEPTH
+  if (depth + 1 > maxDepth) {
+    throw new DelegationDepthError(agentId, depth + 1, maxDepth)
+  }
+  if (stack.includes(agentId)) {
+    throw new DelegationCycleError(agentId, stack)
+  }
+  const pipeline = await runtime.pipelineRegistry?.(agentId)
+  if (pipeline === undefined) {
+    throw new InvokePipelineNotFoundError(agentId, caller.stepId)
+  }
+  const nestedRun = await runPipeline(pipeline, input, {
+    signal: caller.signal,
+    ...(events !== undefined && { events }),
+    ...(backends !== undefined && { backends }),
+    ...(runtime.store !== undefined && { store: runtime.store }),
+    ...(runtime.stateStore !== undefined && { stateStore: runtime.stateStore }),
+    ...(runtime.defaultPermissions !== undefined && {
+      defaultPermissions: runtime.defaultPermissions,
+    }),
+    ...(runtime.permissionProfiles !== undefined && {
+      permissionProfiles: runtime.permissionProfiles,
+    }),
+    ...(runtime.unrestrictedGrant !== undefined && {
+      unrestrictedGrant: runtime.unrestrictedGrant,
+    }),
+    ...(runtime.workspaceManager !== undefined && { workspaceManager: runtime.workspaceManager }),
+    ...(runtime.skillSource !== undefined && { skillSource: runtime.skillSource }),
+    ...(runtime.secretResolver !== undefined && { secretResolver: runtime.secretResolver }),
+    ...(runtime.pipelineRegistry !== undefined && { pipelineRegistry: runtime.pipelineRegistry }),
+    delegationCeiling: caller.ceiling,
+    delegationStack: [...stack, agentId],
+    delegationDepth: depth + 1,
+    maxDelegationDepth: maxDepth,
+  })
+  if (nestedRun.status === 'completed') {
+    return { status: 'completed', runId: nestedRun.runId, output: nestedRun.output }
+  }
+  if (nestedRun.status === 'cancelled') {
+    throw new RunCancelledError(`delegate(${agentId}): child run was cancelled`)
+  }
+  return {
+    status: 'failed',
+    runId: nestedRun.runId,
+    error: nestedRun.error?.message ?? nestedRun.error?.name ?? 'delegated run did not complete',
+  }
 }
