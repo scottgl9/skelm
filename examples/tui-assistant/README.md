@@ -18,17 +18,18 @@ This example demonstrates these things together:
   shell/network/filesystem access.
 
 The gateway side is the **headless** `createRemoteTriggerSource()` — it runs no
-UI; it just turns submitted lines into workflow turns and returns the reply. The
-**terminal UI lives in `skelm run`** (the CLI), which activates this project and
-then hosts the chat, POSTing each line to the gateway. This split is what lets
-the gateway run as a background daemon while you still chat from your own
-terminal.
+UI; it just turns submitted lines into workflow turns. The **terminal UI is the
+Ink frontend** (`tui-frontend.mts`), carried on the source and **rendered by
+`skelm run`** in your own process: `skelm run` activates the project, loads the
+frontend, and drives it — each line you type is POSTed to the gateway and the
+reply streams back (`step.partial` → `renderPartial`, final → `render`). This
+split is what lets the gateway run as a background daemon while you chat from
+your own terminal, on any UI library (swap the frontend, nothing else changes).
 
 For an *embedded* UI that runs inside a foreground gateway instead, the
 `@skelm/integrations` `tui` integration's `createTriggerSource({ frontend })`
-takes a UI frontend directly — `tui-frontend.mts` here is one such frontend, built
-on [Ink](https://github.com/vadimdemedes/ink), and `drive.mts` exercises it with
-no gateway and no model.
+takes the same frontend directly; `drive.mts` exercises it with no gateway and no
+model.
 
 ## ⚠️ Security — read this first
 

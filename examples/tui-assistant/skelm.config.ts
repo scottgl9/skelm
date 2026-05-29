@@ -1,13 +1,16 @@
 import { defineConfig } from '@skelm/core'
 import { createRemoteTriggerSource } from '@skelm/integrations'
 import { createPiBackend } from '@skelm/pi'
+import { createTerminalFrontend } from './tui-frontend.mjs'
 
 // The TUI is a CLI-hosted chat: `skelm run examples/tui-assistant/` activates
-// this project on the gateway and then hosts the terminal UI in the CLI process,
-// POSTing each line to the gateway and printing the reply. The gateway side is
-// the headless `createRemoteTriggerSource()` below — no frontend runs in the
-// gateway. (The embedded, gateway-foreground frontend is still available via
-// `TuiIntegration.createTriggerSource({ frontend })`; see drive.mts.)
+// this project on the gateway and then hosts the terminal UI in the CLI process.
+// The gateway side is the headless `createRemoteTriggerSource()` below — no
+// frontend runs in the gateway. The Ink frontend is carried on the source so
+// `skelm run` picks it up and renders it locally (streaming partials + reply);
+// the gateway never invokes it. (The embedded, gateway-foreground variant is
+// still available via `TuiIntegration.createTriggerSource({ frontend })`; see
+// drive.mts.)
 
 export default defineConfig({
   registries: {
@@ -31,10 +34,14 @@ export default defineConfig({
   triggerSources: [
     {
       id: 'tui',
-      // Headless: the gateway runs the turns, the CLI hosts the terminal. The
-      // per-message sessionId comes from the CLI (defaults to TUI_SESSION_ID or
-      // 'tui'); the workflow's sessionKey derives the durable conversation.
-      driver: createRemoteTriggerSource(),
+      // Headless on the gateway; the CLI host renders `frontend`. The per-message
+      // sessionId comes from the CLI (defaults to TUI_SESSION_ID or 'tui'); the
+      // workflow's sessionKey derives the durable conversation.
+      driver: createRemoteTriggerSource({
+        frontend: createTerminalFrontend({
+          banner: 'skelm tui-assistant — chat with your agent (Ctrl-C to exit)',
+        }),
+      }),
     },
   ],
   defaults: {
