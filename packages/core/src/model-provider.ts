@@ -1,7 +1,7 @@
 /**
  * Model Provider abstraction for LLM endpoints
  *
- * Supports: OpenAI, Anthropic, vllm, sglang, ollama, gemini, etc.
+ * Supports: OpenAI, Anthropic, vllm, sglang, ollama, etc.
  * Used for direct LLM() calls in workflows
  */
 

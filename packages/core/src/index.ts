@@ -244,7 +244,7 @@ export type {
   ChatMessage,
   LlmCompletion,
 } from './model-provider.js'
-// Model providers: OpenAI, Anthropic, vllm, sglang, ollama, gemini, etc.
+// Model providers: OpenAI, Anthropic, vllm, sglang, ollama, etc.
 // Agent providers: ACP, opencode, pi, github-copilot, etc.
 export { AgentProviderBase, AgentRegistry, executeAgentStep } from './agent-provider.js'
 export type {
