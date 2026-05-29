@@ -716,6 +716,26 @@ export class Gateway {
       // must be marked failed before new runs start so listRuns reflects
       // ground truth and operators can see what was lost.
       await recoverInterruptedRuns(this.runStoreInternal)
+      // Reap orphan ephemeral workspaces left by interrupted runs (plan §4.4).
+      // Conservative: only deletes directories that carry a skelm
+      // `.skelm/workspace.json` metadata file with mode:'ephemeral' AND
+      // whose lastAccessAt is past the grace window. Failure is non-fatal —
+      // disk leaks are recoverable, but blocking start on tmpdir scans
+      // would be a worse failure mode.
+      void this.workspaceManager
+        .reapStaleEphemeralWorkspaces({})
+        .then(({ reaped }) => {
+          if (reaped.length > 0) {
+            console.error(`gateway: reaped ${reaped.length} orphan ephemeral workspace(s)`)
+          }
+        })
+        .catch((err: unknown) => {
+          console.warn(
+            `gateway: ephemeral workspace reap failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          )
+        })
       this.enforcementInternal = this.buildEnforcement()
       this.registriesInternal = await this.buildRegistries()
       this.managersInternal = await this.buildManagers()
