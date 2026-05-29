@@ -11,6 +11,7 @@
     "clean": "true"
   },
   "dependencies": {
+    "@skelm/agent": "workspace:*",
     "@skelm/core": "workspace:*",
     "@skelm/integrations": "workspace:*",
     "@skelm/opencode": "workspace:*",
