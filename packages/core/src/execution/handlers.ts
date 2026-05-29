@@ -702,6 +702,23 @@ async function runAgentStep(
               ...(events !== undefined && { events }),
             })
           : undefined
+      // Bind the delegation capability only when the runtime can resolve
+      // pipelines and the step has a resolved policy — the policy becomes the
+      // child's ceiling. Whether the agent may delegate to a given id is gated
+      // by the `delegate` tool via canDelegate; this just supplies the runner.
+      const ceiling = policy
+      const delegate =
+        runtime?.pipelineRegistry !== undefined && ceiling !== undefined
+          ? (agentId: string, input: unknown) =>
+              runDelegation(
+                agentId,
+                input,
+                { runId: ctx.run.runId, stepId: step.id, signal: stepSignal, ceiling },
+                runtime,
+                backends,
+                events,
+              )
+          : undefined
       let response: import('../backend.js').AgentResponse
       try {
         // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
@@ -716,6 +733,7 @@ async function runAgentStep(
           ...(proxyEnv !== undefined && { proxyEnv }),
           ...(onPartial !== undefined && { onPartial }),
           ...(agentmemoryHandle !== undefined && { agentmemory: agentmemoryHandle }),
+          ...(delegate !== undefined && { delegate }),
           // Plumb the runner's event bus + run/step identifiers so any
           // McpHost the backend brings up itself can publish tool.call /
           // tool.result events that the runner audits. Without this,

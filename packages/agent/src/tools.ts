@@ -11,6 +11,7 @@ import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promise
 import { basename, isAbsolute, resolve } from 'node:path'
 
 import { PermissionDeniedError } from '@skelm/core'
+import type { DelegateResult } from '@skelm/core'
 import type { PermissionDimension } from '@skelm/core/permissions'
 import type { TrustEnforcer } from '@skelm/core/permissions'
 import type { Skill } from '@skelm/core/skills'
@@ -37,6 +38,13 @@ export interface ToolExecutionContext {
         stepId?: string
       }
     | undefined
+  /**
+   * Hand off to another agent/pipeline by id, supplied by the runtime when
+   * delegation is available for this step. The `delegate` tool calls this after
+   * `enforcer.canDelegate` allows the target. Undefined means delegation is not
+   * wired (no pipelineRegistry / no resolved policy) for this run.
+   */
+  delegate?: ((agentId: string, input: unknown) => Promise<DelegateResult>) | undefined
 }
 
 export type ToolHandler = (args: unknown, ctx: ToolExecutionContext) => Promise<ToolResult>

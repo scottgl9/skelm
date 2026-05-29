@@ -76,6 +76,7 @@ export type {
   BackendContext,
   BackendId,
   ContentPart,
+  DelegateResult,
   McpServerConfig,
   InferRequest,
   InferResponse,
