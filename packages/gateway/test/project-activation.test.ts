@@ -200,3 +200,74 @@ describe('POST /v1/projects/activate', () => {
     }
   })
 })
+
+describe('GET /v1/active and POST /v1/workflows/:id/deactivate', () => {
+  async function activate(base: string, dir: string) {
+    const res = await fetch(`${base}/v1/projects/activate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dir }),
+    })
+    expect(res.status).toBe(200)
+    return res.json()
+  }
+
+  it('lists the activated persistent workflow and its queue trigger', async () => {
+    const proj = join(projectRoot, 'proj')
+    await writeProject(proj)
+    const { gw, base } = await boot()
+    try {
+      await activate(base, proj)
+      const view = await fetch(`${base}/v1/active`).then((r) => r.json())
+      expect(view.persistentWorkflows).toEqual([
+        expect.objectContaining({
+          workflowId: 'echo-assistant',
+          sessions: { count: 0, lastUpdatedAt: null },
+        }),
+      ])
+      expect(view.triggers).toEqual([
+        expect.objectContaining({ workflowId: 'echo-assistant', kind: 'queue', driver: 'mem' }),
+      ])
+      expect(view.runsInFlight).toEqual([])
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('deactivates a workflow: unregisters its triggers, leaving sessions intact', async () => {
+    const proj = join(projectRoot, 'proj')
+    await writeProject(proj)
+    const { gw, base } = await boot()
+    try {
+      await activate(base, proj)
+      expect(gw.managers.triggers.list()).toHaveLength(1)
+
+      const res = await fetch(`${base}/v1/workflows/echo-assistant/deactivate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.deactivated).toBe(true)
+      expect(body.triggersRemoved).toHaveLength(1)
+      expect(gw.managers.triggers.list()).toEqual([])
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('404 when deactivating a workflow with no live triggers', async () => {
+    const { gw, base } = await boot()
+    try {
+      const res = await fetch(`${base}/v1/workflows/ghost/deactivate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      expect(res.status).toBe(404)
+    } finally {
+      await gw.stop()
+    }
+  })
+})

@@ -65,9 +65,11 @@ The `:id` path segment is the workflow-registry id — by default this is the fi
 
 ## Projects
 
-| Method | Path                     | Description                                                  |
-| ------ | ------------------------ | ----------------------------------------------------------- |
-| POST   | `/v1/projects/activate`  | Activate a project directory; body `{ dir }`                |
+| Method | Path                              | Description                                                  |
+| ------ | --------------------------------- | ----------------------------------------------------------- |
+| POST   | `/v1/projects/activate`           | Activate a project directory; body `{ dir }`                |
+| GET    | `/v1/active`                      | Running view: persistent workflows, triggers, in-flight runs |
+| POST   | `/v1/workflows/:id/deactivate`    | Stop a workflow; body `{ cancelInflight? }`                 |
 
 `activate` is how `skelm run <dir>` lands a triggered/persistent project on a
 running gateway. The gateway imports the directory's `skelm.config.*` **in its
@@ -85,6 +87,15 @@ live is recorded per turn through the single audit writer as `permission.bypasse
 
 Re-activating an already-active directory is an idempotent refresh
 (`refresh: true`).
+
+`GET /v1/active` is the running view behind `skelm list`: it groups trigger
+registrations by workflow, reports persistent-workflow session counts, and lists
+in-flight runs. `POST /v1/workflows/:id/deactivate` is `skelm stop <id>` — it
+unregisters every trigger for the workflow (stopping its queue driver) and drops
+the registration so a reload will not re-arm it; persisted sessions are kept so a
+re-activation resumes the conversation. Pass `{ cancelInflight: true }` to also
+cancel the workflow's running turns. This is distinct from `skelm gateway stop`
+(stops the whole process) and `DELETE /schedules/:id` (removes one trigger).
 
 ## Schedules
 
