@@ -27,6 +27,7 @@ value:createSkillSource
 value:createTriggerDispatcher
 value:defaultAcpSessionStorePath
 value:isProcessAlive
+value:pipelineTriggerToSpec
 value:readDiscovery
 value:readLockfile
 value:redact

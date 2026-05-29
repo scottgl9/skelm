@@ -1,5 +1,5 @@
+import { pipelineTriggerToSpec } from '@skelm/gateway'
 import { describe, expect, it } from 'vitest'
-import { pipelineTriggerToSpec } from '../src/gateway.js'
 
 describe('pipelineTriggerToSpec', () => {
   it('forwards `dedupe` for webhook triggers (Issue #150)', () => {

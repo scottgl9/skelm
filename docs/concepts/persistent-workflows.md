@@ -78,6 +78,10 @@ A session is one durable conversation. The `agent.sessionKey` function decides t
 
 Each session record holds a stable `sessionId`, the serialized conversation, a turn count, and timestamps. See `PersistentSessionRecord`, `loadSession`, and `saveSession` in `@skelm/core`.
 
+## Running one
+
+A persistent workflow is driven by its trigger sources, not by a direct CLI invocation. `skelm run <dir>` on a project whose `skelm.config.*` declares `triggerSources` **activates** the project on the gateway: the gateway imports the config in its own process, registers the trigger sources and backends, registers the workflow, arms its triggers, and takes ownership — the CLI then exits. The workflow keeps running on the gateway, driven by inbound messages. A plain one-shot pipeline still runs and waits inline as before; only triggered/persistent projects activate. See the activate endpoint under [HTTP reference](/reference/http) for the security model (path-gated grants).
+
 ## See also
 
 - [Telegram persistent-workflow recipe](/recipes/telegram-persistent-workflow) — a full freewheeling chat bot, end to end.
