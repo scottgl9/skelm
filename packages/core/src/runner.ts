@@ -593,9 +593,16 @@ export async function runPipeline<TInput, TOutput>(
   if (store !== undefined) {
     events.subscribe((event) => {
       if (event.type === 'run.waiting') {
+        // Persist BOTH the waiting snapshot AND the 'waiting' status. Without
+        // the status flip, a wait-paused run looks like 'running' to the
+        // gateway's recoverInterruptedRuns() at restart and gets finalized as
+        // failed (RunCrashedError) — silently killing parked runs on every
+        // gateway bounce. The status is restored to 'running' on resume so
+        // the rest of the run executes as before.
         storeWrites.push(
           store
             .updateRun(event.runId, {
+              status: 'waiting',
               waiting: {
                 stepId: event.stepId,
                 ...(event.message !== undefined && { message: event.message }),
@@ -606,7 +613,11 @@ export async function runPipeline<TInput, TOutput>(
             .catch(() => {}),
         )
       } else if (event.type === 'run.resumed') {
-        storeWrites.push(store.updateRun(event.runId, { waiting: undefined }).catch(() => {}))
+        storeWrites.push(
+          store
+            .updateRun(event.runId, { status: 'running', waiting: undefined })
+            .catch(() => {}),
+        )
       }
     })
   }
