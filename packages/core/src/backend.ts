@@ -593,6 +593,53 @@ export class BackendNetworkError extends Error {
 }
 
 /**
+ * Thrown when an upstream provider rejects the request as unauthenticated /
+ * unauthorized (401/403 family). Previously redeclared per backend
+ * (opencode, pi, pi-sdk); consolidated here so callers can `catch` once.
+ */
+export class BackendAuthenticationError extends Error {
+  override readonly name = 'BackendAuthenticationError'
+  constructor(
+    message: string,
+    readonly backendId?: BackendId,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options)
+  }
+}
+
+/**
+ * Thrown when an upstream provider rejects the request due to rate limiting
+ * (429 / Retry-After). Consolidated from per-backend variants.
+ */
+export class BackendRateLimitError extends Error {
+  override readonly name = 'BackendRateLimitError'
+  constructor(
+    message: string,
+    readonly backendId?: BackendId,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options)
+  }
+}
+
+/**
+ * Thrown when a backend operation exceeds its configured timeout, either
+ * client-side (AbortSignal trip) or upstream-reported. Distinct from
+ * BackendNetworkError — the connection was fine, the work was just too slow.
+ */
+export class BackendTimeoutError extends Error {
+  override readonly name = 'BackendTimeoutError'
+  constructor(
+    message: string,
+    readonly backendId?: BackendId,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options)
+  }
+}
+
+/**
  * Thrown when an agent session operation (create, prompt, mcp.add,
  * subscribe) fails. Wraps the upstream error payload as `cause`.
  */
