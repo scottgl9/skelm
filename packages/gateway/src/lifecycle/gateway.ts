@@ -6,6 +6,7 @@ import {
   type AgentPermissions,
   type ApprovalGate,
   type AuditWriter,
+  BackendRegistry,
   DEFAULT_CONFIG,
   EnvSecretResolver,
   EventBus,
@@ -110,6 +111,9 @@ export class Gateway {
   private readonly breakpointsInternal: import('../debug/breakpoint-registry.js').BreakpointRegistry
   private workflowRegistrationInternal: WorkflowRegistrationService | null = null
   private workflowArchiveInternal: WorkflowArchiveService | null = null
+  /** Backend registry, seeded from GatewayOptions; mutable so a runtime-
+   *  activated project can absorb additional backends (see absorbBackends). */
+  private backendsInternal: import('@skelm/core').BackendRegistry | undefined
   /** In-flight reload promise; null when no reload is running. */
   private reloadInFlight: Promise<void> | null = null
   /** Coalesced follow-up reload promise — at most one outstanding. */
@@ -163,6 +167,7 @@ export class Gateway {
       }
     }
     this.breakpointsInternal = new BreakpointRegistry()
+    this.backendsInternal = options.backends
   }
 
   getState(): GatewayState {
@@ -233,7 +238,33 @@ export class Gateway {
    *  this through so runs see the same backends config-defined or
    *  pre-built instances would. */
   get backends(): import('@skelm/core').BackendRegistry | undefined {
-    return this.options.backends
+    return this.backendsInternal
+  }
+
+  /**
+   * Absorb the backends from a runtime-activated project's registry into this
+   * gateway's registry, idempotently. A backend whose id is already registered
+   * is left untouched — an activated config can add backends but never hijack
+   * an already-trusted id. A gateway that booted without any registry gains one
+   * lazily. Returns the ids that were newly registered vs. already present.
+   */
+  absorbBackends(registry: import('@skelm/core').BackendRegistry): {
+    absorbed: string[]
+    skipped: string[]
+  } {
+    if (this.backendsInternal === undefined) {
+      this.backendsInternal = new BackendRegistry()
+    }
+    const absorbed: string[] = []
+    const skipped: string[] = []
+    for (const backend of registry.list()) {
+      if (this.backendsInternal.registerIfAbsent(backend) === 'registered') {
+        absorbed.push(backend.id)
+      } else {
+        skipped.push(backend.id)
+      }
+    }
+    return { absorbed, skipped }
   }
 
   /**
@@ -419,7 +450,7 @@ export class Gateway {
       store: this.runStore,
       events: this.events,
       workspaceManager: this.workspaceManager,
-      ...(this.options.backends !== undefined && { backends: this.options.backends }),
+      ...(this.backendsInternal !== undefined && { backends: this.backendsInternal }),
     })
     this.attachMetricsBus(runner.events)
     const controller = new AbortController()
@@ -643,6 +674,17 @@ export class Gateway {
       })
   }
 
+  /**
+   * Wire the agentmemory client from the current config if it is not already
+   * wired. Idempotent: a no-op when the client is present. `reload()` swaps the
+   * config but does not (re)initialize agentmemory, so project activation that
+   * adopts an agentmemory block calls this after reload to bring the client up.
+   */
+  async reinitAgentmemory(): Promise<void> {
+    if (this.agentmemoryClient !== null) return
+    await this.initAgentmemory()
+  }
+
   /** True when the gateway has the agentmemory client wired. */
   get agentmemoryEnabled(): boolean {
     return this.agentmemoryClient !== null
@@ -683,7 +725,7 @@ export class Gateway {
           createTriggerDispatcher({
             gateway: this,
             loadWorkflow,
-            ...(this.options.backends !== undefined && { backends: this.options.backends }),
+            ...(this.backendsInternal !== undefined && { backends: this.backendsInternal }),
           }),
         )
       }
