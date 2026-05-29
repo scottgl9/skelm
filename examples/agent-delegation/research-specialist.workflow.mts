@@ -7,16 +7,23 @@ import { z } from 'zod'
  * It declares its own (narrow) permissions; whatever the router grants is
  * intersected on top, so the specialist can only ever have less.
  */
+// Accept either a bare string or a { question } object — a delegating model
+// may pass the input in either shape, so the specialist tolerates both.
+const Input = z.union([z.string().min(1), z.object({ question: z.string().min(1) })])
+
 export default pipeline({
   id: 'research-specialist',
   description: 'Answers focused research questions in a few sentences.',
-  input: z.object({ question: z.string().min(1) }),
+  input: Input,
   steps: [
     agent({
       id: 'answer',
       backend: 'agent',
-      prompt: (ctx) =>
-        `You are a research specialist. Answer this question concisely (2-3 sentences), then stop:\n\n${(ctx.input as { question: string }).question}`,
+      prompt: (ctx) => {
+        const input = ctx.input as z.infer<typeof Input>
+        const question = typeof input === 'string' ? input : input.question
+        return `You are a research specialist. Answer this question concisely (2-3 sentences), then stop:\n\n${question}`
+      },
       permissions: { networkEgress: 'allow' },
       maxTurns: 2,
     }),
