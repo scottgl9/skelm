@@ -21,6 +21,9 @@ value:CronTrigger
 value:CustomTrigger
 value:DEFAULT_ARTIFACT_QUOTA_BYTES
 value:DEFAULT_CONFIG
+value:DEFAULT_MAX_DELEGATION_DEPTH
+value:DelegationCycleError
+value:DelegationDepthError
 value:DiscordTrigger
 value:EnvSecretResolver
 value:EventBus
