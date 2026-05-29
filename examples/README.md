@@ -15,6 +15,7 @@ Runnable workflow examples. Each subdirectory is a self-contained workflow you c
 | `agentmemory/`           | Cross-session recall via the agentmemory integration (two-run pattern).    |
 | `telegram-assistant/`    | Persistent agent over Telegram: durable per-chat conversation + agentmemory.|
 | `tui-assistant/`         | Persistent agent over a local terminal UI: durable session + agentmemory.  |
+| `agent-delegation/`      | Multi-agent: a router `agent()` delegates to a specialist via the `delegate` tool. |
 
 ## Run
 
