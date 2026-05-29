@@ -70,6 +70,28 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
       // persistent workflow with preamble `steps` also satisfies isPipelineish,
       // so it MUST be discriminated by `kind` (isPersistentWorkflow) FIRST.
       let output: unknown
+      // Forward run events to the bound queue driver's onEvent hook (if any) so a
+      // streaming frontend (e.g. a TUI) can render the run live, before the final
+      // onResult. This applies to BOTH persistent-workflow turns and plain
+      // queue-triggered pipelines — the QueueDriver.onEvent contract is the same
+      // on every queue path.
+      const evReg = opts.gateway.managers.triggers.get(ctx.triggerId)
+      const evDriver =
+        evReg !== undefined && evReg.spec.kind === 'queue' && ctx.payload !== undefined
+          ? opts.gateway.managers.triggers.getQueueDriver(
+              (evReg.spec as { driver?: string }).driver ?? '',
+            )
+          : undefined
+      const onEvent: ((event: RunEvent) => void) | undefined =
+        evDriver?.onEvent !== undefined
+          ? (event) => {
+              try {
+                void evDriver.onEvent?.(ctx.payload, event)
+              } catch (err) {
+                opts.onError?.(err as Error, ctx)
+              }
+            }
+          : undefined
       const target = isPersistentWorkflow(exported) ? exported : extractDefault(exported)
       const persistentTarget = isPersistentWorkflow(target)
         ? (target as Parameters<typeof runPersistentWorkflowTurn>[0]['workflow'])
@@ -82,25 +104,6 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         // gate from here on; same-session ordering is preserved by
         // runPersistentWorkflowTurn's per-(workflowId, sessionKey) lock.
         opts.gateway.managers.triggers.markParallel(ctx.triggerId)
-        // Forward run events to the queue driver live (onEvent) so a frontend
-        // can stream the turn as it's generated, before the final onResult.
-        const evReg = opts.gateway.managers.triggers.get(ctx.triggerId)
-        const evDriver =
-          evReg !== undefined && evReg.spec.kind === 'queue' && ctx.payload !== undefined
-            ? opts.gateway.managers.triggers.getQueueDriver(
-                (evReg.spec as { driver?: string }).driver ?? '',
-              )
-            : undefined
-        const onEvent: ((event: RunEvent) => void) | undefined =
-          evDriver?.onEvent !== undefined
-            ? (event) => {
-                try {
-                  void evDriver.onEvent?.(ctx.payload, event)
-                } catch (err) {
-                  opts.onError?.(err as Error, ctx)
-                }
-              }
-            : undefined
         const turn = await runPersistentWorkflowTurn({
           gateway: opts.gateway,
           workflow: persistentTarget,
@@ -145,6 +148,7 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
           ...opts.gateway.defaultPermissionRunOptions(),
           ...opts.gateway.egressRunOptions(),
           ...opts.gateway.agentmemoryRunOptions(),
+          ...(onEvent !== undefined && { onEvent }),
           beforeStep: async (info) => {
             if (breakpoints.has(info.stepId)) {
               await breakpoints.pause({ runId: info.runId, stepId: info.stepId, kind: info.kind })
