@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BackendRegistry, type SkelmBackend, persistentAgent } from '@skelm/core'
+import { BackendRegistry, type SkelmBackend, persistentWorkflow } from '@skelm/core'
 import {
   type TuiFrontend,
   type TuiFrontendIo,
@@ -117,13 +117,14 @@ function wireTui(gw: Gateway, fe: ReturnType<typeof fakeFrontend>): void {
   })
 }
 
-const tuiAgent = persistentAgent<TuiMessageInput>({
+const tuiAgent = persistentWorkflow<TuiMessageInput>({
   id: 'tui-assistant',
-  backend: 'echo',
-  system: 'You are a terminal assistant.',
-  sessionKey: (m) => m.sessionId,
-  promptOf: (m) => m.text,
-  replyOf: (text) => ({ reply: text }),
+  agent: {
+    backend: 'echo',
+    system: 'You are a terminal assistant.',
+    sessionKey: (m) => m.sessionId,
+    reply: (text) => ({ reply: text }),
+  },
 })
 
 describe('tui integration end-to-end (real gateway)', () => {

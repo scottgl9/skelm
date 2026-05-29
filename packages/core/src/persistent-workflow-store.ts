@@ -1,13 +1,13 @@
-// Durable per-session persistence for persistent agents. Backed by the run
-// store's StateStore — no new store type. One record per (agentId, sessionKey),
+// Durable per-session persistence for persistent workflows. Backed by the run
+// store's StateStore — no new store type. One record per (workflowId, sessionKey),
 // holding the serialized conversation plus a stable sessionId threaded into
 // AgentRequest.sessionId and the agentmemory session lifecycle so resumption-
 // capable backends pick up where they left off across fires and restarts.
 
 import type { StateStore } from './run-store.js'
 
-/** StateStore namespace owning all persistent-agent session records. */
-export const PERSISTENT_AGENT_NAMESPACE = 'persistent-agent'
+/** StateStore namespace owning all persistent-workflow session records. */
+export const PERSISTENT_WORKFLOW_NAMESPACE = 'persistent-workflow'
 
 /**
  * A durable conversation session. `conversation` holds whatever the turn runner
@@ -16,7 +16,7 @@ export const PERSISTENT_AGENT_NAMESPACE = 'persistent-agent'
  */
 export interface PersistentSessionRecord {
   version: 1
-  agentId: string
+  workflowId: string
   sessionKey: string
   /** Stable across fires; fed to AgentRequest.sessionId + agentmemory.startSession. */
   sessionId: string
@@ -28,16 +28,19 @@ export interface PersistentSessionRecord {
   updatedAt: number
 }
 
-function stateKey(agentId: string, sessionKey: string): string {
-  return `${agentId}::${sessionKey}`
+function stateKey(workflowId: string, sessionKey: string): string {
+  return `${workflowId}::${sessionKey}`
 }
 
 /** Build a fresh session record with a new stable sessionId. */
-export function createSessionRecord(agentId: string, sessionKey: string): PersistentSessionRecord {
+export function createSessionRecord(
+  workflowId: string,
+  sessionKey: string,
+): PersistentSessionRecord {
   const now = Date.now()
   return {
     version: 1,
-    agentId,
+    workflowId,
     sessionKey,
     sessionId: crypto.randomUUID(),
     conversation: undefined,
@@ -50,17 +53,21 @@ export function createSessionRecord(agentId: string, sessionKey: string): Persis
 /** Load the durable session for a conversation key, or undefined if none yet. */
 export async function loadSession(
   store: StateStore,
-  agentId: string,
+  workflowId: string,
   sessionKey: string,
 ): Promise<PersistentSessionRecord | undefined> {
   return store.getState<PersistentSessionRecord>(
-    PERSISTENT_AGENT_NAMESPACE,
-    stateKey(agentId, sessionKey),
+    PERSISTENT_WORKFLOW_NAMESPACE,
+    stateKey(workflowId, sessionKey),
   )
 }
 
 /** Persist a session record (sets `updatedAt`). */
 export async function saveSession(store: StateStore, rec: PersistentSessionRecord): Promise<void> {
   const next: PersistentSessionRecord = { ...rec, updatedAt: Date.now() }
-  await store.setState(PERSISTENT_AGENT_NAMESPACE, stateKey(rec.agentId, rec.sessionKey), next)
+  await store.setState(
+    PERSISTENT_WORKFLOW_NAMESPACE,
+    stateKey(rec.workflowId, rec.sessionKey),
+    next,
+  )
 }

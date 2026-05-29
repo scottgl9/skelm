@@ -2,9 +2,10 @@
 
 Complete, runnable workflows for the patterns customers ship most often. Each recipe is a self-contained project: full `skelm.config.ts`, full workflow, agent definitions where used, schedule registration, and a "why each piece is here" section explaining the trade-offs.
 
-## Chat bots & persistent agents
+## Chat bots & persistent workflows
 
-- **[Telegram persistent agent](./telegram-persistent-agent.md)** — a chat bot you talk *through*: one durable conversation per chat, surviving restarts, optionally freewheeling via the operator-gated unrestricted bypass. The canonical persistent-agent pattern.
+- **[Telegram persistent workflow](./telegram-persistent-workflow.md)** — a chat bot you talk *through*: one durable conversation per chat, surviving restarts, optionally freewheeling via the operator-gated unrestricted bypass. The canonical persistent-workflow pattern, with a `code()` preamble.
+- **[TUI persistent workflow](./tui-persistent-workflow.md)** — the same pattern driven from a local terminal UI, and the minimal persistent-workflow shape (no preamble, just the terminal agent).
 
 ## Long-running scheduled workflows
 

@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
-import { type BackendRegistry, type RunEvent, Runner, isPersistentAgent } from '@skelm/core'
+import { type BackendRegistry, type RunEvent, Runner, isPersistentWorkflow } from '@skelm/core'
 import { makeGatewayPipelineRegistry } from '../http/routes/utils.js'
 import type { Gateway } from '../lifecycle/gateway.js'
-import { runPersistentTurn } from './persistent-turn.js'
+import { runPersistentWorkflowTurn } from './persistent-workflow-turn.js'
 import type { FireContext, RunCallback } from './types.js'
 
 /**
@@ -64,21 +64,23 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
       }
       const exported = await opts.loadWorkflow(ctx.workflowId, workflowPath)
 
-      // Persistent agents are not pipelines: a fire runs one enforced turn that
-      // loads/saves a durable conversation rather than a fresh pipeline run. The
-      // turn runner owns its own Run registration, so `runId` stays null here.
+      // A persistent workflow runs one enforced turn that loads/saves a durable
+      // conversation rather than a fresh stateless pipeline run. The turn runner
+      // owns its own Run registration, so `runId` stays null here. NOTE: a
+      // persistent workflow with preamble `steps` also satisfies isPipelineish,
+      // so it MUST be discriminated by `kind` (isPersistentWorkflow) FIRST.
       let output: unknown
-      const target = isPersistentAgent(exported) ? exported : extractDefault(exported)
-      const persistentTarget = isPersistentAgent(target)
-        ? (target as Parameters<typeof runPersistentTurn>[0]['agent'])
+      const target = isPersistentWorkflow(exported) ? exported : extractDefault(exported)
+      const persistentTarget = isPersistentWorkflow(target)
+        ? (target as Parameters<typeof runPersistentWorkflowTurn>[0]['workflow'])
         : undefined
       if (persistentTarget !== undefined) {
-        // A persistentAgent multiplexes over independent durable sessions
+        // A persistent workflow multiplexes over independent durable sessions
         // (one per sessionKey), so two queued fires for distinct sessionKeys
         // are NOT racing the same resource and must not be serialized at
         // the trigger level. Tell the coordinator to bypass its inflight
         // gate from here on; same-session ordering is preserved by
-        // runPersistentTurn's per-(workflowId, sessionKey) lock.
+        // runPersistentWorkflowTurn's per-(workflowId, sessionKey) lock.
         opts.gateway.managers.triggers.markParallel(ctx.triggerId)
         // Forward run events to the queue driver live (onEvent) so a frontend
         // can stream the turn as it's generated, before the final onResult.
@@ -99,9 +101,9 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
                 }
               }
             : undefined
-        const turn = await runPersistentTurn({
+        const turn = await runPersistentWorkflowTurn({
           gateway: opts.gateway,
-          agent: persistentTarget,
+          workflow: persistentTarget,
           payload: ctx.payload,
           triggerId: ctx.triggerId,
           ...(opts.backends !== undefined && { backends: opts.backends }),
@@ -176,6 +178,9 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
   }
 }
 
+// NOTE: a persistent workflow with preamble `steps` ALSO has a `steps` array, so
+// this is not a sufficient discriminator on its own — always check
+// isPersistentWorkflow (the `kind` discriminator) first when routing a fire.
 function isPipelineish(value: unknown): value is { steps: readonly unknown[] } {
   return (
     typeof value === 'object' &&
@@ -188,6 +193,6 @@ function isPipelineish(value: unknown): value is { steps: readonly unknown[] } {
 function extractDefault(mod: unknown): unknown {
   if (typeof mod !== 'object' || mod === null) return undefined
   const m = mod as Record<string, unknown>
-  if (isPipelineish(m.default) || isPersistentAgent(m.default)) return m.default
+  if (isPersistentWorkflow(m.default) || isPipelineish(m.default)) return m.default
   return undefined
 }

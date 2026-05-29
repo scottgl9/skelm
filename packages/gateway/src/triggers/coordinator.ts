@@ -167,9 +167,9 @@ export class TriggerCoordinator {
    * Mark a trigger's fires as parallelisable so they bypass the per-trigger
    * inflight gate (and the overlap policy that depends on it). Called by the
    * dispatcher the first time it discovers the registered workflow is a
-   * persistent agent — those fires multiplex over independent durable
+   * persistent workflow — those fires multiplex over independent durable
    * sessions and same-session ordering is owned by the per-session lock
-   * inside `runPersistentTurn`, not by this trigger-level gate.
+   * inside `runPersistentWorkflowTurn`, not by this trigger-level gate.
    *
    * Also clears any in-flight queued backlog and the inflight flag so the
    * currently-draining dispatcher loop stops gating subsequent fires.
@@ -449,11 +449,11 @@ export class TriggerCoordinator {
       ...(effectivePayload !== undefined && { payload: effectivePayload }),
     }
     // Parallel triggers bypass the per-trigger inflight gate entirely:
-    // they multiplex over independent sub-resources (e.g. a persistentAgent
-    // trigger keys by sessionKey), so serializing at the trigger level
+    // they multiplex over independent sub-resources (e.g. a persistent
+    // workflow keys by sessionKey), so serializing at the trigger level
     // would coalesce or drop fires that actually target distinct sessions.
     // Same-session ordering, when required, is owned by the dispatched
-    // workflow itself (runPersistentTurn's per-(workflowId, sessionKey)
+    // workflow itself (runPersistentWorkflowTurn's per-(workflowId, sessionKey)
     // lock), not by this trigger-level gate.
     if (reg.parallel === true) {
       reg.lastFiredAt = ctx.firedAt

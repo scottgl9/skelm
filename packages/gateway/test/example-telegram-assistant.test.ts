@@ -1,24 +1,25 @@
 import { fileURLToPath } from 'node:url'
-import { isPersistentAgent } from '@skelm/core'
+import { isPersistentWorkflow } from '@skelm/core'
 import { describe, expect, it } from 'vitest'
 
-// Guards the shipped telegram-assistant example: if the persistent-agent shape
+// Guards the shipped telegram-assistant example: if the persistent-workflow shape
 // or the unrestricted opt-in drifts, this fails before the README does.
 const EXAMPLE = fileURLToPath(
   new URL('../../../examples/telegram-assistant/assistant.workflow.mts', import.meta.url),
 )
 
 describe('examples/telegram-assistant', () => {
-  it('exports a persistent agent with a per-chat session key and a queue trigger', async () => {
+  it('exports a persistent workflow with a preamble step, per-chat session key, and queue trigger', async () => {
     const mod = (await import(EXAMPLE)) as { default: unknown }
-    const agent = mod.default
-    expect(isPersistentAgent(agent)).toBe(true)
-    if (!isPersistentAgent(agent)) return
+    const wf = mod.default
+    expect(isPersistentWorkflow(wf)).toBe(true)
+    if (!isPersistentWorkflow(wf)) return
 
-    expect(agent.id).toBe('telegram-assistant')
-    expect(agent.sessionKey({ chatId: 'c1' } as never)).toBe('c1')
-    expect(agent.triggers?.[0]).toMatchObject({ kind: 'queue', sourceId: 'telegram' })
+    expect(wf.id).toBe('telegram-assistant')
+    expect(wf.steps?.[0]?.id).toBe('prepare')
+    expect(wf.agent.sessionKey({ chatId: 'c1' } as never)).toBe('c1')
+    expect(wf.triggers?.[0]).toMatchObject({ kind: 'queue', sourceId: 'telegram' })
     // Requests the bypass (inert until the config grants the id).
-    expect(agent.permissions?.requestUnrestricted).toBe(true)
+    expect(wf.agent.permissions?.requestUnrestricted).toBe(true)
   })
 })

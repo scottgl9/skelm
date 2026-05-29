@@ -771,7 +771,7 @@ export async function syncDeclaredTriggers(gateway: Gateway, io: MainIO): Promis
       // Node 22+ produces under CJS interop. Without it, workflows
       // without top-level imports (or test fixtures) silently produce
       // zero declared triggers instead of registering correctly.
-      // Both pipelines and persistent agents expose a `triggers` array, so
+      // Both pipelines and persistent workflows expose a `triggers` array, so
       // trigger discovery is agnostic to which kind the module exported.
       const exported = pickExport(mod, 'default') as
         | { triggers?: readonly Record<string, unknown>[] }
