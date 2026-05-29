@@ -188,6 +188,116 @@ describe('permission enforcement — adversarial', () => {
       /cannot enforce tool, executable, filesystem, MCP, or skill permissions/,
     )
   })
+
+  it('does NOT fail-close a toolPermissions:unsupported backend for operator-default dimensions', async () => {
+    // Regression: the backend-capability fail-close used to be computed from the
+    // fully-RESOLVED policy, so an operator's project-default permissions
+    // (defaultPermissions — tool/executable/fs dimensions) tripped it on a
+    // toolPermissions:'unsupported' backend (e.g. Pi) even though the AUTHOR only
+    // asked for networkEgress. That made such backends fail closed on entry
+    // points that apply defaults (POST /runs, triggers) while working on the ones
+    // that don't (cli, /pipelines/:id/run) — and broke their egress on the former.
+    // The check must consider only AUTHOR-declared dimensions; operator defaults
+    // the backend can't enforce are advisory (egress is still proxy-enforced).
+    const registry = new BackendRegistry()
+    let ran = false
+    const backend: SkelmBackend = {
+      id: 'pi',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'unsupported',
+      },
+      async run() {
+        ran = true
+        return { text: 'ok' }
+      },
+    }
+    registry.register(backend)
+
+    const run = await runPipeline(
+      pipeline({
+        id: 'unsupported-operator-defaults',
+        steps: [
+          agent({
+            id: 'step',
+            backend: 'pi',
+            prompt: 'go',
+            // Author asks ONLY for egress — pi relies on the gateway egress proxy.
+            permissions: { networkEgress: 'allow' },
+          }),
+        ],
+      }),
+      undefined,
+      {
+        backends: registry,
+        // Operator project-default ceiling with tool-class dimensions pi cannot
+        // enforce. These must NOT fail-close the run.
+        defaultPermissions: {
+          allowedExecutables: ['git'],
+          allowedTools: ['fs.read'],
+          fsRead: ['/'],
+        },
+        // Gateway egress proxy present (enforces the network dimension
+        // out-of-band, so the author's networkEgress doesn't fail-close either).
+        registerEgressToken: () => 'tok',
+        getProxyEnv: () => ({ HTTP_PROXY: 'http://127.0.0.1:1' }),
+      },
+    )
+
+    expect(run.status).toBe('completed')
+    expect(ran).toBe(true)
+  })
+
+  it('still fails closed when the AUTHOR declares tool perms on a toolPermissions:unsupported backend, even with an egress proxy', async () => {
+    // The security contract preserved: an author-declared tool/fs restriction on
+    // an incapable backend must still fail closed so the author is warned it
+    // can't be honoured — independent of operator defaults or the egress proxy.
+    const registry = new BackendRegistry()
+    const backend: SkelmBackend = {
+      id: 'pi',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'unsupported',
+      },
+      async run() {
+        return { text: 'should not reach' }
+      },
+    }
+    registry.register(backend)
+
+    const run = await runPipeline(
+      pipeline({
+        id: 'unsupported-author-tools',
+        steps: [
+          agent({
+            id: 'step',
+            backend: 'pi',
+            prompt: 'go',
+            permissions: { allowedTools: ['fs.read'], fsRead: ['./'], networkEgress: 'allow' },
+          }),
+        ],
+      }),
+      undefined,
+      {
+        backends: registry,
+        registerEgressToken: () => 'tok',
+        getProxyEnv: () => ({ HTTP_PROXY: 'http://127.0.0.1:1' }),
+      },
+    )
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('BackendCapabilityError')
+  })
 })
 
 function workflow(prompt: string) {
