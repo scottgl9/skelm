@@ -284,6 +284,7 @@ export type {
 } from './workspace.js'
 export {
   createPolicyFetch,
+  intersectResolvedPolicies,
   resolvePermissions,
   TrustEnforcer,
 } from './permissions.js'
