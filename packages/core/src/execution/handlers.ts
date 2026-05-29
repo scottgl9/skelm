@@ -60,7 +60,6 @@ import type {
 import { WorkspaceManager } from '../workspace.js'
 import {
   assertBackendSupportsPermissions,
-  collectDeclaredPermissionDimensions,
   collectResolvedPermissionDimensions,
   createDetachedWorkspaceRuntime,
   makeSkillLoader,
@@ -521,7 +520,35 @@ async function runAgentStep(
       })
       throw new BackendCapabilityError(detail, backend.id, 'skills')
     }
-    const declaredPermissionDimensions = collectResolvedPermissionDimensions(policy, mcpServers)
+    // Backend-capability fail-close is about what the AUTHOR asked the backend
+    // to enforce — step permissions (+ a workspace's implied fs scope, + named
+    // profiles) — NOT the operator's project-default ceiling. Operator defaults
+    // are a broad baseline applied to every step/backend; a
+    // `toolPermissions: 'unsupported'` backend (e.g. Pi RPC) legitimately can't
+    // enforce skelm's tool/exec/fs dimensions and relies on networkEgress + the
+    // gateway egress proxy. Failing closed on default-origin dimensions makes
+    // such backends unusable on every entry point that applies defaults
+    // (POST /runs, triggers) while they work on the others (cli,
+    // /pipelines/:id/run) — an inconsistency that broke egress on the
+    // default-applying paths. So we re-resolve the policy WITHOUT operator
+    // defaults purely to compute the capability-check dimensions; author-declared
+    // restrictions on an incapable backend still fail closed here (the author is
+    // warned their constraint can't be honoured). The full merged `policy` is
+    // still handed to the TrustEnforcer below, so every dimension the backend CAN
+    // enforce is still enforced.
+    const authorPolicy =
+      step.permissions !== undefined || step.mcp !== undefined || preparedWorkspace !== undefined
+        ? resolvePermissions(
+            undefined,
+            applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
+            runtime?.permissionProfiles,
+            { grantUnrestricted: runtime?.unrestrictedGrant === true },
+          )
+        : undefined
+    const declaredPermissionDimensions = collectResolvedPermissionDimensions(
+      authorPolicy,
+      mcpServers,
+    )
     try {
       assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions, {
         hasEgressProxy: runtime?.registerEgressToken !== undefined,
