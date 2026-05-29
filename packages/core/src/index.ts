@@ -203,9 +203,12 @@ export type {
   PersistentWorkflowDef,
 } from './persistent-workflow.js'
 export {
+  acquireSession,
   createSessionRecord,
   loadSession,
   PERSISTENT_WORKFLOW_NAMESPACE,
+  PersistentSessionLockedError,
+  releaseSession,
   saveSession,
 } from './persistent-workflow-store.js'
 export type { PersistentSessionRecord } from './persistent-workflow-store.js'

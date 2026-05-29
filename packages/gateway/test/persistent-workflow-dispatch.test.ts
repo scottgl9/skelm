@@ -250,8 +250,14 @@ describe('persistent-workflow dispatch', () => {
     await new Promise((r) => setTimeout(r, 80))
 
     // The terminal turn never ran, and no partial conversation was persisted.
+    // (acquireSession does write a record with the advisory lock; what must
+    // be absent is the conversation, since saveSession is gated on a
+    // completed turn. The lock itself was released in the finally so a
+    // retry can re-acquire.)
     expect(seen).toHaveLength(0)
-    await expect(loadSession(gw.runStore, 'bot', 'c1')).resolves.toBeUndefined()
+    const rec = await loadSession(gw.runStore, 'bot', 'c1')
+    expect(rec?.conversation).toBeUndefined()
+    expect(rec?.active).toBeUndefined()
     await gw.stop()
   })
 
