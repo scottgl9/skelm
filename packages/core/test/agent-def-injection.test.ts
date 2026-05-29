@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -36,7 +36,8 @@ function makeAgentBackend(id: string): SkelmBackend & { calls: AgentRequest[] } 
 }
 
 const dirs: string[] = []
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true })))
   dirs.length = 0
 })
 
