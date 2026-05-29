@@ -1237,6 +1237,22 @@ export async function runDelegation(
   backends: BackendRegistry | undefined,
   events?: EventBus,
 ): Promise<DelegateResult> {
+  // Authoritative permission gate: enforce the caller's `delegation` allowlist
+  // here, not only in the native agent's tool. Any backend that calls
+  // ctx.delegate routes through this helper, so the allowlist binds regardless
+  // of which backend (or tool) initiated the hand-off — defense in depth.
+  const decision = new TrustEnforcer(caller.ceiling).canDelegate(agentId)
+  if (!decision.allow) {
+    events?.publish({
+      type: 'permission.denied',
+      runId: caller.runId,
+      stepId: caller.stepId,
+      dimension: 'delegation',
+      detail: `delegate denied: ${agentId} — ${decision.reason}`,
+      at: Date.now(),
+    })
+    throw new PermissionDeniedError(`delegation to "${agentId}" denied (${decision.reason})`)
+  }
   const stack = runtime.delegationStack ?? []
   const depth = runtime.delegationDepth ?? 0
   const maxDepth = runtime.maxDelegationDepth ?? DEFAULT_MAX_DELEGATION_DEPTH

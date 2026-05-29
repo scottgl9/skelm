@@ -37,7 +37,7 @@ function makeCaller(): DelegationCaller {
     runId: 'parent-run',
     stepId: 'router',
     signal: new AbortController().signal,
-    ceiling: resolvePermissions(undefined, { allowedTools: ['*'] }),
+    ceiling: resolvePermissions(undefined, { allowedTools: ['*'], delegation: ['*'] }),
   }
 }
 
@@ -54,6 +54,19 @@ describe('runDelegation — mechanics', () => {
     expect(result.output).toEqual({ echoed: { q: 1 } })
     expect(typeof result.runId).toBe('string')
     expect(result.runId.length).toBeGreaterThan(0)
+  })
+
+  it('enforces the caller delegation allowlist (deny target not on the ceiling)', async () => {
+    const runtime = makeRuntime({ pipelineRegistry: registryOf({ specialist }) })
+    const caller: DelegationCaller = {
+      runId: 'parent-run',
+      stepId: 'router',
+      signal: new AbortController().signal,
+      ceiling: resolvePermissions(undefined, { delegation: ['other.agent'] }),
+    }
+    await expect(
+      runDelegation('specialist', undefined, caller, runtime, undefined),
+    ).rejects.toThrow(/denied/)
   })
 
   it('throws InvokePipelineNotFoundError when the target id is unknown', async () => {
