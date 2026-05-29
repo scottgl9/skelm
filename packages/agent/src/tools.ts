@@ -413,6 +413,64 @@ export const BUILTIN_TOOLS: BuiltInToolDef[] = [
     },
   },
 
+  {
+    name: 'delegate',
+    description:
+      'Hand off a task to another agent or pipeline by id and get its result back. ' +
+      "The target id must be on this step's `delegation` allowlist. Returns a JSON " +
+      'envelope: { status: "completed" | "failed", runId, output?, error? }. Inspect ' +
+      '`status` to decide whether to use the result, retry, or route elsewhere. The ' +
+      "delegated agent runs with at most this agent's permissions.",
+    parameters: {
+      type: 'object',
+      properties: {
+        agentId: {
+          type: 'string',
+          description:
+            'Id of the agent/pipeline to delegate to. Must be on the `delegation` allowlist.',
+        },
+        input: {
+          description: 'Input value passed to the delegated agent/pipeline (any JSON value).',
+        },
+      },
+      required: ['agentId'],
+    },
+    handler: async (args, ctx): Promise<ToolResult> => {
+      const p = args as { agentId?: string; input?: unknown }
+      if (!p.agentId) {
+        return { content: 'Error: agentId is required', isError: true }
+      }
+      const decision = ctx.enforcer.canDelegate(p.agentId)
+      if (!decision.allow) {
+        publishDenied(
+          ctx.events,
+          'delegation',
+          `delegate denied: ${p.agentId} — ${decision.reason}`,
+        )
+        return {
+          content: `Permission denied: cannot delegate to "${p.agentId}" (${decision.reason}). Add it to the step's \`delegation\` allowlist.`,
+          isError: true,
+        }
+      }
+      if (ctx.delegate === undefined) {
+        return {
+          content:
+            'Delegation is unavailable in this run (no pipeline registry is wired). Run via the gateway, or pass a pipelineRegistry to runPipeline().',
+          isError: true,
+        }
+      }
+      try {
+        const result = await ctx.delegate(p.agentId, p.input)
+        // A failed child run is a legitimate structured result, not a tool
+        // error — the agent reads `status` and decides what to do next.
+        return { content: JSON.stringify(result, null, 2) }
+      } catch (err) {
+        // Cycle / depth / unknown-target are refused before any child runs.
+        return { content: `Delegation error: ${(err as Error).message}`, isError: true }
+      }
+    },
+  },
+
   // Run an executable from AgentPermissions.allowedExecutables. No shell is
   // invoked: argv is passed directly to spawn() with shell:false, so shell
   // metacharacters in args are NOT expanded. To run a shell pipeline, the
