@@ -1,10 +1,4 @@
-import {
-  deriveSessionId,
-  endMemoryTurn,
-  extractPromptText,
-  recordMemoryTurn,
-  startMemoryTurn,
-} from '@skelm/agentmemory'
+import { runWithMemoryTurns } from '@skelm/agentmemory'
 import {
   BackendAuthenticationError,
   BackendRateLimitError,
@@ -91,49 +85,42 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
         )
       }
 
-      const sessionIdForMemory = deriveSessionId(request, {
-        ...(context.runId !== undefined && { runId: context.runId }),
-        ...(context.stepId !== undefined && { stepId: context.stepId }),
-      })
       const memoryProject = request.cwd ?? process.cwd()
-      const memoryTurn = await startMemoryTurn(context.agentmemory, {
-        sessionId: sessionIdForMemory,
-        project: memoryProject,
-        cwd: memoryProject,
-        promptText: extractPromptText(request.prompt),
-      })
-
       // Load skills and inject into system prompt before forwarding
       const enrichedRequest = await injectSkills(request, context)
-      const memoryEnrichedRequest =
-        memoryTurn.recallPrefix.length > 0
-          ? {
-              ...enrichedRequest,
-              system:
-                enrichedRequest.system === undefined
-                  ? memoryTurn.recallPrefix
-                  : `${memoryTurn.recallPrefix}${enrichedRequest.system}`,
-            }
-          : enrichedRequest
 
       // Signal and timeout are threaded directly into prompt(); no separate
       // cancel() listener needed — the SSE loop handles abort internally.
       try {
-        const result = await client.prompt(
-          memoryEnrichedRequest,
-          context.signal,
-          options.timeout,
-          policy,
-          context.onPartial,
+        return await runWithMemoryTurns<AgentResponse>(
+          {
+            handle: context.agentmemory,
+            ...(context.runId !== undefined && { runId: context.runId }),
+            ...(context.stepId !== undefined && { stepId: context.stepId }),
+            project: memoryProject,
+          },
+          request,
+          async ({ recallPrefix }) => {
+            const memoryEnrichedRequest =
+              recallPrefix.length > 0
+                ? {
+                    ...enrichedRequest,
+                    system:
+                      enrichedRequest.system === undefined
+                        ? recallPrefix
+                        : `${recallPrefix}${enrichedRequest.system}`,
+                  }
+                : enrichedRequest
+            const result = await client.prompt(
+              memoryEnrichedRequest,
+              context.signal,
+              options.timeout,
+              policy,
+              context.onPartial,
+            )
+            return { result, resultText: result.text ?? '' }
+          },
         )
-        await recordMemoryTurn(context.agentmemory, {
-          sessionId: memoryTurn.sessionId,
-          project: memoryProject,
-          cwd: memoryProject,
-          resultText: result.text ?? '',
-        })
-        await endMemoryTurn(context.agentmemory, memoryTurn.sessionId)
-        return result
       } catch (error) {
         if (error instanceof Error) {
           // The opencode SDK surfaces these conditions as plain Errors
@@ -158,7 +145,6 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
             throw new BackendTimeoutError(error.message, 'opencode', { cause: error })
           }
         }
-        await endMemoryTurn(context.agentmemory, memoryTurn.sessionId)
         throw error
       }
       // Do NOT dispose — server stays alive for subsequent calls

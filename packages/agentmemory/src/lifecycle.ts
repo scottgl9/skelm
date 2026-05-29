@@ -111,3 +111,73 @@ export function extractPromptText(prompt: string | readonly ContentPart[]): stri
     .join(' ')
     .slice(0, 1024)
 }
+
+export interface RunWithMemoryOptions {
+  readonly handle: AgentmemoryHandle | undefined
+  readonly runId?: string
+  readonly stepId?: string
+  /** Stable string forwarded to start/record/end as the project + cwd. */
+  readonly project: string
+}
+
+export interface RunWithMemoryInnerParams {
+  readonly sessionId: string
+  /** Caller prepends this to its system prompt; empty string when no hits. */
+  readonly recallPrefix: string
+}
+
+export interface RunWithMemoryInnerResult<T> {
+  /** The backend-shaped result returned to the caller of runWithMemoryTurns. */
+  readonly result: T
+  /** Text recorded into the memory turn observation; pass '' to skip. */
+  readonly resultText: string
+}
+
+/**
+ * Wrap an inner backend run with the start/observe → run → record → end
+ * lifecycle. Replaces the same boilerplate previously duplicated in
+ * @skelm/agent, codex, opencode, pi, and vercel-ai backends.
+ *
+ * The inner callback receives the recall prefix that should be prepended
+ * to the backend's system prompt (empty string when the handle is
+ * undefined or no recall hits). It must return both the typed result
+ * (returned through unchanged) and the text to record into the turn
+ * observation.
+ *
+ * Behaviour matches the prior open-coded sequence exactly:
+ *   - sessionId comes from `request.sessionId` or `deriveSessionId(...)`.
+ *   - startMemoryTurn opens the session and runs smartSearch.
+ *   - recordMemoryTurn fires on success only.
+ *   - endMemoryTurn fires in `finally` on both success and failure.
+ */
+export async function runWithMemoryTurns<T>(
+  opts: RunWithMemoryOptions,
+  request: { sessionId?: string; prompt: string | readonly ContentPart[] },
+  inner: (params: RunWithMemoryInnerParams) => Promise<RunWithMemoryInnerResult<T>>,
+): Promise<T> {
+  const sessionId = deriveSessionId(request, {
+    ...(opts.runId !== undefined && { runId: opts.runId }),
+    ...(opts.stepId !== undefined && { stepId: opts.stepId }),
+  })
+  const turn = await startMemoryTurn(opts.handle, {
+    sessionId,
+    project: opts.project,
+    cwd: opts.project,
+    promptText: extractPromptText(request.prompt),
+  })
+  try {
+    const { result, resultText } = await inner({
+      sessionId: turn.sessionId,
+      recallPrefix: turn.recallPrefix,
+    })
+    await recordMemoryTurn(opts.handle, {
+      sessionId: turn.sessionId,
+      project: opts.project,
+      cwd: opts.project,
+      resultText,
+    })
+    return result
+  } finally {
+    await endMemoryTurn(opts.handle, turn.sessionId)
+  }
+}

@@ -8,6 +8,7 @@ value:deriveSessionId
 value:endMemoryTurn
 value:extractPromptText
 value:recordMemoryTurn
+value:runWithMemoryTurns
 value:startMemoryTurn
 type:AgentmemoryAuditEvent
 type:AgentmemoryClientOptions
@@ -31,6 +32,9 @@ type:MemorySaveResponse
 type:MemoryTurnInit
 type:MemoryTurnRecord
 type:MemoryTurnResult
+type:RunWithMemoryInnerParams
+type:RunWithMemoryInnerResult
+type:RunWithMemoryOptions
 type:SessionEndRequest
 type:SessionStartRequest
 type:SessionsListRequest
