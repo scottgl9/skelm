@@ -17,7 +17,7 @@
     "format": "biome format --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "guards": "node scripts/guards/default-deny-permissions.ts && node scripts/guards/public-export-baseline.ts && node scripts/guards/gateway-only-enforcement.ts && node scripts/guards/docs-orphans.ts && node scripts/guards/dist-invariants.ts && node scripts/guards/cli-no-core-runtime.ts",
+    "guards": "node scripts/guards/default-deny-permissions.ts && node scripts/guards/public-export-baseline.ts && node scripts/guards/gateway-only-enforcement.ts && node scripts/guards/docs-orphans.ts && node scripts/guards/dist-invariants.ts && node scripts/guards/cli-no-core-runtime.ts && node scripts/guards/backend-contract-exhaustive.ts",
     "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm guards && pnpm test",
     "clean": "pnpm -r clean && rm -rf node_modules",
     "release:dry": "DRY_RUN=1 ./scripts/publish-npm.sh",
