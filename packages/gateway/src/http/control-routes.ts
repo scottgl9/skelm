@@ -27,6 +27,7 @@ import { registerHealthRoutes } from './routes/health.js'
 import { registerMetricsRoutes } from './routes/metrics.js'
 import { registerOpenAIRoutes } from './routes/openai.js'
 import { registerPipelineRoutes } from './routes/pipelines.js'
+import { registerProjectRoutes } from './routes/projects.js'
 import { registerRunRoutes } from './routes/runs.js'
 import { registerScheduleRoutes } from './routes/schedules.js'
 import { registerSecretRoutes } from './routes/secrets.js'
@@ -53,6 +54,7 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
   registerSessionRoutes(router, gateway)
   registerRunRoutes(router, gateway)
   registerPipelineRoutes(router, gateway)
+  registerProjectRoutes(router, gateway)
   registerScheduleRoutes(router, gateway)
   registerOpenAIRoutes(router, gateway)
   registerDashboardRoutes(router, gateway)

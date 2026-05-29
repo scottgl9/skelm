@@ -63,6 +63,29 @@ The `:id` path segment is the workflow-registry id — by default this is the fi
 | GET    | `/triggers`                | List registered triggers             |
 | POST   | `/triggers/:id/fire`       | Manually fire a trigger              |
 
+## Projects
+
+| Method | Path                     | Description                                                  |
+| ------ | ------------------------ | ----------------------------------------------------------- |
+| POST   | `/v1/projects/activate`  | Activate a project directory; body `{ dir }`                |
+
+`activate` is how `skelm run <dir>` lands a triggered/persistent project on a
+running gateway. The gateway imports the directory's `skelm.config.*` **in its
+own process** (the trigger-source drivers and backend instances are live
+objects that cannot cross HTTP), registers its queue drivers, absorbs its
+backend instances, registers its workflow files, arms their declared triggers,
+and merges its `unrestrictedGrants` + `agentmemory` into the running config.
+
+**Security (path-gated).** A `dir` outside the gateway's trusted `projectRoot` /
+`allowedRegistrationDirs` is refused **wholesale and before its config is
+imported** — nothing is registered, no grant is escalated, no backend absorbed
+(`trusted: false` in the response). Importing runs arbitrary top-level code as
+the gateway user, so an untrusted project stays inert. Every grant that goes
+live is recorded per turn through the single audit writer as `permission.bypassed`.
+
+Re-activating an already-active directory is an idempotent refresh
+(`refresh: true`).
+
 ## Schedules
 
 | Method | Path                  | Description                          |

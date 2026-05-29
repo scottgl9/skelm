@@ -80,6 +80,7 @@ export { InMemoryQueueDriver } from './triggers/queue-driver.js'
 export type { QueueDriver } from './triggers/queue-driver.js'
 export { createTriggerDispatcher } from './triggers/dispatcher.js'
 export type { CreateDispatcherOptions, WorkflowLoader } from './triggers/dispatcher.js'
+export { pipelineTriggerToSpec } from './triggers/pipeline-trigger-to-spec.js'
 export type {
   FireContext,
   OverlapPolicy,
