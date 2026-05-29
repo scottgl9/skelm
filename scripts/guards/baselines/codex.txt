@@ -1,7 +1,5 @@
 value:CodexPermissionError
-value:buildAuditEntry
 value:createCodexBackend
-value:filterIds
 value:mapPermissionsToCodex
 type:CodexBackendOptions
 type:CodexPermissionAuditEntry
