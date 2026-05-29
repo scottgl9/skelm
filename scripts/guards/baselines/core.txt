@@ -117,6 +117,7 @@ value:globalCapabilityRegistry
 value:idempotent
 value:imagePart
 value:imagePartFromFile
+value:intersectResolvedPolicies
 value:invoke
 value:isMultimodal
 value:isPersistentWorkflow

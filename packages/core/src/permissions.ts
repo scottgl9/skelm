@@ -22,6 +22,7 @@ export type PermissionDimension =
   | 'fs.read'
   | 'fs.write'
   | 'agentmemory'
+  | 'delegation'
 
 /**
  * Operations the agentmemory dimension can independently allow.
@@ -84,6 +85,14 @@ export interface AgentPermissions {
   allowedMcpServers?: readonly string[]
   /** Skill ids permitted to load. */
   allowedSkills?: readonly string[]
+  /**
+   * Pipeline / agent ids this agent step may hand off to via the `delegate`
+   * tool. Matched like `allowedTools` (exact ids, `foo.*` prefixes, or `*`).
+   * Default-deny: omitted means the agent cannot delegate to anything. A
+   * delegated child's effective permissions are intersected with the parent's,
+   * so this allowlist can only shrink down the delegation chain.
+   */
+  delegation?: ToolMatcher
   /** Secret names the agent step is permitted to access. */
   allowedSecrets?: readonly string[]
   /** Network egress policy. */
@@ -119,6 +128,7 @@ export interface ResolvedPolicy {
   readonly allowedExecutables: ReadonlySet<string>
   readonly allowedMcpServers: ReadonlySet<string>
   readonly allowedSkills: ReadonlySet<string>
+  readonly allowedAgents: ResolvedToolMatcher
   readonly allowedSecrets: ReadonlySet<string>
   readonly networkEgress: NetworkPolicy
   readonly fsRead: ReadonlySet<string>
@@ -216,6 +226,7 @@ export function resolvePermissions(
     allowedExecutables: intersectStrings(inputs.map((p) => p.allowedExecutables)),
     allowedMcpServers: intersectStrings(inputs.map((p) => p.allowedMcpServers)),
     allowedSkills: intersectStrings(inputs.map((p) => p.allowedSkills)),
+    allowedAgents: intersectToolMatchers(inputs.map((p) => p.delegation)),
     allowedSecrets: intersectStrings(inputs.map((p) => p.allowedSecrets)),
     networkEgress: intersectNetwork(inputs.map((p) => p.networkEgress)),
     fsRead: intersectStrings(inputs.map((p) => p.fsRead)),
@@ -224,6 +235,130 @@ export function resolvePermissions(
     agentmemory: intersectAgentmemory(inputs.map((p) => p.agentmemory)),
     unrestricted,
   })
+}
+
+/**
+ * Intersect two already-resolved policies into the strict lower bound of both.
+ * Used to bound a delegated child agent to a subset of its parent's grant:
+ * `ceiling` is the parent's resolved policy (what it was actually granted),
+ * `child` is the child run's own resolved policy. Nothing in the result widens
+ * beyond `ceiling`.
+ *
+ * `unrestricted` follows the parent: an unrestricted ceiling imposes no
+ * constraint and fully empowers the child; a restricted ceiling caps the child
+ * to normal per-dimension enforcement regardless of the child's own grant, so a
+ * restricted parent can never produce an unrestricted child. Denylists are
+ * unioned (a parent's denies also bind the child) and approval gating is unioned
+ * (if either side gates a dimension, the child gates on it).
+ */
+export function intersectResolvedPolicies(
+  ceiling: ResolvedPolicy,
+  child: ResolvedPolicy,
+): ResolvedPolicy {
+  if (ceiling.unrestricted === true) {
+    return Object.freeze({ ...child, unrestricted: true })
+  }
+  return Object.freeze({
+    allowedTools: intersectResolvedMatchers(ceiling.allowedTools, child.allowedTools),
+    deniedTools: unionResolvedMatchers(ceiling.deniedTools, child.deniedTools),
+    allowedExecutables: intersectStringSets(ceiling.allowedExecutables, child.allowedExecutables),
+    allowedMcpServers: intersectStringSets(ceiling.allowedMcpServers, child.allowedMcpServers),
+    allowedSkills: intersectStringSets(ceiling.allowedSkills, child.allowedSkills),
+    allowedAgents: intersectResolvedMatchers(ceiling.allowedAgents, child.allowedAgents),
+    allowedSecrets: intersectStringSets(ceiling.allowedSecrets, child.allowedSecrets),
+    networkEgress: narrowNetwork(ceiling.networkEgress, child.networkEgress),
+    fsRead: intersectStringSets(ceiling.fsRead, child.fsRead),
+    fsWrite: intersectStringSets(ceiling.fsWrite, child.fsWrite),
+    approval: unionApproval(ceiling.approval, child.approval),
+    agentmemory: intersectResolvedAgentmemory(ceiling.agentmemory, child.agentmemory),
+    unrestricted: false,
+  })
+}
+
+// Semantic intersection for ceiling bounding: the result matches an id iff
+// BOTH matchers match it. Unlike the structural author-layer intersection,
+// a `*` ceiling does not erase a narrower child matcher — it imposes no
+// constraint — and an exact id is kept when the other side's prefix covers it.
+function intersectResolvedMatchers(
+  a: ResolvedToolMatcher,
+  b: ResolvedToolMatcher,
+): ResolvedToolMatcher {
+  if (a.star) return b
+  if (b.star) return a
+  const exact = new Set<string>()
+  for (const x of a.exact) {
+    if (matches(b, x)) exact.add(x)
+  }
+  for (const x of b.exact) {
+    if (matches(a, x)) exact.add(x)
+  }
+  const prefixes: string[] = []
+  const keep = (p: string) => {
+    if (!prefixes.includes(p)) prefixes.push(p)
+  }
+  for (const pa of a.prefixes) {
+    for (const pb of b.prefixes) {
+      // The intersection of two prefixes is the more specific one, but only
+      // when one is a prefix of the other; disjoint prefixes match nothing.
+      if (pa.startsWith(pb)) keep(pa)
+      else if (pb.startsWith(pa)) keep(pb)
+    }
+  }
+  return Object.freeze({ exact, prefixes: Object.freeze(prefixes), star: false })
+}
+
+function unionResolvedMatchers(a: ResolvedToolMatcher, b: ResolvedToolMatcher): ResolvedToolMatcher {
+  const prefixes = [...a.prefixes]
+  for (const p of b.prefixes) {
+    if (!prefixes.includes(p)) prefixes.push(p)
+  }
+  return Object.freeze({
+    exact: new Set([...a.exact, ...b.exact]),
+    prefixes: Object.freeze(prefixes),
+    star: a.star || b.star,
+  })
+}
+
+function intersectStringSets(a: ReadonlySet<string>, b: ReadonlySet<string>): ReadonlySet<string> {
+  const out = new Set<string>()
+  for (const x of a) {
+    if (b.has(x)) out.add(x)
+  }
+  return out
+}
+
+function intersectResolvedAgentmemory(
+  a: ResolvedAgentmemoryPolicy,
+  b: ResolvedAgentmemoryPolicy,
+): ResolvedAgentmemoryPolicy {
+  return Object.freeze({
+    allowObserve: a.allowObserve && b.allowObserve,
+    allowSearch: a.allowSearch && b.allowSearch,
+    allowSession: a.allowSession && b.allowSession,
+    allowContext: a.allowContext && b.allowContext,
+    allowSave: a.allowSave && b.allowSave,
+    allowRecall: a.allowRecall && b.allowRecall,
+    allowGraph: a.allowGraph && b.allowGraph,
+  })
+}
+
+function unionApproval(a: ApprovalPolicy | null, b: ApprovalPolicy | null): ApprovalPolicy | null {
+  if (a === null) return b
+  if (b === null) return a
+  const on = [...a.on]
+  for (const dim of b.on) {
+    if (!on.includes(dim)) on.push(dim)
+  }
+  const rememberFor =
+    a.rememberFor === undefined
+      ? b.rememberFor
+      : b.rememberFor === undefined
+        ? a.rememberFor
+        : Math.min(a.rememberFor, b.rememberFor)
+  return {
+    on: Object.freeze(on),
+    ...(rememberFor !== undefined && { rememberFor }),
+  }
 }
 
 const AGENTMEMORY_DENY: ResolvedAgentmemoryPolicy = Object.freeze({
@@ -283,6 +418,14 @@ export class TrustEnforcer {
     }
     if (!matches(this.policy.allowedTools, toolId)) {
       return { allow: false, reason: 'not-in-allowlist', dimension: 'tool' }
+    }
+    return { allow: true }
+  }
+
+  canDelegate(agentId: string): EnforceDecision {
+    if (this.policy.unrestricted === true) return { allow: true }
+    if (!matches(this.policy.allowedAgents, agentId)) {
+      return { allow: false, reason: 'not-in-allowlist', dimension: 'delegation' }
     }
     return { allow: true }
   }
