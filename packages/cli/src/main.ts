@@ -67,7 +67,10 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         return { exitCode: result.exitCode }
       }
       case 'list': {
-        const result = await listCommand({ json: parsed.flags.json === true }, io)
+        const result = await listCommand(
+          { json: parsed.flags.json === true, all: parsed.flags.all === true },
+          io,
+        )
         return { exitCode: result.exitCode }
       }
       case 'describe': {

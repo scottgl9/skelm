@@ -67,9 +67,15 @@ When the argument is a **directory**, `skelm run` behaves one of two ways:
 skelm run builder --input '{"spec":"a workflow that summarizes a GitHub issue"}'
 ```
 
-### `skelm list [--json]`
+### `skelm list [--all] [--json]`
 
-Discover and print pipelines reachable from the current directory.
+Print what the gateway is currently running: persistent workflows, their armed
+triggers (kind/driver, fire count, last-fired, inflight), session counts, and
+in-flight runs. Backed by `GET /v1/active`.
+
+Pass `--all` to instead list the pipelines the gateway has *discovered*
+(registry + glob), regardless of whether anything is running. `--json` emits the
+raw payload for either view.
 
 ### `skelm describe <pipeline> [--json | --format mermaid]`
 
