@@ -1,16 +1,20 @@
-// One enforced turn of a persistent agent.
+// One enforced turn of a persistent workflow.
 //
-// A persistent agent has no resident process: each trigger fire runs exactly
-// one bounded, gateway-enforced, audited turn. We load the durable conversation
-// for the payload's session key, synthesize a single-step agent pipeline, and
-// run it through the SAME Runner + enforcement path a normal triggered pipeline
-// uses (so permissions, audit, egress, and agentmemory all apply — including the
-// operator-gated unrestricted bypass). The updated conversation is persisted so
-// the next fire continues the thread across restarts.
+// A persistent workflow has no resident process: each trigger fire runs FRESH
+// preamble steps followed by exactly one bounded, gateway-enforced, audited
+// agent turn. We load the durable conversation for the payload's session key,
+// synthesize a pipeline whose terminal `'turn'` step is the persistent agent
+// (preceded by the author's preamble steps), and run it through the SAME Runner
+// + enforcement path a normal triggered pipeline uses (so permissions, audit,
+// egress, and agentmemory all apply — including the operator-gated unrestricted
+// bypass). The updated conversation is persisted so the next fire continues the
+// thread across restarts.
 
 import {
   type BackendRegistry,
-  type PersistentAgent,
+  type Context,
+  PERSISTENT_TURN_STEP_ID,
+  type PersistentWorkflow,
   type RunEvent,
   Runner,
   agent,
@@ -33,9 +37,9 @@ interface TurnMessage {
  *  prompt without limit. The full transcript still lives in the session record. */
 const MAX_HISTORY_MESSAGES = 40
 
-export interface RunPersistentTurnOptions {
+export interface RunPersistentWorkflowTurnOptions {
   gateway: Gateway
-  agent: PersistentAgent
+  workflow: PersistentWorkflow
   payload: unknown
   triggerId: string
   backends?: BackendRegistry
@@ -73,39 +77,50 @@ function renderHistory(history: readonly TurnMessage[]): string {
  * Run one turn and return the reply object the queue driver's `onResult` posts.
  * Mirrors the dispatcher's Runner construction so the turn runs through the
  * gateway's real enforcement, with the unrestricted grant resolved here (never
- * from author input).
+ * from author input). Preamble steps run first under their own declared
+ * permissions; only the terminal `'turn'` step carries `agent.permissions`.
  */
-export async function runPersistentTurn(
-  opts: RunPersistentTurnOptions,
+export async function runPersistentWorkflowTurn(
+  opts: RunPersistentWorkflowTurnOptions,
 ): Promise<{ output: unknown }> {
-  const { gateway, agent: a, payload, triggerId } = opts
+  const { gateway, workflow: wf, payload, triggerId } = opts
+  const a = wf.agent
   const sessionKey = a.sessionKey(payload)
-  const userText = (a.promptOf ?? defaultPromptOf)(payload)
-  const lockKey = `${a.id}::${sessionKey}`
+  const lockKey = `${wf.id}::${sessionKey}`
 
   return withSessionLock(lockKey, async () => {
     const rec =
-      (await loadSession(gateway.runStore, a.id, sessionKey)) ??
-      createSessionRecord(a.id, sessionKey)
+      (await loadSession(gateway.runStore, wf.id, sessionKey)) ??
+      createSessionRecord(wf.id, sessionKey)
     const history = Array.isArray(rec.conversation) ? (rec.conversation as TurnMessage[]) : []
 
     const historyBlock = renderHistory(history)
     const system =
       [a.system, historyBlock].filter((s): s is string => !!s).join('\n\n') || undefined
 
+    // The terminal prompt is resolved inside the run because it may read preamble
+    // step outputs (ctx.steps). Capture the resolved text so stored history
+    // records what the agent actually saw; the closure runs once, for 'turn'.
+    let resolvedPrompt = ''
     const turn = pipeline<unknown, { text: string }>({
-      id: a.id,
+      id: wf.id,
       steps: [
+        ...(wf.steps ?? []),
         agent({
-          id: 'turn',
+          id: PERSISTENT_TURN_STEP_ID,
           ...(a.backend !== undefined && { backend: a.backend }),
           ...(system !== undefined && { system }),
-          prompt: userText,
+          prompt: async (ctx) => {
+            resolvedPrompt = a.prompt ? await a.prompt(ctx as Context) : defaultPromptOf(ctx.input)
+            return resolvedPrompt
+          },
           ...(a.permissions !== undefined && { permissions: a.permissions }),
           ...(a.maxTurns !== undefined && { maxTurns: a.maxTurns }),
         }),
       ],
-      finalize: (ctx) => ({ text: ((ctx.steps.turn as { text?: string }).text ?? '').trim() }),
+      finalize: (ctx) => ({
+        text: ((ctx.steps[PERSISTENT_TURN_STEP_ID] as { text?: string }).text ?? '').trim(),
+      }),
     })
 
     const enforcement = gateway.enforcement
@@ -124,35 +139,41 @@ export async function runPersistentTurn(
     const runId = crypto.randomUUID()
     gateway.registerRun(runId, controller, runner)
     try {
-      const handle = runner.start(
-        turn,
-        {},
-        {
-          runId,
-          signal: controller.signal,
-          triggerId,
-          unrestrictedGrant: gateway.isUnrestrictedGranted(a.id),
-          ...gateway.defaultPermissionRunOptions(),
-          ...gateway.egressRunOptions(),
-          ...gateway.agentmemoryRunOptions(),
-          ...(opts.onEvent !== undefined && { onEvent: opts.onEvent }),
-        },
-      )
+      const handle = runner.start(turn, payload ?? {}, {
+        runId,
+        signal: controller.signal,
+        triggerId,
+        unrestrictedGrant: gateway.isUnrestrictedGranted(wf.id),
+        ...gateway.defaultPermissionRunOptions(),
+        ...gateway.egressRunOptions(),
+        ...gateway.agentmemoryRunOptions(),
+        ...(opts.onEvent !== undefined && { onEvent: opts.onEvent }),
+      })
       const result = await handle.wait()
+      // A preamble (or terminal) step failure resolves the run as `failed`
+      // rather than rejecting. Never persist a partial turn: surface the error
+      // so the dispatcher records it and no reply is posted.
+      if (result.status !== 'completed') {
+        throw new Error(
+          `persistent-workflow turn ${wf.id} did not complete (status: ${result.status})${
+            result.error ? `: ${result.error.message}` : ''
+          }`,
+        )
+      }
       const text = (result.output as { text?: string } | undefined)?.text ?? ''
 
       const next = {
         ...rec,
         conversation: [
           ...history,
-          { role: 'user', content: userText },
+          { role: 'user', content: resolvedPrompt },
           { role: 'assistant', content: text },
         ] satisfies TurnMessage[],
         turns: rec.turns + 1,
       }
       await saveSession(gateway.runStore, next)
 
-      return { output: (a.replyOf ?? defaultReplyOf)(text) }
+      return { output: (a.reply ?? defaultReplyOf)(text) }
     } finally {
       gateway.unregisterRun(runId)
     }

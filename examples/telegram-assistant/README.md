@@ -1,13 +1,14 @@
 # telegram-assistant
 
-A **persistent agent** you talk to over Telegram — one durable conversation per
+A **persistent workflow** you talk to over Telegram — one durable conversation per
 chat that survives across messages and gateway restarts. Contrast with the
 sibling [`telegram-bot`](../telegram-bot) example, which runs a fresh, memoryless
 pipeline per message.
 
-This example demonstrates three things together:
+This example demonstrates these things together:
 
-- **Persistent agent** (`persistentAgent()`) with a per-chat `sessionKey`.
+- **Persistent workflow** (`persistentWorkflow()`) with a `code()` preamble step
+  feeding a per-chat session-keyed terminal agent (`agent.sessionKey`).
 - **Agentmemory** wired in for long-term recall across sessions.
 - The **operator-gated unrestricted bypass** — a freewheeling assistant with full
   shell/network/filesystem access.
@@ -51,8 +52,10 @@ request is denied (`permission.denied`).
 
 ## How it works
 
-The gateway routes each inbound Telegram message (a `queue` trigger fire) to one
-enforced [persistent-agent turn](../../docs/concepts/persistent-agents.md): load
-the session for `sessionKey(msg) = msg.chatId`, run one agent turn through the
-gateway's enforcement, persist the updated conversation, post the reply. See the
-[recipe](../../docs/recipes/telegram-persistent-agent.md) for the full walkthrough.
+The gateway routes each inbound Telegram message (a `queue` trigger fire) through
+the [persistent workflow](../../docs/concepts/persistent-workflows.md): the
+`code()` preamble enriches the message, then the terminal turn loads the session
+for `agent.sessionKey(msg) = msg.chatId`, runs one agent turn through the
+gateway's enforcement, persists the updated conversation, and posts the reply. See
+the [recipe](../../docs/recipes/telegram-persistent-workflow.md) for the full
+walkthrough.

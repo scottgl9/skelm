@@ -40,7 +40,8 @@ value:ModelProviderBase
 value:ModelRegistry
 value:NoopAuditWriter
 value:NotImplementedError
-value:PERSISTENT_AGENT_NAMESPACE
+value:PERSISTENT_TURN_STEP_ID
+value:PERSISTENT_WORKFLOW_NAMESPACE
 value:PROTOCOL_VERSION
 value:PermissionDeniedError
 value:PermissionResolver
@@ -118,7 +119,7 @@ value:imagePart
 value:imagePartFromFile
 value:invoke
 value:isMultimodal
-value:isPersistentAgent
+value:isPersistentWorkflow
 value:llm
 value:loadAgentDefinition
 value:loadSession
@@ -129,7 +130,7 @@ value:messageHasImage
 value:parallel
 value:parseDuration
 value:parseSkill
-value:persistentAgent
+value:persistentWorkflow
 value:pickExport
 value:pipeline
 value:pipelineStep
@@ -247,9 +248,10 @@ type:ParallelWaitFor
 type:PermissionDenialReason
 type:PermissionDimension
 type:PermissionResolverOptions
-type:PersistentAgent
-type:PersistentAgentDef
 type:PersistentSessionRecord
+type:PersistentWorkflow
+type:PersistentWorkflowAgentDef
+type:PersistentWorkflowDef
 type:Pipeline
 type:PipelineDescription
 type:PipelineStep

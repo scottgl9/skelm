@@ -39,12 +39,12 @@ Beyond the core dimensions (tools, executables, MCP servers, skills, secrets, ne
 
 ## The unrestricted bypass (freewheeling agents)
 
-Some use cases — a personal chat assistant you talk to over Telegram, a [persistent agent](/concepts/persistent-agents) behaving like a freewheeling shell — want a full bypass of default-deny rather than an exhaustive allow-list. skelm supports this **only as an explicit, operator-gated, audited opt-in**. It never weakens default-deny for anything that does not opt in.
+Some use cases — a personal chat assistant you talk to over Telegram, a [persistent workflow](/concepts/persistent-workflows) behaving like a freewheeling shell — want a full bypass of default-deny rather than an exhaustive allow-list. skelm supports this **only as an explicit, operator-gated, audited opt-in**. It never weakens default-deny for anything that does not opt in.
 
 The bypass is **two-keyed** — both keys are required, and they live on opposite sides of the trust boundary:
 
 1. **Author request** (untrusted): the agent declares `permissions.requestUnrestricted: true`. On its own this flag does **nothing** — it cannot widen a single allow-list. A pipeline therefore cannot self-escalate.
-2. **Operator grant** (trusted): the gateway operator lists the workflow / persistent-agent id in `defaults.unrestrictedGrants` (or the env var `SKELM_UNRESTRICTED_WORKFLOWS`, comma-separated). The gateway passes this grant into `resolvePermissions(..., { grantUnrestricted: true })`; authors can never set it.
+2. **Operator grant** (trusted): the gateway operator lists the workflow / persistent-workflow id in `defaults.unrestrictedGrants` (or the env var `SKELM_UNRESTRICTED_WORKFLOWS`, comma-separated). The gateway passes this grant into `resolvePermissions(..., { grantUnrestricted: true })`; authors can never set it.
 
 ```
 unrestricted = operator-granted  AND  author-requested

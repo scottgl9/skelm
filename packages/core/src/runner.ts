@@ -86,7 +86,7 @@ export interface RunOptions {
   permissionProfiles?: Readonly<Record<string, AgentPermissions>>
   /**
    * Operator grant for the unrestricted bypass. Supplied only by the gateway
-   * (the trust boundary) for workflows / persistent agents it has allowlisted.
+   * (the trust boundary) for workflows / persistent workflows it has allowlisted.
    * A step's `requestUnrestricted` is inert unless this is true. See
    * `docs/concepts/permissions.md`.
    */

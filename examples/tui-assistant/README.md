@@ -1,13 +1,15 @@
 # tui-assistant
 
-A **persistent agent** you talk to from your terminal — one durable conversation
+A **persistent workflow** you talk to from your terminal — one durable conversation
 per TUI session that survives across messages and gateway restarts. It's the
 [`telegram-assistant`](../telegram-assistant) example driven over a local
-terminal UI (the `tui` trigger source) instead of Telegram.
+terminal UI (the `tui` trigger source) instead of Telegram. It's also the minimal
+persistent-workflow shape: no preamble steps, just the terminal agent.
 
-This example demonstrates three things together:
+This example demonstrates these things together:
 
-- **Persistent agent** (`persistentAgent()`) with a per-session `sessionKey`.
+- **Persistent workflow** (`persistentWorkflow()`) with a per-session
+  `agent.sessionKey` and no preamble steps.
 - **Agentmemory** wired in for long-term recall across sessions.
 - The **operator-gated unrestricted bypass** — a freewheeling assistant with full
   shell/network/filesystem access.
@@ -75,9 +77,9 @@ way to iterate on the UI itself.
 
 `tui-frontend.mts` owns the terminal (input prompt + message log) and calls
 `io.submit(line)` for each message you type. The `tui` integration turns that into
-a `queue` trigger fire; the gateway routes it to one enforced
-[persistent-agent turn](../../docs/concepts/persistent-agents.md): load the
-session for `sessionKey(msg) = msg.sessionId`, run one agent turn through the
-gateway's enforcement, persist the updated conversation, and hand the reply back
-to the frontend's `render()`. See the
-[recipe](../../docs/recipes/tui-persistent-agent.md) for the full walkthrough.
+a `queue` trigger fire; the gateway routes it through the
+[persistent workflow](../../docs/concepts/persistent-workflows.md) to its terminal
+turn: load the session for `agent.sessionKey(msg) = msg.sessionId`, run one agent
+turn through the gateway's enforcement, persist the updated conversation, and hand
+the reply back to the frontend's `render()`. See the
+[recipe](../../docs/recipes/tui-persistent-workflow.md) for the full walkthrough.
