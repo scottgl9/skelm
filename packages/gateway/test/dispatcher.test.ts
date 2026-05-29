@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { code, pipeline } from '@skelm/core'
+import { BackendRegistry, type RunEvent, type SkelmBackend, code, llm, pipeline } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   Gateway,
@@ -122,6 +122,75 @@ describe('createTriggerDispatcher', () => {
     expect(onResultSeen).toEqual([
       { payload: { msg: 'hello' }, output: { echoed: { msg: 'hello' } } },
     ])
+    await gw.stop()
+  })
+
+  it('forwards run-stream events to a NON-persistent queue driver onEvent hook (streaming)', async () => {
+    // Regression: onEvent was wired only for persistent-workflow turns; a plain
+    // queue-triggered pipeline with a streaming step delivered nothing to the
+    // driver's onEvent, so a streaming frontend bound to a regular workflow saw
+    // no live deltas. The QueueDriver.onEvent contract is the same on every path.
+    const streamingBackend: SkelmBackend = {
+      id: 'stream',
+      capabilities: {
+        prompt: true,
+        streaming: true,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'native',
+      },
+      async infer(_req, ctx) {
+        for (const delta of ['Hel', 'lo ', 'wor', 'ld']) ctx.onPartial?.(delta)
+        return { text: 'Hello world' }
+      },
+    }
+    const backends = new BackendRegistry()
+    backends.register(streamingBackend)
+
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      backends,
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
+    })
+    await gw.start()
+
+    const wf = pipeline({
+      id: 'stream-wf',
+      steps: [llm({ id: 'gen', backend: 'stream', prompt: 'go' })],
+    })
+
+    const dispatcher = createTriggerDispatcher({
+      gateway: gw,
+      backends,
+      loadWorkflow: async () => ({ default: wf }),
+    })
+    gw.managers.triggers.setOnFire(dispatcher)
+
+    const partials: string[] = []
+    let sawCompleted = false
+    const driver = new InMemoryQueueDriver()
+    driver.onEvent = (_payload, event: RunEvent) => {
+      if (event.type === 'step.partial') partials.push(event.delta)
+      if (event.type === 'run.completed') sawCompleted = true
+    }
+
+    gw.managers.triggers.registerQueueDriver('memq', driver)
+    gw.managers.triggers.register({
+      kind: 'queue',
+      id: 'q',
+      workflowId: 'workflows/hello.workflow.mts',
+      driver: 'memq',
+    })
+
+    driver.push({ msg: 'go' })
+    await new Promise((r) => setTimeout(r, 80))
+
+    expect(partials.join('')).toBe('Hello world')
+    expect(sawCompleted).toBe(true)
     await gw.stop()
   })
 
