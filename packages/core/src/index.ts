@@ -288,6 +288,7 @@ export type {
 } from './workspace.js'
 export {
   ALL_AGENTMEMORY_OPS,
+  ALL_PERMISSION_DIMENSIONS,
   createPolicyFetch,
   intersectResolvedPolicies,
   resolvePermissions,

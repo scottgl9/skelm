@@ -1,4 +1,5 @@
 value:ALL_AGENTMEMORY_OPS
+value:ALL_PERMISSION_DIMENSIONS
 value:AcpClient
 value:AcpProtocolError
 value:AgentDefinitionError
