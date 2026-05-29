@@ -17,14 +17,18 @@ This example demonstrates these things together:
 - The **operator-gated unrestricted bypass** — a freewheeling assistant with full
   shell/network/filesystem access.
 
-The `@skelm/integrations` `tui` source is only the **mechanism** — it bridges a UI
-frontend to the gateway's queue-driver contract. The **UI itself**
-(`tui-frontend.mts`) lives here, built on [Ink](https://github.com/vadimdemedes/ink)
-(a React renderer for the terminal); because the integration is UI-agnostic you
-could swap it for any other terminal-UI library and nothing else changes.
-It uses `createElement` instead of JSX so it runs through the existing `.mts`
-loader; moving it to JSX/TSX would require configuring the TypeScript loader for
-`.tsx`.
+The gateway side is the **headless** `createRemoteTriggerSource()` — it runs no
+UI; it just turns submitted lines into workflow turns and returns the reply. The
+**terminal UI lives in `skelm run`** (the CLI), which activates this project and
+then hosts the chat, POSTing each line to the gateway. This split is what lets
+the gateway run as a background daemon while you still chat from your own
+terminal.
+
+For an *embedded* UI that runs inside a foreground gateway instead, the
+`@skelm/integrations` `tui` integration's `createTriggerSource({ frontend })`
+takes a UI frontend directly — `tui-frontend.mts` here is one such frontend, built
+on [Ink](https://github.com/vadimdemedes/ink), and `drive.mts` exercises it with
+no gateway and no model.
 
 ## ⚠️ Security — read this first
 
@@ -47,22 +51,28 @@ persona before granting the bypass.
 
 ## Run
 
-Start the gateway **in the foreground** so the TUI can bind to your terminal:
+The gateway runs the turns; the terminal chat is hosted by `skelm run` in your
+own process. With a gateway up (foreground or background), point `skelm run` at
+this directory:
 
 ```bash
 # Optional: a running @skelm/agentmemory server (default http://localhost:3111)
 export SKELM_AGENTMEMORY=0          # set to disable agentmemory
 export TUI_SESSION_ID=my-thread     # optional: name the conversation
 
-skelm gateway start                 # foreground; Ctrl-C drains and exits
+skelm gateway start --detach        # or leave it running in another terminal
+skelm run examples/tui-assistant/   # activates the project, then opens the chat
 ```
 
-Type a message and press Enter. The agent replies, remembers the conversation
-(message it again — it has context), and the thread survives a gateway restart
-(reuse the same `TUI_SESSION_ID`). Ask it to do something that needs the shell
-(e.g. "what's the disk usage here?") and — because it's granted — it runs the
-command and reports back. Remove the grant and the same request is denied
-(`permission.denied`).
+`skelm run` activates the project on the gateway (registers the headless TUI
+source + workflow, arms the trigger), then hosts the chat: each line you type is
+sent to the gateway, which runs a turn and returns the reply. Type a message and
+press Enter. The agent replies, remembers the conversation (message it again — it
+has context), and the thread survives a gateway restart (reuse the same
+`TUI_SESSION_ID`). Ask it to do something that needs the shell (e.g. "what's the
+disk usage here?") and — because it's granted — it runs the command and reports
+back. Ctrl-C / Ctrl-D ends the chat and deactivates the workflow (the durable
+conversation is kept).
 
 ## Test the UI on its own
 

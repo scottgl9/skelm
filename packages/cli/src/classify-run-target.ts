@@ -4,7 +4,10 @@ import { CONFIG_FILENAMES, isPersistentWorkflow, loadTsModule, pickExport } from
 import { loadSkelmConfig } from './load-config.js'
 import { resolveWorkflowPath } from './resolve-entrypoint.js'
 
-export type RunTarget = { mode: 'one-shot'; file: string } | { mode: 'activate'; dir: string }
+export type RunTarget =
+  | { mode: 'one-shot'; file: string }
+  | { mode: 'activate'; dir: string }
+  | { mode: 'tui'; dir: string; sourceId: string }
 
 /**
  * Decide how `skelm run <path>` should treat its argument:
@@ -38,6 +41,13 @@ export async function classifyRunTarget(
   const configFile = CONFIG_FILENAMES.map((name) => join(abs, name)).find((p) => existsSync(p))
   if (configFile !== undefined) {
     const { config } = await loadSkelmConfig({ explicitPath: configFile })
+    // A CLI-hosted TUI source (createRemoteTriggerSource) is tagged
+    // `transport: 'tui'` on its live driver object. `skelm run` activates the
+    // project and then hosts the terminal UI in this process.
+    const tui = (config.triggerSources ?? []).find(
+      (e) => (e.driver as { transport?: unknown }).transport === 'tui',
+    )
+    if (tui !== undefined) return { mode: 'tui', dir: abs, sourceId: tui.id }
     if ((config.triggerSources?.length ?? 0) > 0) return { mode: 'activate', dir: abs }
     const entry = await resolveWorkflowPath(workflowPath, cwd)
     try {

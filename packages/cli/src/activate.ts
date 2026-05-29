@@ -2,7 +2,7 @@ import { EXIT, type ExitCode } from './exit-codes.js'
 import { fetchHttp, httpError, requireGateway } from './internal/gateway-client.js'
 import type { MainIO } from './internal/io.js'
 
-interface ActivationResponse {
+export interface ActivationResponse {
   project: { dir: string; configPath: string | null }
   trusted: boolean
   workflows: { id: string; kind: string }[]
@@ -12,6 +12,37 @@ interface ActivationResponse {
   agentmemory: string
   refresh: boolean
   message?: string
+}
+
+interface GatewayClient {
+  discovery: { url: string }
+  headers: Record<string, string>
+}
+
+/**
+ * POST the directory to /v1/projects/activate. Returns the parsed response, or
+ * null when the request failed (the error was already written to stderr).
+ */
+export async function requestActivation(
+  client: GatewayClient,
+  dir: string,
+  io: MainIO,
+): Promise<ActivationResponse | null> {
+  const res = await fetchHttp(
+    `${client.discovery.url}/v1/projects/activate`,
+    {
+      method: 'POST',
+      headers: { ...client.headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ dir }),
+    },
+    io,
+  )
+  if (res === null) return null
+  if (!res.ok) {
+    await httpError(res, io)
+    return null
+  }
+  return (await res.json()) as ActivationResponse
 }
 
 /**
@@ -24,19 +55,8 @@ export async function activateProject(dir: string, io: MainIO): Promise<{ exitCo
   const client = await requireGateway(io)
   if (client === null) return { exitCode: EXIT.CLI_ERROR }
 
-  const res = await fetchHttp(
-    `${client.discovery.url}/v1/projects/activate`,
-    {
-      method: 'POST',
-      headers: { ...client.headers, 'content-type': 'application/json' },
-      body: JSON.stringify({ dir }),
-    },
-    io,
-  )
-  if (res === null) return { exitCode: EXIT.CLI_ERROR }
-  if (!res.ok) return (await httpError(res, io)) as { exitCode: ExitCode }
-
-  const body = (await res.json()) as ActivationResponse
+  const body = await requestActivation(client, dir, io)
+  if (body === null) return { exitCode: EXIT.CLI_ERROR }
 
   if (!body.trusted) {
     io.stderr.write(

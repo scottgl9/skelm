@@ -21,6 +21,7 @@ import {
 import type { MainIO } from './internal/io.js'
 import { safeForTty } from './internal/safe-text.js'
 import { CliError } from './load-workflow.js'
+import { tuiCommand } from './tui.js'
 
 export interface RunCommandArgs {
   workflowPath: string
@@ -79,6 +80,9 @@ export async function runCommand(
     const target = await classifyRunTarget(workflowPath)
     if (target.mode === 'activate') {
       return activateProject(target.dir, io as MainIO)
+    }
+    if (target.mode === 'tui') {
+      return tuiCommand({ dir: target.dir, sourceId: target.sourceId }, io as MainIO)
     }
     input = await resolveInput(args, io.stdin)
     absPath = target.file

@@ -87,6 +87,93 @@ export interface CreateTuiTriggerSourceOptions {
  * terminal-UI library. Needs no credentials; it binds to a local frontend
  * rather than a remote service.
  */
+export interface CreateRemoteTuiTriggerSourceOptions {
+  /** Display name of the local user. Default: `'you'`. */
+  from?: string
+  /** Per-turn reply timeout in ms. Default: 120_000. */
+  replyTimeoutMs?: number
+}
+
+/**
+ * A headless TUI trigger source for the gateway side of a split UI. Unlike
+ * {@link TuiIntegration.createTriggerSource}, it builds NO frontend — the
+ * terminal UI lives in the `skelm run` CLI process. The gateway registers this
+ * as the project's queue driver; the CLI POSTs each user line to
+ * `/v1/tui/:sourceId/submit`, which calls {@link submit} here. submit fires the
+ * workflow with a {@link TuiMessageInput} and resolves with the turn's reply,
+ * correlated by the per-source `seq` echoed back through {@link onResult}.
+ */
+export interface RemoteTuiTriggerSource extends TuiTriggerSource {
+  /** Discriminator the gateway uses to tag this source as CLI-hosted. */
+  readonly transport: 'tui'
+  /** Inject one user line and resolve with the workflow's reply. */
+  submit(input: { sessionId: string; text: string; from?: string }): Promise<{ reply: string }>
+}
+
+export function createRemoteTriggerSource(
+  options: CreateRemoteTuiTriggerSourceOptions = {},
+): RemoteTuiTriggerSource {
+  const defaultFrom = options.from ?? 'you'
+  const replyTimeoutMs = options.replyTimeoutMs ?? 120_000
+  let onMessage: ((payload?: unknown) => Promise<void>) | null = null
+  let seq = 0
+  const pending = new Map<
+    number,
+    { resolve: (r: { reply: string }) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
+  >()
+
+  return {
+    transport: 'tui',
+    start({ onMessage: fn }): void {
+      onMessage = fn
+      seq = 0
+    },
+    stop(): void {
+      onMessage = null
+      for (const p of pending.values()) {
+        clearTimeout(p.timer)
+        p.reject(new Error('tui source stopped'))
+      }
+      pending.clear()
+    },
+    onResult(payload: unknown, output: unknown): void {
+      const s = (payload as { seq?: unknown } | undefined)?.seq
+      if (typeof s !== 'number') return
+      const entry = pending.get(s)
+      if (entry === undefined) return
+      clearTimeout(entry.timer)
+      pending.delete(s)
+      const reply = (output as { reply?: unknown } | undefined)?.reply
+      entry.resolve({ reply: typeof reply === 'string' ? reply : '' })
+    },
+    async submit(input: {
+      sessionId: string
+      text: string
+      from?: string
+    }): Promise<{ reply: string }> {
+      if (onMessage === null) throw new Error('tui source not started')
+      seq += 1
+      const mySeq = seq
+      const payload: TuiMessageInput = {
+        sessionId: input.sessionId,
+        from: input.from ?? defaultFrom,
+        text: input.text,
+        seq: mySeq,
+      }
+      const result = new Promise<{ reply: string }>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          pending.delete(mySeq)
+          reject(new Error('tui turn timed out'))
+        }, replyTimeoutMs)
+        timer.unref?.()
+        pending.set(mySeq, { resolve, reject, timer })
+      })
+      await onMessage(payload)
+      return result
+    },
+  }
+}
+
 export class TuiIntegration extends IntegrationBase {
   readonly id = 'tui' as const
   readonly name = 'Terminal UI'
