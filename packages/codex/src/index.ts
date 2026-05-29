@@ -8,12 +8,7 @@
  */
 
 export { createCodexBackend } from './backend.js'
-export {
-  CodexPermissionError,
-  buildAuditEntry,
-  filterIds,
-  mapPermissionsToCodex,
-} from './permission-mapper.js'
+export { CodexPermissionError, mapPermissionsToCodex } from './permission-mapper.js'
 export type {
   CodexBackendOptions,
   CodexPermissionAuditEntry,

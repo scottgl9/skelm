@@ -11,10 +11,9 @@ export type { OpencodeBackendConfig } from './factory.js'
 export { OpencodeProvider, createOpencodeProvider } from './provider.js'
 export { OpencodeClientWrapper } from './client.js'
 export {
-  mapSkelmPermissionsToOpencode,
-  mapOpencodePermissionsToSkelm,
-  validatePermissions,
   buildPermissionAuditEntry,
+  mapSkelmPermissionsToOpencode,
+  validatePermissions,
 } from './permission-mapper.js'
 
 export type {
