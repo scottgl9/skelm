@@ -5,7 +5,13 @@ import {
   recordMemoryTurn,
   startMemoryTurn,
 } from '@skelm/agentmemory'
-import { PermissionDeniedError, loadSkillBodies } from '@skelm/core'
+import {
+  BackendAuthenticationError,
+  BackendRateLimitError,
+  BackendTimeoutError,
+  PermissionDeniedError,
+  loadSkillBodies,
+} from '@skelm/core'
 import type {
   AgentRequest,
   AgentResponse,
@@ -136,16 +142,19 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
           if (error.message.includes('Authentication')) {
             throw new BackendAuthenticationError(
               `Opencode authentication failed: ${error.message}`,
+              'opencode',
               { cause: error },
             )
           }
           if (error.message.includes('Rate limit')) {
-            throw new BackendRateLimitError(`Opencode rate limit exceeded: ${error.message}`, {
-              cause: error,
-            })
+            throw new BackendRateLimitError(
+              `Opencode rate limit exceeded: ${error.message}`,
+              'opencode',
+              { cause: error },
+            )
           }
           if (error.message.includes('timed out')) {
-            throw new BackendTimeoutError(error.message, { cause: error })
+            throw new BackendTimeoutError(error.message, 'opencode', { cause: error })
           }
         }
         await endMemoryTurn(context.agentmemory, memoryTurn.sessionId)
@@ -207,29 +216,5 @@ function createEmptyPolicy(): ResolvedPolicy {
       allowRecall: false,
       allowGraph: false,
     },
-  }
-}
-
-/**
- * Custom error types for opencode backend
- */
-export class BackendAuthenticationError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options)
-    this.name = 'BackendAuthenticationError'
-  }
-}
-
-export class BackendRateLimitError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options)
-    this.name = 'BackendRateLimitError'
-  }
-}
-
-export class BackendTimeoutError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options)
-    this.name = 'BackendTimeoutError'
   }
 }

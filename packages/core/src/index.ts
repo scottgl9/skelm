@@ -46,12 +46,15 @@ export type {
 
 export {
   AgentMaxTurnsError,
+  BackendAuthenticationError,
   BackendCapabilityError,
   BackendConfigError,
   BackendNetworkError,
   BackendNotFoundError,
+  BackendRateLimitError,
   BackendRegistry,
   BackendSessionError,
+  BackendTimeoutError,
   BackendUnavailableError,
   BackendUpstreamError,
   LLMTruncatedError,
