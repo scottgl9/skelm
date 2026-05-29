@@ -35,7 +35,12 @@ import type {
   PermissionDimension,
   ResolvedPolicy,
 } from './permissions.js'
-import { TrustEnforcer, createPolicyFetch, resolvePermissions } from './permissions.js'
+import {
+  ALL_PERMISSION_DIMENSIONS,
+  TrustEnforcer,
+  createPolicyFetch,
+  resolvePermissions,
+} from './permissions.js'
 import {
   type ArtifactStore,
   type ArtifactStoreHandle,
@@ -322,15 +327,37 @@ export class Runner {
       }
       // A full permission bypass is a security event: record it durably so the
       // audit log shows when default-deny was intentionally short-circuited.
+      // We emit ONE summary row plus one row PER dimension, all flagged
+      // `actor: 'step-author'` to distinguish step-author-requested
+      // escalation from runtime-emitted denials (`actor: 'runtime'`). Per-
+      // dimension rows let `skelm audit query --action 'permission.bypass.*'`
+      // enumerate exactly what the bypass enabled, which the prior single
+      // summary row could not surface (plan §1.4).
       if (event.type === 'permission.bypassed') {
-        void this.enforcement.auditWriter
+        const summary = this.enforcement.auditWriter
           .write({
             runId: event.runId,
-            actor: 'runtime',
+            actor: 'step-author',
             action: 'permission.bypassed',
-            details: { stepId: event.stepId, detail: event.detail, at: event.at },
+            details: {
+              stepId: event.stepId,
+              detail: event.detail,
+              at: event.at,
+              dimensions: [...ALL_PERMISSION_DIMENSIONS],
+            },
           })
           .catch(() => {})
+        void summary
+        for (const dimension of ALL_PERMISSION_DIMENSIONS) {
+          void this.enforcement.auditWriter
+            .write({
+              runId: event.runId,
+              actor: 'step-author',
+              action: `permission.bypass.${dimension}`,
+              details: { stepId: event.stepId, dimension, at: event.at },
+            })
+            .catch(() => {})
+        }
       }
       // Record successful tool calls so the audit log captures legitimate
       // privileged operations, not just denials.
@@ -616,6 +643,39 @@ export async function runPipeline<TInput, TOutput>(
             at: event.at,
           },
         })
+      } else if (event.type === 'permission.bypassed') {
+        // Per-dimension fan-out so `skelm audit query` can enumerate
+        // exactly what an operator-granted bypass enabled. Kept in lock-
+        // step with the Runner-ctor handler — both paths must produce
+        // the same shape. Step-author is the responsible actor: the
+        // workflow requested the bypass, the operator merely confirmed.
+        auditWrites.push(
+          auditWriter
+            .write({
+              ...(event.runId !== undefined && { runId: event.runId }),
+              actor: 'step-author',
+              action: 'permission.bypassed',
+              details: {
+                stepId: event.stepId,
+                detail: event.detail,
+                at: event.at,
+                dimensions: [...ALL_PERMISSION_DIMENSIONS],
+              },
+            })
+            .catch(() => {}),
+        )
+        for (const dimension of ALL_PERMISSION_DIMENSIONS) {
+          auditWrites.push(
+            auditWriter
+              .write({
+                ...(event.runId !== undefined && { runId: event.runId }),
+                actor: 'step-author',
+                action: `permission.bypass.${dimension}`,
+                details: { stepId: event.stepId, dimension, at: event.at },
+              })
+              .catch(() => {}),
+          )
+        }
       } else if (event.type === 'secret.not_found') {
         queue({
           action: 'secret.not_found',
