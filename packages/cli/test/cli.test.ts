@@ -286,7 +286,7 @@ describe('main — integration', () => {
   // here in skipped form as a reminder that this path is exercised.
   it.skip('lists and describes discovered workflows', async () => {
     await withProjectDir(async (dir) => {
-      const listed = await invokeInDir(['list'], dir)
+      const listed = await invokeInDir(['list', '--all'], dir)
       expect(listed.exitCode).toBe(EXIT.OK)
       expect(listed.stdout).toContain('alpha-workflow')
       expect(listed.stdout).toContain('graph-workflow')
@@ -394,6 +394,15 @@ describe('main — integration', () => {
     expect(stderr).toMatch(/trigger .* armed/)
     // Fire-and-forget: the gateway owns the workflow now, no run output streams.
     expect(stdout).toBe('')
+  })
+
+  it('lists the activated workflow in the running view', async () => {
+    // Runs after the activation above (same in-process gateway), so the
+    // workflow's queue trigger is armed and shows up in `skelm list`.
+    const { stdout, exitCode } = await invoke(['list'])
+    expect(exitCode).toBe(EXIT.OK)
+    expect(stdout).toContain('cli-activate-fixture')
+    expect(stdout).toContain('queue/mem')
   })
 
   it('refuses to activate a project outside the gateway trusted roots', async () => {
