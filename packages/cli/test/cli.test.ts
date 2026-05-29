@@ -405,6 +405,26 @@ describe('main — integration', () => {
     expect(stdout).toContain('queue/mem')
   })
 
+  it('stops (deactivates) the activated workflow', async () => {
+    const { stdout, exitCode } = await invoke(['stop', 'cli-activate-fixture'])
+    expect(exitCode).toBe(EXIT.OK)
+    expect(stdout).toContain('stopped cli-activate-fixture')
+    // The trigger is gone from the running view now.
+    const after = await invoke(['list'])
+    expect(after.stdout).not.toContain('cli-activate-fixture')
+  })
+
+  it('skelm stop with no id is a CLI error', async () => {
+    const { stderr, exitCode } = await invoke(['stop'])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+    expect(stderr).toMatch(/requires a workflow id/)
+  })
+
+  it('skelm stop on an unknown workflow returns a CLI error', async () => {
+    const { exitCode } = await invoke(['stop', 'no-such-workflow'])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+  })
+
   it('refuses to activate a project outside the gateway trusted roots', async () => {
     const outside = await mkdtemp(join(tmpdir(), 'skelm-cli-outside-'))
     await writeFile(
