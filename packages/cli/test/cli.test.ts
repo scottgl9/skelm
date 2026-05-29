@@ -30,6 +30,7 @@ afterAll(async () => {
 const FIXTURES_DIR = fileURLToPath(new URL('./fixtures/', import.meta.url))
 const PROJECT_FIXTURE_DIR = join(FIXTURES_DIR, 'project')
 const TRIGGERED_FIXTURE_DIR = join(FIXTURES_DIR, 'triggered')
+const TUI_FIXTURE_DIR = join(FIXTURES_DIR, 'tui')
 
 describe('parseArgv', () => {
   it('returns help when no args', () => {
@@ -440,6 +441,17 @@ describe('main — integration', () => {
     } finally {
       await rm(outside, { recursive: true, force: true })
     }
+  })
+
+  it('hosts a TUI chat: activates, echoes a submitted line, and deactivates on EOF', async () => {
+    // The fixture is a plain echo pipeline driven by the headless remote TUI
+    // source, so a turn runs with no backend. stdin ends after one line, which
+    // closes the chat loop and deactivates the workflow.
+    const { stdout, stderr, exitCode } = await invoke(['run', TUI_FIXTURE_DIR], 'hello\n')
+    expect(exitCode).toBe(EXIT.OK)
+    expect(stdout).toContain('echo: hello')
+    expect(stderr).toContain('chat session')
+    expect(stderr).toContain('stopped tui-echo')
   })
 })
 

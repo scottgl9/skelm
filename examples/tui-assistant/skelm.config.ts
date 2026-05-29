@@ -1,20 +1,13 @@
 import { defineConfig } from '@skelm/core'
-import { TuiIntegration } from '@skelm/integrations'
+import { createRemoteTriggerSource } from '@skelm/integrations'
 import { createPiBackend } from '@skelm/pi'
-import { createTerminalFrontend } from './tui-frontend.mjs'
 
-// The TUI is local-only and needs no credentials — it binds to the terminal the
-// gateway runs in. Start the gateway in the FOREGROUND to chat with the agent.
-// The integration is just the mechanism; the UI frontend lives in this example
-// (tui-frontend.mts) and is wired in below.
-const tui = new TuiIntegration({
-  id: 'tui',
-  name: 'Terminal UI',
-  enabled: true,
-  credentials: {},
-})
-
-await tui.init()
+// The TUI is a CLI-hosted chat: `skelm run examples/tui-assistant/` activates
+// this project on the gateway and then hosts the terminal UI in the CLI process,
+// POSTing each line to the gateway and printing the reply. The gateway side is
+// the headless `createRemoteTriggerSource()` below — no frontend runs in the
+// gateway. (The embedded, gateway-foreground frontend is still available via
+// `TuiIntegration.createTriggerSource({ frontend })`; see drive.mts.)
 
 export default defineConfig({
   registries: {
@@ -38,13 +31,10 @@ export default defineConfig({
   triggerSources: [
     {
       id: 'tui',
-      driver: tui.createTriggerSource({
-        frontend: createTerminalFrontend({
-          banner: 'skelm tui-assistant — chat with your agent (Ctrl-C to exit)',
-        }),
-        // One durable conversation per session id; override to resume a thread.
-        sessionId: process.env.TUI_SESSION_ID ?? 'tui',
-      }),
+      // Headless: the gateway runs the turns, the CLI hosts the terminal. The
+      // per-message sessionId comes from the CLI (defaults to TUI_SESSION_ID or
+      // 'tui'); the workflow's sessionKey derives the durable conversation.
+      driver: createRemoteTriggerSource(),
     },
   ],
   defaults: {

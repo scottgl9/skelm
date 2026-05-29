@@ -5,6 +5,7 @@ import {
   type TuiFrontendIo,
   TuiIntegration,
   type TuiMessageInput,
+  createRemoteTriggerSource,
 } from '../src/tui.js'
 
 function makeTui(): TuiIntegration {
@@ -157,5 +158,40 @@ describe('TuiIntegration (mechanism)', () => {
     const fe = fakeFrontend()
     const source = tui.createTriggerSource({ frontend: fe.factory, postReply: false })
     expect(source.onResult).toBeUndefined()
+  })
+})
+
+describe('createRemoteTriggerSource', () => {
+  it('submit fires onMessage with a TuiMessageInput and resolves when onResult echoes the seq', async () => {
+    const src = createRemoteTriggerSource()
+    const fired: TuiMessageInput[] = []
+    src.start({
+      onMessage: async (p) => {
+        fired.push(p as TuiMessageInput)
+        // Simulate the gateway running the turn and the dispatcher calling onResult.
+        src.onResult(p, { reply: `echo: ${(p as TuiMessageInput).text}` })
+      },
+    })
+    const { reply } = await src.submit({ sessionId: 's1', text: 'hi' })
+    expect(reply).toBe('echo: hi')
+    expect(fired[0]).toMatchObject({ sessionId: 's1', text: 'hi', from: 'you', seq: 1 })
+  })
+
+  it('exposes the tui transport marker', () => {
+    expect(createRemoteTriggerSource().transport).toBe('tui')
+  })
+
+  it('rejects when no reply arrives within the timeout', async () => {
+    const src = createRemoteTriggerSource({ replyTimeoutMs: 10 })
+    src.start({ onMessage: async () => {} })
+    await expect(src.submit({ sessionId: 's', text: 'x' })).rejects.toThrow(/timed out/)
+  })
+
+  it('stop rejects pending submits', async () => {
+    const src = createRemoteTriggerSource()
+    src.start({ onMessage: async () => {} })
+    const pending = src.submit({ sessionId: 's', text: 'x' })
+    src.stop()
+    await expect(pending).rejects.toThrow(/stopped/)
   })
 })

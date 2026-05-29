@@ -7,6 +7,7 @@ value:SlackIntegration
 value:TelegramIntegration
 value:TuiIntegration
 value:createIntegrationPlugin
+value:createRemoteTriggerSource
 value:defineIntegration
 value:deleteWebhook
 value:getAuthenticatedUser
@@ -21,6 +22,7 @@ value:telegramUpdateToInput
 value:verifyGitHubSignature
 value:verifyMsGraphClientState
 value:verifySlackSignature
+type:CreateRemoteTuiTriggerSourceOptions
 type:CreateTelegramTriggerSourceOptions
 type:CreateTuiTriggerSourceOptions
 type:DefineIntegrationOptions
@@ -48,6 +50,7 @@ type:PostPullRequestReviewParams
 type:PullRequestReviewComment
 type:RateLimitConfig
 type:RegisterWebhookParams
+type:RemoteTuiTriggerSource
 type:RunInput
 type:SlackConfig
 type:SlackWebhookEvent

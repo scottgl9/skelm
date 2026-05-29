@@ -81,7 +81,10 @@ export {
 } from './telegram.js'
 export {
   TuiIntegration,
+  createRemoteTriggerSource,
+  type CreateRemoteTuiTriggerSourceOptions,
   type CreateTuiTriggerSourceOptions,
+  type RemoteTuiTriggerSource,
   type TuiFrontend,
   type TuiFrontendFactory,
   type TuiFrontendIo,
