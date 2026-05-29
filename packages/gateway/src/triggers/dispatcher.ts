@@ -104,6 +104,13 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         // gate from here on; same-session ordering is preserved by
         // runPersistentWorkflowTurn's per-(workflowId, sessionKey) lock.
         opts.gateway.managers.triggers.markParallel(ctx.triggerId)
+        // Resolve the live gateway registry first, falling back to the
+        // constructor-passed one. The fallback is NOT dead: the gateway's
+        // registry may be absorbed lazily during project activation (a gateway
+        // booted without backends gains them via Gateway.absorbBackends), and
+        // reading `gateway.backends` at fire time picks up those additions —
+        // whereas `opts.backends` is the registry captured when the dispatcher
+        // was wired. Keep both.
         const turn = await runPersistentWorkflowTurn({
           gateway: opts.gateway,
           workflow: persistentTarget,
@@ -128,6 +135,7 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
           auditWriter: enforcement.auditWriter,
           store: opts.gateway.runStore,
           workspaceManager: opts.gateway.workspaceManager,
+          // Live registry first, constructor registry as fallback (see above).
           ...((opts.gateway.backends ?? opts.backends) !== undefined && {
             backends: opts.gateway.backends ?? opts.backends,
           }),
