@@ -102,17 +102,22 @@ export default defineConfig({
 
 ## Run it
 
-Start the gateway **in the foreground** so the TUI can bind to your terminal:
+The gateway runs the turns; `skelm run` hosts the chat in your own terminal. With
+a gateway up (foreground or detached), point it at the project:
 
 ```bash
 export TUI_SESSION_ID=my-thread     # optional: name the conversation
-skelm gateway start
+skelm gateway start --detach        # or run it in another terminal
+skelm run examples/tui-assistant/   # activates the project, then opens the chat
 ```
 
-Type a message and press Enter. The agent replies; message it again — it
-remembers. Restart the gateway, reuse the same `TUI_SESSION_ID`, and the thread
-survives. Ask for something that needs the shell; because it's granted, it runs
-and reports back.
+`skelm run` activates the project (registers the headless TUI source + workflow,
+arms the trigger), then hosts the chat: each line is sent to the gateway, which
+runs a turn and returns the reply. Type a message and press Enter. The agent
+replies; message it again — it remembers. Restart the gateway, reuse the same
+`TUI_SESSION_ID`, and the thread survives. Ask for something that needs the
+shell; because it's granted, it runs and reports back. Ctrl-C / Ctrl-D ends the
+chat and deactivates the workflow (the conversation is kept).
 
 ## Test the UI on its own
 

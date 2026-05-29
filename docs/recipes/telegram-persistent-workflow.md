@@ -89,12 +89,17 @@ export default defineConfig({
 ```bash
 export TELEGRAM_BOT_TOKEN=...
 export TELEGRAM_ALLOWED_CHAT_IDS=<your-chat-id>
-skelm gateway start
+skelm gateway start --detach                  # a gateway, once
+skelm run examples/telegram-assistant/        # activate, then exits
 ```
 
-Message the bot, then message again — it remembers. Restart the gateway and
-message once more — the thread survives. Ask for something that needs the shell;
-because it's granted, it runs and reports back.
+`skelm run` activates the project on the gateway — registering the Telegram
+source, backend, workflow, and operator grant — then exits; the gateway
+long-polls Telegram and drives a turn per message. `skelm list` shows it;
+`skelm stop telegram-assistant` stops it. Message the bot, then message again —
+it remembers. Restart the gateway and message once more — the thread survives.
+Ask for something that needs the shell; because it's granted, it runs and
+reports back.
 
 ## Observability
 
