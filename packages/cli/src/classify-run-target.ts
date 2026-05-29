@@ -4,10 +4,22 @@ import { CONFIG_FILENAMES, isPersistentWorkflow, loadTsModule, pickExport } from
 import { loadSkelmConfig } from './load-config.js'
 import { resolveWorkflowPath } from './resolve-entrypoint.js'
 
+/**
+ * Structural mirror of `@skelm/integrations` TuiFrontend / TuiFrontendFactory —
+ * declared locally so the CLI carries a project's UI frontend without taking a
+ * dependency on the integrations package.
+ */
+export interface TuiFrontendLike {
+  render(reply: string, payload?: unknown): void
+  renderPartial?(text: string): void
+  close?(): void | Promise<void>
+}
+export type TuiFrontendFactoryLike = (io: { submit: (text: string) => void }) => TuiFrontendLike
+
 export type RunTarget =
   | { mode: 'one-shot'; file: string }
   | { mode: 'activate'; dir: string }
-  | { mode: 'tui'; dir: string; sourceId: string }
+  | { mode: 'tui'; dir: string; sourceId: string; frontend?: TuiFrontendFactoryLike }
 
 /**
  * Decide how `skelm run <path>` should treat its argument:
@@ -47,7 +59,15 @@ export async function classifyRunTarget(
     const tui = (config.triggerSources ?? []).find(
       (e) => (e.driver as { transport?: unknown }).transport === 'tui',
     )
-    if (tui !== undefined) return { mode: 'tui', dir: abs, sourceId: tui.id }
+    if (tui !== undefined) {
+      const frontend = (tui.driver as { frontend?: TuiFrontendFactoryLike }).frontend
+      return {
+        mode: 'tui',
+        dir: abs,
+        sourceId: tui.id,
+        ...(typeof frontend === 'function' && { frontend }),
+      }
+    }
     if ((config.triggerSources?.length ?? 0) > 0) return { mode: 'activate', dir: abs }
     const entry = await resolveWorkflowPath(workflowPath, cwd)
     try {

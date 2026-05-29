@@ -82,7 +82,14 @@ export async function runCommand(
       return activateProject(target.dir, io as MainIO)
     }
     if (target.mode === 'tui') {
-      return tuiCommand({ dir: target.dir, sourceId: target.sourceId }, io as MainIO)
+      return tuiCommand(
+        {
+          dir: target.dir,
+          sourceId: target.sourceId,
+          ...(target.frontend !== undefined && { frontend: target.frontend }),
+        },
+        io as MainIO,
+      )
     }
     input = await resolveInput(args, io.stdin)
     absPath = target.file
