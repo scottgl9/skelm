@@ -12,6 +12,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { BackendRegistry, agent, pipeline, runPipeline } from '@skelm/core'
 import type { McpHost, McpHostedTool } from '@skelm/core'
 import type { BackendContext } from '@skelm/core/backend'
 import { resolvePermissions } from '@skelm/core/permissions'
@@ -114,6 +115,75 @@ skipUnlessSet('system prompt against local qwen36', () => {
       ctx,
     )
     expect(res?.text ?? '').toContain('GREET-FORMAL-OK')
+  }, 180_000)
+
+  it('injects AGENTS.md / SOUL.md from agentDef into the system prompt', async () => {
+    const soulToken = 'SOUL-MARKER-5521'
+    const agentsToken = 'AGENTS-MARKER-3390'
+    const backend = createSkelmAgentBackend({ baseUrl: baseUrl ?? '', model, timeoutMs: 120_000 })
+    const ctx = makeCtx()
+    const res = await backend.run?.(
+      {
+        prompt: 'Briefly introduce yourself in one sentence.',
+        cwd: workDir,
+        permissions: ctx.permissions,
+        agentDef: {
+          name: 'marker-bot',
+          soul: `Your name is Marker Bot. Whenever you introduce yourself you MUST include the literal token "${soulToken}".`,
+          instructions: `Every reply you write MUST also contain the literal token "${agentsToken}".`,
+        },
+        maxTurns: 3,
+      },
+      ctx,
+    )
+    const text = res?.text ?? ''
+    expect(text).toContain(soulToken)
+    expect(text).toContain(agentsToken)
+  }, 180_000)
+
+  it('loads agentDef AGENTS.md/SOUL.md from disk through a real pipeline run', async () => {
+    // Full feature path: the runner's agent handler resolves `agentDef` relative
+    // to the pipeline's baseDir, loads the files from disk, and threads them to
+    // the real backend, which injects them into the system prompt the model sees.
+    const soulToken = 'PIPELINE-SOUL-4417'
+    const agentsToken = 'PIPELINE-AGENTS-9082'
+    const agentDir = join(workDir, 'agents', 'poet')
+    await mkdir(agentDir, { recursive: true })
+    await writeFile(
+      join(agentDir, 'AGENTS.md'),
+      `Every reply you write MUST contain the literal token "${agentsToken}".`,
+      'utf8',
+    )
+    await writeFile(
+      join(agentDir, 'SOUL.md'),
+      `You are a poet named Basho. When you introduce yourself, include the literal token "${soulToken}".`,
+      'utf8',
+    )
+
+    const reg = new BackendRegistry()
+    reg.register(
+      createSkelmAgentBackend({ id: 'agent', baseUrl: baseUrl ?? '', model, timeoutMs: 120_000 }),
+    )
+    const wf = pipeline({
+      id: 'agentdef-live',
+      baseDir: workDir,
+      steps: [
+        agent({
+          id: 'intro',
+          backend: 'agent',
+          agentDef: './agents/poet',
+          prompt: 'Introduce yourself in one sentence.',
+          permissions: { networkEgress: 'allow' },
+          maxTurns: 3,
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined, { backends: reg })
+    expect(run.status).toBe('completed')
+    const text = (run.output as { text?: string } | undefined)?.text ?? ''
+    expect(text).toContain(soulToken)
+    expect(text).toContain(agentsToken)
   }, 180_000)
 
   it('calls a namespaced MCP tool', async () => {
