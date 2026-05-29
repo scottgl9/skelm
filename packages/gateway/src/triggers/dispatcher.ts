@@ -106,6 +106,7 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
           workflow: persistentTarget,
           payload: ctx.payload,
           triggerId: ctx.triggerId,
+          workflowPath,
           ...(opts.backends !== undefined && { backends: opts.backends }),
           ...(onEvent !== undefined && { onEvent }),
         })

@@ -1,3 +1,4 @@
+import { loadAgentDefinition } from '../agent-def.js'
 import {
   type AgentRequest,
   BackendCapabilityError,
@@ -461,6 +462,17 @@ async function runAgentStep(
     }
     const resolvedSystemText =
       step.system === undefined ? undefined : await resolveValueOrFnAsync(step.system, stepCtx)
+    // AGENTS.md/SOUL.md live in a workflow-local directory; resolve the relative
+    // spec against the loaded pipeline's base dir (a relative spec on a
+    // programmatic pipeline has no base and surfaces an explicit error).
+    const loadedAgentDef =
+      step.agentDef === undefined
+        ? undefined
+        : await loadAgentDefinition(step.agentDef, {
+            ...(runtime?.pipelineBaseDir !== undefined && {
+              agentDefRoot: runtime.pipelineBaseDir,
+            }),
+          })
     const mcpServers = step.mcp === undefined ? undefined : resolveValueOrFn(step.mcp, stepCtx)
     if (policy !== undefined && mcpServers !== undefined) {
       const enforcer = new TrustEnforcer(policy)
@@ -558,6 +570,13 @@ async function runAgentStep(
     const req: AgentRequest = {
       prompt: resolvedPromptValue as string | readonly ContentPart[],
       ...(resolvedSystemText !== undefined && { system: resolvedSystemText }),
+      ...(loadedAgentDef !== undefined && {
+        agentDef: {
+          name: loadedAgentDef.id,
+          instructions: loadedAgentDef.instructions,
+          ...(loadedAgentDef.soul !== undefined && { soul: loadedAgentDef.soul }),
+        },
+      }),
       ...(step.maxTurns !== undefined && { maxTurns: step.maxTurns }),
       ...(preparedWorkspace !== undefined && { cwd: preparedWorkspace.handle.path }),
       ...(policy !== undefined && { permissions: policy }),

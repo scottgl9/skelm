@@ -10,6 +10,7 @@
 // bypass). The updated conversation is persisted so the next fire continues the
 // thread across restarts.
 
+import { dirname } from 'node:path'
 import {
   type BackendRegistry,
   type Context,
@@ -43,6 +44,8 @@ export interface RunPersistentWorkflowTurnOptions {
   payload: unknown
   triggerId: string
   backends?: BackendRegistry
+  /** Absolute path to the workflow source file; resolves a relative `agent.agentDef`. */
+  workflowPath?: string
   /** Forwarded to the runner so callers observe run events as the turn streams. */
   onEvent?: (event: RunEvent) => void
 }
@@ -104,12 +107,21 @@ export async function runPersistentWorkflowTurn(
     let resolvedPrompt = ''
     const turn = pipeline<unknown, { text: string }>({
       id: wf.id,
+      // baseDir is what populates runtime.pipelineBaseDir, against which the
+      // handler resolves a relative `agentDef`. Passing workflowPath to
+      // runner.start alone would only set the run record, not the resolver base.
+      ...(opts.workflowPath !== undefined && { baseDir: dirname(opts.workflowPath) }),
       steps: [
         ...(wf.steps ?? []),
         agent({
           id: PERSISTENT_TURN_STEP_ID,
           ...(a.backend !== undefined && { backend: a.backend }),
           ...(system !== undefined && { system }),
+          ...(a.agentDef !== undefined && { agentDef: a.agentDef }),
+          ...(a.systemPromptMode !== undefined && { systemPromptMode: a.systemPromptMode }),
+          ...(a.systemPromptIncludeAgentDef !== undefined && {
+            systemPromptIncludeAgentDef: a.systemPromptIncludeAgentDef,
+          }),
           prompt: async (ctx) => {
             resolvedPrompt = a.prompt ? await a.prompt(ctx as Context) : defaultPromptOf(ctx.input)
             return resolvedPrompt
@@ -144,6 +156,7 @@ export async function runPersistentWorkflowTurn(
         signal: controller.signal,
         triggerId,
         unrestrictedGrant: gateway.isUnrestrictedGranted(wf.id),
+        ...(opts.workflowPath !== undefined && { workflowPath: opts.workflowPath }),
         ...gateway.defaultPermissionRunOptions(),
         ...gateway.egressRunOptions(),
         ...gateway.agentmemoryRunOptions(),
