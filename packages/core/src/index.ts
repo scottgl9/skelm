@@ -206,6 +206,9 @@ export {
 } from './persistent-workflow-store.js'
 export type { PersistentSessionRecord } from './persistent-workflow-store.js'
 export {
+  DEFAULT_MAX_DELEGATION_DEPTH,
+  DelegationCycleError,
+  DelegationDepthError,
   ExecConfigError,
   InvokePipelineNotFoundError,
   PermissionDeniedError,

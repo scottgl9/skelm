@@ -114,6 +114,43 @@ export class WaitConfigError extends Error {
   }
 }
 
+/**
+ * Default cap on how deep a chain of agent-to-agent delegations may go before
+ * the runtime refuses further hand-offs. Bounds resource use on a runaway
+ * router; gateways may override via config.
+ */
+export const DEFAULT_MAX_DELEGATION_DEPTH = 8
+
+/** Thrown when a delegation would revisit a pipeline already on the active chain. */
+export class DelegationCycleError extends Error {
+  override readonly name = 'DelegationCycleError'
+  readonly targetId: string
+  readonly chain: readonly string[]
+  constructor(targetId: string, chain: readonly string[]) {
+    super(
+      `delegation cycle: "${targetId}" is already on the delegation chain [${chain.join(' -> ')}]`,
+    )
+    this.targetId = targetId
+    this.chain = chain
+  }
+}
+
+/** Thrown when a delegation would exceed the maximum delegation depth. */
+export class DelegationDepthError extends Error {
+  override readonly name = 'DelegationDepthError'
+  readonly targetId: string
+  readonly depth: number
+  readonly maxDepth: number
+  constructor(targetId: string, depth: number, maxDepth: number) {
+    super(
+      `delegation to "${targetId}" rejected: depth ${depth} would exceed the maximum of ${maxDepth}`,
+    )
+    this.targetId = targetId
+    this.depth = depth
+    this.maxDepth = maxDepth
+  }
+}
+
 /** Convert any thrown value to the serializable error shape we record. */
 export function serializeError(err: unknown): SerializedError {
   if (err instanceof Error) {
