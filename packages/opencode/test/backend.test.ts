@@ -7,7 +7,7 @@ describe('OpencodeBackend', () => {
       const backend = createOpencodeBackend({})
 
       expect(backend.id).toBe('opencode')
-      expect(backend.capabilities.prompt).toBe(true)
+      expect(backend.capabilities.prompt).toBe(false)
       expect(backend.capabilities.streaming).toBe(true)
       // Opencode manages its own permissions at the process level
       expect(backend.capabilities.toolPermissions).toBe('native')
