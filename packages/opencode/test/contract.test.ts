@@ -10,10 +10,25 @@
  * flags — which was the root motivation for adding the contract gate.
  */
 
+import { resolvePermissions } from '@skelm/core'
 import { runBackendContract } from '@skelm/core/testing/contract'
 import { createOpencodeBackend } from '../src/backend.js'
 
 runBackendContract(() => createOpencodeBackend({}), {
   name: 'opencode',
   skip: ['infer', 'agent', 'permission-gate'],
+  adversarialCases: [
+    {
+      // Proves opencode's run() denies an mcpServer not in allowedMcpServers
+      // BEFORE spawning the opencode subprocess. Empty resolved policy =>
+      // every mcp server is denied by default.
+      name: 'unallowed mcp server denied at step start',
+      dimension: 'mcp',
+      request: {
+        prompt: 'adversarial mcp',
+        permissions: resolvePermissions(undefined, undefined),
+        mcpServers: [{ id: 'evil-server', kind: 'stdio', command: 'echo', args: ['hi'] }],
+      },
+    },
+  ],
 })

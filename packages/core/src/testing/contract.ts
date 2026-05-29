@@ -67,11 +67,38 @@ export interface BackendContractCase<TRequest, TResponse> {
   readonly assert?: (response: TResponse) => void | Promise<void>
 }
 
+/**
+ * Per-dimension adversarial case: the backend's `run()` MUST reject the
+ * supplied request because the resolved policy denies the operation the
+ * request implies. The suite passes the request through `run()` and asserts
+ * either:
+ *
+ *   - the call throws an Error whose `name` matches `expectedErrorName`
+ *     (default `'PermissionDeniedError'`), OR
+ *   - the user-provided `assertRejection` matcher accepts the thrown error.
+ *
+ * Why this exists: per-backend permission mappers (codex, opencode, pi)
+ * silently invert booleans or miss dimensions, and unit-testing the
+ * mapper in isolation does not prove the live `run()` path actually
+ * denies. This block runs the real `run()` and proves the deny path
+ * fires end-to-end. Every dimension a backend claims to enforce should
+ * have at least one adversarial case here.
+ */
+export interface BackendAdversarialCase {
+  readonly name: string
+  readonly dimension: string
+  readonly request: AgentRequest
+  readonly context?: Partial<BackendContext>
+  readonly expectedErrorName?: string
+  readonly assertRejection?: (error: unknown) => void | Promise<void>
+}
+
 export interface BackendContractOptions {
   readonly name?: string
   readonly skip?: readonly BackendContractSuite[]
   readonly inferCases?: readonly BackendContractCase<InferRequest, InferResponse>[]
   readonly agentCases?: readonly BackendContractCase<AgentRequest, AgentResponse>[]
+  readonly adversarialCases?: readonly BackendAdversarialCase[]
 }
 
 export function runBackendContract(
@@ -160,6 +187,31 @@ export function runBackendContract(
           const run = await runPipeline(workflow, undefined, { backends: registry })
           expect(run.status).toBe('failed')
           expect(run.error?.name).toBe(BackendCapabilityError.name)
+        })
+      })
+    }
+
+    for (const adversarial of options.adversarialCases ?? []) {
+      it(`adversarial (${adversarial.dimension}): ${adversarial.name} denies`, async () => {
+        await withBackend(backendOrFactory, async (backend) => {
+          if (typeof backend.run !== 'function') {
+            throw new Error(
+              `backend ${backend.id} has no run(); adversarial cases require an agent surface`,
+            )
+          }
+          let thrown: unknown
+          try {
+            await backend.run(adversarial.request, buildContext(adversarial.context))
+          } catch (err) {
+            thrown = err
+          }
+          expect(thrown, `expected ${adversarial.dimension} adversarial run to throw`).toBeDefined()
+          if (adversarial.assertRejection !== undefined) {
+            await adversarial.assertRejection(thrown)
+          } else {
+            const expectedName = adversarial.expectedErrorName ?? 'PermissionDeniedError'
+            expect((thrown as { name?: string } | undefined)?.name).toBe(expectedName)
+          }
         })
       })
     }
