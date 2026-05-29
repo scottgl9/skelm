@@ -1,7 +1,11 @@
 import { mkdtempSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { AgentmemoryClient, createAgentmemoryHandle } from '@skelm/agentmemory'
+import {
+  type AgentmemoryAuditEvent,
+  AgentmemoryClient,
+  createAgentmemoryHandle,
+} from '@skelm/agentmemory'
 import {
   type AgentPermissions,
   type ApprovalGate,
@@ -592,6 +596,12 @@ export class Gateway {
     const client = this.agentmemoryClient
     if (client === null) return {}
     const defaultProject = this.projectRoot
+    // Capture the audit writer at factory-build time so each per-step handle
+    // emits one audit row per agentmemory op into the same ChainAuditWriter
+    // that records every other privileged action — the "exactly one audit
+    // writer" invariant from AGENTS.md. Without this, memory ops were
+    // invisible to `skelm audit query` and to compliance review.
+    const auditWriter = this.enforcementInternal?.auditWriter
     return {
       agentmemoryHandleFactory: (ctx) => {
         // Optional per agent: only hand out a handle when the step's resolved
@@ -609,6 +619,9 @@ export class Gateway {
           runId: ctx.runId,
           stepId: ctx.stepId,
           ...(eventsBus !== undefined ? { events: (event) => eventsBus.publish(event) } : {}),
+          ...(auditWriter !== undefined
+            ? { audit: (event) => writeAgentmemoryAudit(auditWriter, event, ctx.runId) }
+            : {}),
         })
       },
     }
@@ -1162,6 +1175,32 @@ function requireStarted<T>(value: T | null, notAvailableMsg: string): T {
     throw new Error(`${notAvailableMsg} — start() the gateway first`)
   }
   return value
+}
+
+// Translate one AgentmemoryAuditEvent into an AuditEvent and fire-and-forget
+// the write. The agentmemory handle invokes `audit(...)` synchronously (void
+// return) but AuditWriter.write returns a Promise — we attach a no-op `.catch`
+// so a writer failure can never surface as an unhandled rejection in the
+// gateway's main loop. Action names mirror the event `type` (e.g.
+// 'agentmemory.observe', 'agentmemory.session.start') so `skelm audit query
+// --action 'agentmemory.*'` selects them cleanly.
+function writeAgentmemoryAudit(
+  writer: AuditWriter,
+  event: AgentmemoryAuditEvent,
+  runId: string | undefined,
+): void {
+  const { type, at: _at, ...details } = event
+  void writer
+    .write({
+      timestamp: new Date(event.at).toISOString(),
+      ...(runId !== undefined ? { runId } : {}),
+      actor: 'agentmemory',
+      action: type,
+      details,
+    })
+    .catch(() => {
+      /* audit writer failures are non-fatal for the agent loop */
+    })
 }
 
 // Drop `permissions` from a config `defaults` block. Used for the no-config
