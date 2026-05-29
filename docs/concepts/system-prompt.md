@@ -38,17 +38,23 @@ Three layers of customization, from least invasive to most:
 
 ### 1. AGENTS.md / SOUL.md (per-agent persona and instructions)
 
-Author them in the directory referenced by `step.agentDef`:
+Author them in the directory referenced by `step.agentDef`. The path is resolved
+relative to the workflow file's directory; `AGENTS.md` is required and `SOUL.md` is
+optional. (A relative `agentDef` on a programmatically-constructed pipeline — one
+with no source file — has no base to resolve against and fails the step explicitly;
+use an absolute path there.)
 
 ```ts
 agent({
   id: 'support',
   agentDef: './agents/support',   // contains AGENTS.md (+ optional SOUL.md)
-  prompt: ({ ctx }) => ctx.input.question,
+  prompt: (ctx) => ctx.input.question,
 })
 ```
 
-These get appended after the built-in default sections.
+These get appended after the built-in default sections. Persistent workflows accept
+the same `agentDef` (plus `systemPromptMode` / `systemPromptIncludeAgentDef`) on
+`agent` — see [persistent workflows](./persistent-workflows.md).
 
 ### 2. `step.system` (per-step extension)
 

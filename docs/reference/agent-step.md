@@ -6,9 +6,11 @@
 agent({
   id: string                                          // required
   backend?: string | readonly string[]                // backend id(s) — first match wins
-  agentDef?: string                                   // path to a directory holding AGENTS.md / SOUL.md
+  agentDef?: string                                   // dir with AGENTS.md (+ optional SOUL.md), resolved vs. the workflow file
   prompt: string | ((ctx: Context) => string)         // required
   system?: string | ((ctx: Context) => string)
+  systemPromptMode?: 'extend' | 'replace'             // 'extend' (default) keeps the built-in sections
+  systemPromptIncludeAgentDef?: boolean               // with 'replace', still inject AGENTS.md/SOUL.md (default true)
   mcp?: McpServerConfig[] | ((ctx: Context) => McpServerConfig[])
   skills?: readonly string[]                          // skill ids the agent should load
   secrets?: readonly string[]                         // secret names resolved before the run
@@ -91,6 +93,29 @@ Permission → pi tool mapping:
 - `networkEgress: 'deny'` → drops `bash` (pi has no native fetch tool, so removing shell is the only way to deny network)
 
 ⚠ **Permission semantics with the SDK backend differ from MCP-host backends.** Pi has one `bash` tool (not per-binary) — granting `bash` lets the agent run any executable. Filesystem paths are advisory: `fsRead`/`fsWrite` unlock the tool *category* but don't constrain paths. Use the SDK backend inside an already-bounded workspace (ephemeral cwd, OS sandbox, container); use MCP-host backends (opencode) when you need per-call binary/path enforcement.
+
+## Agent definition (`agentDef`)
+
+`agentDef` points at a directory holding an `AGENTS.md` (required, the agent's
+instructions) and an optional `SOUL.md` (its persona/voice). The path resolves
+relative to the **workflow file's directory**, and the loaded content extends the
+system prompt — `SOUL.md` then `AGENTS.md`, after the built-in default sections and
+before any inline `system`. See [system prompt construction](../concepts/system-prompt.md)
+for the full ordering.
+
+```ts
+agent({
+  id: 'support',
+  agentDef: './agents/support',   // ./agents/support/AGENTS.md (+ optional SOUL.md)
+  prompt: (ctx) => (ctx.input as { question: string }).question,
+})
+```
+
+Use `agentDef` (files) for a durable persona, and inline `system` for a per-run
+extension on top of it. `systemPromptMode: 'replace'` drops the built-in default
+sections; pair it with `systemPromptIncludeAgentDef: false` to drop AGENTS.md/SOUL.md
+too. A relative `agentDef` on a pipeline with no source file (constructed in-process)
+fails the step explicitly — use an absolute path there.
 
 ## MCP servers
 

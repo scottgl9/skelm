@@ -26,6 +26,13 @@ export default persistentWorkflow({
 
 The simplest persistent workflow has no preamble at all — just `id`, `triggers`, and `agent`. That is exactly a long-lived chat agent, with the preamble available the moment you need to preprocess a message.
 
+The `agent` block accepts the same system-prompt controls as an `agent()` step:
+`system` (an inline extension, shown above), `agentDef` (a path to a directory with
+`AGENTS.md` + optional `SOUL.md`, resolved relative to the workflow file), and
+`systemPromptMode` / `systemPromptIncludeAgentDef`. Prefer `agentDef` once the persona
+outgrows a sentence — see [system prompt construction](./system-prompt.md). The
+`tui-assistant` and `telegram-assistant` examples both define their persona this way.
+
 ## How it works
 
 Each trigger fire runs the preamble steps and then **exactly one bounded, gateway-enforced, audited terminal turn**:
