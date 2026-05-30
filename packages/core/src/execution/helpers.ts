@@ -82,6 +82,16 @@ export function assertBackendSupportsPermissions(
  * Shallow-copy an ExecutionRuntime with an independent currentWorkspace
  * slot. Used by parallel / forEach branches so concurrent siblings don't
  * stomp on each other's workspace state.
+ *
+ * Only `currentWorkspace` is branch-local; every other field is a read-only
+ * reference that must pass through unchanged. In particular the delegation
+ * cluster (pipelineRegistry, delegationCeiling, delegationStack/Depth,
+ * maxDelegationDepth) MUST be preserved: dropping `pipelineRegistry` /
+ * delegation tracking would make `ctx.delegate` unavailable and reset the
+ * cycle/depth guards inside parallel/forEach, and — worse — dropping
+ * `delegationCeiling` would let a step nested in a parallel/forEach branch of a
+ * delegated child resolve its own (wider) declared policy instead of being
+ * intersected with the delegating parent's ceiling, escaping it entirely.
  */
 export function createDetachedWorkspaceRuntime(
   runtime: ExecutionRuntime | undefined,
@@ -92,6 +102,15 @@ export function createDetachedWorkspaceRuntime(
     workspaceManager: runtime.workspaceManager,
     stateStore: runtime.stateStore,
     ...(runtime.store !== undefined && { store: runtime.store }),
+    ...(runtime.pipelineRegistry !== undefined && { pipelineRegistry: runtime.pipelineRegistry }),
+    ...(runtime.delegationCeiling !== undefined && {
+      delegationCeiling: runtime.delegationCeiling,
+    }),
+    ...(runtime.delegationStack !== undefined && { delegationStack: runtime.delegationStack }),
+    ...(runtime.delegationDepth !== undefined && { delegationDepth: runtime.delegationDepth }),
+    ...(runtime.maxDelegationDepth !== undefined && {
+      maxDelegationDepth: runtime.maxDelegationDepth,
+    }),
     ...(runtime.defaultPermissions !== undefined && {
       defaultPermissions: runtime.defaultPermissions,
     }),
