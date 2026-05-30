@@ -10,6 +10,8 @@ vi.mock('../../src/mcp/client.js', () => {
     listTools: vi.fn().mockResolvedValue({
       tools: [
         { name: 'read_file', description: 'Read a file', inputSchema: {} },
+        { name: 'read_text_file', description: 'Read a text file', inputSchema: {} },
+        { name: 'read_media_file', description: 'Read a media file', inputSchema: {} },
         { name: 'write_file', description: 'Write a file', inputSchema: {} },
         { name: 'list_directory', description: 'List a dir', inputSchema: {} },
         { name: 'create_file', description: 'Create a file', inputSchema: {} },
@@ -121,6 +123,75 @@ describe('MCP host — canRead/canWrite enforcement on filesystem tool calls', (
 
     const result = await host.invokeTool('fs.create_file', { path: '/tmp/output.txt' })
     expect(result).toBeDefined()
+
+    await host.dispose()
+  })
+
+  // Regression: @modelcontextprotocol/server-filesystem's current read tool is
+  // `read_text_file` (renamed from `read_file`). It must be enforced exactly
+  // like `read_file`, or an agent reads any path the server can reach,
+  // escaping fsRead. (Previously absent from FS_READ_NAMES → silent bypass.)
+  it('default-deny: read_text_file is denied when fsRead is omitted', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['fs'],
+        allowedTools: ['fs.read_text_file'],
+      }),
+    )
+    const host = await createMcpHost(servers, { enforcer })
+
+    await expect(host.invokeTool('fs.read_text_file', { path: '/etc/passwd' })).rejects.toThrow(
+      /read access.*which is not allowed/,
+    )
+
+    await host.dispose()
+  })
+
+  it('explicit-deny: read_text_file outside fsRead roots is denied', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['fs'],
+        allowedTools: ['fs.read_text_file'],
+        fsRead: ['/project/'],
+      }),
+    )
+    const host = await createMcpHost(servers, { enforcer })
+
+    await expect(host.invokeTool('fs.read_text_file', { path: '/etc/passwd' })).rejects.toThrow(
+      /read access.*which is not allowed/,
+    )
+
+    await host.dispose()
+  })
+
+  it('allows read_text_file when path is within fsRead root', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['fs'],
+        allowedTools: ['fs.read_text_file'],
+        fsRead: ['/project/'],
+      }),
+    )
+    const host = await createMcpHost(servers, { enforcer })
+
+    const result = await host.invokeTool('fs.read_text_file', { path: '/project/src/main.ts' })
+    expect(result).toBeDefined()
+
+    await host.dispose()
+  })
+
+  it('default-deny: read_media_file is denied when fsRead is omitted', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['fs'],
+        allowedTools: ['fs.read_media_file'],
+      }),
+    )
+    const host = await createMcpHost(servers, { enforcer })
+
+    await expect(host.invokeTool('fs.read_media_file', { path: '/etc/shadow' })).rejects.toThrow(
+      /read access.*which is not allowed/,
+    )
 
     await host.dispose()
   })
