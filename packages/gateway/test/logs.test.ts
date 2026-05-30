@@ -43,6 +43,43 @@ describe('redact()', () => {
     expect((out.fields?.headers as Record<string, string>).Cookie).toBe('[REDACTED]')
     expect((out.fields?.headers as Record<string, string>).Accept).toBe('json')
   })
+
+  // Regression: arrays were skipped entirely, so a secret-shaped string inside
+  // a list (e.g. a logged command argv or a header list) leaked verbatim.
+  it('redacts secret-shaped values inside array elements', () => {
+    const out = redact({
+      level: 'info',
+      message: 'spawn',
+      fields: { argv: ['curl', '-H', 'Authorization: Bearer sk-test_1234567890abcdef'] },
+    })
+    const argv = out.fields?.argv as string[]
+    expect(argv[0]).toBe('curl')
+    expect(argv[2]).not.toContain('sk-test_1234567890abcdef')
+    expect(argv[2]).toMatch(/\[REDACTED\]/)
+  })
+
+  it('redacts secret-named fields inside arrays of objects', () => {
+    const out = redact({
+      level: 'info',
+      message: 'batch',
+      fields: { requests: [{ url: '/a', token: 'super-secret' }, { url: '/b' }] },
+    })
+    const reqs = out.fields?.requests as Array<Record<string, unknown>>
+    expect(reqs[0].token).toBe('[REDACTED]')
+    expect(reqs[0].url).toBe('/a')
+    expect(reqs[1].url).toBe('/b')
+  })
+
+  it('redacts secrets in nested arrays (array of arrays)', () => {
+    const out = redact({
+      level: 'info',
+      message: 'm',
+      fields: { rows: [['ok', 'ghp_ABCDEFGHIJKLMNOPQRST']] },
+    })
+    const rows = out.fields?.rows as string[][]
+    expect(rows[0][1]).not.toContain('ghp_ABCDEFGHIJKLMNOPQRST')
+    expect(rows[0][1]).toMatch(/\[REDACTED\]/)
+  })
 })
 
 describe('RingBufferLogSink', () => {
