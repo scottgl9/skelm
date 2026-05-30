@@ -19,7 +19,7 @@ describe('createSkelmAgentBackend — registry routing', () => {
     vi.restoreAllMocks()
   })
 
-  it('routes infer() to the registry entry resolved from req.model', async () => {
+  it('routes inference() to the registry entry resolved from req.model', async () => {
     const registry = new ModelRegistry()
     registry.registerProvider('cloud', {
       baseUrl: 'https://cloud.example/v1',
@@ -60,7 +60,7 @@ describe('createSkelmAgentBackend — registry routing', () => {
     })
 
     const ctx = { permissions: undefined, signal: undefined } as never
-    const res = await backend.infer(
+    const res = await backend.inference(
       { messages: [{ role: 'user', content: 'hi' }], model: 'big' },
       ctx,
     )
@@ -100,7 +100,7 @@ describe('createSkelmAgentBackend — registry routing', () => {
       defaultModel: { provider: 'local', id: 'small' },
     })
 
-    await backend.infer({ messages: [{ role: 'user', content: 'hi' }] }, {
+    await backend.inference({ messages: [{ role: 'user', content: 'hi' }] }, {
       permissions: undefined,
       signal: undefined,
     } as never)
@@ -130,7 +130,7 @@ describe('createSkelmAgentBackend — registry routing', () => {
     })
     const backend = createSkelmAgentBackend({ registry } as never)
     await expect(
-      backend.infer({ messages: [{ role: 'user', content: 'hi' }], model: 'b' }, {
+      backend.inference({ messages: [{ role: 'user', content: 'hi' }], model: 'b' }, {
         permissions: undefined,
         signal: undefined,
       } as never),
@@ -155,7 +155,7 @@ describe('createSkelmAgentBackend — registry routing', () => {
     })
     const backend = createSkelmAgentBackend({ registry } as never)
     await expect(
-      backend.infer({ messages: [{ role: 'user', content: 'hi' }] }, {
+      backend.inference({ messages: [{ role: 'user', content: 'hi' }] }, {
         permissions: undefined,
         signal: undefined,
       } as never),
@@ -165,7 +165,7 @@ describe('createSkelmAgentBackend — registry routing', () => {
   it('throws when neither baseUrl nor registry is provided', async () => {
     const backend = createSkelmAgentBackend({} as never)
     await expect(
-      backend.infer({ messages: [{ role: 'user', content: 'hi' }] }, {
+      backend.inference({ messages: [{ role: 'user', content: 'hi' }] }, {
         permissions: undefined,
         signal: undefined,
       } as never),
@@ -182,7 +182,7 @@ describe('createSkelmAgentBackend — registry routing', () => {
       model: 'legacy-model',
     })
 
-    await backend.infer({ messages: [{ role: 'user', content: 'hi' }] }, {
+    await backend.inference({ messages: [{ role: 'user', content: 'hi' }] }, {
       permissions: undefined,
       signal: undefined,
     } as never)
@@ -215,7 +215,7 @@ describe('createSkelmAgentBackend — registry routing', () => {
       registry,
       defaultModel: { provider: 'p', id: 'a' },
     })
-    await backend.infer({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 64 }, {
+    await backend.inference({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 64 }, {
       permissions: undefined,
       signal: undefined,
     } as never)

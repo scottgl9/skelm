@@ -490,7 +490,7 @@ export async function createPluginsFromConfig(config: SkelmConfig): Promise<Skel
   // Load provider plugins from backends config
   if (config.backends) {
     for (const [backendId, backendConfig] of Object.entries(config.backends)) {
-      if (backendId === 'default' || backendId === 'llm' || backendId === 'agent') continue
+      if (backendId === 'default' || backendId === 'infer' || backendId === 'agent') continue
       if (typeof backendConfig === 'string') continue
 
       // Check if this backend has a plugin field

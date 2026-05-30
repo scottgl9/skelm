@@ -31,7 +31,7 @@ describe('buildBackendRegistry', () => {
 
       const backend = registry?.resolveForLlm({ backendId: 'openai' })
       expect(backend).toBeDefined()
-      const response = await backend?.infer?.(
+      const response = await backend?.inference?.(
         { messages: [{ role: 'user', content: 'hello' }] },
         { signal: new AbortController().signal },
       )
@@ -71,7 +71,7 @@ describe('buildBackendRegistry', () => {
 
       const backend = registry?.resolveForLlm({ backendId: 'anthropic' })
       expect(backend).toBeDefined()
-      const response = await backend?.infer?.(
+      const response = await backend?.inference?.(
         { messages: [{ role: 'user', content: 'hello' }] },
         { signal: new AbortController().signal },
       )
@@ -100,7 +100,7 @@ describe('buildBackendRegistry', () => {
 
       const backend = registry?.resolveForLlm({ backendId: 'skelm-agent' })
       expect(backend).toBeDefined()
-      const response = await backend?.infer?.(
+      const response = await backend?.inference?.(
         { messages: [{ role: 'user', content: 'hello' }] },
         { signal: new AbortController().signal },
       )
@@ -129,7 +129,7 @@ describe('buildBackendRegistry', () => {
       } satisfies SkelmConfig)
 
       const backend = registry?.resolveForLlm({ backendId: 'skelm-agent' })
-      const response = await backend?.infer?.(
+      const response = await backend?.inference?.(
         { messages: [{ role: 'user', content: 'hello' }] },
         { signal: new AbortController().signal },
       )

@@ -2,7 +2,7 @@
 
 A plain **pipeline** is a bounded run: a trigger fires, the gateway runs its steps, the run ends. That is the right model for stateless workflows — review a PR, triage a ticket, enrich a record. It is the wrong model for a chat bot you talk *through*, where the same conversation continues across many messages and should survive a gateway restart.
 
-A **persistent workflow** fills that gap while staying inside the workflow model. Each trigger fire runs fresh **preamble** steps (`code()`, `llm()`, control flow) that enrich or transform the incoming message, then **always ends in one long-lived, session-keyed agent turn** whose *conversation* outlives any single fire:
+A **persistent workflow** fills that gap while staying inside the workflow model. Each trigger fire runs fresh **preamble** steps (`code()`, `infer()`, control flow) that enrich or transform the incoming message, then **always ends in one long-lived, session-keyed agent turn** whose *conversation* outlives any single fire:
 
 ```ts
 import { code, persistentWorkflow } from 'skelm'
@@ -61,7 +61,7 @@ There is **no resident in-process loop**. Triggers drive fires, exactly like a r
 The preamble is the difference from a bare chat agent. It runs fresh each fire and feeds the terminal turn through `ctx.steps`:
 
 - **`code()`** — enrich, redact, rate-limit, or reshape the inbound message; fetch context from an API.
-- **`llm()`** — classify intent or summarize before the expensive agent turn.
+- **`infer()`** — classify intent or summarize before the expensive agent turn.
 - **control flow** (`branch`, `parallel`, …) — route or gate the message.
 
 No preamble step may use the reserved id `'turn'` — that id belongs to the synthesized terminal turn.

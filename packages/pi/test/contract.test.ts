@@ -2,7 +2,7 @@
  * Backend-contract suite for `@skelm/pi` (RPC backend).
  *
  * Runs the capability-self-consistency block from `@skelm/core/testing`.
- * `infer` / `agent` / `permission-gate` are skipped: pi RPC mode spawns
+ * `inference` / `agent` / `permission-gate` are skipped: pi RPC mode spawns
  * a `pi --mode rpc` subprocess; agent-loop coverage lives in
  * `test/backend.test.ts` and integration tests. The capability block
  * still catches mis-declared capabilities (e.g. `toolPermissions` flag
@@ -18,5 +18,5 @@ import { createPiBackend } from '../src/backend.js'
 
 runBackendContract(() => createPiBackend({}), {
   name: 'pi',
-  skip: ['infer', 'agent', 'permission-gate'],
+  skip: ['inference', 'agent', 'permission-gate'],
 })

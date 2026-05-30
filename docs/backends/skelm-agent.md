@@ -5,7 +5,7 @@ any OpenAI-compatible chat-completions endpoint, with permissions enforced
 **in-process** by skelm's own `TrustEnforcer`.
 
 No dependency on Pi, Opencode, or ACP — the agent loop, the tool surface, and
-the permission gating all live inside this package. Powers both `llm()`
+the permission gating all live inside this package. Powers both `infer()`
 (single-shot inference) and `agent()` (multi-turn tool use).
 
 ## Install
@@ -28,7 +28,7 @@ import { defineConfig } from '@skelm/core'
 import { createSkelmAgentBackend } from '@skelm/agent'
 
 export default defineConfig({
-  backends: { agent: 'native-agent', llm: 'native-agent' },
+  backends: { agent: 'native-agent', infer: 'native-agent' },
   instances: [
     createSkelmAgentBackend({
       id: 'native-agent',
@@ -71,7 +71,7 @@ a string-keyed `backends:` entry — pass a configured instance through
 
 | Flag                | Value      | Notes                                                                       |
 |---------------------|------------|-----------------------------------------------------------------------------|
-| `prompt`            | `true`     | Drives `llm()` steps via single-shot inference.                             |
+| `prompt`            | `true`     | Drives `infer()` steps via single-shot inference.                             |
 | `run`               | `true`     | Drives `agent()` steps with multi-turn tool use.                            |
 | `mcp`               | `true`     | Unknown tool names fall through to `ctx.mcpHost.invokeTool` (gated by `canCallTool`). |
 | `skills`            | `true`     | `load_skill` returns metadata for skills allowed by `allowedSkills`.        |

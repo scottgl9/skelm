@@ -11,7 +11,7 @@ Complete, runnable workflows for the patterns customers ship most often. Each re
 
 - **[Coding agent on chat](./coding-agent-on-chat.md)** — webhook-triggered coding workflow with a persistent repo workspace. Receives chat messages, opens PRs, replies. The canonical "long-running agent reachable via chat" pattern.
 - **[Ticket to PR](./ticket-to-pr.md)** — poll-triggered queue worker. For each new ticket, attempts the change in a per-repo persistent workspace and opens a PR. Demonstrates `forEach`, `compensate`, and per-item workspaces.
-- **[Email triage](./email-triage.md)** — poll-triggered classifier. No agent loop; uses `llm()` with structured output. Demonstrates `forEach`, `branch`, decision journals, and a paired digest workflow.
+- **[Email triage](./email-triage.md)** — poll-triggered classifier. No agent loop; uses `infer()` with structured output. Demonstrates `forEach`, `branch`, decision journals, and a paired digest workflow.
 
 ## HTTP-triggered workflows
 
@@ -55,5 +55,5 @@ If your shape is none of these, mix and match. A workflow is just a typed orches
 - **Default-deny permissions.** Every agent step declares exactly what it can do. There is no implicit access.
 - **Idempotency at the right layer.** HTTP-triggered workflows use `Idempotency-Key`; long-running ones use `ctx.state.cas` or watermarks; queue-driven ones use the scheduler's `dedupeKey`.
 - **Decision journals.** Long-running workflows append to `ctx.state.append('decisions', ...)` so a human can review what the workflow has done over time without scrolling chat history.
-- **Structured output on `llm()` and `agent()`.** The runtime validates and the consuming `code()` step does not have to guess at parsing.
+- **Structured output on `infer()` and `agent()`.** The runtime validates and the consuming `code()` step does not have to guess at parsing.
 - **Workspaces for filesystem state, KV state for structured decisions, run history for behavior, audit for security.** Four artifacts; one per question.

@@ -190,7 +190,7 @@ describe('main — integration', () => {
   // The harness gateway has no backends wired. Re-enable once the
   // harness accepts a BackendRegistry option and we point it at a fake
   // OpenAI server — separate from the CLI-as-gateway-interface refactor.
-  it.skip('loads the default OpenAI backend for llm() workflows without a config file', async () => {
+  it.skip('loads the default OpenAI backend for infer() workflows without a config file', async () => {
     const filePath = join(FIXTURES_DIR, 'openai-default.workflow.mts')
 
     const seenAuth: string[] = []

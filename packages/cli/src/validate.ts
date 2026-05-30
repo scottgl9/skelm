@@ -201,7 +201,7 @@ function inspectStep(step: Step, at: string, issues: ValidationIssue[]): void {
       return
     }
     case 'code':
-    case 'llm':
+    case 'infer':
     case 'wait':
       return
     default: {

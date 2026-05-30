@@ -6,8 +6,8 @@ export default defineConfig({
   //   openai, anthropic, opencode, copilot-acp, acp, pi (RPC variant)
   // Use `instances:` (below) for the pi SDK backend or any custom backend.
   backends: {
-    default: 'openai', // used by llm() and agent() unless overridden
-    // llm:    'openai',
+    default: 'openai', // used by infer() and agent() unless overridden
+    // infer:    'openai',
     // agent:  'pi',
     // openai: {
     //   baseUrl: 'https://api.openai.com/v1',  // or any OpenAI-compatible URL

@@ -166,8 +166,8 @@ async function runStep(
   switch (step.kind) {
     case 'code':
       return await runCodeStep(step, ctx, events, runtime)
-    case 'llm':
-      return await runLlmStep(step, ctx, backends, events, runtime)
+    case 'infer':
+      return await runInferStep(step, ctx, backends, events, runtime)
     case 'agent':
       return await runAgentStep(step, ctx, backends, waitForInput, events, runtime)
     case 'idempotent':
@@ -334,8 +334,8 @@ async function resolveCodeRun(
   return exported as (ctx: Context) => unknown | Promise<unknown>
 }
 
-async function runLlmStep(
-  step: Extract<Step, { kind: 'llm' }>,
+async function runInferStep(
+  step: Extract<Step, { kind: 'infer' }>,
   ctx: Context,
   backends: BackendRegistry | undefined,
   events: EventBus | undefined,
@@ -390,7 +390,7 @@ async function runLlmStep(
         }
       : undefined
   // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForLlm
-  const response = await backend.infer!(req, {
+  const response = await backend.inference!(req, {
     signal: stepCtx.signal,
     ...(onPartial !== undefined && { onPartial }),
   })
@@ -440,7 +440,7 @@ async function runAgentStep(
           })
     // Resolve permissions + secrets FIRST so step.prompt / step.system /
     // step.mcp functions receive ctx.secrets, matching the contract that
-    // runCodeStep and runLlmStep already implement. Without this ordering
+    // runCodeStep and runInferStep already implement. Without this ordering
     // agent steps see no secrets in their user-supplied callbacks.
     const declaredPolicy =
       step.permissions !== undefined || step.mcp !== undefined || preparedWorkspace !== undefined

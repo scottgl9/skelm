@@ -3,8 +3,8 @@ import {
   type BackendCapabilities,
   BackendConfigError,
   type BackendContext,
-  type InferRequest,
-  type InferResponse,
+  type InferenceRequest,
+  type InferenceResponse,
   type SkelmBackend,
   type Usage,
 } from '../backend.js'
@@ -81,7 +81,7 @@ export function createOpenAIBackend(opts: OpenAIBackendOptions = {}): SkelmBacke
       return debug.effective
     },
     getApiKey: debug.getApiKey,
-    async infer(req: InferRequest, ctx: BackendContext): Promise<InferResponse> {
+    async inference(req: InferenceRequest, ctx: BackendContext): Promise<InferenceResponse> {
       const apiKey = await debug.getApiKey()
       const response = await (opts.fetch ?? fetch)(
         new URL('/chat/completions', baseUrl(opts.baseUrl)),
@@ -199,7 +199,7 @@ type OpenAIContentPart =
   | { type: 'image_url'; image_url: { url: string } }
 
 function buildMessages(
-  req: InferRequest,
+  req: InferenceRequest,
 ): Array<{ role: string; content: string | OpenAIContentPart[] }> {
   const messages: Array<{ role: string; content: string | OpenAIContentPart[] }> = []
   if (req.system !== undefined) {
@@ -218,7 +218,7 @@ function buildMessages(
 }
 
 function toOpenAIContent(
-  content: InferRequest['messages'][number]['content'],
+  content: InferenceRequest['messages'][number]['content'],
 ): string | OpenAIContentPart[] {
   if (!isMultimodal(content)) return content
   const parts: OpenAIContentPart[] = []

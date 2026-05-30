@@ -86,7 +86,7 @@ export interface AssertVisionArgs {
   visionModels: readonly string[] | undefined
   /** From AgentRequest.prompt — the agent path. */
   prompt?: AgentPromptLike
-  /** From InferRequest.messages — the llm() path. */
+  /** From InferenceRequest.messages — the infer() path. */
   messages?: readonly PromptMessage[]
 }
 
@@ -100,7 +100,7 @@ export interface AssertVisionArgs {
  *
  * Silently honoring the backend's bound model when callers ask for a
  * different one masks vision-routing mistakes: an operator pinning
- * `llm({ model: 'qwen3-text-only' })` against a vision-bound backend
+ * `infer({ model: 'qwen3-text-only' })` against a vision-bound backend
  * would silently get the vision model's reply (finding-133). Fail loud.
  *
  * `requestedModel` is `undefined` when the step did not set `model`; in

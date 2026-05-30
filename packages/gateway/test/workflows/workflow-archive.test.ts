@@ -13,7 +13,9 @@ let projectRoot: string
 
 beforeEach(async () => {
   stateDir = await mkdtemp(join(tmpdir(), 'skelm-wfzip-'))
+  stateDir = await fs.realpath(stateDir)
   projectRoot = await mkdtemp(join(tmpdir(), 'skelm-wfzip-root-'))
+  projectRoot = await fs.realpath(projectRoot)
 })
 
 afterEach(async () => {

@@ -3,7 +3,7 @@
 //
 // A persistent workflow folds the old "persistent agent" back into skelm's
 // workflow model. Each trigger fire runs FRESH preamble steps (`code()`,
-// `llm()`, control flow) that enrich or transform the incoming message, then
+// `infer()`, control flow) that enrich or transform the incoming message, then
 // ALWAYS ends in one bounded, gateway-enforced, audited agent turn. Only that
 // terminal turn is persistent: it loads the durable conversation for a session
 // key, runs the agent, and saves it again. The conversation is durable

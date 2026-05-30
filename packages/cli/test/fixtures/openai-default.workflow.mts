@@ -1,9 +1,9 @@
-import { llm, pipeline } from '@skelm/core'
+import { infer, pipeline } from '@skelm/core'
 
 export default pipeline({
   id: 'openai-default',
   steps: [
-    llm({
+    infer({
       id: 'greet',
       prompt: 'say hi',
     }),

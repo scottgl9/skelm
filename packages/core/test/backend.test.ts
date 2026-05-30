@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { BackendCapabilityError, BackendNotFoundError, BackendRegistry } from '../src/backend.js'
-import { code, llm, pipeline } from '../src/builders.js'
+import { code, infer, pipeline } from '../src/builders.js'
 import { runPipeline } from '../src/runner.js'
 import { fixtureBackend } from '../src/testing/contract.js'
 
@@ -70,8 +70,8 @@ describe('BackendRegistry', () => {
   })
 })
 
-describe('llm() step', () => {
-  it('runs an llm step against a fixture backend (text output)', async () => {
+describe('infer() step', () => {
+  it('runs an infer step against a fixture backend (text output)', async () => {
     const reg = new BackendRegistry()
     reg.register(
       fixtureBackend({
@@ -81,8 +81,8 @@ describe('llm() step', () => {
     )
 
     const wf = pipeline({
-      id: 'llm-text',
-      steps: [llm({ id: 'say', backend: 'fake', prompt: 'hello' })],
+      id: 'inference-text',
+      steps: [infer({ id: 'say', backend: 'fake', prompt: 'hello' })],
     })
     const run = await runPipeline(wf, undefined, { backends: reg })
 
@@ -90,7 +90,7 @@ describe('llm() step', () => {
     expect(run.output).toEqual({ text: 'echo:hello', usage: undefined })
   })
 
-  it('runs an llm step with a structured output schema', async () => {
+  it('runs an infer step with a structured output schema', async () => {
     const reg = new BackendRegistry()
     reg.register(
       fixtureBackend({
@@ -100,9 +100,9 @@ describe('llm() step', () => {
     )
 
     const wf = pipeline({
-      id: 'llm-struct',
+      id: 'inference-struct',
       steps: [
-        llm({
+        infer({
           id: 'classify',
           backend: 'fake',
           prompt: 'classify',
@@ -126,10 +126,10 @@ describe('llm() step', () => {
     )
 
     const wf = pipeline({
-      id: 'llm-prompt-fn',
+      id: 'inference-prompt-fn',
       input: z.object({ name: z.string() }),
       steps: [
-        llm({
+        infer({
           id: 'greet',
           backend: 'fake',
           prompt: (ctx) => `hello, ${(ctx.input as { name: string }).name}`,
@@ -157,9 +157,9 @@ describe('llm() step', () => {
     )
 
     const wf = pipeline({
-      id: 'llm-image',
+      id: 'inference-image',
       steps: [
-        llm({
+        infer({
           id: 'describe',
           backend: 'vision-ok',
           prompt: [
@@ -187,9 +187,9 @@ describe('llm() step', () => {
     )
 
     const wf = pipeline({
-      id: 'llm-image-denied',
+      id: 'inference-image-denied',
       steps: [
-        llm({
+        infer({
           id: 'describe',
           backend: 'no-vision',
           prompt: [
@@ -218,7 +218,7 @@ describe('llm() step', () => {
     const wf = pipeline({
       id: 'bad-struct',
       steps: [
-        llm({
+        infer({
           id: 'classify',
           backend: 'fake',
           prompt: 'x',
@@ -234,14 +234,14 @@ describe('llm() step', () => {
   it('fails the run when no backend registry is provided to runPipeline', async () => {
     const wf = pipeline({
       id: 'no-reg',
-      steps: [llm({ id: 'say', prompt: 'hi' })],
+      steps: [infer({ id: 'say', prompt: 'hi' })],
     })
     const run = await runPipeline(wf, undefined)
     expect(run.status).toBe('failed')
     expect(run.error?.name).toBe('BackendNotFoundError')
   })
 
-  it('mixes code and llm steps; ctx.steps[id] sees the llm output', async () => {
+  it('mixes code and infer steps; ctx.steps[id] sees the inference output', async () => {
     const reg = new BackendRegistry()
     reg.register(
       fixtureBackend({
@@ -253,7 +253,7 @@ describe('llm() step', () => {
     const wf = pipeline({
       id: 'mix',
       steps: [
-        llm({
+        infer({
           id: 'classify',
           backend: 'fake',
           prompt: 'x',

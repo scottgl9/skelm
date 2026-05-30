@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BackendRegistry, type SkelmBackend } from '../src/backend.js'
-import { code, llm, pipeline } from '../src/builders.js'
+import { code, infer, pipeline } from '../src/builders.js'
 import { EventBus } from '../src/events.js'
 import type { RunEvent } from '../src/events.js'
 import { runPipeline } from '../src/runner.js'
@@ -18,7 +18,7 @@ describe('streaming output — step.partial events', () => {
         modelSelection: false,
         toolPermissions: 'native',
       },
-      async infer(req, ctx) {
+      async inference(req, ctx) {
         // Simulate streaming by calling onPartial with each chunk
         if (ctx.onPartial !== undefined) {
           for (const chunk of chunks) {
@@ -30,7 +30,7 @@ describe('streaming output — step.partial events', () => {
     }
   }
 
-  it('llm() step emits step.partial events when onPartial is provided', async () => {
+  it('infer() step emits step.partial events when onPartial is provided', async () => {
     const chunks = ['Hello', ' ', 'world', '!']
     const registry = new BackendRegistry()
     registry.register(streamingLlmBackend(chunks))
@@ -46,7 +46,7 @@ describe('streaming output — step.partial events', () => {
     const wf = pipeline({
       id: 'streaming-llm',
       steps: [
-        llm({
+        infer({
           id: 'stream-step',
           backend: 'streaming-llm',
           prompt: 'say hello',
@@ -81,7 +81,7 @@ describe('streaming output — step.partial events', () => {
     const received: RunEvent[] = []
     const wf = pipeline({
       id: 'onevent-stream',
-      steps: [llm({ id: 'stream-step', backend: 'streaming-llm', prompt: 'say hello' })],
+      steps: [infer({ id: 'stream-step', backend: 'streaming-llm', prompt: 'say hello' })],
     })
 
     const run = await runPipeline(
@@ -102,7 +102,7 @@ describe('streaming output — step.partial events', () => {
     expect(received.some((e) => e.type === 'run.completed')).toBe(true)
   })
 
-  it('llm() step without events bus does not emit step.partial events', async () => {
+  it('infer() step without events bus does not emit step.partial events', async () => {
     const chunks = ['Hello', ' ', 'world', '!']
     const registry = new BackendRegistry()
     registry.register(streamingLlmBackend(chunks))
@@ -110,7 +110,7 @@ describe('streaming output — step.partial events', () => {
     const wf = pipeline({
       id: 'no-events',
       steps: [
-        llm({
+        infer({
           id: 'stream-step',
           backend: 'streaming-llm',
           prompt: 'say hello',

@@ -22,7 +22,7 @@ export type StepStatus = 'completed' | 'failed' | 'skipped' | 'waiting'
 /** Discriminator for step kinds; the union grows in later stages. */
 export type StepKind =
   | 'code'
-  | 'llm'
+  | 'infer'
   | 'agent'
   | 'idempotent'
   | 'parallel'

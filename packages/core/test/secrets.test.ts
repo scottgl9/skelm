@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BackendRegistry, type SkelmBackend } from '../src/backend.js'
-import { agent, code, llm, pipeline } from '../src/builders.js'
+import { agent, code, infer, pipeline } from '../src/builders.js'
 import { EnvSecretResolver, MissingSecretError } from '../src/enforcement/index.js'
 import { EventBus } from '../src/events.js'
 import { runPipeline } from '../src/runner.js'
@@ -106,7 +106,7 @@ describe('secrets in code() steps', () => {
   })
 })
 
-describe('secrets in llm() steps', () => {
+describe('secrets in infer() steps', () => {
   function mockLlmBackend(captured: { prompt: string; system?: string }): SkelmBackend {
     return {
       id: 'mock-llm',
@@ -119,7 +119,7 @@ describe('secrets in llm() steps', () => {
         modelSelection: false,
         toolPermissions: 'native',
       },
-      async infer(req) {
+      async inference(req) {
         captured.prompt = req.messages[0]?.content ?? ''
         captured.system = req.system
         return { text: 'mock response' }
@@ -127,16 +127,16 @@ describe('secrets in llm() steps', () => {
     }
   }
 
-  it('llm() step with secrets receives ctx.secrets.get() in prompt function', async () => {
+  it('infer() step with secrets receives ctx.secrets.get() in prompt function', async () => {
     const captured = { prompt: '', system: undefined }
     const registry = new BackendRegistry()
     registry.register(mockLlmBackend(captured))
 
     const wf = pipeline({
-      id: 'llm-secrets',
+      id: 'inference-secrets',
       steps: [
-        llm({
-          id: 'llm-with-secrets',
+        infer({
+          id: 'inference-with-secrets',
           backend: 'mock-llm',
           secrets: ['API_KEY'],
           prompt: (ctx) => {
@@ -163,16 +163,16 @@ describe('secrets in llm() steps', () => {
     expect(captured.prompt).toBe('use key secret-api-key to process this')
   })
 
-  it('llm() step without secrets has ctx.secrets === undefined', async () => {
+  it('infer() step without secrets has ctx.secrets === undefined', async () => {
     const captured = { prompt: '', system: undefined }
     const registry = new BackendRegistry()
     registry.register(mockLlmBackend(captured))
 
     const wf = pipeline({
-      id: 'llm-no-secrets',
+      id: 'inference-no-secrets',
       steps: [
-        llm({
-          id: 'llm-no-secrets-step',
+        infer({
+          id: 'inference-no-secrets-step',
           backend: 'mock-llm',
           prompt: (ctx) => {
             expect(ctx.secrets).toBeUndefined()
@@ -188,7 +188,7 @@ describe('secrets in llm() steps', () => {
     expect(captured.prompt).toBe('no secrets here')
   })
 
-  it('llm() step with missing secret throws MissingSecretError', async () => {
+  it('infer() step with missing secret throws MissingSecretError', async () => {
     const registry = new BackendRegistry()
     registry.register({
       id: 'mock-llm-2',
@@ -201,16 +201,16 @@ describe('secrets in llm() steps', () => {
         modelSelection: false,
         toolPermissions: 'native',
       },
-      async infer(req) {
+      async inference(req) {
         return { text: 'mock response' }
       },
     })
 
     const wf = pipeline({
-      id: 'llm-missing',
+      id: 'inference-missing',
       steps: [
-        llm({
-          id: 'llm-missing-secret',
+        infer({
+          id: 'inference-missing-secret',
           backend: 'mock-llm-2',
           secrets: ['MISSING_KEY'],
           prompt: (ctx) => {

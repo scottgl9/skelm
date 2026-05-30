@@ -51,10 +51,10 @@ code({
 
 `ctx.exec` accepts `{ command | python | bash }` plus `args`, `cwd`, `env`, `stdin`, `timeoutMs`, `throwOnNonZero`. The allowlist is checked against the resolved binary's basename (e.g. `python3`, `bash`, `git`).
 
-### `llm(def)` — single-shot inference
+### `infer(def)` — single-shot inference
 
 ```ts
-llm({
+infer({
   id: string
   prompt: string | ((ctx: Context) => string)
   system?: string | ((ctx: Context) => string)

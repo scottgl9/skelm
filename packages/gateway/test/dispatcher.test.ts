@@ -2,7 +2,14 @@ import { promises as fs } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BackendRegistry, type RunEvent, type SkelmBackend, code, llm, pipeline } from '@skelm/core'
+import {
+  BackendRegistry,
+  type RunEvent,
+  type SkelmBackend,
+  code,
+  infer,
+  pipeline,
+} from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   Gateway,
@@ -141,7 +148,7 @@ describe('createTriggerDispatcher', () => {
         modelSelection: false,
         toolPermissions: 'native',
       },
-      async infer(_req, ctx) {
+      async inference(_req, ctx) {
         for (const delta of ['Hel', 'lo ', 'wor', 'ld']) ctx.onPartial?.(delta)
         return { text: 'Hello world' }
       },
@@ -160,7 +167,7 @@ describe('createTriggerDispatcher', () => {
 
     const wf = pipeline({
       id: 'stream-wf',
-      steps: [llm({ id: 'gen', backend: 'stream', prompt: 'go' })],
+      steps: [infer({ id: 'gen', backend: 'stream', prompt: 'go' })],
     })
 
     const dispatcher = createTriggerDispatcher({

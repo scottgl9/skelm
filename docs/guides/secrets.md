@@ -43,10 +43,10 @@ The runner asks the resolver for `OPENAI_KEY` at step start. If the resolver ret
 
 ### Reading a secret inside a step (`ctx.secrets`)
 
-`code()`, `llm()`, and `agent()` steps can declare `secrets: [...]` and read each value via `ctx.secrets.get(name)` inside their user-supplied callbacks (`run`, `prompt`, `system`, `mcp`). The runner resolves every declared name through the `SecretResolver` **before** the callback runs and refuses to start the step if any name is missing.
+`code()`, `infer()`, and `agent()` steps can declare `secrets: [...]` and read each value via `ctx.secrets.get(name)` inside their user-supplied callbacks (`run`, `prompt`, `system`, `mcp`). The runner resolves every declared name through the `SecretResolver` **before** the callback runs and refuses to start the step if any name is missing.
 
 ```ts
-import { code, llm, agent, pipeline } from 'skelm'
+import { code, infer, agent, pipeline } from 'skelm'
 
 export default pipeline({
   id: 'summarize-ticket',
@@ -59,7 +59,7 @@ export default pipeline({
         // … use token to call Jira; never log it
       },
     }),
-    llm({
+    infer({
       id: 'summarize',
       backend: 'openai',
       secrets: ['INTERNAL_DOC_KEY'],

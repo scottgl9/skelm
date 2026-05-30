@@ -1,7 +1,7 @@
 // SkelmBackend — the SPI for LLM providers, agent runtimes, and any
 // other inference/execution backend skelm calls into.
 //
-// Two methods: `infer()` powers `llm()` steps (single-shot inference);
+// Two methods: `infer()` powers `infer()` steps (single-shot inference);
 // `run()` powers `agent()` steps (multi-turn loops). A backend may
 // implement only one. The capability flags tell the runtime what the
 // backend can and cannot enforce natively.
@@ -35,8 +35,8 @@ export interface BackendCapabilities {
   /** How the backend honors permissions. */
   toolPermissions: ToolPermissionEnforcement
   /**
-   * Accepts image content parts in PromptMessage / InferRequest. Backends
-   * that omit or set this to false will be rejected at the llm-step handler
+   * Accepts image content parts in PromptMessage / InferenceRequest. Backends
+   * that omit or set this to false will be rejected at the infer-step handler
    * when image parts are submitted. Default-deny: prefer omitting over
    * declaring `true` if image handling is not wired through.
    */
@@ -73,7 +73,7 @@ export interface PromptMessage {
    * Plain text or a sequence of typed content parts. Most callers use the
    * string form. Image parts are only honored by backends that report
    * `capabilities.vision === true`; submitting an image part to a non-vision
-   * backend fails at the llm-step handler with a BackendCapabilityError.
+   * backend fails at the infer-step handler with a BackendCapabilityError.
    */
   content: string | readonly ContentPart[]
   /** Optional tool_call_id for tool-result messages. */
@@ -91,7 +91,7 @@ export interface Usage {
 }
 
 /** Request shape for `infer()`. */
-export interface InferRequest {
+export interface InferenceRequest {
   /** Chat-style messages. */
   messages: readonly PromptMessage[]
   /** Optional system prompt prepended to messages. */
@@ -104,7 +104,7 @@ export interface InferRequest {
   maxTokens?: number
   /**
    * If supplied, the backend must return a structured value matching this
-   * schema in `InferResponse.structured`. The runtime validates again before
+   * schema in `InferenceResponse.structured`. The runtime validates again before
    * surfacing as the step output, so backend-side validation is belt; the
    * framework is braces.
    */
@@ -112,7 +112,7 @@ export interface InferRequest {
 }
 
 /** Response shape for `infer()`. */
-export interface InferResponse {
+export interface InferenceResponse {
   /** Free-form text (when no outputSchema is requested). */
   text?: string
   /** Structured output (when outputSchema was requested). */
@@ -211,7 +211,7 @@ export interface AgentResponse {
   stopReason?: string
   /**
    * Reasoning/"thinking" trace from reasoning-mode models on the last
-   * turn. Same shape as `InferResponse.reasoning`. See that field for
+   * turn. Same shape as `InferenceResponse.reasoning`. See that field for
    * caveats.
    */
   reasoning?: string
@@ -485,8 +485,8 @@ export interface SkelmBackend {
   readonly label?: string
   readonly capabilities: BackendCapabilities
 
-  /** Single-shot inference (powers `llm()`). */
-  infer?(req: InferRequest, ctx: BackendContext): Promise<InferResponse>
+  /** Single-shot inference (powers `infer()`). */
+  inference?(req: InferenceRequest, ctx: BackendContext): Promise<InferenceResponse>
 
   /** Multi-turn agent loop (powers `agent()`). */
   run?(req: AgentRequest, ctx: BackendContext): Promise<AgentResponse>
@@ -707,9 +707,9 @@ export class BackendRegistry {
       if (!found) {
         throw new BackendNotFoundError(`backend not registered: ${opts.backendId}`)
       }
-      if (!found.capabilities.prompt || typeof found.infer !== 'function') {
+      if (!found.capabilities.prompt || typeof found.inference !== 'function') {
         throw new BackendCapabilityError(
-          `backend ${opts.backendId} does not support llm() steps. Use a backend with single-shot inference (e.g. anthropic, openai, pi-sdk), or rewrite as agent({ maxTurns: 1 }).`,
+          `backend ${opts.backendId} does not support infer() steps. Use a backend with single-shot inference (e.g. anthropic, openai, pi-sdk), or rewrite as agent({ maxTurns: 1 }).`,
           opts.backendId,
           'prompt',
         )
@@ -717,7 +717,7 @@ export class BackendRegistry {
       return found
     }
     for (const candidate of this.backends.values()) {
-      if (candidate.capabilities.prompt && typeof candidate.infer === 'function') {
+      if (candidate.capabilities.prompt && typeof candidate.inference === 'function') {
         return candidate
       }
     }

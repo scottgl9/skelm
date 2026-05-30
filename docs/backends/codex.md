@@ -43,7 +43,7 @@ The full type is `CodexBackendOptions` — see [`packages/codex/src/types.ts`](h
 
 | Capability         | Value      |
 |--------------------|------------|
-| `prompt`           | `false` (codex-sdk is agent-loop only; route `llm()` steps to a Codex-compatible OpenAI endpoint via `@skelm/agent` instead) |
+| `prompt`           | `false` (codex-sdk is agent-loop only; route `infer()` steps to a Codex-compatible OpenAI endpoint via `@skelm/agent` instead) |
 | `streaming`        | `true` (`agent_message.text` flows to `BackendContext.onPartial`) |
 | `sessionLifecycle` | `true` (`request.sessionId` triggers `Codex.resumeThread`) |
 | `mcp`              | `true` (skelm MCP servers injected via Codex `config.mcp_servers`) |
@@ -112,6 +112,6 @@ The skill-injection test in [`packages/codex/test/integration.test.ts`](https://
 
 ## Out of scope (today)
 
-- `prompt`/`infer` — Codex is agent-loop only. For Codex *models* in `llm()` steps, point `@skelm/agent` at the OpenAI endpoint.
+- `prompt`/`inference` — Codex is agent-loop only. For Codex *models* in `infer()` steps, point `@skelm/agent` at the OpenAI endpoint.
 - Web search (`webSearchMode`) — defer to a follow-up.
 - Multimodal `local_image` input — defer.

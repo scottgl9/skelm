@@ -29,8 +29,8 @@ import type {
   BackendCapabilities,
   BackendContext,
   ContentPart,
-  InferRequest,
-  InferResponse,
+  InferenceRequest,
+  InferenceResponse,
   ResolvedPolicy,
   SkelmBackend,
 } from '@skelm/core'
@@ -41,7 +41,7 @@ import type {
  * matches skelm's image ContentPart shape one-for-one.
  */
 function extractPromptImages(
-  prompt: AgentRequest['prompt'] | InferRequest['messages'][number]['content'],
+  prompt: AgentRequest['prompt'] | InferenceRequest['messages'][number]['content'],
 ): ReadonlyArray<{ mimeType: string; data: string }> {
   if (typeof prompt === 'string' || prompt === undefined) return []
   return (prompt as readonly ContentPart[])
@@ -50,7 +50,7 @@ function extractPromptImages(
 }
 
 /**
- * Collect image parts from all `role: 'user'` messages in an `InferRequest`.
+ * Collect image parts from all `role: 'user'` messages in an `InferenceRequest`.
  *
  * Intentionally first-turn-only: pi's `session.prompt(text, { images })` is
  * turn-scoped — it sends the supplied images alongside `text` as one user
@@ -62,7 +62,7 @@ function extractPromptImages(
  * the skelm side, so filtering on `role: 'user'` is sufficient.
  */
 function gatherImagesFromMessages(
-  messages: InferRequest['messages'],
+  messages: InferenceRequest['messages'],
 ): ReadonlyArray<{ mimeType: string; data: string }> {
   const out: Array<{ mimeType: string; data: string }> = []
   for (const m of messages) {
@@ -220,7 +220,10 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
     label: options.label ?? 'Pi Coding Agent (SDK)',
     capabilities,
 
-    async infer(request: InferRequest, context: BackendContext): Promise<InferResponse> {
+    async inference(
+      request: InferenceRequest,
+      context: BackendContext,
+    ): Promise<InferenceResponse> {
       // Fail-closed before acquiring the concurrency slot — see comment on
       // assertEgressEnforceable.
       assertEgressEnforceable(context.permissions)
@@ -253,7 +256,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
           inferImages.length > 0 ? inferImages : undefined,
         )
 
-        const response: InferResponse = {
+        const response: InferenceResponse = {
           ...(result.usage !== undefined && {
             usage: {
               inputTokens: result.usage.inputTokens,
@@ -410,11 +413,11 @@ function buildSystemContent(
 }
 
 /**
- * Concatenate InferRequest messages into a single prompt string.
+ * Concatenate InferenceRequest messages into a single prompt string.
  * Pi runs as a chat agent that takes one user prompt — for multi-turn
  * histories we serialize the conversation into a labeled transcript.
  */
-function buildInferPrompt(req: InferRequest): string {
+function buildInferPrompt(req: InferenceRequest): string {
   // Pi does not support image content; collapse any multimodal messages to
   // their text parts. Callers needing vision should route to a vision-capable
   // backend (anthropic / openai).

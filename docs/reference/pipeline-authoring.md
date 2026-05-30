@@ -85,10 +85,10 @@ The allowlist is checked against the **basename of the resolved binary** (`git`,
 
 When `timeoutMs` is set, the runtime chains an `AbortController` to `ctx.signal` and races `run()` against the budget. Authors that ignore `ctx.signal` still lose the race — the wrapping promise rejects with `StepTimeoutError` so a runaway code step cannot block the gateway.
 
-### `llm(def)` — single-shot inference
+### `infer(def)` — single-shot inference
 
 ```ts
-llm({
+infer({
   id: string
   prompt:
     | string
@@ -108,9 +108,9 @@ Multimodal prompts use `ContentPart` blocks. Build them with the
 `textPart` / `imagePart` / `imagePartFromFile` helpers:
 
 ```ts
-import { imagePartFromFile, textPart, llm } from 'skelm'
+import { imagePartFromFile, textPart, infer } from 'skelm'
 
-llm({
+infer({
   id: 'describe',
   backend: 'anthropic',
   prompt: async (ctx) => [
@@ -301,7 +301,7 @@ currently evaluated by the runtime.
 
 ## `continueOnError` — soft step failures
 
-Every top-level step builder (`code`, `llm`, `agent`, `parallel`, `forEach`,
+Every top-level step builder (`code`, `inference`, `agent`, `parallel`, `forEach`,
 `branch`, `loop`, `wait`, `pipelineStep`, `invoke`, `idempotent`) accepts an
 optional `continueOnError?: boolean`. Default `false`.
 

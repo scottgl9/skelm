@@ -10,8 +10,8 @@ import {
   BackendCapabilityError,
   type BackendContext,
   BackendRegistry,
-  type InferRequest,
-  type InferResponse,
+  type InferenceRequest,
+  type InferenceResponse,
   type SkelmBackend,
   type Usage,
 } from '../backend.js'
@@ -20,7 +20,7 @@ import { runPipeline } from '../runner.js'
 
 /**
  * Build a deterministic fixture backend for tests. Provide a map keyed
- * either by step id or by an arbitrary route; the backend's `infer()` calls
+ * either by step id or by an arbitrary route; the backend's `inference()` calls
  * `respond(req)` and returns the result. Recorded calls are exposed as
  * `calls` for assertions.
  */
@@ -28,9 +28,9 @@ export function fixtureBackend(opts: {
   id: string
   label?: string
   capabilities?: Partial<BackendCapabilities>
-  respond: (req: InferRequest) => InferResponse | Promise<InferResponse>
-}): SkelmBackend & { readonly calls: ReadonlyArray<InferRequest> } {
-  const calls: InferRequest[] = []
+  respond: (req: InferenceRequest) => InferenceResponse | Promise<InferenceResponse>
+}): SkelmBackend & { readonly calls: ReadonlyArray<InferenceRequest> } {
+  const calls: InferenceRequest[] = []
 
   const capabilities: BackendCapabilities = {
     prompt: true,
@@ -43,11 +43,11 @@ export function fixtureBackend(opts: {
     ...opts.capabilities,
   }
 
-  const backend: SkelmBackend & { calls: InferRequest[] } = {
+  const backend: SkelmBackend & { calls: InferenceRequest[] } = {
     id: opts.id,
     capabilities,
     calls,
-    async infer(req: InferRequest, _ctx: BackendContext): Promise<InferResponse> {
+    async inference(req: InferenceRequest, _ctx: BackendContext): Promise<InferenceResponse> {
       calls.push(req)
       return opts.respond(req)
     },
@@ -58,7 +58,7 @@ export function fixtureBackend(opts: {
   return backend
 }
 
-export type BackendContractSuite = 'infer' | 'agent' | 'permission-gate'
+export type BackendContractSuite = 'inference' | 'agent' | 'permission-gate'
 
 export interface BackendContractCase<TRequest, TResponse> {
   readonly name: string
@@ -96,7 +96,7 @@ export interface BackendAdversarialCase {
 export interface BackendContractOptions {
   readonly name?: string
   readonly skip?: readonly BackendContractSuite[]
-  readonly inferCases?: readonly BackendContractCase<InferRequest, InferResponse>[]
+  readonly inferCases?: readonly BackendContractCase<InferenceRequest, InferenceResponse>[]
   readonly agentCases?: readonly BackendContractCase<AgentRequest, AgentResponse>[]
   readonly adversarialCases?: readonly BackendAdversarialCase[]
 }
@@ -114,25 +114,28 @@ export function runBackendContract(
       await withBackend(backendOrFactory, async (backend) => {
         expect(backend.id.length).toBeGreaterThan(0)
         if (backend.capabilities.prompt) {
-          expect(typeof backend.infer).toBe('function')
+          expect(typeof backend.inference).toBe('function')
         } else {
-          expect(backend.infer).toBeUndefined()
+          expect(backend.inference).toBeUndefined()
         }
         expect(['native', 'wrapped', 'unsupported']).toContain(backend.capabilities.toolPermissions)
       })
     })
 
-    if (!skipped.has('infer')) {
+    if (!skipped.has('inference')) {
       const inferCases = options.inferCases ?? [
         { name: 'basic infer', request: basicInferRequest() },
       ]
       for (const inferCase of inferCases) {
         it(`satisfies infer case: ${inferCase.name}`, async () => {
           await withBackend(backendOrFactory, async (backend) => {
-            if (!backend.capabilities.prompt || typeof backend.infer !== 'function') {
+            if (!backend.capabilities.prompt || typeof backend.inference !== 'function') {
               throw new Error(`backend ${backend.id} does not satisfy the infer contract`)
             }
-            const response = await backend.infer(inferCase.request, buildContext(inferCase.context))
+            const response = await backend.inference(
+              inferCase.request,
+              buildContext(inferCase.context),
+            )
             assertInferResponseShape(response, inferCase.request)
             await inferCase.assert?.(response)
           })
@@ -242,7 +245,7 @@ function buildContext(context: Partial<BackendContext> = {}): BackendContext {
   }
 }
 
-function basicInferRequest(): InferRequest {
+function basicInferRequest(): InferenceRequest {
   return {
     messages: [{ role: 'user', content: 'ping' }],
   }
@@ -254,7 +257,7 @@ function basicAgentRequest(): AgentRequest {
   }
 }
 
-function assertInferResponseShape(response: InferResponse, request: InferRequest): void {
+function assertInferResponseShape(response: InferenceResponse, request: InferenceRequest): void {
   expect(response).toBeTypeOf('object')
   if (request.outputSchema !== undefined) {
     expect(response.structured).not.toBeUndefined()

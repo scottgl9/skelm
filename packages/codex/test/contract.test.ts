@@ -71,7 +71,7 @@ runBackendContract(
   },
   {
     name: 'codex',
-    skip: ['infer', 'permission-gate'],
+    skip: ['inference', 'permission-gate'],
     agentCases: [
       {
         name: 'basic agent run with read-only policy',

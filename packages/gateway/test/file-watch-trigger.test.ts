@@ -1,4 +1,4 @@
-import { mkdtemp, rm, unlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, realpath, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -8,6 +8,7 @@ let tempDir: string
 
 beforeEach(async () => {
   tempDir = await mkdtemp(join(tmpdir(), 'skelm-file-watch-'))
+  tempDir = await realpath(tempDir)
 })
 
 afterEach(async () => {
@@ -66,6 +67,8 @@ describe('file-watch trigger', () => {
       path: tempDir,
       debounceMs: 75,
     })
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
 
     const filePath = join(tempDir, 'debounce.txt')
     await writeFile(filePath, 'one')

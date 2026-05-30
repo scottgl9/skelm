@@ -4,8 +4,8 @@ import type {
   BackendCapabilities,
   BackendContext,
   BackendId,
-  InferRequest,
-  InferResponse,
+  InferenceRequest,
+  InferenceResponse,
   SkelmBackend,
 } from './backend.js'
 
@@ -44,7 +44,7 @@ export function createRoutingBackend(opts: RoutingBackendOptions): SkelmBackend 
   const isRetryable = opts.retryable ?? (() => true)
 
   const tryEach = async <T>(
-    method: 'infer' | 'run',
+    method: 'inference' | 'run',
     fn: (b: SkelmBackend) => Promise<T>,
   ): Promise<T> => {
     let lastErr: unknown
@@ -92,11 +92,11 @@ export function createRoutingBackend(opts: RoutingBackendOptions): SkelmBackend 
     },
   }
 
-  if (all.some((b) => typeof b.infer === 'function')) {
-    wrapper.infer = (req: InferRequest, ctx: BackendContext): Promise<InferResponse> =>
-      tryEach('infer', (b) => {
-        if (b.infer === undefined) throw new Error(`backend ${b.id} has no infer`)
-        return b.infer(req, ctx)
+  if (all.some((b) => typeof b.inference === 'function')) {
+    wrapper.inference = (req: InferenceRequest, ctx: BackendContext): Promise<InferenceResponse> =>
+      tryEach('inference', (b) => {
+        if (b.inference === undefined) throw new Error(`backend ${b.id} has no infer`)
+        return b.inference(req, ctx)
       })
   }
   if (all.some((b) => typeof b.run === 'function')) {

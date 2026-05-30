@@ -19,7 +19,7 @@ function makeFactory() {
 describe('acp-backend contract', () => {
   runBackendContract(makeFactory(), {
     name: 'acp-backend',
-    skip: ['infer'], // ACP backend only implements run(), not infer()
+    skip: ['inference'], // ACP backend only implements run(), not inference()
   })
 })
 
