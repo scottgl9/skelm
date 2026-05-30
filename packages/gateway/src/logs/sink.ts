@@ -61,15 +61,21 @@ function redactObject(obj: Readonly<Record<string, unknown>>): Record<string, un
       out[k] = '[REDACTED]'
       continue
     }
-    if (typeof v === 'string') {
-      out[k] = redactString(v)
-    } else if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      out[k] = redactObject(v as Record<string, unknown>)
-    } else {
-      out[k] = v
-    }
+    out[k] = redactValue(v)
   }
   return out
+}
+
+// Recursively redact any value. Arrays MUST be traversed too: a secret-shaped
+// string (or a secret-named field) buried in an array — e.g. a logged
+// `argv: ['curl', '-H', 'Authorization: Bearer sk-…']` or request headers
+// serialized as a list — would otherwise pass through verbatim and leak into
+// `skelm logs` / the file sink.
+function redactValue(v: unknown): unknown {
+  if (typeof v === 'string') return redactString(v)
+  if (Array.isArray(v)) return v.map(redactValue)
+  if (v !== null && typeof v === 'object') return redactObject(v as Record<string, unknown>)
+  return v
 }
 
 function redactString(s: string): string {
