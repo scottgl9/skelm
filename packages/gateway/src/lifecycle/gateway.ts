@@ -100,6 +100,11 @@ export class Gateway {
   private readonly inFlightRuns = new Map<string, AbortController>()
   private readonly inFlightRunners = new Map<string, import('@skelm/core').Runner>()
   private metricsInternal: import('@skelm/metrics').MetricsCollector | null = null
+  // Captured as a function reference (not the module itself) so production
+  // bundles only pull in @opentelemetry/api when enableOtel is true.
+  private otelAttach: ((events: import('@skelm/core').EventBus) => { dispose(): void }) | null =
+    null
+  private otelDisposers: Array<{ dispose(): void }> = []
   private metricsBus: import('@skelm/core').EventBus | null = null
   /** Single shared EventBus that every per-request Runner publishes into,
    *  and that GET /runs/:id/stream subscribes to. Lazily-constructed; the
@@ -388,6 +393,18 @@ export class Gateway {
   }
 
   /**
+   * Subscribe an EventBus into the OpenTelemetry collector when
+   * enableOtel:true. The dispatcher calls this alongside attachMetricsBus
+   * so every run produces a `run:<pipelineId>` span and one `step:<id>`
+   * span per step. No-ops when otel is disabled. Disposers are tracked
+   * so stop() can unsubscribe.
+   */
+  attachOtelBus(bus: import('@skelm/core').EventBus): void {
+    if (this.otelAttach === null) return
+    this.otelDisposers.push(this.otelAttach(bus))
+  }
+
+  /**
    * Shared async-start path used by `POST /pipelines/:id/start` and the batch
    * fan-out route. Constructs a Runner with the gateway's enforcement, wires
    * skills + sub-pipeline lookup, registers the run for cancellation, and
@@ -450,6 +467,7 @@ export class Gateway {
       ...(this.backendsInternal !== undefined && { backends: this.backendsInternal }),
     })
     this.attachMetricsBus(runner.events)
+    this.attachOtelBus(runner.events)
     const controller = new AbortController()
     const runId = crypto.randomUUID()
     this.registerRun(runId, controller, runner)
@@ -759,6 +777,12 @@ export class Gateway {
         const { MetricsCollector } = await import('@skelm/metrics')
         this.metricsInternal = new MetricsCollector()
       }
+      if (this.options.enableOtel) {
+        // Captured behind a closure so the dynamic import only happens once
+        // and per-run attach calls are synchronous (matches metrics).
+        const { attachOpenTelemetry } = await import('@skelm/otel')
+        this.otelAttach = (bus) => attachOpenTelemetry(bus)
+      }
       await this.initAgentmemory()
       // Start the egress proxy before HTTP server
       await this.startEgressProxy()
@@ -932,6 +956,20 @@ export class Gateway {
         }),
       ])
     } finally {
+      // Unsubscribe every OTel attachment so spans stop being emitted and
+      // the subscriber listeners on freed buses are released. Disposers
+      // are individually try/catch'd via the `?.()` so a single failure
+      // doesn't prevent the rest of stop() from running.
+      for (const disposer of this.otelDisposers) {
+        try {
+          disposer.dispose()
+        } catch {
+          /* otel dispose failures must not block gateway stop */
+        }
+      }
+      this.otelDisposers = []
+      this.otelAttach = null
+      this.metricsInternal = null
       this.state = 'stopped'
       this.lockfile = null
       this.discovery = null
