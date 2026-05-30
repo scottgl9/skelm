@@ -150,6 +150,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
         ...(gateway.backends !== undefined && { backends: gateway.backends }),
       })
       gateway.attachMetricsBus(runner.events)
+      gateway.attachOtelBus(runner.events)
       const controller = new AbortController()
       const runId = crypto.randomUUID()
       gateway.registerRun(runId, controller, runner)
@@ -233,6 +234,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
         ...(gateway.backends !== undefined && { backends: gateway.backends }),
       })
       gateway.attachMetricsBus(runner.events)
+      gateway.attachOtelBus(runner.events)
       const controller = new AbortController()
       const runId = crypto.randomUUID()
       gateway.registerRun(runId, controller, runner)
@@ -294,6 +296,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
         ...(gateway.backends !== undefined && { backends: gateway.backends }),
       })
       gateway.attachMetricsBus(runner.events)
+      gateway.attachOtelBus(runner.events)
       const controller = new AbortController()
       const runId = crypto.randomUUID()
       gateway.registerRun(runId, controller, runner)

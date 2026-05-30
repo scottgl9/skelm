@@ -51,6 +51,7 @@ export async function runPipelineSync(
     workspaceManager: gateway.workspaceManager,
   })
   gateway.attachMetricsBus(runner.events)
+  gateway.attachOtelBus(runner.events)
   const controller = new AbortController()
   const runId = crypto.randomUUID()
   gateway.registerRun(runId, controller, runner)

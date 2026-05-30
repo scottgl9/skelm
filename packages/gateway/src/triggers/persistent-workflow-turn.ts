@@ -151,6 +151,7 @@ export async function runPersistentWorkflowTurn(
       ...(opts.backends !== undefined && { backends: opts.backends }),
     })
     gateway.attachMetricsBus(runner.events)
+    gateway.attachOtelBus(runner.events)
     gateway.metrics?.recordTriggerFire(triggerId)
 
     const controller = new AbortController()
