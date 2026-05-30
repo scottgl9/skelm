@@ -1,6 +1,7 @@
 import { parseDuration } from '@skelm/core'
 import { type Router, createError, eventHandler, readBody } from 'h3'
 import type { Gateway } from '../../lifecycle/gateway.js'
+import { isValidIntervalMs } from '../../triggers/pipeline-trigger-to-spec.js'
 import type { TriggerRegistration, TriggerSpec } from '../../triggers/types.js'
 
 export function registerScheduleRoutes(router: Router, gateway: Gateway): void {
@@ -156,6 +157,11 @@ function scheduleTriggerToSpec(
           return 'invalid'
         }
       }
+      // Reject intervals outside setInterval's effective range. Node silently
+      // clamps delays <= 0 (and > 2^31-1) to 1ms, so an unvalidated everyMs of
+      // -5 / 0 / 1e12 would arm a ~1ms tight loop and fire the workflow ~1000x/s
+      // — a denial of service. The cron path already validates its expression.
+      if (!isValidIntervalMs(resolvedEveryMs)) return 'invalid'
       return {
         kind: 'interval',
         id,
@@ -223,6 +229,8 @@ function scheduleTriggerToSpec(
       const everyMs = trigger.everyMs
       const sourceFnId = trigger.sourceFnId
       if (typeof everyMs !== 'number' || typeof sourceFnId !== 'string') return 'invalid'
+      // Same setInterval tight-loop guard as the interval kind.
+      if (!isValidIntervalMs(everyMs)) return 'invalid'
       const spec: TriggerSpec = { kind: 'poll', id, workflowId, everyMs, sourceFnId }
       if (typeof trigger.dedupeKeyFnId === 'string') spec.dedupeKeyFnId = trigger.dedupeKeyFnId
       return spec
