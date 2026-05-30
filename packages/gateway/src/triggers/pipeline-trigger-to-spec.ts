@@ -104,12 +104,22 @@ export function pipelineTriggerToSpec(
     case 'interval': {
       const everyMsRaw = trigger.everyMs
       const everyRaw = trigger.every
-      const everyMs =
-        typeof everyMsRaw === 'number'
-          ? everyMsRaw
-          : typeof everyRaw === 'string'
-            ? parseDuration(everyRaw)
-            : undefined
+      let everyMs: number | undefined
+      if (typeof everyMsRaw === 'number') {
+        everyMs = everyMsRaw
+      } else if (typeof everyRaw === 'string') {
+        // parseDuration throws on a malformed string (e.g. '5min', the valid
+        // unit is 'm'). The schedules HTTP route catches that and rejects with
+        // 400; here an uncaught throw would crash trigger discovery at gateway
+        // boot / project activation — one typo'd trigger taking down the whole
+        // workflow load — instead of skipping the bad trigger like every other
+        // invalid config. Treat an unparseable duration as invalid.
+        try {
+          everyMs = parseDuration(everyRaw)
+        } catch {
+          return undefined
+        }
+      }
       if (everyMs === undefined || !isValidIntervalMs(everyMs)) return undefined
       return {
         kind: 'interval',
