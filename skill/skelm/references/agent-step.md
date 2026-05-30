@@ -59,12 +59,12 @@ If `backend` is omitted on the step, the runtime resolves it from (in order): `c
 
 ### Pi backends (`@skelm/pi`)
 
-Two pi backends ship in `@skelm/pi`. Prefer the **SDK** backend — it gives you native enforcement of the skelm permission policy and supports both `agent()` and `llm()` steps.
+Two pi backends ship in `@skelm/pi`. Prefer the **SDK** backend — it gives you native enforcement of the skelm permission policy and supports both `agent()` and `infer()` steps.
 
 | | `createPiBackend` (RPC) | `createPiSdkBackend` (SDK) |
 |---|---|---|
 | Tool enforcement | Advisory | **Native** — pi hard-enforces the allowlist |
-| `llm()` support  | No                      | Yes                          |
+| `infer()` support  | No                      | Yes                          |
 | System prompt    | Not controllable        | Pi's default; `req.system` appended; optional full replace |
 | Peer dep         | `pi` CLI on `$PATH`     | `@earendil-works/pi-coding-agent` npm package |
 

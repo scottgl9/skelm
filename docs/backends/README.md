@@ -1,6 +1,6 @@
 # Backends
 
-A **backend** in skelm is anything that satisfies the `SkelmBackend` interface from `@skelm/core`. The runtime calls `infer()` for `llm()` steps and `run()` for `agent()` steps; nothing else is special-cased.
+A **backend** in skelm is anything that satisfies the `SkelmBackend` interface from `@skelm/core`. The runtime calls `inference()` on the backend for `infer()` steps and `run()` for `agent()` steps; nothing else is special-cased.
 
 There is one interface, one registry. The split between "model" and "agent" is a *capability* the backend declares, not a parallel class hierarchy.
 
@@ -9,7 +9,7 @@ interface SkelmBackend {
   id: string
   label?: string
   capabilities: BackendCapabilities
-  infer?(req: InferRequest, ctx: BackendContext): Promise<InferResponse>
+  inference?(req: InferenceRequest, ctx: BackendContext): Promise<InferenceResponse>
   run?(req: AgentRequest, ctx: BackendContext): Promise<AgentResponse>
 }
 ```
@@ -18,7 +18,7 @@ Capabilities (`prompt`, `streaming`, `mcp`, `skills`, `modelSelection`, `toolPer
 
 ## Built-in backends
 
-| Backend                 | Factory                            | Package          | `llm()` | `agent()` | Tool enforcement |
+| Backend                 | Factory                            | Package          | `infer()` | `agent()` | Tool enforcement |
 |-------------------------|------------------------------------|------------------|:-------:|:---------:|------------------|
 | OpenAI / OpenAI-compat  | `createOpenAIBackend`              | `@skelm/core`    |   ✅    |    —      | n/a              |
 | Anthropic               | `createAnthropicBackend`           | `@skelm/core`    |   ✅    |    —      | n/a              |
@@ -43,8 +43,8 @@ import { defineConfig } from 'skelm'
 export default defineConfig({
   backends: {
     // Selectors
-    default: 'openai',     // used by both llm() and agent() if not overridden
-    llm:     'openai',     // optional — default for llm() steps
+    default: 'openai',     // used by both infer() and agent() if not overridden
+    infer:     'openai',     // optional — default for infer() steps
     agent:   'opencode',   // optional — default for agent() steps
 
     // Backend definitions
@@ -76,7 +76,7 @@ export default defineConfig({
 Step-level `backend:` overrides the config-level default.
 
 ```ts
-import { agent, llm, pipeline } from 'skelm'
+import { agent, infer, pipeline } from 'skelm'
 import { z } from 'zod'
 
 export default pipeline({
@@ -84,7 +84,7 @@ export default pipeline({
   input:  z.object({ text: z.string() }),
   output: z.object({ summary: z.string(), action: z.string() }),
   steps: [
-    llm({
+    infer({
       id: 'summarize',
       backend: 'openai',
       prompt: (ctx) => `Summarize in one sentence:\n${ctx.input.text}`,
@@ -121,9 +121,9 @@ export default defineConfig({
 
 The same pattern works for backends you write yourself — see [Writing a backend](../guides/writing-a-backend.md).
 
-## Picking a backend for `llm()`
+## Picking a backend for `infer()`
 
-For `llm()` you almost always want a model provider (`createOpenAIBackend` or `createAnthropicBackend`). The OpenAI backend talks to anything that exposes the OpenAI `/v1/chat/completions` shape — vLLM, llama.cpp, sglang, ollama (with `/v1`), and the cloud OpenAI endpoint all work behind the same factory:
+For `infer()` you almost always want a model provider (`createOpenAIBackend` or `createAnthropicBackend`). The OpenAI backend talks to anything that exposes the OpenAI `/v1/chat/completions` shape — vLLM, llama.cpp, sglang, ollama (with `/v1`), and the cloud OpenAI endpoint all work behind the same factory:
 
 ```ts
 openai: {

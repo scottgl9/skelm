@@ -123,7 +123,7 @@ describe('createSkelmAgentBackend', () => {
 })
 
 // ---------------------------------------------------------------------------
-// infer() — single-shot LLM inference
+// inference() — single-shot LLM inference
 // ---------------------------------------------------------------------------
 
 describe('SkelmAgentBackend — infer (mocked)', () => {
@@ -135,7 +135,7 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
   it('returns the assistant content for a simple prompt', async () => {
     stubFetch([{ content: '4' }])
 
-    const response = await backend.infer?.(
+    const response = await backend.inference?.(
       { messages: [{ role: 'user', content: 'What is 2 + 2?' }] },
       { signal: new AbortController().signal },
     )
@@ -148,7 +148,7 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
   it('requests JSON object mode and parses structured output', async () => {
     const fetchSpy = stubFetch([{ content: '{"answer":"4"}' }])
 
-    const response = await backend.infer?.(
+    const response = await backend.inference?.(
       {
         messages: [{ role: 'user', content: 'What is 2 + 2?' }],
         outputSchema: { type: 'object', properties: { answer: { type: 'string' } } } as never,
@@ -174,7 +174,7 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
     })
     const fetchSpy = stubFetch([{ content: 'ok' }])
 
-    await apiKeyed.infer?.(
+    await apiKeyed.inference?.(
       { messages: [{ role: 'user', content: 'ping' }] },
       { signal: new AbortController().signal },
     )
@@ -188,7 +188,7 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
     // is a successful inference of empty text, not an error.
     stubFetch([{ content: '' }])
 
-    const result = await backend.infer?.(
+    const result = await backend.inference?.(
       { messages: [{ role: 'user', content: 'x' }] },
       { signal: new AbortController().signal },
     )
@@ -208,7 +208,7 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
     })
     vi.stubGlobal('fetch', fetchSpy)
     await expect(
-      backend.infer?.(
+      backend.inference?.(
         { messages: [{ role: 'user', content: 'x' }] },
         { signal: new AbortController().signal },
       ),
@@ -244,7 +244,7 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
     vi.stubGlobal('fetch', fetchSpy)
 
     await expect(
-      backend.infer?.(
+      backend.inference?.(
         { messages: [{ role: 'user', content: 'x' }] },
         { signal: new AbortController().signal },
       ),
@@ -252,7 +252,7 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
 
     // Round-trip the reasoning + finishReason via the error
     try {
-      await backend.infer?.(
+      await backend.inference?.(
         { messages: [{ role: 'user', content: 'x' }] },
         { signal: new AbortController().signal },
       )
@@ -265,7 +265,7 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
     }
   })
 
-  it('surfaces reasoning_content on successful InferResponse (#182)', async () => {
+  it('surfaces reasoning_content on successful InferenceResponse (#182)', async () => {
     const fetchSpy = vi.fn(async (_url: unknown, _init?: unknown): Promise<Response> => {
       return new Response(
         JSON.stringify({
@@ -288,7 +288,7 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
     })
     vi.stubGlobal('fetch', fetchSpy)
 
-    const result = await backend.infer?.(
+    const result = await backend.inference?.(
       { messages: [{ role: 'user', content: 'x' }] },
       { signal: new AbortController().signal },
     )
@@ -305,7 +305,7 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
       maxTokens: 256,
     })
     const fetchSpy = stubFetch([{ content: 'ok' }])
-    await capped.infer?.(
+    await capped.inference?.(
       { messages: [{ role: 'user', content: 'hi' }] },
       { signal: new AbortController().signal },
     )
@@ -322,9 +322,12 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
       maxTokens: 256,
     })
     const fetchSpy = stubFetch([{ content: 'ok' }])
-    await capped.infer?.({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 64 } as never, {
-      signal: new AbortController().signal,
-    })
+    await capped.inference?.(
+      { messages: [{ role: 'user', content: 'hi' }], maxTokens: 64 } as never,
+      {
+        signal: new AbortController().signal,
+      },
+    )
     const body = JSON.parse((fetchSpy.mock.calls[0]?.[1] as { body: string }).body) as {
       max_tokens?: number
     }
@@ -333,7 +336,7 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
 
   it('omits max_tokens when neither option nor request sets it', async () => {
     const fetchSpy = stubFetch([{ content: 'ok' }])
-    await backend.infer?.(
+    await backend.inference?.(
       { messages: [{ role: 'user', content: 'hi' }] },
       { signal: new AbortController().signal },
     )

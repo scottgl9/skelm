@@ -10,7 +10,7 @@
 // `runBackendContract`. We do not parse what suites are skipped; the
 // always-on capability-self-consistency block runs even with every
 // optional suite skipped, and that is the minimum bar this guard
-// enforces. Per-backend tests should grow infer/agent/permission-gate
+// enforces. Per-backend tests should grow inference/agent/permission-gate
 // coverage over time.
 //
 // Adding a new backend? Add its package name to BACKENDS below and ship

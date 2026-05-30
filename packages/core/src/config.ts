@@ -32,7 +32,7 @@ export interface SkelmConfigBackendEntry {
 
 export interface SkelmConfigBackends {
   default?: string
-  llm?: string
+  infer?: string
   agent?: string
   [k: string]: SkelmConfigBackendEntry | string | undefined
 }
@@ -112,7 +112,7 @@ export interface SkelmConfig {
    * `index.pipeline.{mts,ts}` file or a single unambiguous workflow file.
    */
   entrypoint?: string
-  /** Default backend id used by llm()/agent() steps that don't specify one. */
+  /** Default backend id used by infer()/agent() steps that don't specify one. */
   backend?: string
   backends?: SkelmConfigBackends
   /**
@@ -222,7 +222,7 @@ export const CONFIG_FILENAMES = [
 /** Default configuration used when no skelm.config.ts is found. */
 export const DEFAULT_CONFIG: SkelmConfig = Object.freeze({
   backends: {
-    llm: 'openai' as const,
+    infer: 'openai' as const,
     openai: {},
   },
   pipelines: { discovery: 'auto' as const, glob: 'workflows/**/*.workflow.{mts,ts}' },

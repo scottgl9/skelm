@@ -49,10 +49,13 @@ describe('createVercelAiBackend — capabilities', () => {
   })
 })
 
-describe('createVercelAiBackend — infer()', () => {
+describe('createVercelAiBackend — inference()', () => {
   it('returns text for a plain prompt', async () => {
     const backend = createVercelAiBackend({ model: mockModel('hello world') })
-    const result = await backend.infer?.({ messages: [{ role: 'user', content: 'hi' }] }, makeCtx())
+    const result = await backend.inference?.(
+      { messages: [{ role: 'user', content: 'hi' }] },
+      makeCtx(),
+    )
     expect(result?.text).toBe('hello world')
     expect(result?.structured).toBeUndefined()
   })
@@ -75,7 +78,7 @@ describe('createVercelAiBackend — infer()', () => {
       },
     })
     const backend = createVercelAiBackend({ model })
-    const result = await backend.infer?.(
+    const result = await backend.inference?.(
       {
         messages: [{ role: 'user', content: 'q' }],
         outputSchema: z.object({ answer: z.number() }),
@@ -90,7 +93,10 @@ describe('createVercelAiBackend — infer()', () => {
 
   it('reports usage from the model', async () => {
     const backend = createVercelAiBackend({ model: mockModel('ok') })
-    const result = await backend.infer?.({ messages: [{ role: 'user', content: 'hi' }] }, makeCtx())
+    const result = await backend.inference?.(
+      { messages: [{ role: 'user', content: 'hi' }] },
+      makeCtx(),
+    )
     expect(result?.usage).toEqual({ inputTokens: 10, outputTokens: 5 })
   })
 })
@@ -231,13 +237,13 @@ describe('createVercelAiBackend — visionModels allowlist (F123)', () => {
     ],
   }
 
-  it('throws BackendCapabilityError on infer() when model not in visionModels', async () => {
+  it('throws BackendCapabilityError on inference() when model not in visionModels', async () => {
     const model = mockModel('would-have-hallucinated')
     const backend = createVercelAiBackend({
       model,
       visionModels: ['qwen2.5-vl', 'gpt-4o'],
     })
-    await expect(backend.infer?.({ messages: [imageMsg] }, makeCtx())).rejects.toThrow(
+    await expect(backend.inference?.({ messages: [imageMsg] }, makeCtx())).rejects.toThrow(
       /visionModels allowlist/,
     )
   })
@@ -307,28 +313,28 @@ describe('createVercelAiBackend — visionModels allowlist (F123)', () => {
 })
 
 describe('createVercelAiBackend — per-call model override guard (F133)', () => {
-  it('throws BackendCapabilityError on infer() when req.model differs from bound model', async () => {
+  it('throws BackendCapabilityError on inference() when req.model differs from bound model', async () => {
     const backend = createVercelAiBackend({ model: mockModel('bound-reply') })
     await expect(
-      backend.infer?.(
+      backend.inference?.(
         { messages: [{ role: 'user', content: 'hi' }], model: 'some-other-model' },
         makeCtx(),
       ),
     ).rejects.toThrow(/cannot honour per-call model overrides/)
   })
 
-  it('passes infer() when req.model matches bound model id', async () => {
+  it('passes inference() when req.model matches bound model id', async () => {
     const backend = createVercelAiBackend({ model: mockModel('bound-reply') })
-    const result = await backend.infer?.(
+    const result = await backend.inference?.(
       { messages: [{ role: 'user', content: 'hi' }], model: 'mock-model-id' },
       makeCtx(),
     )
     expect(result?.text).toBe('bound-reply')
   })
 
-  it('passes infer() when req.model matches the provider:modelId form', async () => {
+  it('passes inference() when req.model matches the provider:modelId form', async () => {
     const backend = createVercelAiBackend({ model: mockModel('bound-reply') })
-    const result = await backend.infer?.(
+    const result = await backend.inference?.(
       { messages: [{ role: 'user', content: 'hi' }], model: 'mock-provider:mock-model-id' },
       makeCtx(),
     )
@@ -337,14 +343,17 @@ describe('createVercelAiBackend — per-call model override guard (F133)', () =>
 
   it('is a no-op when req.model is undefined (preserves prior behavior)', async () => {
     const backend = createVercelAiBackend({ model: mockModel('bound-reply') })
-    const result = await backend.infer?.({ messages: [{ role: 'user', content: 'hi' }] }, makeCtx())
+    const result = await backend.inference?.(
+      { messages: [{ role: 'user', content: 'hi' }] },
+      makeCtx(),
+    )
     expect(result?.text).toBe('bound-reply')
   })
 
   it('error message names both bound model and requested model', async () => {
     const backend = createVercelAiBackend({ model: mockModel('bound-reply') })
     await expect(
-      backend.infer?.(
+      backend.inference?.(
         { messages: [{ role: 'user', content: 'hi' }], model: 'qwen3-8b' },
         makeCtx(),
       ),
@@ -358,7 +367,7 @@ describe('createVercelAiBackend — per-call model override guard (F133)', () =>
     // which is exactly the contract this guard enforces.
     const backend = createVercelAiBackend({ model: mockModel('bound-reply') })
     try {
-      await backend.infer?.(
+      await backend.inference?.(
         { messages: [{ role: 'user', content: 'hi' }], model: 'qwen3-8b' },
         makeCtx(),
       )

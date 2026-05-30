@@ -2,7 +2,7 @@
  * Backend-contract suite for `@skelm/agent`.
  *
  * Runs the capability-self-consistency block from `@skelm/core/testing`.
- * `infer` / `agent` / `permission-gate` are skipped: the live agent loop
+ * `inference` / `agent` / `permission-gate` are skipped: the live agent loop
  * and OpenAI-compatible HTTP transport are exercised exhaustively in
  * `test/agent-backend.test.ts`, `test/prompt.test.ts`, and the
  * permissions/mcp tests. The capability block here guards against the
@@ -22,6 +22,6 @@ runBackendContract(
     }),
   {
     name: 'agent',
-    skip: ['infer', 'agent', 'permission-gate'],
+    skip: ['inference', 'agent', 'permission-gate'],
   },
 )

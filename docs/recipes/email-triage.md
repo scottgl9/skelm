@@ -24,7 +24,7 @@ email-triage/
 └── package.json
 ```
 
-No `agents/` directory — this recipe uses `llm()` steps, not `agent()`. Most triage problems are classification, not action; an LLM-only flow is cheaper, faster, and easier to reason about.
+No `agents/` directory — this recipe uses `infer()` steps, not `agent()`. Most triage problems are classification, not action; an LLM-only flow is cheaper, faster, and easier to reason about.
 
 ## `sources/inbox-poll.ts`
 
@@ -48,7 +48,7 @@ export const inboxPoll: PollSource<{ id: string; from: string; subject: string; 
 ## `workflows/triage.workflow.mts`
 
 ```ts
-import { pipeline, code, llm, branch, forEach } from 'skelm'
+import { pipeline, code, infer, branch, forEach } from 'skelm'
 import { z } from 'zod'
 
 const message = z.object({
@@ -72,7 +72,7 @@ export default pipeline({
       id: 'classify',
       items: (ctx) => ctx.input.items,
       concurrency: 4,
-      step: (item) => llm({
+      step: (item) => infer({
         id: 'classify-one',
         backend: 'openai',
         prompt: (ctx) => `
@@ -142,7 +142,7 @@ export default pipeline({
 A second workflow runs daily to compose the digest from the journal:
 
 ```ts
-import { pipeline, code, llm } from 'skelm'
+import { pipeline, code, infer } from 'skelm'
 import { z } from 'zod'
 
 export default pipeline({
@@ -162,7 +162,7 @@ export default pipeline({
         return { entries: entries.filter((e: any) => e.label === 'informational') }
       },
     }),
-    llm({
+    infer({
       id: 'compose',
       backend: 'openai',
       prompt: (ctx) => `

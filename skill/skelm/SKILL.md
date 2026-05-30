@@ -27,7 +27,7 @@ A **pipeline** is a TypeScript file that exports a `pipeline()` call. It has:
 - `steps` — ordered array of `Step` values
 - optional `finalize` — transforms accumulated step outputs into the declared output shape
 
-**Step kinds:** `code | llm | agent | parallel | forEach | branch | loop | wait | pipelineStep | idempotent`
+**Step kinds:** `code | inference | agent | parallel | forEach | branch | loop | wait | pipelineStep | idempotent`
 
 Import everything from `'skelm'` (or `'@skelm/core'` in library contexts — `'skelm'` re-exports `'@skelm/core'`).
 
@@ -66,10 +66,10 @@ For multi-step composition, LLM inference, and control flow, see [references/pip
 
 ## Adding an LLM step
 
-`llm()` is for single-shot inference — chat-completion-style requests with optional structured output. The recommended backend is `'openai'` (the OpenAI factory talks to anything that exposes the OpenAI Chat Completions shape: hosted OpenAI, vLLM, llama.cpp, sglang, ollama with `/v1`):
+`infer()` is for single-shot inference — chat-completion-style requests with optional structured output. The recommended backend is `'openai'` (the OpenAI factory talks to anything that exposes the OpenAI Chat Completions shape: hosted OpenAI, vLLM, llama.cpp, sglang, ollama with `/v1`):
 
 ```ts
-import { llm, pipeline } from 'skelm'
+import { infer, pipeline } from 'skelm'
 import { z } from 'zod'
 
 export default pipeline({
@@ -77,7 +77,7 @@ export default pipeline({
   input: z.object({ text: z.string() }),
   output: z.object({ label: z.string(), confidence: z.number() }),
   steps: [
-    llm({
+    infer({
       id: 'classify-text',
       backend: 'openai',
       prompt: (ctx) =>

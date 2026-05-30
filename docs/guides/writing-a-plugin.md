@@ -110,7 +110,7 @@ Example: a redacting `afterStep` hook that strips API tokens from logs:
 import type { HookContext, StepInfo, StepResult } from 'skelm/plugin'
 
 export function redactingAfterStepHook(ctx: HookContext, step: StepInfo, result: StepResult) {
-  if (step.kind === 'agent' || step.kind === 'llm') {
+  if (step.kind === 'agent' || step.kind === 'infer') {
     const output = result.output as Record<string, unknown>
     if (typeof output?.text === 'string') {
       output.text = output.text.replace(/sk-[A-Za-z0-9-]{20,}/g, '[redacted-token]')

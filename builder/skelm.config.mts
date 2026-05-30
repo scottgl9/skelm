@@ -10,7 +10,7 @@ export default defineConfig({
   entrypoint: './builder.workflow.mts',
   // `openai: undefined` suppresses the framework-default openai backend, which
   // would otherwise be constructed at startup and demand OPENAI_API_KEY.
-  backends: { agent: 'pi-sdk', llm: 'pi-sdk', openai: undefined },
+  backends: { agent: 'pi-sdk', infer: 'pi-sdk', openai: undefined },
   instances: [
     createPiSdkBackend({
       id: 'pi-sdk',

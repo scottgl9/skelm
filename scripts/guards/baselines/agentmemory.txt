@@ -37,9 +37,9 @@ type:RunWithMemoryInnerResult
 type:RunWithMemoryOptions
 type:SessionEndRequest
 type:SessionStartRequest
+type:SessionSummary
 type:SessionsListRequest
 type:SessionsListResponse
-type:SessionSummary
 type:SmartSearchHit
 type:SmartSearchRequest
 type:SmartSearchResponse

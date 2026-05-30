@@ -81,7 +81,7 @@ describe('createPiSdkBackend', () => {
     }
     // Install a default test provider so the F131 deny-by-default guard
     // (sdk-backend.ts:assertProviderConfigured) doesn't refuse every
-    // run/infer call in tests that don't care about the providerOverride
+    // run/inference call in tests that don't care about the providerOverride
     // shape. Tests that exercise F131 / F119 explicitly delete and/or
     // override these inside their own try/finally.
     process.env.OPENAI_BASE_URL = 'http://test.invalid/v1'
@@ -104,34 +104,34 @@ describe('createPiSdkBackend', () => {
     expect(createPiSdkBackend().capabilities.toolPermissions).toBe('native')
   })
 
-  it('capabilities.prompt is true (supports llm() steps)', () => {
+  it('capabilities.prompt is true (supports infer() steps)', () => {
     expect(createPiSdkBackend().capabilities.prompt).toBe(true)
   })
 
-  it('exposes an infer() method for llm() steps', () => {
-    expect(typeof createPiSdkBackend().infer).toBe('function')
+  it('exposes an infer() method for infer() steps', () => {
+    expect(typeof createPiSdkBackend().inference).toBe('function')
   })
 
-  // --- infer (llm steps) ---
+  // --- inference (infer steps) ---
 
-  it('infer returns text when no outputSchema is set', async () => {
+  it('inference returns text when no outputSchema is set', async () => {
     const backend = createPiSdkBackend()
     const ctx = { signal: new AbortController().signal }
-    const result = await backend.infer?.({ messages: [{ role: 'user', content: 'hi' }] }, ctx)
+    const result = await backend.inference?.({ messages: [{ role: 'user', content: 'hi' }] }, ctx)
     expect(result?.text).toBe('agent output')
     expect(result?.structured).toBeUndefined()
   })
 
-  it('infer disables tools (noTools: all) for pure inference', async () => {
+  it('inference disables tools (noTools: all) for pure inference', async () => {
     const backend = createPiSdkBackend()
     const ctx = { signal: new AbortController().signal }
-    await backend.infer?.({ messages: [{ role: 'user', content: 'hi' }] }, ctx)
+    await backend.inference?.({ messages: [{ role: 'user', content: 'hi' }] }, ctx)
     const args = lastConstructorArgs()
     expect(args?.noTools).toBe('all')
     expect(args?.tools).toEqual([])
   })
 
-  it('infer parses structured JSON when outputSchema is provided', async () => {
+  it('inference parses structured JSON when outputSchema is provided', async () => {
     ;(PiSdkClient as ReturnType<typeof vi.fn>).mockImplementationOnce(() => ({
       prompt: vi.fn().mockResolvedValue({
         text: '```json\n{"answer":"42"}\n```',
@@ -140,7 +140,7 @@ describe('createPiSdkBackend', () => {
     }))
     const backend = createPiSdkBackend()
     const ctx = { signal: new AbortController().signal }
-    const result = await backend.infer?.(
+    const result = await backend.inference?.(
       {
         messages: [{ role: 'user', content: 'q' }],
         outputSchema: {
@@ -376,7 +376,10 @@ describe('createPiSdkBackend', () => {
     Reflect.deleteProperty(process.env, 'OPENAI_MODEL')
     try {
       await expect(
-        createPiSdkBackend().infer?.({ messages: [{ role: 'user', content: 'go' }] }, makeCtx()),
+        createPiSdkBackend().inference?.(
+          { messages: [{ role: 'user', content: 'go' }] },
+          makeCtx(),
+        ),
       ).rejects.toBeInstanceOf(PiSdkBackendAuthenticationError)
     } finally {
       restoreEnv('OPENAI_BASE_URL', prev.base)
@@ -409,7 +412,7 @@ describe('createPiSdkBackend', () => {
     const backend = createPiSdkBackend()
     const policy = makePolicy({ networkEgress: 'deny' })
     await expect(
-      backend.infer?.(
+      backend.inference?.(
         { messages: [{ role: 'user', content: 'hi' }] },
         makeCtx({ permissions: policy }),
       ),
@@ -466,7 +469,7 @@ describe('createPiSdkBackend', () => {
     const backend = createPiSdkBackend()
     let caught: unknown
     try {
-      await backend.infer?.({ messages: [{ role: 'user', content: 'hi' }] }, makeCtx())
+      await backend.inference?.({ messages: [{ role: 'user', content: 'hi' }] }, makeCtx())
     } catch (err) {
       caught = err
     }

@@ -53,7 +53,7 @@ export class PiBackendTimeoutError extends PiBackendError {}
  */
 export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
   const capabilities: BackendCapabilities = {
-    // RPC mode runs an agent loop; for single-shot inference (llm() steps)
+    // RPC mode runs an agent loop; for single-shot inference (infer() steps)
     // use the pi-sdk backend which can disable tools via noTools: 'all'.
     prompt: false,
     streaming: true,

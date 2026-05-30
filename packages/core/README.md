@@ -48,10 +48,10 @@ console.log(run.output)
 // { summary: '[INCIDENT] DB primary unreachable', priority: 'high' }
 ```
 
-### LLM inference step (`llm`)
+### LLM infer step (`inference`)
 
 ```ts
-import { code, llm, pipeline, runPipeline } from '@skelm/core'
+import { code, infer, pipeline, runPipeline } from '@skelm/core'
 import { createOpenAIBackend } from '@skelm/core'
 import { BackendRegistry } from '@skelm/core'
 import { z } from 'zod'
@@ -70,7 +70,7 @@ const wf = pipeline({
   input:  z.object({ summary: z.string() }),
   output: z.object({ label: z.string(), reasoning: z.string() }),
   steps: [
-    llm({
+    infer({
       id: 'classify',
       backend: 'openai',
       prompt: (ctx) => `Classify the following event as "incident", "alert", or "info":\n\n${ctx.input.summary}`,
@@ -134,7 +134,7 @@ console.log(run.output)
 
 ## Features
 
-- **Three step kinds** — `code()` for deterministic logic, `llm()` for one-shot inference, `agent()` for full agent loops. None is a wrapper around another.
+- **Three step kinds** — `code()` for deterministic logic, `infer()` for one-shot inference, `agent()` for full agent loops. None is a wrapper around another.
 - **Native control flow** — `parallel()`, `forEach()`, `branch()`, `loop()`, `wait()`, and nested `pipelineStep()`.
 - **Standard Schema bridge** — Zod is the documented default; any Standard Schema-compatible validator works for input/output validation.
 - **Default-deny permission model** — `AgentPermissions` and `TrustEnforcer` for agent step gating. Optional fields default to deny.
@@ -147,7 +147,7 @@ console.log(run.output)
 ```ts
 export {
   // builders
-  pipeline, code, llm, agent, parallel, forEach, branch, loop, wait, pipelineStep,
+  pipeline, code, infer, agent, parallel, forEach, branch, loop, wait, pipelineStep,
   // runtime
   runPipeline, Runner, type RunOptions,
   // types

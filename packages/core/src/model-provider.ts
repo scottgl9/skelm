@@ -5,7 +5,7 @@
  * Used for direct LLM() calls in workflows
  */
 
-import type { Context, LlmStep } from './types.js'
+import type { Context, InferStep } from './types.js'
 import type { RunMetadata } from './types.js'
 
 /**
@@ -240,8 +240,8 @@ export class ModelRegistry {
 /**
  * Execute an LLM step using the model registry
  */
-export async function executeLlmStep(
-  step: LlmStep,
+export async function executeInferStep(
+  step: InferStep,
   ctx: Context,
   registry: ModelRegistry,
 ): Promise<LlmCompletion> {
@@ -266,7 +266,7 @@ export async function executeLlmStep(
   // Add current prompt — the ModelRegistry path predates multimodal prompts
   // and only accepts string content; collapse any image-bearing prompt to its
   // text components. Vision callers should target a vision-capable backend
-  // via the BackendRegistry/llm() path. Function form may be async since
+  // via the BackendRegistry/infer() path. Function form may be async since
   // multimodal authoring sometimes loads bytes from disk in the resolver.
   const promptValue = await (typeof step.prompt === 'function' ? step.prompt(ctx) : step.prompt)
   const prompt =

@@ -9,7 +9,7 @@ describe('OpenAI backend', () => {
     process.env.OPENAI_API_KEY = undefined
   })
 
-  it('maps infer() to chat completions text responses', async () => {
+  it('maps inference() to chat completions text responses', async () => {
     const requests: unknown[] = []
     const server = await startServer(async (req) => {
       requests.push(req)
@@ -23,7 +23,7 @@ describe('OpenAI backend', () => {
         apiKey: 'test-key',
         baseUrl: server.baseUrl,
       })
-      const response = await backend.infer?.(
+      const response = await backend.inference?.(
         {
           system: 'be terse',
           messages: [{ role: 'user', content: 'say hi' }],
@@ -60,7 +60,7 @@ describe('OpenAI backend', () => {
     try {
       const backend = createOpenAIBackend({ apiKey: 'test-key', baseUrl: server.baseUrl })
       expect(backend.capabilities.vision).toBe(true)
-      await backend.infer?.(
+      await backend.inference?.(
         {
           messages: [
             {
@@ -105,7 +105,7 @@ describe('OpenAI backend', () => {
         apiKey: 'test-key',
         baseUrl: server.baseUrl,
       })
-      const response = await backend.infer?.(
+      const response = await backend.inference?.(
         {
           messages: [{ role: 'user', content: 'greet me' }],
           outputSchema: z.object({ greeting: z.string() }),
@@ -127,7 +127,7 @@ describe('OpenAI backend', () => {
     }))
     try {
       const backend = createOpenAIBackend({ baseUrl: server.baseUrl })
-      const response = await backend.infer?.(
+      const response = await backend.inference?.(
         {
           messages: [{ role: 'user', content: 'ping' }],
         },
@@ -179,7 +179,7 @@ describe('OpenAI backend', () => {
     expect(backend.id).toBe('openai')
     // The missing key surfaces only when the backend is actually invoked.
     await expect(
-      backend.infer?.(
+      backend.inference?.(
         { messages: [{ role: 'user', content: 'ping' }] },
         { signal: AbortSignal.timeout(5_000) },
       ),

@@ -2,7 +2,7 @@
  * Backend-contract suite for `@skelm/vercel-ai`.
  *
  * Runs the capability-self-consistency block from `@skelm/core/testing`.
- * `infer` / `agent` / `permission-gate` are skipped: the Vercel AI SDK
+ * `inference` / `agent` / `permission-gate` are skipped: the Vercel AI SDK
  * round-trip is exhaustively covered in `test/backend.test.ts`
  * (incl. tool-permission gating via `test/permissions.test.ts`). The
  * capability block here is the cheap, always-on guard against drift
@@ -31,6 +31,6 @@ runBackendContract(
     }),
   {
     name: 'vercel-ai',
-    skip: ['infer', 'agent', 'permission-gate'],
+    skip: ['inference', 'agent', 'permission-gate'],
   },
 )

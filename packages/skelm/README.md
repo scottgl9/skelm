@@ -76,7 +76,7 @@ skelm gateway install --systemd       # Install as a systemd user service
 
 Everything from `@skelm/core`:
 
-- **Builders** — `pipeline()`, `code()`, `llm()`, `agent()`, `parallel()`, `forEach()`, `branch()`, `loop()`, `wait()`, `pipelineStep()`
+- **Builders** — `pipeline()`, `code()`, `infer()`, `agent()`, `parallel()`, `forEach()`, `branch()`, `loop()`, `wait()`, `pipelineStep()`
 - **Runtime** — `runPipeline()`, `Runner`, `RunOptions`
 - **Types** — `Pipeline`, `Step`, `Context`, `Run`, `StepResult`, `RunMetadata`, `RunStatus`, `StepStatus`, `RetryPolicy`, ...
 - **Schemas** — `SkelmSchema`, `SchemaValidationError` (Standard Schema-compatible; Zod is the documented default)

@@ -52,8 +52,8 @@ describe('createPiBackend', () => {
     expect(typeof createPiBackend().run).toBe('function')
   })
 
-  it('does not expose infer() (pi is agent-only)', () => {
-    expect(createPiBackend().infer).toBeUndefined()
+  it('does not expose inference() (pi is agent-only)', () => {
+    expect(createPiBackend().inference).toBeUndefined()
   })
 })
 

@@ -3,7 +3,7 @@
  *
  * An AgentSession owns the message history for an agent run and exposes a
  * `prompt(text)` method that appends a user turn and dispatches a single
- * assistant turn through a caller-provided `infer` function. Tool-calling
+ * assistant turn through a caller-provided `inference` function. Tool-calling
  * is intentionally NOT folded in here — the existing backend `run()` path
  * still owns that. Sessions are for pipelines that want to thread an
  * inference-style chat across multiple agent-step invocations and persist

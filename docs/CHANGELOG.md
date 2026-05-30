@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Breaking
+
+- **Renamed step builder `llm()` → `infer()` and renamed backend SPI method `infer()` → `inference()`.** Public step authors call `infer({...})`; backend authors implement `async inference(req, ctx)`. Update pipelines: `import { llm }` → `import { infer }` (or from `@skelm/core`), and call sites `llm({...})` → `infer({...})`. Public type `LlmStep` → `InferStep`; runtime helpers `executeLlmStep`/`runLlmStep` → `executeInferStep`/`runInferStep`; step kind discriminator `'llm'` → `'infer'`; config routing key `backends.llm` → `backends.infer`. On the SPI side, `SkelmBackend.infer` → `SkelmBackend.inference`; types `InferRequest`/`InferResponse` → `InferenceRequest`/`InferenceResponse`; capability skip-list and routing strings `'infer'` → `'inference'`. No deprecation shim.
+
 ### Added
 
 - **`@skelm/agent` is now bundled with the CLI.** `@skelm/cli` depends on the first-party agent backend, so installing the `skelm` meta-package pulls it in automatically alongside the `codex`, `opencode`, and `pi` backends. Reference it declaratively under the `skelm-agent` id: `backends: { 'skelm-agent': { baseUrl, apiKey, model?, maxTokens?, timeoutMs?, vision? }, agent: 'skelm-agent' }` (the bare `agent` key is a reserved selector, so the backend definition uses `skelm-agent`). The `apiKey` accepts a literal or an `{ secret: "ENV_NAME" }` reference, resolved eagerly since the agent backend takes a plain key.

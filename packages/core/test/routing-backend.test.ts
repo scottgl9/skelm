@@ -4,8 +4,8 @@ import type {
   AgentResponse,
   BackendCapabilities,
   BackendContext,
-  InferRequest,
-  InferResponse,
+  InferenceRequest,
+  InferenceResponse,
   SkelmBackend,
 } from '../src/backend.js'
 import { createRoutingBackend } from '../src/routing-backend.js'
@@ -22,11 +22,11 @@ const baseCaps: BackendCapabilities = {
 
 function stubBackend(opts: {
   id: string
-  inferImpl?: (req: InferRequest, ctx: BackendContext) => Promise<InferResponse>
+  inferImpl?: (req: InferenceRequest, ctx: BackendContext) => Promise<InferenceResponse>
   runImpl?: (req: AgentRequest, ctx: BackendContext) => Promise<AgentResponse>
 }): SkelmBackend {
   const b: SkelmBackend = { id: opts.id, capabilities: baseCaps }
-  if (opts.inferImpl) b.infer = opts.inferImpl
+  if (opts.inferImpl) b.inference = opts.inferImpl
   if (opts.runImpl) b.run = opts.runImpl
   return b
 }
@@ -52,7 +52,7 @@ describe('createRoutingBackend', () => {
       },
     })
     const router = createRoutingBackend({ id: 'r', primary, failover: [fallback] })
-    const out = await router.infer?.({ messages: [] }, dummyCtx)
+    const out = await router.inference?.({ messages: [] }, dummyCtx)
     expect(out?.text).toBe('ok-primary')
     expect(primaryCalls).toBe(1)
     expect(fallbackCalls).toBe(0)
@@ -77,7 +77,7 @@ describe('createRoutingBackend', () => {
       onFailover: (info) =>
         events.push(`${info.from}->${info.to}:${(info.error as Error).message}`),
     })
-    const out = await router.infer?.({ messages: [] }, dummyCtx)
+    const out = await router.inference?.({ messages: [] }, dummyCtx)
     expect(out?.text).toBe('from-secondary')
     expect(events).toEqual(['p->s:primary down'])
   })
@@ -99,7 +99,7 @@ describe('createRoutingBackend', () => {
       failover: [secondary],
       retryable: (err) => !(err instanceof Error) || !err.message.includes('schema'),
     })
-    await expect(router.infer?.({ messages: [] }, dummyCtx)).rejects.toThrow('schema mismatch')
+    await expect(router.inference?.({ messages: [] }, dummyCtx)).rejects.toThrow('schema mismatch')
   })
 
   it('skips backends that do not implement the requested method', async () => {
@@ -112,7 +112,7 @@ describe('createRoutingBackend', () => {
       inferImpl: async () => ({ text: 'ok' }),
     })
     const router = createRoutingBackend({ id: 'r', primary: noInfer, failover: [inferer] })
-    const out = await router.infer?.({ messages: [] }, dummyCtx)
+    const out = await router.inference?.({ messages: [] }, dummyCtx)
     expect(out?.text).toBe('ok')
   })
 
@@ -130,7 +130,7 @@ describe('createRoutingBackend', () => {
       },
     })
     const router = createRoutingBackend({ id: 'r', primary: a, failover: [b] })
-    await expect(router.infer?.({ messages: [] }, dummyCtx)).rejects.toThrow('b-err')
+    await expect(router.inference?.({ messages: [] }, dummyCtx)).rejects.toThrow('b-err')
   })
 
   it('forwards capabilities from the primary', () => {
@@ -144,7 +144,7 @@ describe('createRoutingBackend', () => {
     const make = (id: string): SkelmBackend => ({
       id,
       capabilities: baseCaps,
-      async infer(): Promise<InferResponse> {
+      async inference(): Promise<InferenceResponse> {
         return { text: id }
       },
       async dispose(): Promise<void> {

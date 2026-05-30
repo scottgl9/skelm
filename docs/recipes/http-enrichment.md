@@ -64,7 +64,7 @@ export default defineConfig({
 ## `workflows/enrich-and-post.workflow.mts`
 
 ```ts
-import { pipeline, code, llm } from 'skelm'
+import { pipeline, code, infer } from 'skelm'
 import { z } from 'zod'
 
 const inboundEvent = z.object({
@@ -96,7 +96,7 @@ export default pipeline({
         return { summary, repo: ctx.input.repo, eventType: ctx.input.type }
       },
     }),
-    llm({
+    infer({
       id: 'classify',
       backend: 'openai',
       prompt: (ctx) => `
@@ -221,7 +221,7 @@ curl -H "Authorization: Bearer $TOKEN" http://gateway-host:14738/runs/abc/events
 
 - **No agent step.** Classification is a single LLM call. Latency is one round-trip plus a small fixed overhead.
 - **Deterministic normalization first.** The `code()` step gives the LLM a consistent shape regardless of how the upstream payload varies. Easier to evaluate accuracy.
-- **Structured output schema on `llm()`.** The runtime forces the LLM to return JSON matching the schema; the `code()` step that consumes it does not have to guess at parsing.
+- **Structured output schema on `infer()`.** The runtime forces the LLM to return JSON matching the schema; the `code()` step that consumes it does not have to guess at parsing.
 - **`Idempotency-Key`.** Retries from the upstream caller (network blip, queue redelivery) are safe. The same key returns the same `runId`.
 - **`bearer` auth.** The gateway is exposed on `0.0.0.0`; auth is enforced. Skelm refuses `--host 0.0.0.0` with `auth.mode: none` at startup.
 

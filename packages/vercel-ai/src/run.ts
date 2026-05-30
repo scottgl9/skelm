@@ -3,7 +3,7 @@ import { BackendCapabilityError, combineSignals } from '@skelm/core'
 import type { AgentRequest, AgentResponse, BackendContext } from '@skelm/core'
 import { type ModelMessage, Output, generateText, stepCountIs, streamText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
-import { mapMessages, mapUsage } from './infer.js'
+import { mapMessages, mapUsage } from './inference.js'
 import { applyPolicyToTools, assertEgressEnforceable } from './permissions.js'
 import { buildSystemContent, loadSkillBodies } from './skill-injection.js'
 import type { VercelAiBackendOptions } from './types.js'
@@ -23,8 +23,8 @@ export async function vercelAiRun(
   // visionModels allowlist, fail loudly *before* dispatch instead of letting
   // the upstream silently strip images and hallucinate.
   // (The agent() path has no `model` field on AgentRequest today, so the
-  // F133 per-call override guard only fires on the llm()/infer() path —
-  // see infer.ts.)
+  // F133 per-call override guard only fires on the infer()/infer() path —
+  // see inference.ts.)
   assertModelSupportsImages({
     backendId: 'vercel-ai',
     model: options.model,
@@ -129,7 +129,7 @@ async function dispatchVercelAi(p: DispatchParams): Promise<AgentResponse> {
       // stream processing (not via a separate microtask) and the textStream
       // iterator stops yielding once an error fires, so the post-loop check
       // is guaranteed to see `streamError` populated when termination was
-      // due to error. See infer.ts for the same reasoning.
+      // due to error. See inference.ts for the same reasoning.
       let streamError: unknown
       const stream = streamText({
         model: options.model,

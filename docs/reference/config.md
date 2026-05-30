@@ -13,8 +13,8 @@ export default defineConfig({
   // ── Backends ────────────────────────────────────────────────────────
   backend?: string,                          // legacy single-backend selector; prefer `backends.default`
   backends?: {
-    default?: string,                        // used by both llm() and agent() unless overridden
-    llm?:     string,                        // optional override for llm()
+    default?: string,                        // used by both infer() and agent() unless overridden
+    infer?:     string,                        // optional override for infer()
     agent?:   string,                        // optional override for agent()
     [id: string]: SkelmConfigBackendEntry | string | undefined,
   },
