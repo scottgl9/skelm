@@ -1,6 +1,18 @@
 import { parseDuration } from '@skelm/core'
 import type { TriggerSpec } from './types.js'
 
+/** Largest delay Node's setInterval honors; above this it silently clamps to 1ms. */
+export const MAX_INTERVAL_MS = 2_147_483_647
+
+/**
+ * A valid interval is a finite delay in [1, MAX_INTERVAL_MS]. Node's setInterval
+ * clamps delays <= 0 (and > MAX) to 1ms, so accepting those would arm a ~1ms
+ * tight loop (a DoS). Reject them at the spec-building boundary instead.
+ */
+export function isValidIntervalMs(everyMs: number): boolean {
+  return Number.isFinite(everyMs) && everyMs >= 1 && everyMs <= MAX_INTERVAL_MS
+}
+
 /**
  * Translate a pipeline-declared trigger into a full TriggerSpec. The
  * pipeline file omits `workflowId` (filled here from the registry id) and
@@ -98,7 +110,7 @@ export function pipelineTriggerToSpec(
           : typeof everyRaw === 'string'
             ? parseDuration(everyRaw)
             : undefined
-      if (everyMs === undefined) return undefined
+      if (everyMs === undefined || !isValidIntervalMs(everyMs)) return undefined
       return {
         kind: 'interval',
         id,

@@ -1,0 +1,72 @@
+import { describe, expect, it } from 'vitest'
+import { TriggerCoordinator } from '../src/index.js'
+import {
+  MAX_INTERVAL_MS,
+  isValidIntervalMs,
+  pipelineTriggerToSpec,
+} from '../src/triggers/pipeline-trigger-to-spec.js'
+
+// Regression: an interval trigger with everyMs <= 0 (or > 2^31-1) used to be
+// accepted verbatim. Node's setInterval clamps such delays to 1ms, so the
+// trigger would fire ~1000x/second — a denial of service. The cron path
+// validated its expression; the interval path did not.
+describe('interval everyMs validation (tight-loop DoS)', () => {
+  describe('isValidIntervalMs', () => {
+    it('rejects non-positive, non-finite, and out-of-range delays', () => {
+      for (const bad of [
+        0,
+        -1,
+        -5,
+        -0.5,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        MAX_INTERVAL_MS + 1,
+      ]) {
+        expect(isValidIntervalMs(bad)).toBe(false)
+      }
+    })
+    it('accepts delays in [1, MAX_INTERVAL_MS]', () => {
+      for (const ok of [1, 1000, 60_000, MAX_INTERVAL_MS]) {
+        expect(isValidIntervalMs(ok)).toBe(true)
+      }
+    })
+  })
+
+  describe('pipelineTriggerToSpec', () => {
+    it('refuses a pipeline-declared interval with everyMs <= 0', () => {
+      expect(pipelineTriggerToSpec('wf', { kind: 'interval', everyMs: -5 }, 0)).toBeUndefined()
+      expect(pipelineTriggerToSpec('wf', { kind: 'interval', everyMs: 0 }, 0)).toBeUndefined()
+    })
+    it('refuses an interval above the setInterval range', () => {
+      expect(
+        pipelineTriggerToSpec('wf', { kind: 'interval', everyMs: MAX_INTERVAL_MS + 1 }, 0),
+      ).toBeUndefined()
+    })
+    it('accepts a valid interval', () => {
+      const spec = pipelineTriggerToSpec('wf', { kind: 'interval', everyMs: 1000 }, 0)
+      expect(spec).toMatchObject({ kind: 'interval', workflowId: 'wf', everyMs: 1000 })
+    })
+  })
+
+  describe('TriggerCoordinator', () => {
+    it('does NOT arm a tight loop for everyMs <= 0 (DoS prevented)', async () => {
+      const fires: string[] = []
+      const c = new TriggerCoordinator({ onFire: async (ctx) => void fires.push(ctx.workflowId) })
+      c.register({ kind: 'interval', id: 't-bad', workflowId: 'wf', everyMs: -5 })
+      // Without the guard this would fire ~60 times in 60ms; with it, zero.
+      await new Promise((r) => setTimeout(r, 60))
+      expect(fires).toHaveLength(0)
+      expect(c.get('t-bad')?.lastError).toMatch(/invalid interval/i)
+      await c.stop()
+    })
+
+    it('still arms valid intervals', async () => {
+      const fires: string[] = []
+      const c = new TriggerCoordinator({ onFire: async (ctx) => void fires.push(ctx.workflowId) })
+      c.register({ kind: 'interval', id: 't-ok', workflowId: 'wf', everyMs: 20 })
+      await new Promise((r) => setTimeout(r, 70))
+      expect(fires.length).toBeGreaterThanOrEqual(1)
+      await c.stop()
+    })
+  })
+})
