@@ -1,4 +1,4 @@
-import { type ParsedCron, nextFireTime, parseCron } from './cron-parser.js'
+import { CRON_LOOKAHEAD_MS, type ParsedCron, nextFireTime, parseCron } from './cron-parser.js'
 import { type DedupeStore, InMemoryDedupeStore } from './dedupe-store.js'
 import { EventSourceManager } from './event-source-manager.js'
 import { FileWatchTrigger } from './file-watcher.js'
@@ -117,7 +117,22 @@ export class TriggerCoordinator {
     if (this.stopping) return
     if (!this.registrations.has(triggerId)) return
     const next = nextFireTime(parsed, new Date())
-    if (next === null) return
+    if (next === null) {
+      // No fire within nextFireTime's lookahead window. This does NOT mean the
+      // cron never fires — a valid but sparse expression (e.g. `0 0 29 2 *`,
+      // whose next Feb 29 can be years out across a non-leap century) also
+      // returns null. The cron was accepted at registration, so silently
+      // dropping it here would make it never fire at all. Re-check at the
+      // horizon edge instead: each re-check advances `from` by the lookahead,
+      // so a far-future fire is eventually found and armed once it comes within
+      // range. (A truly impossible expression like Feb 30 simply re-checks
+      // harmlessly once per horizon — it fired never before this change too.)
+      const recheck = new LongTimer(CRON_LOOKAHEAD_MS, () => {
+        this.scheduleNextCron(triggerId, parsed)
+      })
+      this.cronTimers.set(triggerId, recheck)
+      return
+    }
     const delay = Math.max(0, next.getTime() - Date.now())
     // A sparse cron (e.g. annual `0 0 1 1 *`) can be months out — a delay
     // well beyond setTimeout's 2^31-1 ms ceiling, where Node would clamp it

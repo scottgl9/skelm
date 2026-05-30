@@ -101,6 +101,23 @@ describe('nextFireTime', () => {
     expect(nextFireTime(p as never, from)).toBeNull()
   })
 
+  it('null is "no fire within the lookahead", NOT "never fires" (leap-day cron)', () => {
+    // `0 0 29 2 *` is a VALID, fireable cron — Feb 29 exists in leap years.
+    // From 2026 the next Feb 29 (2028) is ~639 days out, beyond the 366-day
+    // lookahead, so nextFireTime returns null. That null must NOT be treated as
+    // "dead": from a date within range of 2028-02-29 it resolves correctly.
+    // (TriggerCoordinator.scheduleNextCron re-checks at the horizon for this.)
+    const p = parseCron('0 0 29 2 *')
+    expect(p).not.toBeNull()
+    expect(nextFireTime(p as never, new Date('2026-05-30T00:00:00.000Z'))).toBeNull()
+    const within = nextFireTime(p as never, new Date('2028-01-01T00:00:00.000Z'))
+    // Local-time assertion (cron `0 0` is local midnight) — TZ-robust.
+    expect(within).not.toBeNull()
+    expect(within?.getFullYear()).toBe(2028)
+    expect(within?.getMonth()).toBe(1) // February (0-indexed)
+    expect(within?.getDate()).toBe(29)
+  })
+
   itTz('projects cron matching into the requested timezone', () => {
     const winter = parseCron('0 9 * * *', 'America/New_York')
     const summer = parseCron('0 9 * * *', 'America/New_York')

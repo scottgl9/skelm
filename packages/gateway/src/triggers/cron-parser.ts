@@ -153,9 +153,20 @@ function parseField(part: string, min: number, max: number): ReadonlySet<number>
 }
 
 /**
+ * How far `nextFireTime` looks ahead for the next match. A cron whose next
+ * fire is beyond this window returns null — note that this means null is
+ * "no fire within the horizon", NOT "never fires": a valid but sparse cron
+ * (e.g. `0 0 29 2 *`, whose next Feb 29 can be years out) also returns null.
+ * Callers that arm a timer must therefore re-check at the horizon rather than
+ * treat null as a dead trigger (see TriggerCoordinator.scheduleNextCron).
+ */
+export const CRON_LOOKAHEAD_MS = 366 * 24 * 60 * 60 * 1000
+
+/**
  * Compute the next time the cron expression fires after `from`.
  * Walks forward minute by minute and returns the first match. Caps at
- * 366 days lookahead — a cron that never fires (e.g., Feb 30) returns null.
+ * CRON_LOOKAHEAD_MS; returns null when no match falls within that window
+ * (either an impossible expression like Feb 30, or a fire further out).
  */
 export function nextFireTime(parsed: ParsedCron, from: Date): Date | null {
   // Start at the next whole minute; cron resolution is per-minute.
@@ -163,8 +174,7 @@ export function nextFireTime(parsed: ParsedCron, from: Date): Date | null {
   t.setSeconds(0, 0)
   t.setMinutes(t.getMinutes() + 1)
 
-  const horizonMs = 366 * 24 * 60 * 60 * 1000
-  const cap = from.getTime() + horizonMs
+  const cap = from.getTime() + CRON_LOOKAHEAD_MS
 
   while (t.getTime() <= cap) {
     const fields =
