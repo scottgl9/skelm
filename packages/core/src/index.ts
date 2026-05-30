@@ -203,6 +203,7 @@ export type {
   PersistentWorkflowDef,
 } from './persistent-workflow.js'
 export {
+  DEFAULT_SESSION_LOCK_STALE_MS,
   acquireSession,
   createSessionRecord,
   loadSession,

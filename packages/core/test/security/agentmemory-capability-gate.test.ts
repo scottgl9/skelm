@@ -78,6 +78,15 @@ describe('agentmemory capability gate (plan §1.2)', () => {
     expect(run.status).toBe('completed')
   })
 
+  // Why this case exists: the operator-granted unrestricted bypass is a
+  // deliberate "trust this run" lever, not a per-dimension grant. The author
+  // didn't EXPLICITLY opt into agentmemory; the bypass just makes every
+  // TrustEnforcer.can*() short-circuit true. Tripping the capability gate
+  // here would mean "an unrestricted run on a non-agentmemory backend is
+  // structurally impossible", which is wrong — most backends don't wire
+  // agentmemory, and bypass must remain a valid escape hatch. The gate
+  // reads `policy.agentmemory.allow*` directly (skipping the unrestricted
+  // shortcut) precisely to preserve this carve-out.
   it('does NOT trip when an unrestricted bypass is granted (capability check is structural, not permission-shaped)', async () => {
     const backend = fixtureAgentBackend()
     const registry = new BackendRegistry()

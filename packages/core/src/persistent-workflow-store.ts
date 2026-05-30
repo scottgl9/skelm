@@ -96,26 +96,48 @@ export async function saveSession(store: StateStore, rec: PersistentSessionRecor
 }
 
 /**
+ * Default staleness window for advisory locks: a lock older than this is
+ * treated as abandoned (typically because the holding gateway crashed mid-
+ * turn) and any subsequent caller may reclaim it. Chosen generously: a
+ * legitimate turn longer than an hour is unusual, and a false reclaim only
+ * costs one wasted turn while the original holder (if still alive) sees a
+ * lost CAS and surfaces a `PersistentSessionLockedError` to its caller.
+ */
+export const DEFAULT_SESSION_LOCK_STALE_MS = 60 * 60 * 1000
+
+/**
  * Acquire the session's advisory lock for the given owner. Atomic via
  * StateStore.casState: returns the locked record on success, or throws
  * PersistentSessionLockedError when another owner already holds it.
  *
  * Re-entrant for the same `ownerId` (same owner can reacquire without
- * error — supports retry on transient client failure). Lock entries are
- * advisory and survive process death; operators recovering a stuck
- * session can clear `active` manually if a dispatcher truly died mid-turn
- * without releasing.
+ * error — supports retry on transient client failure).
+ *
+ * Stale-lock recovery: a held lock whose `since` timestamp is older than
+ * `staleAfterMs` (default `DEFAULT_SESSION_LOCK_STALE_MS`) is treated as
+ * abandoned and may be reclaimed. This is the crash-recovery path — without
+ * it, a gateway that died mid-turn would leave the session permanently
+ * stuck and require operator surgery on the StateStore.
  */
 export async function acquireSession(
   store: StateStore,
   workflowId: string,
   sessionKey: string,
   ownerId: string,
+  opts: { staleAfterMs?: number } = {},
 ): Promise<PersistentSessionRecord> {
   const key = stateKey(workflowId, sessionKey)
+  const staleAfterMs = opts.staleAfterMs ?? DEFAULT_SESSION_LOCK_STALE_MS
   const current = await store.getState<PersistentSessionRecord>(PERSISTENT_WORKFLOW_NAMESPACE, key)
   if (current?.active !== undefined && current.active.ownerId !== ownerId) {
-    throw new PersistentSessionLockedError(workflowId, sessionKey, current.active.ownerId)
+    const age = Date.now() - current.active.since
+    if (age <= staleAfterMs) {
+      throw new PersistentSessionLockedError(workflowId, sessionKey, current.active.ownerId)
+    }
+    // Lock is stale (older than staleAfterMs) — fall through and reclaim
+    // it via CAS. If the original owner is somehow still alive and racing
+    // us, the CAS will fail (current refreshed) and we'll throw with the
+    // refreshed holder, which is the correct behaviour.
   }
   const base: PersistentSessionRecord = current ?? createSessionRecord(workflowId, sessionKey)
   const next: PersistentSessionRecord = {
