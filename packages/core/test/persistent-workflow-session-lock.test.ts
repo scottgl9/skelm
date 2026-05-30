@@ -74,4 +74,49 @@ describe('persistent-workflow session lock (plan §4.5)', () => {
     expect(reloaded?.active?.ownerId).toBe('owner-A')
     expect(reloaded?.turns).toBe(1)
   })
+
+  it('reclaims a stale lock from a dead owner (crash recovery)', async () => {
+    const store = new MemoryRunStore()
+    // Seed a record whose `active.since` is older than the staleness window —
+    // this is the post-crash state: the original gateway died holding the
+    // lock, never ran releaseSession(), and a fresh gateway is now booting.
+    const stale = {
+      version: 1 as const,
+      workflowId: 'wf-1',
+      sessionKey: 'chat',
+      sessionId: 'sess-x',
+      conversation: undefined,
+      turns: 0,
+      createdAt: 0,
+      updatedAt: 0,
+      active: { ownerId: 'gateway:dead-pid', since: Date.now() - 2 * 60 * 60 * 1000 },
+    }
+    await saveSession(store, stale)
+    // Without staleness recovery this throws PersistentSessionLockedError
+    // forever. With it, a fresh owner reclaims after the default 1h window.
+    const reclaimed = await acquireSession(store, 'wf-1', 'chat', 'gateway:new-pid')
+    expect(reclaimed.active?.ownerId).toBe('gateway:new-pid')
+  })
+
+  it('respects a custom staleAfterMs for callers wanting a tighter window', async () => {
+    const store = new MemoryRunStore()
+    const rec = await acquireSession(store, 'wf-1', 'chat', 'owner-A')
+    // Seed an older `since` to dodge the ms-resolution flake of comparing
+    // two same-tick Date.now() reads. With staleAfterMs:5, anything older
+    // than 5ms is reclaimable, so a 50ms-old lock falls through.
+    await saveSession(store, {
+      ...rec,
+      active: { ownerId: 'owner-A', since: Date.now() - 50 },
+    })
+    const reclaimed = await acquireSession(store, 'wf-1', 'chat', 'owner-B', { staleAfterMs: 5 })
+    expect(reclaimed.active?.ownerId).toBe('owner-B')
+  })
+
+  it('still rejects a FRESH lock held by another owner even with a generous staleAfterMs', async () => {
+    const store = new MemoryRunStore()
+    await acquireSession(store, 'wf-1', 'chat', 'owner-A')
+    await expect(
+      acquireSession(store, 'wf-1', 'chat', 'owner-B', { staleAfterMs: 1_000_000 }),
+    ).rejects.toBeInstanceOf(PersistentSessionLockedError)
+  })
 })
