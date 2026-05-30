@@ -300,6 +300,12 @@ const FS_WRITE_NAMES = new Set([
 
 const FS_READ_NAMES = new Set([
   'read_file',
+  // @modelcontextprotocol/server-filesystem renamed `read_file` →
+  // `read_text_file` (and added `read_media_file`). Without these, a read via
+  // the current server's tool names skips canRead() entirely and escapes the
+  // fsRead allowlist — a filesystem-permission bypass.
+  'read_text_file',
+  'read_media_file',
   'get_file',
   'read_multiple_files',
   'list_directory',
