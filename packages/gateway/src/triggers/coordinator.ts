@@ -2,6 +2,7 @@ import { type ParsedCron, nextFireTime, parseCron } from './cron-parser.js'
 import { type DedupeStore, InMemoryDedupeStore } from './dedupe-store.js'
 import { EventSourceManager } from './event-source-manager.js'
 import { FileWatchTrigger } from './file-watcher.js'
+import { MAX_INTERVAL_MS, isValidIntervalMs } from './pipeline-trigger-to-spec.js'
 import type { QueueDriver } from './queue-driver.js'
 import type {
   FireContext,
@@ -219,6 +220,13 @@ export class TriggerCoordinator {
     this.registrations.set(spec.id, reg)
     switch (spec.kind) {
       case 'interval': {
+        // Defense in depth: never arm a setInterval with an out-of-range delay
+        // (Node clamps <= 0 / > 2^31-1 to 1ms → tight-loop DoS). The spec
+        // builders reject these up front; this guards any other path.
+        if (!isValidIntervalMs(spec.everyMs)) {
+          reg.lastError = `invalid interval everyMs=${spec.everyMs} (must be 1..${MAX_INTERVAL_MS}ms)`
+          break
+        }
         const t = setInterval(() => {
           void this.fire(spec.id)
         }, spec.everyMs)
@@ -279,6 +287,10 @@ export class TriggerCoordinator {
         break
       }
       case 'poll': {
+        if (!isValidIntervalMs(spec.everyMs)) {
+          reg.lastError = `invalid poll everyMs=${spec.everyMs} (must be 1..${MAX_INTERVAL_MS}ms)`
+          break
+        }
         const source = this.pollSources.get(spec.sourceFnId)
         if (source === undefined) {
           reg.lastError = `poll source not registered: ${spec.sourceFnId}`
