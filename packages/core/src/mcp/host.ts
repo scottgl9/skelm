@@ -124,8 +124,10 @@ export async function createMcpHost(
           }
         }
 
-        const fsAccess = requestedFsPath(toolName, args)
-        if (fsAccess !== undefined) {
+        // A tool can touch more than one path (e.g. move_file/copy_file/rename
+        // read/remove a source AND write a destination). EVERY path it touches
+        // must satisfy the allowlist, or the unchecked one escapes it.
+        for (const fsAccess of requestedFsPaths(toolName, args)) {
           const fsDecision = fsAccess.write
             ? enforcer.canWrite(fsAccess.path)
             : enforcer.canRead(fsAccess.path)
@@ -316,37 +318,57 @@ const FS_READ_NAMES = new Set([
   'directory_tree',
 ])
 
+// Two-path filesystem tools: they take a SOURCE and a DESTINATION. move_file is
+// the @modelcontextprotocol/server-filesystem name; copy_file / rename are
+// common variants. All three are in FS_WRITE_NAMES, so the source is checked as
+// a write; the destination — which the operation creates/overwrites — must be
+// checked as a write TOO. Extracting only the source (the historical behavior)
+// left the destination unchecked: an agent restricted to fsWrite:['/sandbox']
+// could move_file source=/sandbox/x destination=~/.ssh/authorized_keys and
+// write outside the allowlist. Same class as the read_text_file bypass (#263).
+const FS_TWO_PATH_NAMES = new Set(['move_file', 'copy_file', 'rename'])
+
+function firstStringField(
+  record: Record<string, unknown>,
+  keys: readonly string[],
+): string | undefined {
+  for (const k of keys) {
+    if (typeof record[k] === 'string') return record[k] as string
+  }
+  return undefined
+}
+
 /**
- * Extract a filesystem path from tool arguments when the tool name matches a
- * known filesystem-access pattern. Returns `{ path, write }` or undefined if
- * the tool does not look like a filesystem tool or carries no extractable path.
- * Path extraction is best-effort: unknown argument shapes return undefined.
+ * Extract every filesystem path a tool call touches, each tagged read/write.
+ * Returns one entry for ordinary single-path fs tools, and a second entry (the
+ * write destination) for two-path tools (move/copy/rename). Empty when the tool
+ * is not a filesystem tool or no path can be extracted (best-effort: unknown
+ * argument shapes contribute nothing).
  */
-function requestedFsPath(
-  toolName: string,
-  args: unknown,
-): { path: string; write: boolean } | undefined {
+function requestedFsPaths(toolName: string, args: unknown): { path: string; write: boolean }[] {
   const isWrite = FS_WRITE_NAMES.has(toolName)
   const isRead = FS_READ_NAMES.has(toolName)
-  if (!isWrite && !isRead) return undefined
-
-  if (args === null || typeof args !== 'object') return undefined
+  if (!isWrite && !isRead) return []
+  if (args === null || typeof args !== 'object') return []
   const record = args as Record<string, unknown>
 
-  // Common path argument names from mcp-server-filesystem and similar servers
-  const path =
-    typeof record.path === 'string'
-      ? record.path
-      : typeof record.file_path === 'string'
-        ? record.file_path
-        : typeof record.filename === 'string'
-          ? record.filename
-          : typeof record.source === 'string'
-            ? record.source
-            : undefined
+  const reqs: { path: string; write: boolean }[] = []
+  // Common path argument names from mcp-server-filesystem and similar servers.
+  const primary = firstStringField(record, ['path', 'file_path', 'filename', 'source'])
+  if (primary !== undefined) reqs.push({ path: primary, write: isWrite })
 
-  if (path === undefined) return undefined
-  return { path, write: isWrite }
+  if (FS_TWO_PATH_NAMES.has(toolName)) {
+    const dest = firstStringField(record, [
+      'destination',
+      'dest',
+      'to',
+      'target',
+      'new_path',
+      'newPath',
+    ])
+    if (dest !== undefined) reqs.push({ path: dest, write: true })
+  }
+  return reqs
 }
 
 async function awaitWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {

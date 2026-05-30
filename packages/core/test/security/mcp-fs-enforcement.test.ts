@@ -15,6 +15,8 @@ vi.mock('../../src/mcp/client.js', () => {
         { name: 'write_file', description: 'Write a file', inputSchema: {} },
         { name: 'list_directory', description: 'List a dir', inputSchema: {} },
         { name: 'create_file', description: 'Create a file', inputSchema: {} },
+        { name: 'move_file', description: 'Move a file', inputSchema: {} },
+        { name: 'copy_file', description: 'Copy a file', inputSchema: {} },
       ],
     }),
     callTool: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] }),
@@ -192,6 +194,73 @@ describe('MCP host — canRead/canWrite enforcement on filesystem tool calls', (
     await expect(host.invokeTool('fs.read_media_file', { path: '/etc/shadow' })).rejects.toThrow(
       /read access.*which is not allowed/,
     )
+
+    await host.dispose()
+  })
+
+  // Regression: move_file/copy_file/rename take a SOURCE and a DESTINATION.
+  // The single-path extraction only checked the source, so the destination —
+  // which the operation writes — escaped fsWrite. An agent allowed to write
+  // only inside /project could move_file source=/project/x destination=
+  // /etc/cron.d/evil and write outside the allowlist. (Same class as #263.)
+  it('explicit-deny: move_file destination outside fsWrite is denied (source allowed)', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['fs'],
+        allowedTools: ['fs.move_file'],
+        fsRead: ['/project/'],
+        fsWrite: ['/project/'],
+      }),
+    )
+    const host = await createMcpHost(servers, { enforcer })
+
+    await expect(
+      host.invokeTool('fs.move_file', {
+        source: '/project/data.txt', // inside fsWrite — passes the source check
+        destination: '/etc/cron.d/evil', // outside fsWrite — must be denied
+      }),
+    ).rejects.toThrow(/write access to "\/etc\/cron\.d\/evil".*which is not allowed/)
+
+    await host.dispose()
+  })
+
+  it('explicit-deny: copy_file destination outside fsWrite is denied', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['fs'],
+        allowedTools: ['fs.copy_file'],
+        fsRead: ['/project/'],
+        fsWrite: ['/project/'],
+      }),
+    )
+    const host = await createMcpHost(servers, { enforcer })
+
+    await expect(
+      host.invokeTool('fs.copy_file', {
+        source: '/project/a',
+        destination: '/root/.ssh/authorized_keys',
+      }),
+    ).rejects.toThrow(/write access to "\/root\/.ssh\/authorized_keys".*which is not allowed/)
+
+    await host.dispose()
+  })
+
+  it('allows move_file when BOTH source and destination are within fsWrite', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['fs'],
+        allowedTools: ['fs.move_file'],
+        fsRead: ['/project/'],
+        fsWrite: ['/project/'],
+      }),
+    )
+    const host = await createMcpHost(servers, { enforcer })
+
+    const result = await host.invokeTool('fs.move_file', {
+      source: '/project/a.txt',
+      destination: '/project/sub/b.txt',
+    })
+    expect(result).toBeDefined()
 
     await host.dispose()
   })
