@@ -140,8 +140,9 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
             backends: opts.gateway.backends ?? opts.backends,
           }),
         })
-        // Feed step events into the metrics collector if enabled.
+        // Feed step events into the metrics collector + OTel tracer if enabled.
         opts.gateway.attachMetricsBus(runner.events)
+        opts.gateway.attachOtelBus(runner.events)
         opts.gateway.metrics?.recordTriggerFire(ctx.triggerId)
         const controller = new AbortController()
         runId = crypto.randomUUID()

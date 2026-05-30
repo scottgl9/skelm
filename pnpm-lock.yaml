@@ -232,6 +232,9 @@ importers:
       '@skelm/metrics':
         specifier: workspace:*
         version: link:../metrics
+      '@skelm/otel':
+        specifier: workspace:*
+        version: link:../otel
       fflate:
         specifier: ^0.8.2
         version: 0.8.2
@@ -242,6 +245,9 @@ importers:
         specifier: ^8.20.1
         version: 8.21.0
     devDependencies:
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.1
       '@types/node':
         specifier: ^22.9.0
         version: 22.19.17
@@ -1665,7 +1671,6 @@ packages:
   /@opentelemetry/api@1.9.1:
     resolution: {integrity: sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q==}
     engines: {node: '>=8.0.0'}
-    dev: false
 
   /@protobufjs/aspromise@1.1.2:
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}

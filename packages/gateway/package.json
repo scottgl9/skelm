@@ -39,11 +39,13 @@
     "@skelm/core": "workspace:*",
     "@skelm/integrations": "workspace:*",
     "@skelm/metrics": "workspace:*",
+    "@skelm/otel": "workspace:*",
     "fflate": "^0.8.2",
     "h3": "^1.15.0",
     "ws": "^8.20.1"
   },
   "devDependencies": {
+    "@opentelemetry/api": "^1.9.0",
     "@types/node": "^22.9.0",
     "@types/ws": "^8.18.1",
     "typescript": "^5.6.3",

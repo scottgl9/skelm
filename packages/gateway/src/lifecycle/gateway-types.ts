@@ -69,6 +69,15 @@ export interface GatewayOptions {
    */
   enableMetrics?: boolean
   /**
+   * Enable OpenTelemetry tracing for runs and steps. When true, the gateway
+   * subscribes to every per-run EventBus via the @skelm/otel collector,
+   * emitting one span per run + one per step. The OTel SDK setup (exporter
+   * / sampler / resource attributes) is the host's responsibility — by
+   * default, spans are picked up by whatever global tracer provider the
+   * host has registered (or a no-op tracer if none is registered).
+   */
+  enableOtel?: boolean
+  /**
    * Custom RunStore. When provided, overrides the storage config and is
    * used as-is — the gateway calls no constructor and applies no path
    * resolution. This is the integration point for callers that want a
