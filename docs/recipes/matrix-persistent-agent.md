@@ -3,8 +3,8 @@
 A chat bot you talk *through* over [Matrix](https://matrix.org): one durable
 conversation per room that survives across messages and gateway restarts,
 optionally freewheeling with the operator-gated unrestricted bypass. This is the
-[persistent agent](/concepts/persistent-agents) pattern end to end — the same
-shape as the [Telegram persistent agent](/recipes/telegram-persistent-agent),
+[persistent agent](/concepts/persistent-workflows) pattern end to end — the same
+shape as the [Telegram persistent agent](/recipes/telegram-persistent-workflow),
 over a different channel.
 
 Runnable source: [`examples/matrix-assistant/`](https://github.com/scottgl9/skelm/tree/main/examples/matrix-assistant).
