@@ -2,6 +2,7 @@ import { type ParsedCron, nextFireTime, parseCron } from './cron-parser.js'
 import { type DedupeStore, InMemoryDedupeStore } from './dedupe-store.js'
 import { EventSourceManager } from './event-source-manager.js'
 import { FileWatchTrigger } from './file-watcher.js'
+import { LongTimer } from './long-timer.js'
 import { MAX_INTERVAL_MS, isValidIntervalMs } from './pipeline-trigger-to-spec.js'
 import type { QueueDriver } from './queue-driver.js'
 import type {
@@ -69,10 +70,10 @@ export type FireStatus = 'dispatched' | 'queued' | 'skipped' | 'cancelled' | 'un
 export class TriggerCoordinator {
   private registrations: Map<string, TriggerRegistration> = new Map()
   private intervalTimers: Map<string, NodeJS.Timeout> = new Map()
-  private cronTimers: Map<string, NodeJS.Timeout> = new Map()
+  private cronTimers: Map<string, LongTimer> = new Map()
   private fileWatchers: Map<string, FileWatchTrigger> = new Map()
   private eventSourceManagers: Map<string, EventSourceManager> = new Map()
-  private atTimers: Map<string, NodeJS.Timeout> = new Map()
+  private atTimers: Map<string, LongTimer> = new Map()
   private pollTimers: Map<string, NodeJS.Timeout> = new Map()
   private webhookRoutes: Map<string, string> = new Map() // path:method → triggerId
   private pollSources: Map<string, PollSourceFn> = new Map()
@@ -118,15 +119,18 @@ export class TriggerCoordinator {
     const next = nextFireTime(parsed, new Date())
     if (next === null) return
     const delay = Math.max(0, next.getTime() - Date.now())
-    const t = setTimeout(() => {
+    // A sparse cron (e.g. annual `0 0 1 1 *`) can be months out — a delay
+    // well beyond setTimeout's 2^31-1 ms ceiling, where Node would clamp it
+    // to 1ms and turn this self-rescheduling timer into a tight loop firing
+    // ~1000x/second (DoS). LongTimer arms the delay in safe chunks instead.
+    const t = new LongTimer(delay, () => {
       // Schedule the *next* fire before invoking this one so a fire that
       // outlives its period does not skip ticks. The coordinator's
       // overlap policy on the registration decides what happens when a
       // fresh fire arrives while the previous one is still running.
       this.scheduleNextCron(triggerId, parsed)
       void this.fire(triggerId, next)
-    }, delay)
-    t.unref?.()
+    })
     this.cronTimers.set(triggerId, t)
   }
 
@@ -261,10 +265,13 @@ export class TriggerCoordinator {
             void this.fire(spec.id)
           }).unref?.()
         } else {
-          const t = setTimeout(() => {
+          // A far-future `when` (> 2^31-1 ms ≈ 24.8 days out) would overflow
+          // setTimeout and clamp to 1ms — firing the trigger IMMEDIATELY
+          // instead of at the scheduled time. LongTimer chunks the delay so
+          // an `at` weeks/months away fires exactly once, when it should.
+          const t = new LongTimer(delay, () => {
             void this.fire(spec.id)
-          }, delay)
-          t.unref?.()
+          })
           this.atTimers.set(spec.id, t)
         }
         break
@@ -407,11 +414,11 @@ export class TriggerCoordinator {
       this.intervalTimers.delete(id)
     }
     if (t2 !== undefined) {
-      clearTimeout(t2)
+      t2.clear()
       this.cronTimers.delete(id)
     }
     if (t3 !== undefined) {
-      clearTimeout(t3)
+      t3.clear()
       this.atTimers.delete(id)
     }
     if (t4 !== undefined) {
@@ -546,8 +553,8 @@ export class TriggerCoordinator {
   async stop(): Promise<void> {
     this.stopping = true
     for (const t of this.intervalTimers.values()) clearInterval(t)
-    for (const t of this.cronTimers.values()) clearTimeout(t)
-    for (const t of this.atTimers.values()) clearTimeout(t)
+    for (const t of this.cronTimers.values()) t.clear()
+    for (const t of this.atTimers.values()) t.clear()
     for (const t of this.pollTimers.values()) clearInterval(t)
     for (const watcher of this.fileWatchers.values()) watcher.stop()
     for (const manager of this.eventSourceManagers.values()) manager.stop()
