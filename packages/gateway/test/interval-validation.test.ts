@@ -46,6 +46,31 @@ describe('interval everyMs validation (tight-loop DoS)', () => {
       const spec = pipelineTriggerToSpec('wf', { kind: 'interval', everyMs: 1000 }, 0)
       expect(spec).toMatchObject({ kind: 'interval', workflowId: 'wf', everyMs: 1000 })
     })
+
+    it('accepts a valid duration string for `every`', () => {
+      const spec = pipelineTriggerToSpec('wf', { kind: 'interval', every: '5m' }, 0)
+      expect(spec).toMatchObject({
+        kind: 'interval',
+        workflowId: 'wf',
+        everyMs: 300_000,
+        every: '5m',
+      })
+    })
+
+    // Regression: parseDuration THROWS on a malformed string ('5min' — the unit
+    // is 'm', not 'min'). This is called uncaught during gateway-boot trigger
+    // discovery and project activation, so a single typo'd `every` would crash
+    // the whole workflow load instead of skipping just that trigger. It must be
+    // rejected gracefully (return undefined → caller skips it), matching the
+    // schedules HTTP route which catches parseDuration and returns 400.
+    it('returns undefined (does not throw) for a malformed `every` duration', () => {
+      expect(() =>
+        pipelineTriggerToSpec('wf', { kind: 'interval', every: '5min' }, 0),
+      ).not.toThrow()
+      expect(pipelineTriggerToSpec('wf', { kind: 'interval', every: '5min' }, 0)).toBeUndefined()
+      expect(pipelineTriggerToSpec('wf', { kind: 'interval', every: 'garbage' }, 0)).toBeUndefined()
+      expect(pipelineTriggerToSpec('wf', { kind: 'interval', every: '' }, 0)).toBeUndefined()
+    })
   })
 
   describe('TriggerCoordinator', () => {
