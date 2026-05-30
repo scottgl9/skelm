@@ -24,7 +24,7 @@ skelm is a TypeScript framework for authoring and running **workflows** — type
 - **TypeScript-native** — Real `.mts` modules, no DSL or JSON config
 - **Default-deny security** — Every permission must be explicitly declared
 - **Multi-backend agents** — First-party agent, Pi, Opencode (native or ACP), Codex, Vercel AI, ACP (Copilot, Claude Code), Anthropic, OpenAI
-- **Multimodal prompts** — `llm()` and `agent()` accept image content parts; vision routed through vision-capable backends, denied at step start for the rest. Pair with `ctx.artifacts` to persist screenshots and other binary evidence on the run record
+- **Multimodal prompts** — `infer()` and `agent()` accept image content parts; vision routed through vision-capable backends, denied at step start for the rest. Pair with `ctx.artifacts` to persist screenshots and other binary evidence on the run record
 - **MCP-native** — Model Context Protocol servers lifecycle-managed by the gateway
 - **Skill support** — Reusable `SKILL.md` capability bundles injected into agent system prompts; permission-gated via `allowedSkills`; auto-discovered from `skills/**/SKILL.md` by the gateway registry
 - **Trigger-rich runtime** — Cron, intervals, and webhooks via `@skelm/scheduler`; poll, queue, file-watch, and event-source triggers via the gateway's `TriggerCoordinator`
@@ -87,7 +87,7 @@ See [Backend documentation](./docs/backends/README.md) for setup guides, and [Co
 ### Workflow step kinds
 
 - **`code()`** — Deterministic logic, API calls, data transformation
-- **`llm()`** — Single LLM inference call
+- **`infer()`** — Single LLM inference call
 - **`agent()`** — Multi-turn agent loops with tools, MCP, and skills
 
 ### Control flow primitives

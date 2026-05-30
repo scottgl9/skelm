@@ -93,7 +93,7 @@ describe('/v1/config', () => {
   it('GET succeeds when config holds live backend instances with non-cloneable functions', async () => {
     // Regression for F020: structuredClone(config) used to throw
     // DataCloneError when `instances[]` carried closures like an
-    // `infer` function on a backend factory. sanitize() now JSON
+    // `inference` function on a backend factory. sanitize() now JSON
     // round-trips and PATCH no longer clones the entire config.
     const { gw, base } = await bootGatewayWithRetry((port) => ({
       stateDir,
@@ -104,7 +104,7 @@ describe('/v1/config', () => {
       config: {
         server: { auth: { mode: 'none' }, maxConcurrentRuns: 2 },
         instances: [
-          // Live backend instance — `run`/`infer` are closures that
+          // Live backend instance — `run`/`inference` are closures that
           // structuredClone cannot copy.
           {
             id: 'fake-backend',
@@ -112,7 +112,7 @@ describe('/v1/config', () => {
             async run() {
               return { text: 'ok', stopReason: 'stop' }
             },
-            async infer() {
+            async inference() {
               return { text: 'ok' }
             },
           } as unknown as never,

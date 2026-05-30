@@ -23,7 +23,7 @@ export default pipeline({
       id: 'summarize',
       run: (ctx) => {
         const t = (ctx.steps['parse-input'] as { task: string }).task
-        // Placeholder for `llm({ id: 'summarize', prompt: ... })`.
+        // Placeholder for `infer({ id: 'summarize', prompt: ... })`.
         return { summary: `One-line summary of: ${t}` }
       },
     }),

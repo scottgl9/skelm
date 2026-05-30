@@ -11,7 +11,7 @@ Two flavours are available:
 
 Use the SDK backend for new work. The RPC backend exists for environments where the SDK peer dependency cannot be installed.
 
-The SDK backend also supports `llm()` steps — `prompt: true` in its capability declaration — which is unusual for an agent backend.
+The SDK backend also supports `infer()` steps — `prompt: true` in its capability declaration — which is unusual for an agent backend.
 
 ## Install
 

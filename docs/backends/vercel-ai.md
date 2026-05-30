@@ -2,7 +2,7 @@
 
 Wrap any Vercel AI SDK [`LanguageModel`](https://ai-sdk.dev/) — from `@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/google`, OpenAI-compatible local servers, etc. — and run it under skelm's permission policy.
 
-Powers both `llm()` (single-shot inference via `generateText`) and `agent()` (tool-using agent loop via `generateText({ tools, stopWhen })`).
+Powers both `infer()` (single-shot inference via `generateText`) and `agent()` (tool-using agent loop via `generateText({ tools, stopWhen })`).
 
 ## Install
 
@@ -103,7 +103,7 @@ The backend always returns `result.text` and ignores reasoning content blocks. B
   `providerOptions: { openai: { reasoningEffort: 'minimal' } }`.
 - Use a non-reasoning model.
 
-This is most visible on `agent()` runs (where the call uses tool-loop framing); plain `llm()` calls are usually fine.
+This is most visible on `agent()` runs (where the call uses tool-loop framing); plain `infer()` calls are usually fine.
 
 ## Caveats and non-goals
 

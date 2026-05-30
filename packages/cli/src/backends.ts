@@ -18,10 +18,10 @@ export function applyConfiguredBackends<TInput, TOutput>(
   config: SkelmConfig,
 ): Pipeline<TInput, TOutput> {
   const defaultBackend = pickDefaultBackend(config)
-  const defaultLlmBackend = readString(config.backends?.llm) ?? defaultBackend
+  const defaultInferBackend = readString(config.backends?.inference) ?? defaultBackend
   const defaultAgentBackend = readString(config.backends?.agent) ?? defaultBackend
 
-  return patchPipeline(pipeline, defaultLlmBackend, defaultAgentBackend)
+  return patchPipeline(pipeline, defaultInferBackend, defaultAgentBackend)
 }
 
 export async function buildBackendRegistry(
@@ -67,25 +67,25 @@ function backendIdsReferencedByPipeline(pipeline: Pipeline<unknown, unknown>): S
 
 function patchPipeline<TInput, TOutput>(
   pipeline: Pipeline<TInput, TOutput>,
-  defaultLlmBackend: string | undefined,
+  defaultInferBackend: string | undefined,
   defaultAgentBackend: string | undefined,
 ): Pipeline<TInput, TOutput> {
   return {
     ...pipeline,
-    steps: pipeline.steps.map((step) => patchStep(step, defaultLlmBackend, defaultAgentBackend)),
+    steps: pipeline.steps.map((step) => patchStep(step, defaultInferBackend, defaultAgentBackend)),
   }
 }
 
 function patchStep(
   step: Step,
-  defaultLlmBackend: string | undefined,
+  defaultInferBackend: string | undefined,
   defaultAgentBackend: string | undefined,
 ): Step {
   switch (step.kind) {
-    case 'llm':
-      return step.backend !== undefined || defaultLlmBackend === undefined
+    case 'infer':
+      return step.backend !== undefined || defaultInferBackend === undefined
         ? step
-        : { ...step, backend: defaultLlmBackend }
+        : { ...step, backend: defaultInferBackend }
     case 'agent':
       return step.backend !== undefined || defaultAgentBackend === undefined
         ? step
@@ -93,40 +93,42 @@ function patchStep(
     case 'idempotent':
       return {
         ...step,
-        step: patchStep(step.step, defaultLlmBackend, defaultAgentBackend),
+        step: patchStep(step.step, defaultInferBackend, defaultAgentBackend),
       }
     case 'parallel':
       return {
         ...step,
-        steps: step.steps.map((child) => patchStep(child, defaultLlmBackend, defaultAgentBackend)),
+        steps: step.steps.map((child) =>
+          patchStep(child, defaultInferBackend, defaultAgentBackend),
+        ),
       }
     case 'forEach':
       return {
         ...step,
         step: (item, index) =>
-          patchStep(step.step(item, index), defaultLlmBackend, defaultAgentBackend),
+          patchStep(step.step(item, index), defaultInferBackend, defaultAgentBackend),
       }
     case 'branch': {
       const cases = Object.fromEntries(
         Object.entries(step.cases).map(([key, child]) => [
           key,
-          patchStep(child, defaultLlmBackend, defaultAgentBackend),
+          patchStep(child, defaultInferBackend, defaultAgentBackend),
         ]),
       )
       return {
         ...step,
         cases,
         ...(step.default !== undefined && {
-          default: patchStep(step.default, defaultLlmBackend, defaultAgentBackend),
+          default: patchStep(step.default, defaultInferBackend, defaultAgentBackend),
         }),
       }
     }
     case 'loop':
-      return { ...step, step: patchStep(step.step, defaultLlmBackend, defaultAgentBackend) }
+      return { ...step, step: patchStep(step.step, defaultInferBackend, defaultAgentBackend) }
     case 'pipelineStep':
       return {
         ...step,
-        pipeline: patchPipeline(step.pipeline, defaultLlmBackend, defaultAgentBackend),
+        pipeline: patchPipeline(step.pipeline, defaultInferBackend, defaultAgentBackend),
       }
     default:
       return step
@@ -266,20 +268,20 @@ function createBackend(backendId: string, config: SkelmConfig, secretResolver?: 
 
 function configuredBackendIds(config: SkelmConfig): Set<string> {
   // Only register backends that the config actually references — either via
-  // an explicit entry in `backends`, the `default` / `llm` / `agent`
+  // an explicit entry in `backends`, the `default` / `inference` / `agent`
   // selectors, or the top-level `backend` field. This avoids constructing
   // (and validating) backends the workflow never uses, which would
   // otherwise throw on missing credentials for unrelated providers.
   const ids = new Set<string>()
   const backends = config.backends ?? {}
   for (const [key, value] of Object.entries(backends)) {
-    if (key === 'default' || key === 'llm' || key === 'agent') continue
+    if (key === 'default' || key === 'infer' || key === 'agent') continue
     if (value !== undefined) ids.add(key)
   }
   const defaultBackend = pickDefaultBackend(config)
   if (defaultBackend !== undefined) ids.add(defaultBackend)
-  const llmBackend = readString(config.backends?.llm)
-  if (llmBackend !== undefined) ids.add(llmBackend)
+  const inferBackend = readString(config.backends?.inference)
+  if (inferBackend !== undefined) ids.add(inferBackend)
   const agentBackend = readString(config.backends?.agent)
   if (agentBackend !== undefined) ids.add(agentBackend)
   return ids

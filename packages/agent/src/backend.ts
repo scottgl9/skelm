@@ -8,7 +8,7 @@
  * No dependency on ACP, Pi, Opencode, or any external agent runtime.
  *
  * Capabilities:
- * - `prompt: true`  — powers `llm()` steps via single-shot inference
+ * - `prompt: true`  — powers `infer()` steps via single-shot inference
  * - `run()`: true   — powers `agent()` steps with multi-turn tool-use loop
  * - `toolPermissions: 'native'` — we enforce every permission before
  *   dispatching tool calls; no external sandbox required.
@@ -28,8 +28,8 @@ import type {
   BackendCapabilities,
   BackendContext,
   ContentPart,
-  InferRequest,
-  InferResponse,
+  InferenceRequest,
+  InferenceResponse,
   SkelmBackend,
   Usage,
 } from '@skelm/core/backend'
@@ -73,7 +73,7 @@ export interface SkelmAgentOptions {
   /**
    * Default cap on output tokens per chat completion. Sent as `max_tokens`
    * on the OpenAI Chat Completions request body. Per-call `req.maxTokens`
-   * (on `llm()` steps) overrides this default; the agent loop (`run()`)
+   * (on `infer()` steps) overrides this default; the agent loop (`run()`)
    * uses it on every turn since `req.maxTokens` isn't plumbed there.
    *
    * Omit to let the upstream pick its own default (typically the model's
@@ -518,7 +518,7 @@ function formatMemoryRecall(
 }
 
 /**
- * Create a SkelmBackend that implements the agent() and llm() steps
+ * Create a SkelmBackend that implements the agent() and infer() steps
  * using a native OpenAI-compatible chat loop with built-in permission
  * enforcement.
  */
@@ -535,7 +535,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
     id: resolvedId,
     capabilities,
 
-    async infer(req: InferRequest, ctx: BackendContext): Promise<InferResponse> {
+    async inference(req: InferenceRequest, ctx: BackendContext): Promise<InferenceResponse> {
       const route = resolveCallModel(opts, req.model)
       const baseUrl = route.kind === 'registry' ? route.resolved.baseUrl : route.baseUrl
       const apiKey = route.kind === 'registry' ? route.resolved.apiKey : route.apiKey
@@ -561,7 +561,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
         model,
         messages,
         temperature: req.temperature as number | undefined,
-        // Per-call req.maxTokens (llm step input) wins; otherwise fall back
+        // Per-call req.maxTokens (infer step input) wins; otherwise fall back
         // to the registry entry's maxTokens, then the backend-level default.
         // Any may be undefined → upstream picks its own default.
         maxTokens: perCallMax,
@@ -640,7 +640,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
       // AgentRequest has no `model` field, so the agent-loop path always
       // uses the backend's defaultModel (or opts.model in single-endpoint
       // mode). Per-call model routing is only available on the infer() path
-      // via InferRequest.model. To switch models within an agent run, build
+      // via InferenceRequest.model. To switch models within an agent run, build
       // a separate backend instance per model.
       const route = resolveCallModel(opts, undefined)
       const baseUrl = route.kind === 'registry' ? route.resolved.baseUrl : route.baseUrl

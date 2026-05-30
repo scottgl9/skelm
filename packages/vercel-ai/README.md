@@ -2,7 +2,7 @@
 
 [Vercel AI SDK](https://ai-sdk.dev/) backend for [skelm](https://github.com/scottgl9/skelm).
 
-Wrap any AI SDK `LanguageModel` (`@ai-sdk/openai`, `@ai-sdk/anthropic`, OpenAI-compatible local servers, …) and run it under skelm's permission policy. Powers both `llm()` and `agent()` step types.
+Wrap any AI SDK `LanguageModel` (`@ai-sdk/openai`, `@ai-sdk/anthropic`, OpenAI-compatible local servers, …) and run it under skelm's permission policy. Powers both `infer()` and `agent()` step types.
 
 ## Install
 

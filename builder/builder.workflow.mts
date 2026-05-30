@@ -75,7 +75,7 @@ Consult the skelm skill as the authoring API reference: call load_skill("skelm")
 Produce exactly one workflow file:
 - A single .mts file that \`export default pipeline({ ... })\` (import from "skelm").
 - Declare zod input/output schemas at the run boundaries.
-- For any agent()/llm() step, declare least-privilege AgentPermissions explicitly — every permission field defaults to deny, so grant only what the workflow needs.
+- For any agent()/infer() step, declare least-privilege AgentPermissions explicitly — every permission field defaults to deny, so grant only what the workflow needs.
 - Keep it minimal and runnable; do not invent backends or tools that aren't requested.
 
 Then, in order, and stop as soon as step 3 is done:

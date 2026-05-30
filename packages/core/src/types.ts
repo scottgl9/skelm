@@ -314,9 +314,9 @@ export interface CodeStep<TOutput = unknown> {
   readonly continueOnError?: boolean
 }
 
-/** An `llm()` step: single-shot inference against a backend. */
-export interface LlmStep<TOutput = unknown> {
-  readonly kind: 'llm'
+/** An `infer()` step: single-shot inference against a backend. */
+export interface InferStep<TOutput = unknown> {
+  readonly kind: 'infer'
   readonly id: StepId
   readonly backend?: string | readonly string[]
   readonly model?: string
@@ -582,7 +582,7 @@ export interface InvokeStep<TInput = unknown, TOutput = unknown> {
 /** Discriminated union of all step kinds. */
 export type Step =
   | CodeStep
-  | LlmStep
+  | InferStep
   | AgentStep
   | IdempotentStep
   | ParallelStep

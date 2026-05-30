@@ -17,7 +17,7 @@ import { writeJsonOutput } from './internal/output.js'
 
 const KNOWN_STEP_KINDS = new Set([
   'agent',
-  'llm',
+  'infer',
   'code',
   'parallel',
   'forEach',

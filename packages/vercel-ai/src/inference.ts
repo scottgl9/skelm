@@ -2,8 +2,8 @@ import { BackendCapabilityError, combineSignals, isMultimodal } from '@skelm/cor
 import type {
   BackendContext,
   ContentPart,
-  InferRequest,
-  InferResponse,
+  InferenceRequest,
+  InferenceResponse,
   PromptMessage,
   Usage,
 } from '@skelm/core'
@@ -13,11 +13,11 @@ import { assertEgressEnforceable } from './permissions.js'
 import type { VercelAiBackendOptions } from './types.js'
 import { assertModelMatchesBound, assertModelSupportsImages } from './vision-gate.js'
 
-export async function vercelAiInfer(
+export async function vercelAiInference(
   options: VercelAiBackendOptions,
-  request: InferRequest,
+  request: InferenceRequest,
   context: BackendContext,
-): Promise<InferResponse> {
+): Promise<InferenceResponse> {
   // vercel-ai is in-process; the AI SDK's outbound HTTP does not honor
   // HTTP_PROXY env vars from the gateway egress proxy. Fail-closed instead
   // of pretending to enforce networkEgress.
@@ -74,7 +74,7 @@ export async function vercelAiInfer(
         // biome-ignore lint/suspicious/noExplicitAny: see above
         schema: request.outputSchema as any,
       })
-      const response: InferResponse = { structured: objectResult.object }
+      const response: InferenceResponse = { structured: objectResult.object }
       const usage = mapUsage(objectResult.usage)
       if (usage !== undefined) response.usage = usage
       return response
@@ -122,7 +122,7 @@ export async function vercelAiInfer(
         // so callers see a thrown error instead of an empty text result.
         throw new Error(`vercel-ai stream terminated with finishReason='error'`)
       }
-      const response: InferResponse = { text: fullText }
+      const response: InferenceResponse = { text: fullText }
       const usage = mapUsage(finalUsage)
       if (usage !== undefined) response.usage = usage
       return response
@@ -135,7 +135,7 @@ export async function vercelAiInfer(
       // step is marked failed rather than completed with empty text.
       throw new Error(`vercel-ai generateText terminated with finishReason='error'`)
     }
-    const response: InferResponse = { text: textResult.text }
+    const response: InferenceResponse = { text: textResult.text }
     const usage = mapUsage(textResult.usage)
     if (usage !== undefined) response.usage = usage
     return response

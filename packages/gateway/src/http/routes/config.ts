@@ -131,7 +131,7 @@ function sanitize(config: import('@skelm/core').SkelmConfig): Record<string, unk
   const backends = clone.backends as Record<string, unknown> | undefined
   if (backends !== undefined && backends !== null) {
     for (const [key, value] of Object.entries(backends)) {
-      // `default` / `llm` / `agent` are string pointers, not backend entries.
+      // `default` / `inference` / `agent` are string pointers, not backend entries.
       if (typeof value !== 'object' || value === null) continue
       redactMatchingKeys(value as Record<string, unknown>, new Set())
       // best-effort: also walk a nested `env` map if the backend defines one.

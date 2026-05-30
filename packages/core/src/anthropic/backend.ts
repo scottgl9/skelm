@@ -5,8 +5,8 @@ import {
   type BackendCapabilities,
   BackendConfigError,
   type BackendContext,
-  type InferRequest,
-  type InferResponse,
+  type InferenceRequest,
+  type InferenceResponse,
   type SkelmBackend,
   type Usage,
 } from '../backend.js'
@@ -85,7 +85,7 @@ export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): Skel
       return debug.effective
     },
     getApiKey: debug.getApiKey,
-    async infer(req: InferRequest, ctx: BackendContext): Promise<InferResponse> {
+    async inference(req: InferenceRequest, ctx: BackendContext): Promise<InferenceResponse> {
       const request: AnthropicMessageRequest = {
         messages: toAnthropicMessages(req.messages),
         model: req.model ?? opts.model ?? 'claude-3-5-haiku-latest',
@@ -287,7 +287,7 @@ function baseUrl(url?: string): string {
 }
 
 function toAnthropicMessages(
-  messages: InferRequest['messages'],
+  messages: InferenceRequest['messages'],
 ): Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }> {
   const out: Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }> = []
   for (const message of messages) {
@@ -298,7 +298,7 @@ function toAnthropicMessages(
 }
 
 function toAnthropicContent(
-  content: InferRequest['messages'][number]['content'] | AgentRequest['prompt'],
+  content: InferenceRequest['messages'][number]['content'] | AgentRequest['prompt'],
 ): string | AnthropicContentBlock[] {
   if (!isMultimodal(content)) return content
   const blocks: AnthropicContentBlock[] = []

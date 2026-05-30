@@ -9,8 +9,8 @@ import type {
   Context,
   ForEachStep,
   IdempotentStep,
+  InferStep,
   InvokeStep,
-  LlmStep,
   LoopStep,
   ParallelOnError,
   ParallelStep,
@@ -154,12 +154,12 @@ export function code<TOutput>(def: {
 }
 
 /**
- * Author a single-shot LLM inference step. The backend resolves at run
+ * Author a single-shot LLM infer step. The backend resolves at run
  * time (step-level `backend` overrides the registry's default). When
  * `output` is supplied, the runtime requests structured output from the
  * backend and validates the result against the schema before recording it.
  */
-export function llm<TOutput>(def: {
+export function infer<TOutput>(def: {
   id: StepId
   backend?: string | readonly string[]
   model?: string
@@ -181,16 +181,16 @@ export function llm<TOutput>(def: {
   retry?: RetryPolicy
   when?: WhenPredicate
   continueOnError?: boolean
-}): LlmStep<TOutput> {
+}): InferStep<TOutput> {
   if (!def.id) {
-    throw new Error('llm(): id is required')
+    throw new Error('infer(): id is required')
   }
   if (def.prompt === undefined) {
-    throw new Error(`llm(${def.id}): prompt is required`)
+    throw new Error(`infer(${def.id}): prompt is required`)
   }
-  assertValidRetryPolicy('llm', def.id, def.retry)
+  assertValidRetryPolicy('infer', def.id, def.retry)
   return Object.freeze({
-    kind: 'llm',
+    kind: 'infer',
     id: def.id,
     prompt: def.prompt,
     ...(def.backend !== undefined && { backend: def.backend }),

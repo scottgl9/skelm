@@ -10,7 +10,7 @@ No dependency on Pi, Opencode, or ACP. The agent loop, the tool surface, and the
 
 | Capability | Value |
 |---|---|
-| `prompt` | `true` — drives `llm()` steps via single-shot inference |
+| `prompt` | `true` — drives `infer()` steps via single-shot inference |
 | `run` | `true` — drives `agent()` steps with multi-turn tool use |
 | `mcp` | `true` — unknown tool names fall through to `ctx.mcpHost.invokeTool` |
 | `skills` | `true` — `load_skill` is gated by `allowedSkills` |
@@ -33,7 +33,7 @@ import { defineConfig } from '@skelm/core'
 import { createSkelmAgentBackend } from '@skelm/agent'
 
 export default defineConfig({
-  backends: { agent: 'native-agent', llm: 'native-agent' },
+  backends: { agent: 'native-agent', infer: 'native-agent' },
   instances: [
     createSkelmAgentBackend({
       id: 'native-agent',

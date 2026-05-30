@@ -81,8 +81,8 @@ export type {
   ContentPart,
   DelegateResult,
   McpServerConfig,
-  InferRequest,
-  InferResponse,
+  InferenceRequest,
+  InferenceResponse,
   PromptMessage,
   SkelmBackend,
   ToolPermissionEnforcement,
@@ -182,7 +182,7 @@ export {
   forEach,
   idempotent,
   invoke,
-  llm,
+  infer,
   loop,
   parallel,
   pipeline,
@@ -248,7 +248,7 @@ export type {
 
 export { createOpenAIBackend } from './openai/index.js'
 export type { OpenAIBackendOptions } from './openai/index.js'
-export { ModelProviderBase, ModelRegistry, executeLlmStep } from './model-provider.js'
+export { ModelProviderBase, ModelRegistry, executeInferStep } from './model-provider.js'
 export type {
   ModelProvider,
   ModelProviderConfig,
@@ -363,7 +363,7 @@ export type {
   Context,
   ForEachStep,
   InvokeStep,
-  LlmStep,
+  InferStep,
   LoopStep,
   ParallelOnError,
   ParallelStep,

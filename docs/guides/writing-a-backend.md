@@ -1,6 +1,6 @@
 # Guide — writing a backend
 
-A **backend** is a `SkelmBackend` implementation that powers `llm()` and `agent()` steps. Skelm ships in-tree backends for the major providers; this guide is for anyone integrating a private LLM, a custom agent runtime, or an enterprise model gateway behind skelm's SPI.
+A **backend** is a `SkelmBackend` implementation that powers `infer()` and `agent()` steps. Skelm ships in-tree backends for the major providers; this guide is for anyone integrating a private LLM, a custom agent runtime, or an enterprise model gateway behind skelm's SPI.
 
 By the end of this guide you will have:
 
@@ -19,8 +19,8 @@ export type SkelmBackend = {
 
   capabilities: Capabilities
 
-  infer(req: InferRequest, ctx: BackendContext): Promise<InferResponse>
-  inferStream?(req: InferRequest, ctx: BackendContext): AsyncIterable<InferStreamEvent>
+  inference(req: InferenceRequest, ctx: BackendContext): Promise<InferenceResponse>
+  inferenceStream?(req: InferenceRequest, ctx: BackendContext): AsyncIterable<InferenceStreamEvent>
 
   run(req: AgentRequest, ctx: BackendContext): Promise<AgentResponse>
   runStream?(req: AgentRequest, ctx: BackendContext): AsyncIterable<AgentStreamEvent>
@@ -29,14 +29,14 @@ export type SkelmBackend = {
 }
 ```
 
-`infer` powers `llm()`; `run` powers `agent()`. A backend may implement only one. A backend that implements neither is not registerable.
+`inference` powers `infer()`; `run` powers `agent()`. A backend may implement only one. A backend that implements neither is not registerable.
 
 ## Capabilities — the contract behind the contract
 
 ```ts
 type Capabilities = {
   prompt: boolean              // can do single-shot inference (drives infer())
-  streaming: boolean           // supports inferStream / runStream
+  streaming: boolean           // supports inferenceStream / runStream
   sessionLifecycle: boolean    // long-lived sessions across turns
   mcp: boolean                 // can attach MCP servers per-run
   skills: boolean              // can load skills per-run natively
@@ -59,7 +59,7 @@ A backend that talks to a hypothetical OpenAI-compatible endpoint:
 
 ```ts
 // my-backend/src/index.ts
-import type { SkelmBackend, InferRequest, InferResponse, BackendContext } from '@skelm/core'
+import type { SkelmBackend, InferenceRequest, InferenceResponse, BackendContext } from '@skelm/core'
 
 export function createMyBackend(opts: { endpoint: string; apiKeySecret: string }): SkelmBackend {
   return {
@@ -75,7 +75,7 @@ export function createMyBackend(opts: { endpoint: string; apiKeySecret: string }
       toolPermissions: 'wrapped',          // skelm wraps tool calls
     },
 
-    async infer(req, ctx): Promise<InferResponse> {
+    async inference(req, ctx): Promise<InferenceResponse> {
       const apiKey = ctx.secrets.apiKey.read()    // one-shot accessor
       const res = await ctx.enforcer.fetch(new URL(opts.endpoint + '/v1/chat/completions'), {
         method: 'POST',
@@ -166,9 +166,9 @@ This pattern — model emits tool call → enforcer checks → MCP host invokes 
 
 ## Handling `outputSchema`
 
-When an `llm()` or `agent()` step declares an `output` schema, the framework requires structured output. Your backend's job:
+When an `infer()` or `agent()` step declares an `output` schema, the framework requires structured output. Your backend's job:
 
-- For `llm()` — request structured output from the underlying API (JSON mode, response schema, or whatever the API offers). Return the parsed structured value in `InferResponse.structured`.
+- For `infer()` — request structured output from the underlying API (JSON mode, response schema, or whatever the API offers). Return the parsed structured value in `InferenceResponse.structured`.
 - For `agent()` — when the agent emits a "final" response, validate it against the schema. If invalid, instruct the model to fix it (one retry) before throwing.
 
 The framework re-validates the returned value before exposing it as the step output. Your backend's validation is belt; the framework is braces.
@@ -185,14 +185,14 @@ import { createMyBackend } from '../src/index.ts'
 const backend = createMyBackend({ endpoint: 'http://localhost:8080', apiKeySecret: 'TEST_KEY' })
 
 runBackendContract(backend, {
-  // Optional: skip suites that don't apply (e.g. agent loop if your backend is infer-only).
+  // Optional: skip suites that don't apply (e.g. agent loop if your backend is inference-only).
   skip: ['agent'],
 })
 ```
 
 The contract test asserts:
 
-- `infer` honors `outputSchema` when supplied.
+- `inference` honors `outputSchema` when supplied.
 - Streaming yields events in the documented order.
 - Cancellation propagates within 1 s.
 - For `'wrapped'` backends: a denied tool call surfaces as a tool-result with the denial reason.
@@ -262,6 +262,6 @@ export default defineConfig({
 
 ## Reference
 
-- `SkelmBackend`, `Capabilities`, `BackendContext`, `InferRequest`, `AgentRequest` — [API → backends](../reference/api.md#backends).
+- `SkelmBackend`, `Capabilities`, `BackendContext`, `InferenceRequest`, `AgentRequest` — [API → backends](../reference/api.md#backends).
 - `runBackendContract` — [API → testing](../reference/api.md#testing).
 - The plugin contract — [Writing a plugin](./writing-a-plugin.md).

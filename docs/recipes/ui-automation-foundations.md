@@ -16,7 +16,7 @@ decide**, with the screenshot stored as a run artifact for later evidence.
 
 - `imagePart` / `imagePartFromFile` / `textPart` — build multimodal prompts
   from `'skelm'`.
-- `llm({ prompt: [...] })` — accepts a `ContentPart[]` for image-bearing
+- `infer({ prompt: [...] })` — accepts a `ContentPart[]` for image-bearing
   prompts. Throws `BackendCapabilityError` if routed to a non-vision
   backend. Note: `imagePartFromFile` returns a `Promise<ContentPart>`, so a
   static array containing it must be built inside an `async` prompt
@@ -31,7 +31,7 @@ decide**, with the screenshot stored as a run artifact for later evidence.
 import {
   code,
   imagePartFromFile,
-  llm,
+  infer,
   pipeline,
   textPart,
 } from 'skelm'
@@ -56,7 +56,7 @@ export default pipeline({
 
     // 2. Ask a vision LLM what is on screen. The prompt is a multimodal
     //    ContentPart[] — anthropic and openai both declare capabilities.vision.
-    llm({
+    infer({
       id: 'describe',
       backend: 'anthropic',
       prompt: async (ctx) => [
@@ -98,7 +98,7 @@ package.
   image parts — but actual vision support depends on the model bound to
   the backend. Pairing the Vercel backend with a text-only model (e.g. a
   text-only Mistral via `createMistral(...)`) will surface as a
-  provider-level error at infer time, not as `BackendCapabilityError` at
+  provider-level error at inference time, not as `BackendCapabilityError` at
   step start. Pick a vision-capable model when using image prompts.
 - **`@skelm/agent`, `opencode`, `pi`, `codex`** collapse multimodal
   prompts to text via `extractPromptText`; image parts are dropped

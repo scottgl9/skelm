@@ -10,7 +10,7 @@ describe('Anthropic backend', () => {
     process.env.ANTHROPIC_BASE_URL = undefined
   })
 
-  it('maps infer() to the messages API', async () => {
+  it('maps inference() to the messages API', async () => {
     const requests: unknown[] = []
     const server = await startServer(async (req) => {
       requests.push(req)
@@ -25,7 +25,7 @@ describe('Anthropic backend', () => {
         apiKey: 'test-key',
         baseUrl: server.baseUrl,
       })
-      const response = await backend.infer?.(
+      const response = await backend.inference?.(
         {
           system: 'be terse',
           messages: [{ role: 'user', content: 'say hi' }],
@@ -86,7 +86,7 @@ describe('Anthropic backend', () => {
     try {
       const backend = createAnthropicBackend({ apiKey: 'test-key', baseUrl: server.baseUrl })
       expect(backend.capabilities.vision).toBe(true)
-      await backend.infer?.(
+      await backend.inference?.(
         {
           messages: [
             {

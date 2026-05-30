@@ -4,18 +4,18 @@ import type {
   AgentResponse,
   BackendCapabilities,
   BackendContext,
-  InferRequest,
-  InferResponse,
+  InferenceRequest,
+  InferenceResponse,
   SkelmBackend,
 } from '@skelm/core'
-import { vercelAiInfer } from './infer.js'
+import { vercelAiInference } from './inference.js'
 import { vercelAiRun } from './run.js'
 import type { VercelAiBackendOptions } from './types.js'
 
 /**
  * Create a SkelmBackend backed by a Vercel AI SDK LanguageModel.
  *
- * Powers both `llm()` (via generateText) and `agent()` (via generateText with
+ * Powers both `infer()` (via generateText) and `agent()` (via generateText with
  * tools and stepCountIs). Tool permissions are enforced natively by filtering
  * the tool set against the resolved policy and re-checking at execute() time.
  *
@@ -51,10 +51,13 @@ export function createVercelAiBackend(options: VercelAiBackendOptions): SkelmBac
     label: options.label ?? 'Vercel AI SDK',
     capabilities,
 
-    async infer(request: InferRequest, context: BackendContext): Promise<InferResponse> {
+    async inference(
+      request: InferenceRequest,
+      context: BackendContext,
+    ): Promise<InferenceResponse> {
       await acquire()
       try {
-        return await vercelAiInfer(options, request, context)
+        return await vercelAiInference(options, request, context)
       } finally {
         release()
       }

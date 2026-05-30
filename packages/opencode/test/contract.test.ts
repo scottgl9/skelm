@@ -2,7 +2,7 @@
  * Backend-contract suite for `@skelm/opencode`.
  *
  * Runs the capability-self-consistency block from `@skelm/core/testing`.
- * `infer` / `agent` / `permission-gate` are skipped: opencode dispatches
+ * `inference` / `agent` / `permission-gate` are skipped: opencode dispatches
  * through a subprocess, so end-to-end agent runs are exercised by
  * integration tests (`test/backend.test.ts`, `test/client.test.ts`,
  * `test/permission-mapper.test.ts`) rather than the in-process contract
@@ -16,7 +16,7 @@ import { createOpencodeBackend } from '../src/backend.js'
 
 runBackendContract(() => createOpencodeBackend({}), {
   name: 'opencode',
-  skip: ['infer', 'agent', 'permission-gate'],
+  skip: ['inference', 'agent', 'permission-gate'],
   adversarialCases: [
     {
       // Proves opencode's run() denies an mcpServer not in allowedMcpServers

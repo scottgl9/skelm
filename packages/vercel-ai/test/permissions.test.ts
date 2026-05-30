@@ -188,7 +188,7 @@ describe('vercel-ai networkEgress fail-closed', () => {
     ).rejects.toBeInstanceOf(PermissionDeniedError)
   })
 
-  it("infer() refuses when policy.networkEgress is 'deny'", async () => {
+  it("inference() refuses when policy.networkEgress is 'deny'", async () => {
     const model = new MockLanguageModelV3({
       doGenerate: async () => ({
         content: [{ type: 'text', text: 'never' }],
@@ -200,7 +200,7 @@ describe('vercel-ai networkEgress fail-closed', () => {
     const backend = createVercelAiBackend({ model })
     const policy = makePolicy({ networkEgress: 'deny' })
     await expect(
-      backend.infer?.(
+      backend.inference?.(
         { messages: [{ role: 'user', content: 'hi' }] },
         makeCtx({ permissions: policy }),
       ),

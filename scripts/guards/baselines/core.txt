@@ -52,10 +52,10 @@ value:NoopAuditWriter
 value:NotImplementedError
 value:PERSISTENT_TURN_STEP_ID
 value:PERSISTENT_WORKFLOW_NAMESPACE
-value:PersistentSessionLockedError
 value:PROTOCOL_VERSION
 value:PermissionDeniedError
 value:PermissionResolver
+value:PersistentSessionLockedError
 value:PostgresRunStore
 value:ProviderAuthenticationError
 value:ProviderCapabilityRegistry
@@ -121,7 +121,7 @@ value:defineConfig
 value:describePipeline
 value:describeStep
 value:executeAgentStep
-value:executeLlmStep
+value:executeInferStep
 value:extractPromptText
 value:forEach
 value:formatSkillBlock
@@ -129,11 +129,11 @@ value:globalCapabilityRegistry
 value:idempotent
 value:imagePart
 value:imagePartFromFile
+value:infer
 value:intersectResolvedPolicies
 value:invoke
 value:isMultimodal
 value:isPersistentWorkflow
-value:llm
 value:loadAgentDefinition
 value:loadSession
 value:loadSkillBodies
@@ -231,8 +231,9 @@ type:GitHubPullRequestEvent
 type:GitHubPushEvent
 type:GitHubTriggerConfig
 type:GitHubWebhookEvent
-type:InferRequest
-type:InferResponse
+type:InferStep
+type:InferenceRequest
+type:InferenceResponse
 type:InitializeRequest
 type:InitializeResponse
 type:InvokeStep
@@ -240,7 +241,6 @@ type:JsonRpcNotification
 type:JsonRpcRequest
 type:JsonRpcResponse
 type:LlmCompletion
-type:LlmStep
 type:LoadAgentDefinitionOptions
 type:LoadTsModuleOptions
 type:LoopStep

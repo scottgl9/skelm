@@ -12,7 +12,9 @@ let projectRoot: string
 
 beforeEach(async () => {
   stateDir = await mkdtemp(join(tmpdir(), 'skelm-wfreg-'))
+  stateDir = await fs.realpath(stateDir)
   projectRoot = await mkdtemp(join(tmpdir(), 'skelm-wfreg-root-'))
+  projectRoot = await fs.realpath(projectRoot)
 })
 
 afterEach(async () => {

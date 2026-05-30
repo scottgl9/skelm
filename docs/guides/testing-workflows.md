@@ -64,7 +64,7 @@ const fakeOpenAI = fixtureBackend({
   },
 })
 
-// fakeOpenAI.calls is a readonly array of every InferRequest received,
+// fakeOpenAI.calls is a readonly array of every InferenceRequest received,
 // useful for asserting prompt content.
 expect(fakeOpenAI.calls).toHaveLength(1)
 expect(fakeOpenAI.calls[0]?.messages[0]?.content).toContain('bug')
@@ -72,7 +72,7 @@ expect(fakeOpenAI.calls[0]?.messages[0]?.content).toContain('bug')
 
 The fixture backend:
 
-- Implements `SkelmBackend.infer` and returns whatever `respond(req)` produces.
+- Implements `SkelmBackend.inference` and returns whatever `respond(req)` produces.
 - Records every call so tests can assert on inputs.
 - For `agent()` steps that need multi-turn behaviour, write a real backend stub: implement `run(request, context)` and return an `AgentResponse` directly.
 
