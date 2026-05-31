@@ -37,6 +37,37 @@ export interface SkelmConfigBackends {
   [k: string]: SkelmConfigBackendEntry | string | undefined
 }
 
+/**
+ * A named model alias that can be referenced by name in `infer()` and
+ * `agent()` step `model` fields instead of a bare model string.
+ *
+ * @example
+ * ```ts
+ * // skelm.config.ts
+ * export default defineConfig({
+ *   models: {
+ *     fast:  { backend: 'openai', model: 'gpt-4o-mini' },
+ *     smart: { backend: 'openai', model: 'gpt-4o' },
+ *     local: { backend: 'native-agent', model: 'qwen36' },
+ *   },
+ * })
+ *
+ * // workflow
+ * infer({ id: 'classify', model: 'fast', prompt: ... })
+ * infer({ id: 'generate', model: 'smart', prompt: ... })
+ * ```
+ */
+export interface ModelAliasEntry {
+  /**
+   * Backend id to route this alias to. When set, this overrides the step's own
+   * `backend` field — the alias pins both the backend and the model string in
+   * one config entry.
+   */
+  backend?: string
+  /** The model string forwarded to the backend (e.g. `'gpt-4o-mini'`). */
+  model: string
+}
+
 export interface SkelmConfigSecrets {
   driver?: 'env' | 'file'
   /** When driver is 'file', path to the JSON file with secrets. */
@@ -180,6 +211,27 @@ export interface SkelmConfig {
    * still required via `permissions.agentmemory`.
    */
   agentmemory?: SkelmConfigAgentmemory
+  /**
+   * Named model aliases. Steps can reference these by name in their `model`
+   * field instead of a bare model string. Each alias maps a short name to a
+   * `{ backend?, model }` entry. The `backend` field, when present, overrides
+   * the step's own `backend` field so the alias pins both routing and the
+   * model string in one place.
+   *
+   * Aliases are resolved statically at config-load time — they are a
+   * convenience layer over the existing per-step `backend` / `model` fields
+   * and add no runtime overhead.
+   *
+   * @example
+   * ```ts
+   * models: {
+   *   fast:  { backend: 'openai', model: 'gpt-4o-mini' },
+   *   smart: { backend: 'openai', model: 'gpt-4o' },
+   *   local: { backend: 'native-agent', model: 'qwen36' },
+   * }
+   * ```
+   */
+  models?: Readonly<Record<string, ModelAliasEntry>>
 }
 
 /** Configuration block for the agentmemory integration. */

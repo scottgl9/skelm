@@ -32,7 +32,7 @@ export async function buildBackendRegistry(
   const backendIds = configuredBackendIds(config)
 
   // Pre-built instances — register directly, exclude their ids from string-keyed lookup.
-  const registry = new BackendRegistry()
+  const registry = new BackendRegistry({ models: config.models })
   const instanceIds = new Set((config.instances ?? []).map((b) => b.id))
   for (const instance of config.instances ?? []) {
     registry.register(instance)

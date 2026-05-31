@@ -676,16 +676,31 @@ export class AgentMaxTurnsError extends Error {
  */
 export class BackendRegistry {
   private readonly backends = new Map<BackendId, SkelmBackend>()
+  private readonly modelAliases: Readonly<Record<string, import('./config.js').ModelAliasEntry>>
+
+  constructor(
+    opts: { models?: Readonly<Record<string, import('./config.js').ModelAliasEntry>> } = {},
+  ) {
+    this.modelAliases = opts.models ?? {}
+  }
+
+  /**
+   * Resolve a model alias to its concrete `{ backend?, model }` entry.
+   * Returns `undefined` when the name is not a registered alias (i.e. it is
+   * already a bare model string or not set). The caller should use the
+   * returned entry to override the step's `backend` and `model` fields.
+   */
+  resolveModelAlias(
+    name: string,
+  ): import('./config.js').ModelAliasEntry | undefined {
+    return this.modelAliases[name]
+  }
 
   register(backend: SkelmBackend): void {
     if (this.backends.has(backend.id)) {
       throw new Error(`backend already registered: ${backend.id}`)
     }
     this.backends.set(backend.id, backend)
-  }
-
-  has(id: BackendId): boolean {
-    return this.backends.has(id)
   }
 
   /**
