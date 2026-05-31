@@ -6,31 +6,84 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-### Breaking
+## [0.4.5] - 2026-05-31
 
-- **Renamed step builder `llm()` → `infer()` and renamed backend SPI method `infer()` → `inference()`.** Public step authors call `infer({...})`; backend authors implement `async inference(req, ctx)`. Update pipelines: `import { llm }` → `import { infer }` (or from `@skelm/core`), and call sites `llm({...})` → `infer({...})`. Public type `LlmStep` → `InferStep`; runtime helpers `executeLlmStep`/`runLlmStep` → `executeInferStep`/`runInferStep`; step kind discriminator `'llm'` → `'infer'`; config routing key `backends.llm` → `backends.infer`. On the SPI side, `SkelmBackend.infer` → `SkelmBackend.inference`; types `InferRequest`/`InferResponse` → `InferenceRequest`/`InferenceResponse`; capability skip-list and routing strings `'infer'` → `'inference'`. No deprecation shim.
+### Breaking Changes
+
+- **Renamed `llm()` step builder → `infer()`; renamed backend SPI `infer()` → `inference()`.** Step authors call `infer({...})`; backend authors implement `async inference(req, ctx)`. The rename also touches the public type (`LlmStep` → `InferStep`), runtime helpers (`executeLlmStep`/`runLlmStep` → `executeInferStep`/`runInferStep`), the step-kind discriminator (`'llm'` → `'infer'`), the config routing key (`backends.llm` → `backends.infer`), the SPI request/response types (`InferRequest`/`InferResponse` → `InferenceRequest`/`InferenceResponse`), and the capability/routing strings (`'infer'` → `'inference'`). No deprecation shim. Migration: `import { llm }` → `import { infer }`; `llm({...})` → `infer({...})`.
+
+- **`skelm list` now shows the running view by default** — persistent workflows, armed triggers, session counts, and in-flight runs (`GET /v1/active`). The previous discovery view moves behind `skelm list --all`. Scripts that parsed bare `skelm list` for discovered workflows must switch.
+
+- **"Persistent agent" reframed as "persistent workflow"** in the public surface — the builder is `persistentWorkflow()` and the gateway/CLI verbs follow.
 
 ### Added
 
-- **`@skelm/agent` is now bundled with the CLI.** `@skelm/cli` depends on the first-party agent backend, so installing the `skelm` meta-package pulls it in automatically alongside the `codex`, `opencode`, and `pi` backends. Reference it declaratively under the `skelm-agent` id: `backends: { 'skelm-agent': { baseUrl, apiKey, model?, maxTokens?, timeoutMs?, vision? }, agent: 'skelm-agent' }` (the bare `agent` key is a reserved selector, so the backend definition uses `skelm-agent`). The `apiKey` accepts a literal or an `{ secret: "ENV_NAME" }` reference, resolved eagerly since the agent backend takes a plain key.
-- **First-class agentmemory integration (`@skelm/agentmemory`).** New workspace package shipping a typed REST client and a gateway-wired `AgentmemoryHandle` for the [agentmemory](https://github.com/rohitg00/agentmemory) memory microservice. Direct integration — no MCP shim. Enable via `agentmemory: { enabled: true, url, secretName, timeoutMs }` in `skelm.config.ts`. On start the gateway runs a non-blocking health probe and logs `agentmemory client wired` (or a warning when the server is unreachable).
-- **New `agentmemory` permission dimension on `AgentPermissions`.** Default-deny, with per-op flags (`allowObserve`, `allowSearch`, `allowSession`, `allowContext`, `allowSave`, `allowRecall`, `allowGraph`) and a `'deny'` shorthand. `TrustEnforcer.canUseAgentmemory(op)` returns the standard `EnforceDecision`; denials emit `permission.denied` events under `dimension: 'agentmemory'`.
-- **`BackendContext.agentmemory?: AgentmemoryHandle`.** Gateway injects per step; backends consume unconditionally — the handle internally enforces `canUseAgentmemory` and swallows transport errors as `agentmemory.error` events. Beyond the automatic loop, custom backend/step code can call `save`, `recall`, `sessions`, and `graphQuery` on the handle.
-- **Broadened handle surface.** `save` (explicit `memory_save`), `recall` + `sessions` (recent/by-session retrieval, gated together by the `recall` op), and `graphQuery` (knowledge-graph traversal) round out the client and `AgentmemoryHandle`.
-- **Backend wiring** in `@skelm/agent` (per-tool observe + final-answer `task_completed` + smart-search recall under a `<memory>` block), `@skelm/codex`, `@skelm/opencode`, `@skelm/vercel-ai`, and `@skelm/pi` (per-turn observe + recall prepended to system prompts). Every backend now also captures the user prompt as a `user_prompt_submit` observation.
-- **`docs/guides/agentmemory.md`** with the trust-boundary explanation, config reference, per-op permissions table, custom-code usage, per-backend hook table, and troubleshooting; plus a runnable `examples/agentmemory/` walkthrough of the two-run recall pattern.
-- **Persistent workflows (`persistentWorkflow()`).** A triggered workflow whose conversation outlives any single trigger fire. Each fire runs optional preamble steps (`code()`, `llm()`, control flow) fresh — to enrich or transform the inbound message — and then always ends in one bounded, gateway-enforced, audited terminal agent turn against a durable per-session conversation (keyed by an `agent.sessionKey` you supply, e.g. a Telegram `chatId`). The whole fire is one Run; the preamble feeds the terminal `agent.prompt` via `ctx.steps`. Surviving across messages and gateway restarts, with no resident process; triggers (queue/cron/webhook) drive fires. The terminal turn's `agent.permissions` apply only to that turn — preamble steps stay default-deny even under an unrestricted grant. Durable sessions reuse the run store's `StateStore` (`loadSession`/`saveSession`/`createSessionRecord`, `PersistentSessionRecord`, namespace `persistent-workflow`). See [`docs/concepts/persistent-workflows.md`](./concepts/persistent-workflows.md) and the [Telegram persistent-workflow recipe](./recipes/telegram-persistent-workflow.md).
-- **Operator-gated unrestricted permission bypass.** A two-keyed escape hatch from default-deny for freewheeling agents. An author declares `permissions.requestUnrestricted: true` (inert on its own); the operator allowlists the id in `defaults.unrestrictedGrants` (or env `SKELM_UNRESTRICTED_WORKFLOWS`). Only when both agree does `TrustEnforcer` short-circuit every dimension to allow — a short-circuit, not a permissive profile, so removing the grant restores default-deny. Never silent: each bypassed turn emits a `permission.bypassed` audit event. A pipeline can never self-escalate. See [`docs/concepts/permissions.md`](./concepts/permissions.md#the-unrestricted-bypass-freewheeling-agents).
-- **Telegram who-can-talk allowlist.** `telegram.createTriggerSource({ allowedChatIds, allowedUsers })` drops inbound updates from non-allowlisted chats/senders before they fire a workflow — the recommended inbound gate when driving a privileged or unrestricted agent.
-- **`examples/telegram-assistant/`** — a persistent-workflow, agentmemory-wired, unrestricted Telegram assistant (with a `code()` preamble) demonstrating all of the above behind a who-can-talk allowlist. `examples/tui-assistant/` is the same pattern over a local terminal UI and the minimal no-preamble shape.
-- **`skelm run <dir>` activates triggered/persistent projects on the gateway.** When a directory's `skelm.config.*` declares `triggerSources`, or its entrypoint is a `persistentWorkflow()`, `skelm run` now hands the directory to the gateway (`POST /v1/projects/activate`): the gateway imports the config in its own process (trigger-source drivers and backend instances are live objects that can't cross HTTP), registers the trigger sources + backends + workflow, arms the triggers, merges `unrestrictedGrants`/`agentmemory`, and takes ownership. The CLI prints a summary and exits; re-running is an idempotent refresh. **Path-gated:** a directory outside the gateway's trusted `projectRoot`/`allowedRegistrationDirs` is refused wholesale *before* its config is imported. One-shot pipelines are unchanged (streamed and awaited inline).
-- **`skelm stop <id>`** deactivates a workflow on the gateway — unregisters its triggers (its queue driver stops) and drops the registration, keeping persisted sessions so a re-activation resumes. `--cancel-inflight` also cancels running turns. Distinct from `skelm gateway stop` (whole process) and `skelm schedule stop <trigger-id>` (one trigger). Backed by `POST /v1/workflows/:id/deactivate`.
-- **CLI-hosted TUI (`createRemoteTriggerSource`).** The gateway side is headless; `skelm run` hosts the project's terminal frontend (carried on the source) in the CLI process and streams each turn over the run SSE (`step.partial` → `renderPartial`, final → `render`) via `POST /v1/tui/:sourceId/submit`. This lets the gateway run as a daemon while you chat from your own terminal; the embedded foreground-gateway frontend (`TuiIntegration.createTriggerSource({ frontend })`) still works.
+- **Persistent workflows (`persistentWorkflow()`).** A triggered workflow whose conversation outlives any single trigger fire. Each fire runs optional preamble steps (`code()`, `infer()`, control flow) fresh, then always ends in one bounded, gateway-enforced, audited terminal agent turn against a durable per-session conversation (keyed by an `agent.sessionKey` you supply, e.g. a Telegram `chatId`). Sessions survive gateway restarts with no resident process; triggers drive fires. The terminal turn's `agent.permissions` apply only to that turn — preamble steps stay default-deny even under an unrestricted grant. Sessions are protected by a CAS-based advisory lock with stale-lock recovery, and distinct `sessionKey`s run concurrently. See [`docs/concepts/persistent-workflows.md`](./concepts/persistent-workflows.md).
+
+- **First-class agentmemory integration (`@skelm/agentmemory`).** New workspace package: a typed REST client and gateway-wired `AgentmemoryHandle` for the [agentmemory](https://github.com/rohitg00/agentmemory) memory microservice — direct integration, no MCP shim. Enable via `agentmemory: { enabled, url, secretName, timeoutMs }` in `skelm.config.ts`. Adds the default-deny `agentmemory` permission dimension on `AgentPermissions` with per-op flags (`allowObserve`/`Search`/`Session`/`Context`/`Save`/`Recall`/`Graph`); all ops audit through the chain writer. `BackendContext.agentmemory` is wired into `@skelm/agent` (per-tool observe + final-answer `task_completed` + recall under a `<memory>` block), `@skelm/codex`, `@skelm/opencode`, `@skelm/vercel-ai`, and `@skelm/pi` (per-turn observe + system-prompt recall). See [`docs/guides/agentmemory.md`](./guides/agentmemory.md) and `examples/agentmemory/`.
+
+- **`delegation` permission dimension + `delegate` built-in tool.** Agents can spawn bounded child runs whose permissions are intersected against the caller's delegation ceiling. New `runDelegation` helper threads ceiling, stack, and depth through the runtime and enforces the allowlist; the dimension survives parallel & forEach branches. See `docs/concepts/delegation.md` and `examples/agent-delegation/`.
+
+- **Operator-gated unrestricted permission bypass.** A two-keyed escape hatch from default-deny: the author declares `permissions.requestUnrestricted: true` (inert on its own); the operator allowlists the id in `defaults.unrestrictedGrants` (or env `SKELM_UNRESTRICTED_WORKFLOWS`). Only when both agree does `TrustEnforcer` short-circuit every dimension. Each bypassed turn emits a `permission.bypassed` audit event, fanned out per dimension granted. A pipeline can never self-escalate. See [`docs/concepts/permissions.md`](./concepts/permissions.md#the-unrestricted-bypass-freewheeling-agents).
+
+- **`@skelm/agent` bundled with the CLI.** Installing `skelm` now pulls the first-party agent backend alongside `codex`, `opencode`, and `pi`. Reference it under the `skelm-agent` id (the bare `agent` key is reserved): `backends: { 'skelm-agent': { baseUrl, apiKey, ... }, agent: 'skelm-agent' }`.
+
+- **`skelm run <dir>` activates triggered/persistent projects on the gateway.** When a directory declares `triggerSources` or its entrypoint is a `persistentWorkflow()`, `skelm run` hands the directory to the gateway (`POST /v1/projects/activate`), which imports the config in-process, registers triggers/backends/workflow, merges `unrestrictedGrants` / `agentmemory`, and takes ownership. Re-running is an idempotent refresh. Path-gated against the gateway's `projectRoot` / `allowedRegistrationDirs` before any code runs. One-shot pipelines unchanged.
+
+- **`skelm stop <id>`** deactivates a workflow on the gateway — unregisters triggers, drops the registration, keeps persisted sessions for re-activation. `--cancel-inflight` also cancels running turns. Distinct from `skelm gateway stop` and `skelm schedule stop <trigger-id>`.
+
+- **CLI-hosted TUI (`createRemoteTriggerSource`).** The gateway side is headless; `skelm run` hosts the project's terminal frontend in the CLI process and streams each turn over the run SSE (`step.partial` → `renderPartial`, final → `render`) via `POST /v1/tui/:sourceId/submit`. Lets the gateway run as a daemon while you chat from your own terminal; the embedded `TuiIntegration.createTriggerSource({ frontend })` form still works.
+
+- **Matrix chat trigger/response integration** — drive a persistent workflow from a Matrix room. See the Matrix recipe under `docs/recipes/`.
+
+- **Telegram who-can-talk allowlist.** `telegram.createTriggerSource({ allowedChatIds, allowedUsers })` drops inbound updates from non-allowlisted chats/senders before they fire a workflow — the recommended inbound gate for a privileged or unrestricted agent.
+
+- **`examples/telegram-assistant/`** — persistent-workflow + agentmemory + unrestricted Telegram assistant behind a who-can-talk allowlist. **`examples/tui-assistant/`** — the same pattern over a local TUI in the minimal no-preamble shape.
+
+- **`@skelm/otel` wired into the gateway** for OpenTelemetry trace export. The workspace reaper also sweeps stale ephemeral workspaces on gateway start.
+
+- **`Run.status='waiting'` persisted on `wait()`** so paused runs survive a gateway restart and resume via the existing `/runs/:id/resume` path.
+
+- **Idempotent backend registry, mutable-once backends, shared `CONFIG_FILENAMES`.** Re-activation no longer fails on duplicate registration; backend definitions can be replaced once.
+
+- **Typed `BackendAuthenticationError` / `BackendRateLimitError` / `BackendTimeoutError`** consolidated into `@skelm/core/backend`. The backend-contract suite gained per-dimension `adversarialCases`, exercising default-deny against every claimed capability.
+
 - **New gateway endpoints:** `POST /v1/projects/activate`, `GET /v1/active`, `POST /v1/workflows/:id/deactivate`, `POST /v1/tui/:sourceId/submit`.
 
-### Changed
+### Fixed
 
-- **`skelm list` now shows the running view by default.** It reports what the gateway is currently running — persistent workflows, their armed triggers, session counts, and in-flight runs (`GET /v1/active`). The previous behavior (discovered pipelines from the registry) moves behind `skelm list --all`. **User-visible behavior change:** scripts that parsed bare `skelm list` for discovered workflows must switch to `skelm list --all`.
+- **`runWithMemoryTurns()` extracted** in `@skelm/core` and four backend agent loops rewired onto it (`@skelm/agent`, `@skelm/codex`, `@skelm/opencode`, `@skelm/vercel-ai`, `@skelm/pi`).
+- **Backend-capability fail-close scoped to author-declared permissions** — a backend missing a capability the author never asked for no longer fails the step.
+- **Approval `resolve`/`timeout`/`cancel` chained onto audit-write completion** so the audit chain cannot lose an approval decision under shutdown races.
+- **Queue-driver `onEvent` honored and forwarded on the non-persistent dispatch path** so queue drivers receive live run events on every code path.
+- **Project-default permissions applied to gateway-run pipelines** (parity with locally-dispatched runs).
+- **Sparse crons re-checked at the horizon** so leap-day schedules fire instead of being skipped.
+- **Malformed interval `every` rejected** with a typed error instead of thrown during trigger discovery (which previously crashed the whole config import).
+- **`createEmptyPolicy()` removed** from `@skelm/opencode` (use `resolvePermissions(undefined, undefined)`); dead permission-mapper exports dropped from `@skelm/codex` / `@skelm/opencode` public APIs.
+- **`research-specialist` example tolerates string or `{question}` input** (regression from input-shape tightening).
+
+### Security
+
+- **`fsWrite` enforced on the destination** of MCP `move` / `copy` / `rename`. The destination path was previously unchecked.
+- **`fsRead` / `fsWrite` enforced on MCP `read_text_file` / `read_media_file`.**
+- **Secrets redacted inside array log fields.** Previous redaction only walked object values.
+- **Interval/poll `everyMs` validated** to prevent a `setInterval` tight-loop DoS from a malformed trigger config.
+- **At/cron triggers armed with a chunked timer** to prevent `setTimeout` overflow-clamp on far-future schedules.
+- **Delegation allowlist enforced inside `runDelegation`** and ceiling/guards preserved across parallel & forEach branches.
+- **Persistent-workflow session locks recover from stale state** so a crashed turn does not park a session forever.
+
+### Tests
+
+- Validation-fail sweep for the runs / schedules / projects routes.
+- Live qwen36 coverage for `agentDef` system-prompt injection; temp-dir cleanup in the suite.
+- `pickFreePort` TOCTOU race + `httpProxyPort` sweep cleanup to de-flake gateway boot tests under parallel `pnpm test`.
+
+### Docs
+
+- `agentDef` (AGENTS.md/SOUL.md) loading + persistent-workflow system-prompt fields documented.
+- Run/activate flow reconciled across guides, recipes, and examples.
+- Dropped Gemini as a documented ACP option; fixed the Claude ACP example.
+- Matrix-persistent-agent recipe dead-link repair.
 
 ## [0.4.4] - 2026-05-26
 
