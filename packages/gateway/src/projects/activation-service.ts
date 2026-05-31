@@ -197,7 +197,7 @@ export class ProjectActivationService {
     }
 
     // 3. Absorb backend instances (live objects).
-    const incoming = new BackendRegistry()
+    const incoming = new BackendRegistry({ models: dirConfig.models })
     for (const backend of dirConfig.instances ?? []) incoming.registerIfAbsent(backend)
     const backends = this.gateway.absorbBackends(incoming)
 

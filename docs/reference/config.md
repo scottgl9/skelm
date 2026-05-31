@@ -69,6 +69,12 @@ export default defineConfig({
   },
   plugins?: readonly string[],               // package names imported at gateway startup
 
+  // ── Model aliases ────────────────────────────────────────────────────
+  models?: Record<string, {                  // named model aliases (see "Model aliases" below)
+    backend?: string,                        // optional: pin the backend for this alias
+    model:    string,                        // the concrete model string forwarded to the backend
+  }>,
+
   // ── Environment variables ───────────────────────────────────────────
   env?: Record<string, string>,              // static defaults; layered with .env (see below)
 })
@@ -204,6 +210,38 @@ export default defineConfig({
   },
 })
 ```
+
+## Model aliases
+
+The `models` map lets you define short, project-wide names for `{ backend, model }` pairs. Steps reference the alias by name in their `model` field instead of repeating a bare model string everywhere.
+
+```ts
+// skelm.config.mts
+export default defineConfig({
+  backends: {
+    openai: { apiKey: { secret: 'OPENAI_API_KEY' } },
+  },
+  models: {
+    fast:  { backend: 'openai', model: 'gpt-4o-mini' },
+    smart: { backend: 'openai', model: 'gpt-4o' },
+    local: { backend: 'native-agent', model: 'qwen36' },
+  },
+})
+```
+
+```ts
+// workflow
+import { infer } from '@skelm/core'
+
+const classify = infer({ id: 'classify', model: 'fast',  prompt: ... })
+const generate = infer({ id: 'generate', model: 'smart', prompt: ... })
+```
+
+**Resolution rules:**
+- If `step.model` matches a key in `models`, the alias is expanded to its `{ backend?, model }` entry.
+- The alias's `backend` field, when present, overrides the step's own `backend` field — the alias pins both routing and the model string.
+- If no alias matches, `step.model` is forwarded to the backend unchanged (plain model string).
+- Resolution is static at config-load time; there is no runtime overhead.
 
 ## Environment variables — `.env` and `config.env`
 

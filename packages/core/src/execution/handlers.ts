@@ -346,7 +346,14 @@ async function runInferStep(
       `step "${step.id}" requires a backend registry but none was provided to runPipeline()`,
     )
   }
-  const backend = backends.resolveForLlm({ backendId: step.backend as string | undefined })
+  // Resolve model alias early so we can use its backend override in resolveForLlm.
+  const modelAlias =
+    step.model !== undefined ? backends.resolveModelAlias(step.model) : undefined
+  // Alias backend takes precedence over step backend, then step backend, then auto.
+  const effectiveBackendId =
+    (modelAlias?.backend ?? (step.backend as string | undefined))
+  const backend = backends.resolveForLlm({ backendId: effectiveBackendId })
+  const resolvedModel = modelAlias !== undefined ? modelAlias.model : step.model
   const resolvedSecrets = await resolveDeclaredSecrets(
     step,
     undefined,
@@ -371,7 +378,7 @@ async function runInferStep(
   const req = {
     messages: [{ role: 'user' as const, content: promptValue as string | readonly ContentPart[] }],
     ...(systemText !== undefined && { system: systemText }),
-    ...(step.model !== undefined && { model: step.model }),
+    ...(resolvedModel !== undefined && { model: resolvedModel }),
     ...(step.temperature !== undefined && { temperature: step.temperature }),
     ...(step.maxTokens !== undefined && { maxTokens: step.maxTokens }),
     ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),

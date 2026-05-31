@@ -91,6 +91,27 @@ export default pipeline({
 
 When `output` is supplied, the runtime requests structured output from the backend and validates the parsed JSON against the schema before recording it.
 
+### Model aliases
+
+Instead of hardcoding model strings per step, define aliases in `skelm.config.ts` and reference them by name:
+
+```ts
+// skelm.config.mts
+export default defineConfig({
+  backends: { openai: { apiKey: { secret: 'OPENAI_API_KEY' } } },
+  models: {
+    fast:  { backend: 'openai', model: 'gpt-4o-mini' },
+    smart: { backend: 'openai', model: 'gpt-4o' },
+  },
+})
+
+// workflow — swap models in one place
+infer({ id: 'classify', model: 'fast',  prompt: ... })
+infer({ id: 'generate', model: 'smart', prompt: ... })
+```
+
+The alias's `backend` field overrides the step's own `backend` when set. If `step.model` is not a registered alias it is forwarded unchanged as a plain model string.
+
 ---
 
 ## Adding an agent step

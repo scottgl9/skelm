@@ -35,6 +35,7 @@ export type {
   SkelmConfigAgentmemory,
   SkelmConfigBackendEntry,
   SkelmConfigBackends,
+  ModelAliasEntry,
   SkelmConfigMcpServerEntry,
   SkelmConfigRegistries,
   SkelmConfigSecrets,
