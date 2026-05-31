@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { BackendRegistry } from '../src/backend.js'
+import { defineConfig } from '../src/config.js'
 import type { ModelAliasEntry } from '../src/config.js'
 import type { InferenceRequest, InferenceResponse, SkelmBackend } from '../src/backend.js'
 
@@ -69,5 +70,43 @@ describe('BackendRegistry model aliases', () => {
     expect(alias?.backend).toBe('cheap')
     const backend = reg.resolveForLlm({ backendId: alias?.backend })
     expect(backend.id).toBe('cheap')
+  })
+})
+
+describe('defineConfig model alias validation', () => {
+  it('warns when an alias backend is not declared in backends', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    defineConfig({
+      backends: { openai: {} },
+      models: {
+        fast: { backend: 'openai', model: 'gpt-4o-mini' },   // ok
+        oops: { backend: 'missing-backend', model: 'x' },    // should warn
+      },
+    })
+    expect(warn).toHaveBeenCalledOnce()
+    expect(warn.mock.calls[0][0]).toContain('oops')
+    expect(warn.mock.calls[0][0]).toContain('missing-backend')
+    warn.mockRestore()
+  })
+
+  it('does not warn when all alias backends are declared', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    defineConfig({
+      backends: { openai: {}, cheap: {} },
+      models: {
+        fast:  { backend: 'openai', model: 'gpt-4o-mini' },
+        smart: { backend: 'cheap', model: 'gpt-3.5-turbo' },
+        bare:  { model: 'some-model' },  // no backend field — always ok
+      },
+    })
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('does not warn when models map is absent', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    defineConfig({ backends: { openai: {} } })
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
   })
 })

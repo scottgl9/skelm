@@ -256,6 +256,27 @@ export interface SkelmConfigAgentmemory {
  * config; we never mutate the result.
  */
 export function defineConfig(config: SkelmConfig): SkelmConfig {
+  // Validate model aliases: warn if an alias pins a backend that isn't declared.
+  if (config.models !== undefined && config.backends !== undefined) {
+    const declaredBackends = new Set(
+      Object.keys(config.backends).filter(
+        (k) => k !== 'default' && k !== 'infer' && k !== 'agent',
+      ),
+    )
+    // Also accept the selector values (default/infer/agent string values)
+    for (const sel of ['default', 'infer', 'agent'] as const) {
+      const v = config.backends[sel]
+      if (typeof v === 'string') declaredBackends.add(v)
+    }
+    for (const [alias, entry] of Object.entries(config.models)) {
+      if (entry.backend !== undefined && !declaredBackends.has(entry.backend)) {
+        console.warn(
+          `[skelm] model alias "${alias}" references backend "${entry.backend}" which is not declared in backends. ` +
+            `Either add it to the backends map or remove the backend field from the alias.`,
+        )
+      }
+    }
+  }
   return Object.freeze({ ...config })
 }
 
