@@ -34,6 +34,7 @@ const RENAME = {
   '@skelm/scheduler': '@scottgl9/scheduler',
   '@skelm/integrations': '@scottgl9/integrations',
   '@skelm/integration-sdk': '@scottgl9/integration-sdk',
+  '@skelm/agentmemory': '@scottgl9/agentmemory',
   '@skelm/metrics': '@scottgl9/metrics',
   '@skelm/opencode': '@scottgl9/opencode',
   '@skelm/codex': '@scottgl9/codex',
