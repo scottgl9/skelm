@@ -1,13 +1,15 @@
 import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import type { Pipeline } from '@skelm/core'
-import { loadTsModule, pickExport } from '@skelm/core'
+import type { PersistentWorkflow, Pipeline } from '@skelm/core'
+import { isPersistentWorkflow, loadTsModule, pickExport } from '@skelm/core'
 
 /**
  * Load a workflow module by file path. The module's default export must be
- * a `Pipeline` value produced by `pipeline()` from @skelm/core. The
- * pipeline file's directory is recorded on the returned value as
+ * a runnable workflow — a `Pipeline` from `pipeline()` or a
+ * `PersistentWorkflow` from `persistentWorkflow()` (the latter has no `steps`
+ * in its minimal, no-preamble form, so it is NOT pipeline-shaped). The
+ * workflow file's directory is recorded on the returned value as
  * `baseDir` so steps that declare relative paths (e.g.
  * `code({ module: './step.ts' })`) resolve consistently.
  *
@@ -17,7 +19,9 @@ import { loadTsModule, pickExport } from '@skelm/core'
  * directory pointing at the CLI's own `node_modules`. The symlink is removed
  * after the module loads.
  */
-export async function loadWorkflowFromFile(filePath: string): Promise<Pipeline> {
+export async function loadWorkflowFromFile(
+  filePath: string,
+): Promise<Pipeline | PersistentWorkflow> {
   const absolute = resolve(process.cwd(), filePath)
   if (!existsSync(absolute)) {
     throw new CliError(`workflow file not found: ${absolute}`, 'workflow-not-found')
@@ -33,13 +37,16 @@ export async function loadWorkflowFromFile(filePath: string): Promise<Pipeline> 
   }
   const defaultExport = pickExport(mod, 'default')
   const candidate =
-    (isPipelineValue(defaultExport) ? defaultExport : undefined) ?? mod.workflow ?? mod.pipeline
-  if (!isPipelineValue(candidate)) {
+    (isRunnableWorkflow(defaultExport) ? defaultExport : undefined) ?? mod.workflow ?? mod.pipeline
+  if (!isRunnableWorkflow(candidate)) {
     throw new CliError(
-      `workflow file does not export a pipeline (default export): ${absolute}`,
+      `workflow file does not export a pipeline or persistent workflow (default export): ${absolute}`,
       'workflow-invalid',
     )
   }
+  // The `kind` brand on a persistent workflow is an enumerable field, so it
+  // survives the spread — the gateway dispatcher re-discriminates via
+  // isPersistentWorkflow on the returned value.
   return Object.freeze({ ...candidate, baseDir: dirname(absolute) })
 }
 
@@ -140,6 +147,11 @@ function isPipelineValue(v: unknown): v is Pipeline {
   if (typeof v !== 'object' || v === null) return false
   const r = v as Record<string, unknown>
   return typeof r.id === 'string' && Array.isArray(r.steps)
+}
+
+/** A runnable workflow file exports either a pipeline or a persistent workflow. */
+function isRunnableWorkflow(v: unknown): v is Pipeline | PersistentWorkflow {
+  return isPipelineValue(v) || isPersistentWorkflow(v)
 }
 
 /** A typed CLI error that carries an exit-code-friendly code string. */
