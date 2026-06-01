@@ -5,6 +5,7 @@ import { approvalsConfigCommand } from './approvals-config.js'
 import { approvalsCommand } from './approvals.js'
 import { parseArgv } from './argv.js'
 import { auditCommand, secretsCommand } from './audit.js'
+import { builderCommand } from './builder.js'
 import { debugCommand } from './debug.js'
 import { describeCommand } from './describe.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
@@ -347,6 +348,16 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         const dir = parsed.positional[0] ?? '.'
         const force = parsed.flags.force === true
         const result = await initCommand({ dir, force }, io)
+        return { exitCode: result.exitCode }
+      }
+      case 'builder': {
+        const result = await builderCommand(
+          {
+            ...(typeof parsed.positional[0] === 'string' && { dir: parsed.positional[0] }),
+            force: parsed.flags.force === true,
+          },
+          io,
+        )
         return { exitCode: result.exitCode }
       }
       case 'schedule': {
