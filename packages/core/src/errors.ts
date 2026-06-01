@@ -151,6 +151,23 @@ export class DelegationDepthError extends Error {
   }
 }
 
+/**
+ * Every model in an `infer()` step's model fallback list (`model: ['a', 'b', …]`)
+ * errored on the same backend. Carries the per-model causes in attempt order.
+ */
+export class ModelChainExhaustedError extends Error {
+  override readonly name = 'ModelChainExhaustedError'
+  constructor(
+    readonly stepId: string,
+    readonly attempts: ReadonlyArray<{ model: string; cause: unknown }>,
+  ) {
+    const summary = attempts
+      .map((a) => `${a.model}: ${a.cause instanceof Error ? a.cause.message : String(a.cause)}`)
+      .join('; ')
+    super(`step "${stepId}" exhausted model fallback chain — ${summary}`)
+  }
+}
+
 /** Convert any thrown value to the serializable error shape we record. */
 export function serializeError(err: unknown): SerializedError {
   if (err instanceof Error) {

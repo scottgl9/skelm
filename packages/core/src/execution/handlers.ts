@@ -75,6 +75,7 @@ import {
   resolveDeclaredSecrets,
 } from './helpers.js'
 import { createSecretsAccessor, resolveValueOrFn, resolveValueOrFnAsync } from './internal.js'
+import { runWithModelFallback } from './model-chain.js'
 import type { ExecutionRuntime } from './runtime.js'
 
 const defaultStateStore = new MemoryRunStore()
@@ -368,10 +369,30 @@ async function runInferStep(
       'vision' as keyof import('../backend.js').BackendCapabilities,
     )
   }
-  const req = {
+  // A `model: ['a','b',…]` list falls over to the next model on the SAME backend
+  // when one errors; a single string or undefined behaves as before. The backend
+  // must honor model selection for a multi-model list to mean anything.
+  const modelList: readonly string[] | undefined = Array.isArray(step.model)
+    ? step.model.length > 0
+      ? step.model
+      : undefined
+    : step.model !== undefined
+      ? [step.model]
+      : undefined
+  if (
+    modelList !== undefined &&
+    modelList.length > 1 &&
+    backend.capabilities.modelSelection !== true
+  ) {
+    throw new BackendCapabilityError(
+      `step "${step.id}": backend "${backend.id}" does not honor model selection (capabilities.modelSelection is not true), so a model fallback list cannot fail over.`,
+      backend.id,
+      'modelSelection',
+    )
+  }
+  const reqBase = {
     messages: [{ role: 'user' as const, content: promptValue as string | readonly ContentPart[] }],
     ...(systemText !== undefined && { system: systemText }),
-    ...(step.model !== undefined && { model: step.model }),
     ...(step.temperature !== undefined && { temperature: step.temperature }),
     ...(step.maxTokens !== undefined && { maxTokens: step.maxTokens }),
     ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
@@ -389,11 +410,21 @@ async function runInferStep(
           })
         }
       : undefined
-  // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForLlm
-  const response = await backend.inference!(req, {
-    signal: stepCtx.signal,
-    ...(onPartial !== undefined && { onPartial }),
-  })
+  const invoke = (model: string | undefined) =>
+    // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForLlm
+    backend.inference!(
+      { ...reqBase, ...(model !== undefined && { model }) },
+      {
+        signal: stepCtx.signal,
+        ...(onPartial !== undefined && { onPartial }),
+      },
+    )
+  const response =
+    modelList === undefined
+      ? await invoke(undefined)
+      : modelList.length === 1
+        ? await invoke(modelList[0])
+        : await runWithModelFallback(step.id, modelList, (m) => invoke(m))
   if (step.outputSchema !== undefined) {
     const candidate = response.structured ?? response.text
     return await validate(step.outputSchema, candidate, 'output', {

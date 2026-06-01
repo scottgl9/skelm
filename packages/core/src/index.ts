@@ -219,6 +219,7 @@ export {
   DelegationDepthError,
   ExecConfigError,
   InvokePipelineNotFoundError,
+  ModelChainExhaustedError,
   PermissionDeniedError,
   RunCancelledError,
   RunStateError,
