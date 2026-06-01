@@ -51,14 +51,22 @@ export async function builderCommand(
   const dir = resolve(process.cwd(), relDir)
   const alreadyScaffolded = BUILDER_MARKERS.every((m) => existsSync(join(dir, m)))
 
-  if (!alreadyScaffolded) {
-    if (existsSync(dir) && !args.force && (await isNonEmpty(dir))) {
+  // Scaffold a fresh project, or re-scaffold an existing one when --force is
+  // passed (refreshes templates + the bundled skill, e.g. after a skelm
+  // upgrade). Without --force an existing builder project is left untouched and
+  // we fall through to launch — idempotent.
+  if (!alreadyScaffolded || args.force === true) {
+    if (!alreadyScaffolded && !args.force && existsSync(dir) && (await isNonEmpty(dir))) {
       io.stderr.write(`error: target directory is not empty: ${dir}\n`)
       io.stderr.write('hint: pass --force to scaffold the builder over an existing tree\n')
       return { exitCode: EXIT.CLI_ERROR }
     }
     await scaffold(dir)
-    io.stdout.write(`✓ scaffolded skelm builder at ${dir}\n`)
+    io.stdout.write(
+      alreadyScaffolded
+        ? `✓ re-scaffolded skelm builder at ${dir} (--force)\n`
+        : `✓ scaffolded skelm builder at ${dir}\n`,
+    )
   }
 
   // The gateway loads skelm.config.mts, which imports @skelm/codex, @skelm/pi,
