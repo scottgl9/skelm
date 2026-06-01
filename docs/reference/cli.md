@@ -216,6 +216,36 @@ Scaffold a new skelm project under `<dir>` (defaults to `.`). Creates
 `workflows/hello.workflow.mts`, `.gitignore`, and `README.md`. `--force` allows
 scaffolding into a non-empty directory.
 
+### `skelm builder [<dir>]`
+
+Scaffold a **conversational workflow-builder** project under `<dir>` (defaults
+to `builder`) and drop into its terminal chat UI. Describe a workflow in plain
+language; the agent consults the bundled `skelm` skill, writes a
+`*.workflow.mts` into the folder, validates it with `skelm validate`, and
+reports the path.
+
+```
+skelm builder [<dir>] [--force]
+```
+
+The scaffold contains a `persistentWorkflow` (the chat agent), an Ink terminal
+frontend over the `tui` chatui transport, the `skelm` skill, and a
+`skelm.config.mts`. Behavior:
+
+- **Idempotent.** Re-running reuses an existing builder project (never clobbers
+  scaffolded files).
+- **No auto-install.** Like `skelm init`, it never installs dependencies. On a
+  fresh scaffold it prints the install step and exits; once `node_modules`
+  exists it activates the project on the gateway and hosts the chat UI in-process
+  (the same path as `skelm run <tui-dir>`).
+- **`--force`** allows scaffolding into a non-empty directory.
+
+The agent backend resolves with a runtime fallback (skelm's
+`createRoutingBackend`): **codex** by default (auth via `codex login` or
+`CODEX_API_KEY`), falling over to the in-process **pi-sdk** backend
+(`OPENAI_BASE_URL` / `OPENAI_MODEL`) if a codex turn errors. Set
+`SKELM_BUILDER_BACKEND=codex|pi-sdk` to pin one backend and skip the fallback.
+
 ### `skelm validate <pipeline.ts>`
 
 Static check that the pipeline imports cleanly and its declared schemas/steps

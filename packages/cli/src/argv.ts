@@ -23,6 +23,7 @@ export interface ParsedArgv {
     | 'schedule'
     | 'validate'
     | 'logs'
+    | 'builder'
     | 'version'
     | 'help'
     | 'unknown'
@@ -49,6 +50,9 @@ export function parseArgv(argv: readonly string[]): ParsedArgv {
   }
   if (first === 'init') {
     return parseSubcommand('init', argv.slice(1))
+  }
+  if (first === 'builder') {
+    return parseSubcommand('builder', argv.slice(1))
   }
   if (first === 'list') {
     return parseSubcommand('list', argv.slice(1))
@@ -102,6 +106,7 @@ function parseSubcommand(
   command:
     | 'run'
     | 'init'
+    | 'builder'
     | 'list'
     | 'stop'
     | 'describe'

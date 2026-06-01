@@ -1,0 +1,55 @@
+import { createCodexBackend } from '@skelm/codex'
+import { createRemoteTriggerSource } from '@skelm/integrations'
+import { createPiSdkBackend } from '@skelm/pi'
+import { createRoutingBackend, defineConfig } from 'skelm'
+import { createTerminalFrontend } from './chatui-frontend.mts'
+
+// Backend selection with native runtime fallback. Codex is the default; if a
+// codex turn errors (no `codex login` / CODEX_API_KEY, the CLI is missing, or an
+// upstream failure), skelm's createRoutingBackend falls over to the in-process
+// pi-sdk backend pointed at a local OpenAI-compatible endpoint. This is true
+// per-request failover, not a static load-time probe. Set SKELM_BUILDER_BACKEND
+// to 'codex' or 'pi-sdk' to pin one backend and skip the fallback.
+const codex = createCodexBackend({ id: 'codex' })
+const piSdk = createPiSdkBackend({
+  id: 'pi-sdk',
+  baseUrl: process.env.OPENAI_BASE_URL ?? 'http://localhost:8000/v1',
+  apiKey: process.env.OPENAI_API_KEY ?? 'unused',
+  model: process.env.OPENAI_MODEL ?? 'qwen36',
+})
+const pin = process.env.SKELM_BUILDER_BACKEND
+const agentBackend =
+  pin === 'pi-sdk'
+    ? piSdk
+    : pin === 'codex'
+      ? codex
+      : createRoutingBackend({
+          id: 'builder-agent',
+          primary: codex,
+          failover: [piSdk],
+          onFailover: (info) =>
+            console.error(`[builder] ${info.from} unavailable — falling over to ${info.to}`),
+        })
+
+export default defineConfig({
+  registries: {
+    workflows: { glob: '*.workflow.{mts,ts}' },
+  },
+  // Only the agent role is wired; `openai: undefined` suppresses the
+  // framework-default openai backend (which would demand OPENAI_API_KEY).
+  backends: { agent: agentBackend.id, openai: undefined },
+  instances: [agentBackend],
+  triggerSources: [
+    {
+      id: 'tui',
+      // Terminal transport: headless on the gateway, the CLI host renders the
+      // Ink frontend. `skelm builder` activates this project and hosts it.
+      driver: createRemoteTriggerSource({
+        transport: 'tui',
+        frontend: createTerminalFrontend({
+          banner: 'skelm builder — describe a workflow to author it (Ctrl-C to exit)',
+        }),
+      }),
+    },
+  ],
+})
