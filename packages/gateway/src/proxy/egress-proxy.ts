@@ -158,6 +158,16 @@ export class EgressProxy {
       const method = firstLine.split(' ')[0]
       const target = firstLine.split(' ')[1]
 
+      // Stop flowing BEFORE the async upstream dial and BEFORE removing this
+      // listener. Removing the only 'data' handler while a socket is in flowing
+      // mode discards subsequently-arriving bytes (Node stream semantics), so a
+      // client's TLS ClientHello — sent the instant it sees our `200 Connection
+      // Established`, while the destination dial is still in flight — was lost
+      // and the tunnel hung. Pausing buffers those bytes; handleConnect/Http
+      // resume the socket via .pipe() once the destination connects.
+      socket.pause()
+      socket.removeListener('data', onData)
+
       if (method === 'CONNECT' && target) {
         this.handleConnect(socket, buffer, target)
       } else if (method !== undefined && HTTP_METHODS.has(method)) {
@@ -168,8 +178,6 @@ export class EgressProxy {
         this.rejectConnection(socket, '501 Not Implemented', 'Unknown request type')
         socket.end()
       }
-
-      socket.removeListener('data', onData)
     }
 
     socket.on('data', onData)
@@ -230,6 +238,7 @@ export class EgressProxy {
     const destPort = Number.parseInt(destPortStr || '443', 10) || 443
 
     const destSocket = connectToHost(destHost, destPort, () => {
+      // Resume the (paused) client socket so buffered + future bytes flow.
       socket.pipe(destSocket)
       destSocket.pipe(socket)
     })
