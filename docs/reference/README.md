@@ -2,6 +2,10 @@
 
 Authoritative specifications for the skelm public surface.
 
+## Overview
+
+- [Packages](./packages.md) — the published `@skelm/*` package map and what each is for.
+
 ## Authoring
 
 - [Pipeline Authoring](./pipeline-authoring.md) — builders, step kinds, control flow, structured output.
