@@ -31,6 +31,7 @@ import type { CodexPermissionAuditEntry, MappedCodexPolicy } from './types.js'
 
 const STAR = '*'
 
+/** Thrown when codex cannot enforce a resolved permission dimension; the refusal is audited. */
 export class CodexPermissionError extends Error {
   override readonly name = 'CodexPermissionError'
   constructor(
