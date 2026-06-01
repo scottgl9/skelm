@@ -204,6 +204,60 @@ describe('egress-proxy', () => {
       const result = await makeConnectRequest(port, `127.0.0.1:${testHttpPort}:443`, 'run1:step1')
       expect(result.allowed).toBe(true)
     })
+
+    test('forwards bytes through the tunnel sent right after the 200 (no ClientHello loss)', async () => {
+      // Regression: the proxy removed its 'data' listener while the client
+      // socket was still in flowing mode, so the first bytes a client sent the
+      // instant it saw `200 Connection Established` — arriving during the async
+      // upstream dial — were silently dropped and the tunnel hung forever. (Live
+      // symptom: codex's model API call through the egress proxy never returned;
+      // codex emitted "Reconnecting... N/5 (timeout waiting for child process to
+      // exit)".) Assert a real round-trip: send a payload AFTER the 200 and
+      // require the upstream echo to come back.
+      const echoPort = await pickFreePort()
+      const echo = createNetServer((s) => s.pipe(s))
+      await new Promise<void>((r) => echo.listen(echoPort, '127.0.0.1', () => r()))
+      try {
+        const port = await startProxyWithPolicy('allow')
+        const echoed = await new Promise<string>((resolve, reject) => {
+          const sock = createConnection(port, '127.0.0.1', () => {
+            sock.write(
+              `CONNECT 127.0.0.1:${echoPort} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer run1:step1\r\n\r\n`,
+            )
+          })
+          let established = false
+          let acc = Buffer.alloc(0)
+          sock.on('data', (d: Buffer) => {
+            acc = Buffer.concat([acc, d])
+            if (!established) {
+              const end = acc.indexOf('\r\n\r\n')
+              if (end < 0) return
+              const status = acc.toString('latin1', 0, acc.indexOf('\r\n'))
+              if (!/\b200\b/.test(status)) {
+                sock.destroy()
+                reject(new Error(`expected 200, got: ${status}`))
+                return
+              }
+              established = true
+              acc = acc.subarray(end + 4) // any early tunnel bytes
+              sock.write('PING-THROUGH-TUNNEL') // the bug window
+            }
+            if (established && acc.toString('latin1').includes('PING-THROUGH-TUNNEL')) {
+              sock.destroy()
+              resolve(acc.toString('latin1'))
+            }
+          })
+          sock.on('error', reject)
+          setTimeout(() => {
+            sock.destroy()
+            reject(new Error('tunnel did not echo (data lost)'))
+          }, 5000)
+        })
+        expect(echoed).toContain('PING-THROUGH-TUNNEL')
+      } finally {
+        await new Promise<void>((r) => echo.close(() => r()))
+      }
+    })
   })
 
   describe('Proxy-Authorization: Basic', () => {
