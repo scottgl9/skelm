@@ -43,8 +43,17 @@ export default persistentWorkflow<ChatMessage>({
     system: SYSTEM,
     // Least-privilege, explicitly declared (no unrestricted bypass): read the
     // project, write generated files, run skelm/node, load the skelm skill.
-    // networkEgress must be 'allow' for the in-process pi-sdk failover, which
-    // can't route through the gateway egress proxy.
+    // `fsWrite: ['./']` is scoped to this project — authoring workflow files
+    // here is the builder's whole job.
+    //
+    // networkEgress stays 'allow' (not an allowHosts list) ON PURPOSE: the
+    // in-process pi-sdk failover can't route through the gateway egress proxy,
+    // so it can't enforce a narrower policy. The start-of-step check runs
+    // against codex (the routing primary, which CAN enforce), so a narrower
+    // policy would pass there yet go silently unenforced once the turn fell
+    // over to pi-sdk. 'allow' is the honest contract for this codex→pi-sdk
+    // chain; pin SKELM_BUILDER_BACKEND=codex and tighten this if you never want
+    // the pi-sdk failover.
     permissions: {
       fsRead: ['./'],
       fsWrite: ['./'],

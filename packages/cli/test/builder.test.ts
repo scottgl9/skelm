@@ -51,6 +51,21 @@ describe('skelm builder', () => {
     expect(readFileSync(wfPath, 'utf8')).toBe('// edited by user\n')
   })
 
+  it('--force re-scaffolds an already-scaffolded project (refreshes templates)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-builder-'))
+    const target = join(dir, 'builder')
+
+    await invoke(['builder', target])
+    const wfPath = join(target, 'builder.workflow.mts')
+    writeFileSync(wfPath, '// edited by user\n')
+
+    const { exitCode, stdout } = await invoke(['builder', target, '--force'])
+    expect(exitCode).toBe(EXIT.OK)
+    expect(stdout).toContain('re-scaffolded skelm builder')
+    // --force overwrites the edited file back to the template.
+    expect(readFileSync(wfPath, 'utf8')).toContain("id: 'skelm-builder'")
+  })
+
   it('refuses a non-empty directory without --force', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'skelm-builder-'))
     writeFileSync(join(dir, 'existing.txt'), 'hi')

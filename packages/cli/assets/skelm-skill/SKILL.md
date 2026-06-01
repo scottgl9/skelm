@@ -5,7 +5,6 @@ license: MIT
 compatibility: Requires Node 20+, pnpm or npm, and the `skelm` package installed globally or as a workspace dependency.
 metadata:
   homepage: https://github.com/scottgl9/skelm
-  version: "0.3.7"
 allowed-tools: Read Edit Write Bash(pnpm:*) Bash(skelm:*) Bash(node:*) Bash(git:*)
 ---
 
