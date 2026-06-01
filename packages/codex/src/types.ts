@@ -62,6 +62,24 @@ export interface CodexBackendOptions {
    * image prompts at step start with no codex turn ever started.
    */
   vision?: boolean
+  /**
+   * Whether codex enforces its own OS sandbox. Default `true`.
+   *
+   * Codex's `workspace-write` sandbox uses Linux user namespaces / bubblewrap
+   * to confine file and shell access to the workspace. In environments that
+   * can't grant unprivileged user namespaces (many CI runners and containers),
+   * that sandbox cannot initialize and every write/exec fails — codex finishes
+   * the turn having done nothing.
+   *
+   * Set `false` for **gateway-as-trust-boundary** deployments (the same posture
+   * the in-process pi-sdk backend already runs in): codex runs with no OS
+   * sandbox (`danger-full-access`), and the declared fs/exec/network policy is
+   * the skelm-side boundary contract — validated and audited by the gateway,
+   * not OS-enforced by codex. The mapper still refuses to escalate when an
+   * explicit approval policy is set. Leave `true` (the default) wherever
+   * codex's sandbox can run so codex keeps enforcing it natively.
+   */
+  osSandbox?: boolean
 }
 
 /**

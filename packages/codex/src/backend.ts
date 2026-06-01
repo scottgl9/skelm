@@ -95,6 +95,7 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
       const mapped = mapPermissionsToCodex({
         policy,
         ...(request.cwd !== undefined && { workingDirectory: request.cwd }),
+        ...(options.osSandbox !== undefined && { osSandbox: options.osSandbox }),
       })
 
       // Filter requested MCP servers through the allowlist; the runner's
