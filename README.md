@@ -123,28 +123,6 @@ See [Backend documentation](./docs/backends/README.md) for setup guides, and [Co
 
 ---
 
-## Package architecture
-
-| Package | Purpose |
-|---------|---------|
-| `skelm` | Meta-package — install this, re-exports `@skelm/core` + CLI |
-| `@skelm/core` | Runtime, types, builders, permission model, event bus |
-| `@skelm/cli` | CLI commands — `run`, `schedule`, `gateway`, `audit` |
-| `@skelm/gateway` | Long-running orchestrator: HTTP, scheduler, agent lifecycle |
-| `@skelm/scheduler` | Cron, interval, and webhook triggers (poll, queue, file-watch, event-source live in `@skelm/gateway`) |
-| `@skelm/integrations` | Typed connectors for GitHub, Slack, Telegram |
-| `@skelm/integration-sdk` | Authoring SDK for building custom skelm integrations |
-| `@skelm/pi` | Pi coding-agent backend |
-| `@skelm/opencode` | Opencode coding-agent backend |
-| `@skelm/codex` | OpenAI Codex backend via the official `@openai/codex-sdk` |
-| `@skelm/vercel-ai` | Vercel AI SDK backend with streaming |
-| `@skelm/agent` | First-party native agent backend with built-in tools |
-| `@skelm/agentmemory` | Optional cross-session memory via the agentmemory server: typed REST client + gateway-wired handle |
-| `@skelm/metrics` | Prometheus-format metrics |
-| `@skelm/otel` | OpenTelemetry tracing |
-
----
-
 ## Documentation
 
 - **[Quickstart](./docs/quickstart/README.md)** — Get started in 60 seconds
@@ -152,6 +130,7 @@ See [Backend documentation](./docs/backends/README.md) for setup guides, and [Co
 - **[Guides](./docs/guides/)** — Testing, plugins, authoring patterns
 - **[Recipes](./docs/recipes/)** — Complete workflow examples
 - **[Reference](./docs/reference/)** — CLI, HTTP API, OpenAPI spec
+- **[Packages](./docs/reference/packages.md)** — Package map and responsibilities
 - **[Contributing](./.github/CONTRIBUTING.md)** — How to contribute
 
 ---
