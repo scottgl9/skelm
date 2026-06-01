@@ -196,7 +196,9 @@ export async function autoStartGateway(io: MainIO): Promise<DiscoveryRecord | nu
     // No service installed — spawn the CLI itself as a detached background
     // process. The child's argv[0]/argv[1] mirror the parent's so it
     // re-execs the same skelm binary.
-    const argv = [process.argv[1] ?? 'skelm', 'gateway', 'start']
+    // The detached child must run the gateway inline; bare `gateway start` now
+    // prints guidance and exits, so pass --foreground explicitly.
+    const argv = [process.argv[1] ?? 'skelm', 'gateway', 'start', '--foreground']
     // An ad-hoc gateway for a NON-default SKELM_STATE_DIR must not collide with
     // the conventional shared gateway (or another state dir's gateway) on the
     // config's fixed port: the child inherits SKELM_STATE_DIR (so its lockfile

@@ -24,10 +24,11 @@ npm install @skelm/gateway
 The gateway is normally driven through the `skelm` CLI:
 
 ```bash
-skelm gateway start                # Run the gateway (foreground; Ctrl-C drains and exits)
+skelm gateway start --foreground   # Run the gateway in this process (Ctrl-C drains and exits)
+skelm gateway start                # Print how to run it (install, or --foreground)
 skelm gateway status               # Inspect a running gateway
 skelm gateway stop                 # Stop it (sends SIGTERM, waits for drain)
-skelm gateway install --systemd    # Install a user-level systemd unit
+skelm gateway install              # Install as a service; auto-detects systemd (linux) / launchd (macOS)
 ```
 
 There is no separate `skelm-gateway` executable — the gateway always runs from the single `skelm` bin.
