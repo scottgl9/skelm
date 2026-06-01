@@ -27,7 +27,7 @@ export type {
   TelegramConfig,
   TelegramWebhookEvent,
   TelegramMessageTrigger,
-  TuiConfig,
+  ChatUiConfig,
   MatrixConfig,
   MatrixMessageTrigger,
 } from './types.js'

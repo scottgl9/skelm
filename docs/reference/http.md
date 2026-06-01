@@ -70,7 +70,7 @@ The `:id` path segment is the workflow-registry id — by default this is the fi
 | POST   | `/v1/projects/activate`           | Activate a project directory; body `{ dir }`                |
 | GET    | `/v1/active`                      | Running view: persistent workflows, triggers, in-flight runs |
 | POST   | `/v1/workflows/:id/deactivate`    | Stop a workflow; body `{ cancelInflight? }`                 |
-| POST   | `/v1/tui/:sourceId/submit`        | Inject a TUI line; body `{ sessionId, text, from? }` → `{ reply }` |
+| POST   | `/v1/chat/:sourceId/submit`       | Inject a chat-UI line (transport `tui` or `web`); body `{ sessionId, text, from? }` → `{ runId }` |
 
 `activate` is how `skelm run <dir>` lands a triggered/persistent project on a
 running gateway. The gateway imports the directory's `skelm.config.*` **in its
@@ -87,11 +87,12 @@ the gateway user, so an untrusted project stays inert. Every grant that goes
 live is recorded per turn through the single audit writer as `permission.bypassed`.
 
 Re-activating an already-active directory is an idempotent refresh
-(`refresh: true`). A project whose config uses a TUI source
-(`createRemoteTriggerSource`) is activated the same way; `skelm run` then hosts
-the terminal chat in the CLI process and drives it through
-`POST /v1/tui/:sourceId/submit` (gateway runs the turn, returns the reply), so
-the gateway itself stays headless and can run as a daemon.
+(`refresh: true`). A project whose config uses a chat-UI source
+(`createRemoteTriggerSource`, transport `tui` or `web`) is activated the same
+way; the client (`skelm run` for `tui`, a browser for `web`) drives it through
+`POST /v1/chat/:sourceId/submit` — the call returns the turn's `runId`, and the
+client tails `/runs/:runId/stream` for partials and the final reply — so the
+gateway itself stays headless and can run as a daemon.
 
 `GET /v1/active` is the running view behind `skelm list`: it groups trigger
 registrations by workflow, reports persistent-workflow session counts, and lists

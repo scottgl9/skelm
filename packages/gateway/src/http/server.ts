@@ -10,7 +10,15 @@ import type { Pipeline, Run, RunStatus, RunStore, RunSummary } from '@skelm/core
 import type { Runner } from '@skelm/core'
 import type { RunEvent } from '@skelm/core'
 import type { H3Event } from 'h3'
-import { createApp, createError, createRouter, eventHandler, readBody, toNodeListener } from 'h3'
+import {
+  createApp,
+  createError,
+  createRouter,
+  eventHandler,
+  readBody,
+  setResponseHeader,
+  toNodeListener,
+} from 'h3'
 import type { AuthMode, ServerConfig } from './config.js'
 import { validateServerConfig } from './config.js'
 import { mountControlRoutes } from './control-routes.js'
@@ -49,6 +57,36 @@ export function createServer(
   let isRunningFlag = false
 
   const app = createApp()
+
+  // Middleware: opt-in dev CORS (default-OFF, preserving default-deny). Only
+  // when SKELM_DEV_CORS is set does the gateway emit CORS headers, so a static
+  // browser chat page (the chatui `web` transport) can POST a line and tail
+  // `/runs/:id/stream` cross-origin. `1`/`true` reflects the request Origin; any
+  // other value is used as the explicit allowed origin. Mounted before auth so
+  // the credential-less preflight (OPTIONS) is answered, not rejected.
+  const devCors = process.env.SKELM_DEV_CORS
+  const devCorsOrigin =
+    devCors === undefined || devCors === '' || devCors === '0' || devCors === 'false'
+      ? undefined
+      : devCors
+  if (devCorsOrigin !== undefined) {
+    app.use(
+      eventHandler((event: H3Event) => {
+        const origin = event.headers.get('origin')
+        const allow =
+          devCorsOrigin === '1' || devCorsOrigin === 'true' ? (origin ?? '*') : devCorsOrigin
+        setResponseHeader(event, 'Access-Control-Allow-Origin', allow)
+        setResponseHeader(event, 'Vary', 'Origin')
+        setResponseHeader(event, 'Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        setResponseHeader(event, 'Access-Control-Allow-Headers', 'authorization, content-type')
+        if ((event.node.req.method ?? 'GET').toUpperCase() === 'OPTIONS') {
+          event.node.res.statusCode = 204
+          return ''
+        }
+        return undefined
+      }),
+    )
+  }
 
   // Middleware: Auth
   app.use(

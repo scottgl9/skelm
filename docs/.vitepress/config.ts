@@ -84,7 +84,7 @@ export default defineConfig({
           items: [
             { text: 'All Recipes', link: '/recipes/' },
             { text: 'Telegram Persistent Workflow', link: '/recipes/telegram-persistent-workflow' },
-            { text: 'TUI Persistent Workflow', link: '/recipes/tui-persistent-workflow' },
+            { text: 'Chat-UI Persistent Workflow', link: '/recipes/chatui-persistent-workflow' },
             { text: 'Matrix Persistent Agent', link: '/recipes/matrix-persistent-agent' },
             { text: 'Coding Agent on Chat', link: '/recipes/coding-agent-on-chat' },
             { text: 'Ticket to PR', link: '/recipes/ticket-to-pr' },

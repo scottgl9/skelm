@@ -214,9 +214,12 @@ export interface TelegramMessageTrigger {
   date: number
 }
 
-/** Terminal-UI-specific types. The TUI is local-only and needs no credentials. */
-export interface TuiConfig extends IntegrationConfig {
-  id: 'tui'
+/**
+ * Chat-UI-specific types. The chat UI (terminal or web) binds to a local
+ * frontend and needs no credentials.
+ */
+export interface ChatUiConfig extends IntegrationConfig {
+  id: 'chatui'
   credentials: Record<string, never>
 }
 
