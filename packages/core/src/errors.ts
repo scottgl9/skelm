@@ -151,6 +151,26 @@ export class DelegationDepthError extends Error {
   }
 }
 
+/**
+ * Every backend in a step's fallback chain (`backend: ['a', 'b', …]`) errored.
+ * Carries the per-backend causes in attempt order for diagnosis.
+ */
+export class BackendChainExhaustedError extends Error {
+  override readonly name = 'BackendChainExhaustedError'
+  constructor(
+    readonly stepId: string,
+    readonly attempts: ReadonlyArray<{ backendId: string; cause: unknown }>,
+  ) {
+    const summary = attempts.map((a) => `${a.backendId}: ${fallbackReason(a.cause)}`).join('; ')
+    super(`step "${stepId}" exhausted backend chain — ${summary}`)
+  }
+}
+
+function fallbackReason(cause: unknown): string {
+  if (cause instanceof Error) return cause.message
+  return String(cause)
+}
+
 /** Convert any thrown value to the serializable error shape we record. */
 export function serializeError(err: unknown): SerializedError {
   if (err instanceof Error) {
