@@ -64,7 +64,7 @@ When the argument is a **directory**, `skelm run` behaves one of two ways:
   file, `skelm run` exits `1` (CLI error).
 
 ```bash
-skelm run builder --input '{"spec":"a workflow that summarizes a GitHub issue"}'
+skelm run examples/hello        # resolves the directory to its single workflow file
 ```
 
 ### `skelm list [--all] [--json]`

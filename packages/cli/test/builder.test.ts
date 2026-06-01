@@ -104,6 +104,27 @@ describe('skelm builder', () => {
     //   pnpm --filter @skelm/cli build
     expect(bundled).toBe(canonical)
   })
+
+  it('the generated builder template assets match the root builder source (no drift)', () => {
+    // tsconfig.json.tmpl is intentionally excluded: it has no derived source —
+    // the workspace builder's tsconfig extends ../tsconfig.base.json, which a
+    // standalone scaffold can't, so the scaffold tsconfig is hand-maintained.
+    const pairs: ReadonlyArray<readonly [string, string]> = [
+      ['builder.workflow.mts.tmpl', 'builder.workflow.mts'],
+      ['skelm.config.mts.tmpl', 'skelm.config.mts'],
+      ['chatui-frontend.mts.tmpl', 'chatui-frontend.mts'],
+      ['README.md.tmpl', 'README.md'],
+      ['gitignore.tmpl', '.gitignore'],
+    ]
+    const builderRoot = resolve(here, '..', '..', '..', 'builder')
+    for (const [tmpl, src] of pairs) {
+      const generated = readFileSync(join(here, '..', 'assets', 'builder-template', tmpl), 'utf8')
+      const canonical = readFileSync(join(builderRoot, src), 'utf8')
+      // If this fails, rebuild the CLI to refresh the generated templates:
+      //   pnpm --filter @skelm/cli build
+      expect(generated, `${tmpl} drifted from builder/${src}`).toBe(canonical)
+    }
+  })
 })
 
 interface InvocationResult {
