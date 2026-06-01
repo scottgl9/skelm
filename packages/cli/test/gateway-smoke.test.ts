@@ -1,6 +1,7 @@
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createServer as createNetServer } from 'node:net'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -69,6 +70,23 @@ describe('skelm gateway — CLI smoke', () => {
     try {
       await invoke(['gateway', 'stop'])
     } catch {}
+  })
+
+  it('bare `gateway start` guides to install or --foreground instead of running', async () => {
+    // The installed-unit path delegates to systemd/launchd (covered by the
+    // formatDelegatedStartMessage tests) and would touch the host's real
+    // service manager — skip when a unit is present so this stays hermetic.
+    const home = process.env.HOME ?? homedir()
+    const unitInstalled =
+      existsSync(join(home, '.config/systemd/user/skelm-gateway.service')) ||
+      existsSync(join(home, 'Library/LaunchAgents/com.skelm.gateway.plist'))
+    if (unitInstalled) return
+    const { stdout, exitCode } = await invoke(['gateway', 'start'])
+    expect(exitCode).toBe(EXIT.OK)
+    expect(stdout).toContain('skelm gateway start --foreground')
+    // Nothing should have been started.
+    const { stdout: status } = await invoke(['gateway', 'status'])
+    expect(status).toContain('not running')
   })
 
   it('stop is idempotent when the gateway is not running', async () => {

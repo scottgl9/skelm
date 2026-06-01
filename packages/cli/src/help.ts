@@ -47,14 +47,15 @@ Workspace flags:
   skelm workspace clean <workflow-id> <name> --force
 
 Gateway flags:
-  skelm gateway start --foreground         Run the gateway in this process
+  skelm gateway start                      Show how to run the gateway (install, or --foreground)
+  skelm gateway start --foreground         Run the gateway in this process (Ctrl-C to stop)
   skelm gateway status [--json]            Show running pid / url / state
   skelm gateway stop                       SIGTERM the running gateway
   skelm gateway reload                     SIGHUP the running gateway
-  skelm gateway install   --systemd        Write ~/.config/systemd/user/skelm-gateway.service (linux)
-  skelm gateway install   --launchd        Write ~/Library/LaunchAgents/com.skelm.gateway.plist (macOS)
-  skelm gateway uninstall --systemd        Remove the systemd unit file (linux)
-  skelm gateway uninstall --launchd        Remove the launchd plist (macOS)
+  skelm gateway install                    Install as a persistent service; auto-detects systemd (linux) / launchd (macOS)
+  skelm gateway install   --systemd        Force a systemd user unit (~/.config/systemd/user/skelm-gateway.service)
+  skelm gateway install   --launchd        Force a launchd agent (~/Library/LaunchAgents/com.skelm.gateway.plist)
+  skelm gateway uninstall                  Remove the installed service (same auto-detect; --systemd / --launchd to force)
   (pause|resume require the HTTP control surface — POST /gateway/pause|resume)
 
 Approvals config flags:
@@ -201,14 +202,15 @@ Workspace flags:
   skelm gateway <start|stop|pause|resume|reload|status|install|uninstall> [flags]
 
 Gateway flags:
-  skelm gateway start --foreground         Run the gateway in this process
+  skelm gateway start                      Show how to run the gateway (install, or --foreground)
+  skelm gateway start --foreground         Run the gateway in this process (Ctrl-C to stop)
   skelm gateway status [--json]            Show running pid / url / state
   skelm gateway stop                       SIGTERM the running gateway
   skelm gateway reload                     SIGHUP the running gateway
-  skelm gateway install   --systemd        Write ~/.config/systemd/user/skelm-gateway.service (linux)
-  skelm gateway install   --launchd        Write ~/Library/LaunchAgents/com.skelm.gateway.plist (macOS)
-  skelm gateway uninstall --systemd        Remove the systemd unit file (linux)
-  skelm gateway uninstall --launchd        Remove the launchd plist (macOS)
+  skelm gateway install                    Install as a persistent service; auto-detects systemd (linux) / launchd (macOS)
+  skelm gateway install   --systemd        Force a systemd user unit (~/.config/systemd/user/skelm-gateway.service)
+  skelm gateway install   --launchd        Force a launchd agent (~/Library/LaunchAgents/com.skelm.gateway.plist)
+  skelm gateway uninstall                  Remove the installed service (same auto-detect; --systemd / --launchd to force)
   (pause|resume require the HTTP control surface — POST /gateway/pause|resume)
 `,
   approvals: `Usage:
