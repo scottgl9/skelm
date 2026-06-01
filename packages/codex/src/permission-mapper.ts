@@ -46,6 +46,14 @@ export interface MapInputs {
   policy: ResolvedPolicy
   /** Working directory hint from the runtime (`WorkspaceHandle.path`). */
   workingDirectory?: string
+  /**
+   * Whether codex enforces its own OS sandbox (default `true`). When `false`,
+   * a `workspace-write` policy maps to `danger-full-access` instead — for
+   * gateway-as-trust-boundary deployments where codex's user-namespace /
+   * bubblewrap sandbox can't run. Still refuses to escalate under an explicit
+   * approval policy. See `CodexBackendOptions.osSandbox`.
+   */
+  osSandbox?: boolean
 }
 
 /**
@@ -54,6 +62,7 @@ export interface MapInputs {
  */
 export function mapPermissionsToCodex(input: MapInputs): MappedCodexPolicy {
   const { policy, workingDirectory } = input
+  const osSandbox = input.osSandbox ?? true
   const fsWrite = Array.from(policy.fsWrite)
   const fsRead = Array.from(policy.fsRead)
 
@@ -74,12 +83,25 @@ export function mapPermissionsToCodex(input: MapInputs): MappedCodexPolicy {
     sandboxMode = 'danger-full-access'
   } else if (fsWrite.length === 0) {
     sandboxMode = 'read-only'
-  } else {
+  } else if (osSandbox) {
     sandboxMode = 'workspace-write'
     if (primary === undefined) primary = fsWrite[0]
     for (const root of fsWrite) {
       if (root !== primary && !extras.includes(root)) extras.push(root)
     }
+  } else {
+    // Gateway-as-trust-boundary: codex's OS sandbox can't run here, so run it
+    // unsandboxed (the gateway validates + audits the declared policy instead).
+    // Same no-approval guard as the '*' case — never escalate past an explicit
+    // approval policy.
+    if (policy.approval !== null) {
+      throw new CodexPermissionError(
+        'osSandbox is disabled but an approval policy is set; refusing danger-full-access',
+        'fs.write',
+      )
+    }
+    sandboxMode = 'danger-full-access'
+    if (primary === undefined) primary = fsWrite[0]
   }
 
   // Read-only sandbox doesn't need fsRead roots (codex's read-only mode is

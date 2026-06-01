@@ -10,6 +10,9 @@
  *   SKELM_CODEX_INTEGRATION=1 pnpm test packages/codex/test/integration.test.ts
  */
 
+import { mkdtempSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { AgentRequest, BackendContext, Skill } from '@skelm/core'
 import { resolvePermissions } from '@skelm/core'
 import { describe, expect, it } from 'vitest'
@@ -78,4 +81,39 @@ describeLive('@skelm/codex — live Codex integration', () => {
     // capitalization differences.
     expect(res.text?.toLowerCase()).toContain('flibbertigibbet')
   }, 120_000)
+
+  // The builder runs codex doing real, multi-turn work with network — the path
+  // where codex's model-stream retry surfaces transient "Reconnecting... N/5"
+  // `error` events that the backend used to treat as fatal. This exercises that
+  // path end-to-end: a sustained run must complete (recovering from any
+  // transient reconnect) and actually write files.
+  //
+  // Mirrors the builder's exact permission shape: a scoped `fsWrite: [<dir>]`
+  // (NOT '*') run with `osSandbox: false`, which maps to codex
+  // `danger-full-access` — the gateway-as-trust-boundary mode that works where
+  // codex's bubblewrap sandbox can't run (no user namespaces).
+  it('completes a real coding task with network (builder mode, osSandbox:false)', async () => {
+    const work = mkdtempSync(join(tmpdir(), 'skelm-codex-live-'))
+    const backend = createCodexBackend({ skipGitRepoCheck: true, osSandbox: false })
+    const policy = resolvePermissions(undefined, {
+      fsWrite: [work],
+      fsRead: [work],
+      networkEgress: 'allow',
+    })
+    const req: AgentRequest = {
+      prompt:
+        'In the current working directory create two files: `fib.py` with a function `fib(n)` ' +
+        'returning the nth Fibonacci number (0-indexed, fib(0)=0, fib(1)=1), and `test_fib.py` ' +
+        'with at least three assert statements covering fib(0), fib(1), and fib(10)=55. ' +
+        'Then reply with the single word DONE.',
+      permissions: policy,
+      cwd: work,
+      maxTurns: 12,
+    }
+    const res = await backend.run?.(req, makeContext())
+    expect(res.stopReason).toBe('turn.completed')
+    const files = readdirSync(work)
+    expect(files).toContain('fib.py')
+    expect(files).toContain('test_fib.py')
+  }, 300_000)
 })
