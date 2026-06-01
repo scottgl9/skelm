@@ -5,9 +5,10 @@ import { loadSkelmConfig } from './load-config.js'
 import { resolveWorkflowPath } from './resolve-entrypoint.js'
 
 /**
- * Structural mirror of `@skelm/integrations` TuiFrontend / TuiFrontendFactory —
- * declared locally so the CLI carries a project's UI frontend without taking a
- * dependency on the integrations package.
+ * Structural mirror of `@skelm/integrations` ChatUiFrontend /
+ * ChatUiFrontendFactory — declared locally so the CLI carries a project's
+ * terminal (`tui` transport) frontend without taking a dependency on the
+ * integrations package.
  */
 export interface TuiFrontendLike {
   render(reply: string, payload?: unknown): void

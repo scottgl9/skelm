@@ -4,26 +4,26 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BackendRegistry, type SkelmBackend, persistentWorkflow } from '@skelm/core'
 import {
-  type TuiFrontend,
-  type TuiFrontendIo,
-  TuiIntegration,
-  type TuiMessageInput,
+  type ChatUiFrontend,
+  type ChatUiFrontendIo,
+  ChatUiIntegration,
+  type ChatUiMessageInput,
 } from '@skelm/integrations'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Gateway } from '../src/index.js'
 
-// End-to-end through the REAL gateway with the REAL TuiIntegration trigger
-// source and a stub backend: a line submitted in the frontend → tui queue
+// End-to-end through the REAL gateway with the REAL ChatUiIntegration trigger
+// source and a stub backend: a line submitted in the frontend → chat queue
 // source → gateway persistent turn → reply rendered back in the frontend. This
 // is the path the user drives, minus the model (an echo stub stands in for pi so
 // the test needs no model).
 //
 // Streaming (step.partial → frontend.renderPartial) is covered deterministically
-// by the integration unit test (packages/integrations/test/tui.test.ts), which
-// drives the source's onEvent hook directly. We don't assert the partial stream
-// here because run events are delivered asynchronously relative to the awaited
-// final output, which makes the exact ordering racy under full-suite load.
-// TODO: #250 stabilize the e2e ordering assertion.
+// by the integration unit test (packages/integrations/test/chatui.test.ts),
+// which drives the source's onEvent hook directly. We don't assert the partial
+// stream here because run events are delivered asynchronously relative to the
+// awaited final output, which makes the exact ordering racy under full-suite
+// load. TODO: #250 stabilize the e2e ordering assertion.
 
 function echoBackend(): SkelmBackend {
   return {
@@ -48,8 +48,8 @@ function echoBackend(): SkelmBackend {
 /** A frontend double that captures render and exposes the bridge io. */
 function fakeFrontend() {
   const rendered: string[] = []
-  let io: TuiFrontendIo | null = null
-  const factory = (bridge: TuiFrontendIo): TuiFrontend => {
+  let io: ChatUiFrontendIo | null = null
+  const factory = (bridge: ChatUiFrontendIo): ChatUiFrontend => {
     io = bridge
     return {
       render: (reply) => rendered.push(reply),
@@ -75,10 +75,10 @@ let projectRoot: string
 let stateDir: string
 
 beforeEach(async () => {
-  projectRoot = await mkdtemp(join(tmpdir(), 'skelm-tui-'))
-  stateDir = await mkdtemp(join(tmpdir(), 'skelm-tui-state-'))
+  projectRoot = await mkdtemp(join(tmpdir(), 'skelm-chatui-'))
+  stateDir = await mkdtemp(join(tmpdir(), 'skelm-chatui-state-'))
   await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
-  await fs.writeFile(join(projectRoot, 'workflows/tui.workflow.mts'), 'export default {}')
+  await fs.writeFile(join(projectRoot, 'workflows/chatui.workflow.mts'), 'export default {}')
 })
 
 afterEach(async () => {
@@ -97,7 +97,7 @@ async function bootGateway(backend: SkelmBackend, agentModule: unknown): Promise
     auditWriter: { write: async () => {} },
     config: {
       registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
-      defaults: { unrestrictedGrants: ['tui-assistant'] },
+      defaults: { unrestrictedGrants: ['chatui-assistant'] },
     },
     loadWorkflow: async () => agentModule,
   })
@@ -105,33 +105,38 @@ async function bootGateway(backend: SkelmBackend, agentModule: unknown): Promise
   return gw
 }
 
-function wireTui(gw: Gateway, fe: ReturnType<typeof fakeFrontend>): void {
-  const tui = new TuiIntegration({ id: 'tui', name: 'Terminal UI', enabled: true, credentials: {} })
-  const source = tui.createTriggerSource({ frontend: fe.factory })
+function wireChatUi(gw: Gateway, fe: ReturnType<typeof fakeFrontend>): void {
+  const chatui = new ChatUiIntegration({
+    id: 'chatui',
+    name: 'Chat UI',
+    enabled: true,
+    credentials: {},
+  })
+  const source = chatui.createTriggerSource({ frontend: fe.factory })
   gw.managers.triggers.registerQueueDriver('tui', source)
   gw.managers.triggers.register({
     kind: 'queue',
     id: 'q',
-    workflowId: 'workflows/tui.workflow.mts',
+    workflowId: 'workflows/chatui.workflow.mts',
     driver: 'tui',
   })
 }
 
-const tuiAgent = persistentWorkflow<TuiMessageInput>({
-  id: 'tui-assistant',
+const chatuiAgent = persistentWorkflow<ChatUiMessageInput>({
+  id: 'chatui-assistant',
   agent: {
     backend: 'echo',
-    system: 'You are a terminal assistant.',
+    system: 'You are a chat assistant.',
     sessionKey: (m) => m.sessionId,
     reply: (text) => ({ reply: text }),
   },
 })
 
-describe('tui integration end-to-end (real gateway)', () => {
+describe('chatui integration end-to-end (real gateway)', () => {
   it('a submitted line drives a persistent turn and renders the reply in the frontend', async () => {
-    const gw = await bootGateway(echoBackend(), { default: tuiAgent })
+    const gw = await bootGateway(echoBackend(), { default: chatuiAgent })
     const fe = fakeFrontend()
-    wireTui(gw, fe)
+    wireChatUi(gw, fe)
 
     fe.submit('hi there')
     await waitFor(() => fe.rendered.length > 0)
@@ -141,9 +146,9 @@ describe('tui integration end-to-end (real gateway)', () => {
   })
 
   it('keeps a durable per-session conversation across submitted lines', async () => {
-    const gw = await bootGateway(echoBackend(), { default: tuiAgent })
+    const gw = await bootGateway(echoBackend(), { default: chatuiAgent })
     const fe = fakeFrontend()
-    wireTui(gw, fe)
+    wireChatUi(gw, fe)
 
     fe.submit('first')
     await waitFor(() => fe.rendered.length >= 1)

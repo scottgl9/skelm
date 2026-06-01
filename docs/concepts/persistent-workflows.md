@@ -31,7 +31,7 @@ The `agent` block accepts the same system-prompt controls as an `agent()` step:
 `AGENTS.md` + optional `SOUL.md`, resolved relative to the workflow file), and
 `systemPromptMode` / `systemPromptIncludeAgentDef`. Prefer `agentDef` once the persona
 outgrows a sentence — see [system prompt construction](./system-prompt.md). The
-`tui-assistant` and `telegram-assistant` examples both define their persona this way.
+`chatui-assistant` and `telegram-assistant` examples both define their persona this way.
 
 ## How it works
 

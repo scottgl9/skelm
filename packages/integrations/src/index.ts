@@ -26,7 +26,7 @@ export type {
   TelegramConfig,
   TelegramWebhookEvent,
   TelegramMessageTrigger,
-  TuiConfig,
+  ChatUiConfig,
   MatrixConfig,
   MatrixMessageTrigger,
 } from '@skelm/integration-sdk'
@@ -91,17 +91,18 @@ export {
   type TelegramTriggerSource,
 } from './telegram.js'
 export {
-  TuiIntegration,
+  ChatUiIntegration,
   createRemoteTriggerSource,
-  type CreateRemoteTuiTriggerSourceOptions,
-  type CreateTuiTriggerSourceOptions,
-  type RemoteTuiTriggerSource,
-  type TuiFrontend,
-  type TuiFrontendFactory,
-  type TuiFrontendIo,
-  type TuiMessageInput,
-  type TuiTriggerSource,
-} from './tui.js'
+  type ChatUiTransport,
+  type CreateRemoteChatUiTriggerSourceOptions,
+  type CreateChatUiTriggerSourceOptions,
+  type RemoteChatUiTriggerSource,
+  type ChatUiFrontend,
+  type ChatUiFrontendFactory,
+  type ChatUiFrontendIo,
+  type ChatUiMessageInput,
+  type ChatUiTriggerSource,
+} from './chatui.js'
 
 // Integration registry
 export { IntegrationRegistry } from './registry.js'

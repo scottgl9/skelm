@@ -1,29 +1,29 @@
-import type { TuiConfig } from '@skelm/integration-sdk'
+import type { ChatUiConfig } from '@skelm/integration-sdk'
 import { describe, expect, it } from 'vitest'
 import {
-  type TuiFrontend,
-  type TuiFrontendIo,
-  TuiIntegration,
-  type TuiMessageInput,
+  type ChatUiFrontend,
+  type ChatUiFrontendIo,
+  ChatUiIntegration,
+  type ChatUiMessageInput,
   createRemoteTriggerSource,
-} from '../src/tui.js'
+} from '../src/chatui.js'
 
-function makeTui(): TuiIntegration {
-  const config: TuiConfig = {
-    id: 'tui',
-    name: 'Terminal UI',
+function makeChatUi(): ChatUiIntegration {
+  const config: ChatUiConfig = {
+    id: 'chatui',
+    name: 'Chat UI',
     enabled: true,
     credentials: {},
   }
-  return new TuiIntegration(config)
+  return new ChatUiIntegration(config)
 }
 
 /** A frontend test double: records render/close and exposes the bridge io. */
 function fakeFrontend() {
-  const rendered: Array<{ reply: string; payload: TuiMessageInput }> = []
-  let io: TuiFrontendIo | null = null
+  const rendered: Array<{ reply: string; payload: ChatUiMessageInput }> = []
+  let io: ChatUiFrontendIo | null = null
   let closed = false
-  const factory = (bridge: TuiFrontendIo): TuiFrontend => {
+  const factory = (bridge: ChatUiFrontendIo): ChatUiFrontend => {
     io = bridge
     return {
       render: (reply, payload) => rendered.push({ reply, payload }),
@@ -42,22 +42,23 @@ function fakeFrontend() {
 
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 
-describe('TuiIntegration (mechanism)', () => {
+describe('ChatUiIntegration (mechanism)', () => {
   it('initializes without credentials and reports healthy', async () => {
-    const tui = makeTui()
-    await expect(tui.init()).resolves.toBeUndefined()
-    await expect(tui.healthCheck()).resolves.toBe(true)
-    expect(tui.capabilities.canTrigger).toBe(true)
+    const chatui = makeChatUi()
+    await expect(chatui.init()).resolves.toBeUndefined()
+    await expect(chatui.healthCheck()).resolves.toBe(true)
+    expect(chatui.capabilities.canTrigger).toBe(true)
+    expect(chatui.id).toBe('chatui')
   })
 
   it('builds the frontend on start and fires onMessage per submitted line', async () => {
-    const tui = makeTui()
-    await tui.init()
+    const chatui = makeChatUi()
+    await chatui.init()
     const fe = fakeFrontend()
-    const source = tui.createTriggerSource({ frontend: fe.factory })
+    const source = chatui.createTriggerSource({ frontend: fe.factory })
 
-    const seen: TuiMessageInput[] = []
-    source.start({ onMessage: async (p) => void seen.push(p as TuiMessageInput) })
+    const seen: ChatUiMessageInput[] = []
+    source.start({ onMessage: async (p) => void seen.push(p as ChatUiMessageInput) })
 
     fe.submit('hello')
     fe.submit('   ') // blank → ignored
@@ -66,22 +67,22 @@ describe('TuiIntegration (mechanism)', () => {
 
     expect(seen.map((s) => s.text)).toEqual(['hello', 'world'])
     expect(seen.map((s) => s.seq)).toEqual([1, 2])
-    expect(seen[0]?.sessionId).toBe('tui')
+    expect(seen[0]?.sessionId).toBe('chatui')
     expect(seen[0]?.from).toBe('you')
     await source.stop()
   })
 
   it('honors sessionId and from options', async () => {
-    const tui = makeTui()
-    await tui.init()
+    const chatui = makeChatUi()
+    await chatui.init()
     const fe = fakeFrontend()
-    const source = tui.createTriggerSource({
+    const source = chatui.createTriggerSource({
       frontend: fe.factory,
       sessionId: 'sess-42',
       from: 'alice',
     })
-    const seen: TuiMessageInput[] = []
-    source.start({ onMessage: async (p) => void seen.push(p as TuiMessageInput) })
+    const seen: ChatUiMessageInput[] = []
+    source.start({ onMessage: async (p) => void seen.push(p as ChatUiMessageInput) })
 
     fe.submit('hi')
     await tick()
@@ -91,13 +92,13 @@ describe('TuiIntegration (mechanism)', () => {
   })
 
   it('onResult renders output.reply to the frontend', async () => {
-    const tui = makeTui()
-    await tui.init()
+    const chatui = makeChatUi()
+    await chatui.init()
     const fe = fakeFrontend()
-    const source = tui.createTriggerSource({ frontend: fe.factory })
+    const source = chatui.createTriggerSource({ frontend: fe.factory })
     source.start({ onMessage: async () => {} })
 
-    const payload: TuiMessageInput = { sessionId: 'tui', from: 'you', text: 'ping', seq: 1 }
+    const payload: ChatUiMessageInput = { sessionId: 'chatui', from: 'you', text: 'ping', seq: 1 }
     await source.onResult?.(payload, { reply: 'pong' })
 
     expect(fe.rendered).toEqual([{ reply: 'pong', payload }])
@@ -105,13 +106,13 @@ describe('TuiIntegration (mechanism)', () => {
   })
 
   it('onResult renders nothing for a missing or empty reply', async () => {
-    const tui = makeTui()
-    await tui.init()
+    const chatui = makeChatUi()
+    await chatui.init()
     const fe = fakeFrontend()
-    const source = tui.createTriggerSource({ frontend: fe.factory })
+    const source = chatui.createTriggerSource({ frontend: fe.factory })
     source.start({ onMessage: async () => {} })
 
-    const payload: TuiMessageInput = { sessionId: 'tui', from: 'you', text: 'x', seq: 1 }
+    const payload: ChatUiMessageInput = { sessionId: 'chatui', from: 'you', text: 'x', seq: 1 }
     await source.onResult?.(payload, { reply: '' })
     await source.onResult?.(payload, {})
     await source.onResult?.(payload, undefined)
@@ -121,15 +122,15 @@ describe('TuiIntegration (mechanism)', () => {
   })
 
   it('end-to-end: a submitted line fires the (echo) handler and renders the reply', async () => {
-    const tui = makeTui()
-    await tui.init()
+    const chatui = makeChatUi()
+    await chatui.init()
     const fe = fakeFrontend()
-    const source = tui.createTriggerSource({ frontend: fe.factory })
+    const source = chatui.createTriggerSource({ frontend: fe.factory })
 
     // Echo handler that drives onResult exactly like the gateway would.
     source.start({
       onMessage: async (payload) => {
-        const msg = payload as TuiMessageInput
+        const msg = payload as ChatUiMessageInput
         await source.onResult?.(payload, { reply: `echo: ${msg.text}` })
       },
     })
@@ -142,10 +143,10 @@ describe('TuiIntegration (mechanism)', () => {
   })
 
   it('stop() closes the frontend', async () => {
-    const tui = makeTui()
-    await tui.init()
+    const chatui = makeChatUi()
+    await chatui.init()
     const fe = fakeFrontend()
-    const source = tui.createTriggerSource({ frontend: fe.factory })
+    const source = chatui.createTriggerSource({ frontend: fe.factory })
     source.start({ onMessage: async () => {} })
     expect(fe.isClosed()).toBe(false)
     await source.stop()
@@ -153,10 +154,10 @@ describe('TuiIntegration (mechanism)', () => {
   })
 
   it('postReply:false does not register an onResult hook', async () => {
-    const tui = makeTui()
-    await tui.init()
+    const chatui = makeChatUi()
+    await chatui.init()
     const fe = fakeFrontend()
-    const source = tui.createTriggerSource({ frontend: fe.factory, postReply: false })
+    const source = chatui.createTriggerSource({ frontend: fe.factory, postReply: false })
     expect(source.onResult).toBeUndefined()
   })
 })
@@ -164,10 +165,10 @@ describe('TuiIntegration (mechanism)', () => {
 describe('createRemoteTriggerSource', () => {
   it('submit fires onMessage and resolves with the runId from the first run event', async () => {
     const src = createRemoteTriggerSource()
-    const fired: TuiMessageInput[] = []
+    const fired: ChatUiMessageInput[] = []
     src.start({
       onMessage: async (p) => {
-        fired.push(p as TuiMessageInput)
+        fired.push(p as ChatUiMessageInput)
         // Simulate the dispatcher forwarding the first run event to onEvent.
         src.onEvent(p, { type: 'run.started', runId: 'run-1', at: 0 })
       },
@@ -177,11 +178,17 @@ describe('createRemoteTriggerSource', () => {
     expect(fired[0]).toMatchObject({ sessionId: 's1', text: 'hi', from: 'you', seq: 1 })
   })
 
-  it('exposes the tui transport marker and an optional frontend', () => {
+  it('defaults to the tui transport and carries an optional frontend', () => {
     const factory = () => ({ render: () => {} })
     const src = createRemoteTriggerSource({ frontend: factory })
     expect(src.transport).toBe('tui')
     expect(src.frontend).toBe(factory)
+  })
+
+  it('selects the web transport and carries no frontend', () => {
+    const src = createRemoteTriggerSource({ transport: 'web' })
+    expect(src.transport).toBe('web')
+    expect(src.frontend).toBeUndefined()
   })
 
   it('rejects when the run never starts within the timeout', async () => {

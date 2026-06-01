@@ -1,3 +1,4 @@
+value:ChatUiIntegration
 value:GitHubApiError
 value:GitHubIntegration
 value:IntegrationBase
@@ -6,7 +7,6 @@ value:MatrixIntegration
 value:MsGraphIntegration
 value:SlackIntegration
 value:TelegramIntegration
-value:TuiIntegration
 value:createIntegrationPlugin
 value:createRemoteTriggerSource
 value:defineIntegration
@@ -24,10 +24,17 @@ value:telegramUpdateToInput
 value:verifyGitHubSignature
 value:verifyMsGraphClientState
 value:verifySlackSignature
+type:ChatUiConfig
+type:ChatUiFrontend
+type:ChatUiFrontendFactory
+type:ChatUiFrontendIo
+type:ChatUiMessageInput
+type:ChatUiTransport
+type:ChatUiTriggerSource
+type:CreateChatUiTriggerSourceOptions
 type:CreateMatrixTriggerSourceOptions
-type:CreateRemoteTuiTriggerSourceOptions
+type:CreateRemoteChatUiTriggerSourceOptions
 type:CreateTelegramTriggerSourceOptions
-type:CreateTuiTriggerSourceOptions
 type:DefineIntegrationOptions
 type:DeleteWebhookParams
 type:EmailTrigger
@@ -59,7 +66,7 @@ type:PostPullRequestReviewParams
 type:PullRequestReviewComment
 type:RateLimitConfig
 type:RegisterWebhookParams
-type:RemoteTuiTriggerSource
+type:RemoteChatUiTriggerSource
 type:RunInput
 type:SlackConfig
 type:SlackWebhookEvent
@@ -70,10 +77,4 @@ type:TelegramMessageTrigger
 type:TelegramSendMessageOptions
 type:TelegramTriggerSource
 type:TelegramWebhookEvent
-type:TuiConfig
-type:TuiFrontend
-type:TuiFrontendFactory
-type:TuiFrontendIo
-type:TuiMessageInput
-type:TuiTriggerSource
 type:WebhookConfig

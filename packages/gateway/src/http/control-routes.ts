@@ -19,6 +19,7 @@ import { DEFAULT_WEBHOOK_DEDUPE_TTL_MS } from '../triggers/dedupe-store.js'
 import { registerApprovalRoutes } from './routes/approvals.js'
 import { registerAuditRoutes } from './routes/audit.js'
 import { registerBatchRoutes } from './routes/batch.js'
+import { registerChatRoutes } from './routes/chat.js'
 import { registerConfigRoutes } from './routes/config.js'
 import { registerDashboardRoutes } from './routes/dashboard.js'
 import { registerDebugRoutes } from './routes/debug.js'
@@ -32,7 +33,6 @@ import { registerRunRoutes } from './routes/runs.js'
 import { registerScheduleRoutes } from './routes/schedules.js'
 import { registerSecretRoutes } from './routes/secrets.js'
 import { registerSessionRoutes } from './routes/sessions.js'
-import { registerTuiRoutes } from './routes/tui.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
 import { registerWorkspaceRoutes } from './routes/workspaces.js'
 
@@ -56,7 +56,7 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
   registerRunRoutes(router, gateway)
   registerPipelineRoutes(router, gateway)
   registerProjectRoutes(router, gateway)
-  registerTuiRoutes(router, gateway)
+  registerChatRoutes(router, gateway)
   registerScheduleRoutes(router, gateway)
   registerOpenAIRoutes(router, gateway)
   registerDashboardRoutes(router, gateway)
