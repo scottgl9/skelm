@@ -25,7 +25,7 @@ import type {
 import { PiRpcClient } from './rpc-client.js'
 import type { PiBackendOptions } from './types.js'
 
-/** Custom error types exposed from @skelm/pi */
+/** Base error for the pi (RPC) backend; subclasses narrow the failure mode. */
 export class PiBackendError extends Error {
   override readonly name = 'PiBackendError'
   constructor(
@@ -36,8 +36,11 @@ export class PiBackendError extends Error {
   }
 }
 
+/** Thrown when pi rejects the request for missing or invalid credentials. */
 export class PiBackendAuthenticationError extends PiBackendError {}
+/** Thrown when pi reports the upstream provider rate-limited the request. */
 export class PiBackendRateLimitError extends PiBackendError {}
+/** Thrown when a pi RPC call exceeds its deadline. */
 export class PiBackendTimeoutError extends PiBackendError {}
 
 /**

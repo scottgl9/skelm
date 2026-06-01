@@ -78,6 +78,7 @@ import type { PiSdkBackendOptions } from './types.js'
 const assertEgressEnforceable = (policy: ResolvedPolicy | undefined): void =>
   assertEgressEnforceableCore(policy, 'pi-sdk')
 
+/** Base error for the pi SDK backend; subclasses narrow the failure mode. */
 export class PiSdkBackendError extends Error {
   override readonly name = 'PiSdkBackendError'
   constructor(
@@ -88,7 +89,9 @@ export class PiSdkBackendError extends Error {
   }
 }
 
+/** Thrown when the pi SDK rejects the request for missing or invalid credentials. */
 export class PiSdkBackendAuthenticationError extends PiSdkBackendError {}
+/** Thrown when a pi SDK call exceeds its deadline. */
 export class PiSdkBackendTimeoutError extends PiSdkBackendError {}
 
 /**
