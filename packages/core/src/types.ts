@@ -319,7 +319,7 @@ export interface InferStep<TOutput = unknown> {
   readonly kind: 'infer'
   readonly id: StepId
   readonly backend?: string | readonly string[]
-  readonly model?: string
+  readonly model?: string | readonly string[]
   readonly system?: string | ((ctx: Context) => string | Promise<string>)
   readonly prompt:
     | string

@@ -162,7 +162,7 @@ export function code<TOutput>(def: {
 export function infer<TOutput>(def: {
   id: StepId
   backend?: string | readonly string[]
-  model?: string
+  model?: string | readonly string[]
   system?: string | ((ctx: Context) => string | Promise<string>)
   prompt:
     | string

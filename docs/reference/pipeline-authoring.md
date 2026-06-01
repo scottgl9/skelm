@@ -95,14 +95,30 @@ infer({
     | readonly ContentPart[]                          // multimodal: text + image parts
     | ((ctx: Context) => string | readonly ContentPart[])
   system?: string | ((ctx: Context) => string)
-  backend?: string                // overrides config default
-  model?: string
+  backend?: string | readonly string[]   // id, or an ordered fallback chain
+  model?: string | readonly string[]      // id, or an ordered fallback list
   output?: ZodSchema<TOutput>    // structured output
   temperature?: number
   maxTokens?: number
   retry?: RetryPolicy
 })
 ```
+
+**Model fallback.** Give `model` an ordered list to fail over to the next model
+on the **same backend** when one errors — useful for rate limits or a model that
+is temporarily unavailable:
+
+```ts
+infer({ id: 'summarize', backend: 'openai', model: ['gpt-5.3', 'gpt-5.2'], prompt: '…' })
+```
+
+The step tries each model in order and uses the first that succeeds; if all
+fail it throws `ModelChainExhaustedError` (per-model causes in order). A
+multi-model list requires the backend to honor model selection
+(`capabilities.modelSelection === true`) — otherwise the step fails closed at
+start, since a backend that ignores `model` can't fail over. This is distinct
+from a `backend: [...]` chain (see the [agent step reference](./agent-step.md)),
+which fails over across backends.
 
 Multimodal prompts use `ContentPart` blocks. Build them with the
 `textPart` / `imagePart` / `imagePartFromFile` helpers:

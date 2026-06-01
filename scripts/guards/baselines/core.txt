@@ -46,6 +46,7 @@ value:McpClient
 value:McpProtocolError
 value:MemoryRunStore
 value:MissingSecretError
+value:ModelChainExhaustedError
 value:ModelProviderBase
 value:ModelRegistry
 value:NoopAuditWriter
