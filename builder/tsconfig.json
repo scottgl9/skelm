@@ -3,7 +3,12 @@
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "dist",
-    "noEmit": true
+    "noEmit": true,
+    // skelm.config.mts imports ./chatui-frontend.mts by its real extension; the
+    // gateway's TS loader resolves it at runtime. tsc needs this to typecheck the
+    // .mts import under noEmit. (The standalone scaffold isn't tsc-checked.)
+    "allowImportingTsExtensions": true,
+    "jsx": "react"
   },
   "include": ["*.mts"],
   "exclude": ["node_modules", "dist"]

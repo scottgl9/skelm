@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
-import type { AgentStep } from '@skelm/core'
+import type { PersistentWorkflow } from '@skelm/core'
+import { isPersistentWorkflow } from '@skelm/core'
 import { describe, expect, it } from 'vitest'
 import { EXIT } from '../src/exit-codes.js'
 import { loadWorkflowFromFile } from '../src/load-workflow.js'
@@ -10,24 +11,23 @@ import { main } from '../src/main.js'
 const BUILDER = join(import.meta.dirname, '..', '..', '..', 'builder', 'builder.workflow.mts')
 
 describe('builder workflow', () => {
-  it('exposes the expected pipeline shape', async () => {
+  it('exposes the expected persistent-workflow shape', async () => {
     const wf = await loadWorkflowFromFile(BUILDER)
     expect(wf.id).toBe('skelm-builder')
-    expect(wf.inputSchema).toBeDefined()
-    expect(wf.outputSchema).toBeDefined()
-    expect(wf.steps.map((s) => s.id)).toEqual(['ask-spec', 'build'])
-    expect(wf.steps.map((s) => s.kind)).toEqual(['wait', 'agent'])
+    expect(isPersistentWorkflow(wf)).toBe(true)
+    const pwf = wf as PersistentWorkflow
+    expect(pwf.triggers).toContainEqual({ kind: 'queue', sourceId: 'tui' })
   })
 
-  it('declares least-privilege permissions on the agent step', async () => {
+  it('declares least-privilege permissions on the persistent agent', async () => {
     const wf = await loadWorkflowFromFile(BUILDER)
-    const build = wf.steps.find((s) => s.id === 'build') as AgentStep
-    expect(build.permissions).toBeDefined()
-    expect(build.permissions?.allowedSkills).toContain('skelm')
-    expect(build.permissions?.fsWrite?.length).toBeGreaterThan(0)
-    // The in-process pi-sdk backend cannot enforce a narrower egress policy, so
-    // the step grants 'allow' (skelm fails closed on anything else for pi-sdk).
-    expect(build.permissions?.networkEgress).toBe('allow')
+    const perms = (wf as PersistentWorkflow).agent.permissions
+    expect(perms).toBeDefined()
+    expect(perms?.allowedSkills).toContain('skelm')
+    expect(perms?.fsWrite?.length).toBeGreaterThan(0)
+    // The codex→pi-sdk routing's in-process pi-sdk failover cannot enforce a
+    // narrower egress policy, so the agent grants 'allow' (the honest contract).
+    expect(perms?.networkEgress).toBe('allow')
   })
 
   it('passes skelm validate', async () => {

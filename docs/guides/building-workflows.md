@@ -15,34 +15,21 @@ path, so the thin-client trust boundary is unchanged. See the
 
 ## The skelm builder
 
-The repo ships `builder/` — a workflow that **authors other workflows** from a
-natural-language spec, demonstrating the directory-run convention and the
-`agent()` + `wait()` pattern.
+The repo ships `builder/` — a conversational agent that **authors workflows**
+for you. It is a [persistent workflow](../recipes/chatui-persistent-workflow.md)
+over a terminal chat UI, launched with the [`skelm builder`](../reference/cli.md#skelm-builder-dir)
+command rather than `skelm run`:
 
 ```bash
-# Start the gateway from builder/ so it loads builder/skelm.config.mts
-# (which wires the backend and declares the entrypoint).
-cd builder && skelm gateway start
-
-# One-shot: pass the spec as input
-skelm run builder --input '{"spec":"a workflow that summarizes a GitHub issue"}'
-
-# Interactive: omit --input and answer the wait() prompt
-skelm run builder
+skelm builder      # scaffolds ./builder if needed, then drops into the chat UI
 ```
 
-The builder is a normal pipeline:
-
-- A `wait()` step prompts for the spec when `--input` doesn't carry one. The
-  gateway emits `run.waiting` and the CLI drives the resume prompt — durable
-  human-in-the-loop with no extra TUI.
-- An `agent()` step (least-privilege: read the project, write generated files,
-  run `skelm`/`node`, no network egress) loads the `skelm` skill, writes the new
-  `*.workflow.mts`, and self-checks it with `skelm validate` before returning
-  `{ path, summary, permissions }`.
-
-Because the gateway resolves backends from the config it was **started** with, a
-project's own backend wiring only applies when the gateway runs with that
-config — hence starting the gateway from `builder/`.
+Each turn you describe a workflow in natural language; the agent consults the
+bundled `skelm` skill, writes a `*.workflow.mts` into the project, validates it
+with `skelm validate`, and reports the path. The agent runs under explicitly
+declared, least-privilege grants (read the project, write generated files, run
+`skelm`/`node`, load the `skelm` skill). Its backend resolves from
+`builder/skelm.config.mts` — codex by default, with an in-process pi-sdk
+failover.
 
 See `builder/README.md` in the repository for the full walkthrough.
