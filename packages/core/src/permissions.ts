@@ -1,15 +1,10 @@
-// AgentPermissions: the default-deny security model for agent steps.
-//
-// Authors declare what an agent step is allowed to do; the runtime resolves
-// the final policy (project defaults + profile + step-level + workspace
-// intersections) and enforces it through a single helper: TrustEnforcer.
+// AgentPermissions: the default-deny security model for agent steps. Authors
+// declare what a step may do; the runtime intersects project defaults + profile
+// + step-level + workspace into a final policy and enforces it through one
+// helper (TrustEnforcer) — backends and tools never branch on policy themselves.
 
 import { isAbsolute, resolve as resolvePath } from 'node:path'
 import { PermissionDeniedError } from './errors.js'
-//
-// Backends and tools never branch on policy themselves — they call the
-// helper, which returns a structured allow/deny decision and emits the
-// matching audit + event payloads.
 
 /** Dimensions of the permission model. Each defaults to deny when omitted. */
 export type PermissionDimension =
