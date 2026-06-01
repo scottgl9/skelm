@@ -20,4 +20,4 @@ skelm ships as a set of focused packages. Install the meta-package `skelm` for t
 | `@skelm/metrics` | Prometheus-format metrics |
 | `@skelm/otel` | OpenTelemetry tracing |
 
-For the full repository layout — including non-published directories (`pipelines/internal`, `examples`, `scripts/guards`, `tests`, `docs`) — see the **Repo shape** section of [`AGENTS.md`](../../AGENTS.md).
+For the full repository layout — including non-published directories (`pipelines/internal`, `examples`, `scripts/guards`, `tests`, `docs`) — see the **Repo shape** section of [`AGENTS.md`](https://github.com/scottgl9/skelm/blob/main/AGENTS.md).
