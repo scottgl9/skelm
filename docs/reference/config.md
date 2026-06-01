@@ -248,12 +248,12 @@ When `skelm run <directory>` targets a directory, the CLI looks for a
 project be run by directory:
 
 ```ts
-// builder/skelm.config.mts
-export default defineConfig({ entrypoint: './builder.workflow.mts' })
+// myproject/skelm.config.mts
+export default defineConfig({ entrypoint: './myproject.workflow.mts' })
 ```
 
 ```bash
-skelm run builder        # runs builder/builder.workflow.mts
+skelm run myproject        # runs myproject/myproject.workflow.mts
 ```
 
 When unset, `skelm run <dir>` falls back to `index.workflow.{mts,ts}` or a
