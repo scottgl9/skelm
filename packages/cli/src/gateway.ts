@@ -184,6 +184,33 @@ export function formatDelegatedStartMessage(opts: {
   return `skelm gateway started (${delegated})\n  url: ${opts.url ?? '(pending)'}\n\nTo view logs:  ${opts.logCmd}\nTo stop:       skelm gateway stop\n`
 }
 
+/**
+ * Guidance printed when `skelm gateway start` runs with no `--foreground` and no
+ * managed unit is installed. Rather than silently running the gateway in the
+ * foreground, we point the operator at the two supported ways to run it: install
+ * it as a persistent background service, or run it inline with --foreground.
+ * Pure + exported so a unit test can pin the contract without spawning anything.
+ */
+export function formatStartGuidanceMessage(opts: { canInstall: boolean }): string {
+  const lines = [
+    'skelm gateway start does not run the gateway on its own. Choose how to run it:',
+    '',
+  ]
+  if (opts.canInstall) {
+    lines.push(
+      '  • Install it as a persistent background service (recommended):',
+      '      skelm gateway install',
+      '',
+    )
+  }
+  lines.push(
+    '  • Run it in the foreground (Ctrl-C to stop):',
+    '      skelm gateway start --foreground',
+    '',
+  )
+  return `${lines.join('\n')}\n`
+}
+
 async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> {
   if (args.detach) {
     return detachGateway(args, io)
@@ -265,11 +292,16 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
       io.stderr.write(
         `warning: ${cmd.hint} start failed (${result.stderr.trim()}); starting in foreground instead.\n\n`,
       )
-    } else if (platform() === 'linux' || platform() === 'darwin') {
-      const installCmd = platform() === 'darwin' ? '--launchd' : '--systemd'
-      io.stderr.write(
-        `tip: run \`skelm gateway install ${installCmd}\` to install the gateway as a persistent background service.\n\n`,
+    } else {
+      // No managed unit installed and no --foreground: don't silently run in the
+      // foreground. Point the operator at install (persistent service) or
+      // --foreground (run inline), then exit.
+      io.stdout.write(
+        formatStartGuidanceMessage({
+          canInstall: platform() === 'linux' || platform() === 'darwin',
+        }),
       )
+      return { exitCode: EXIT.OK }
     }
   }
 
@@ -581,7 +613,9 @@ async function signalGateway(sig: 'SIGTERM' | 'SIGHUP', io: MainIO): Promise<Mai
  * `--http-host` overrides so the child binds where the parent intended.
  */
 async function detachGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> {
-  const argv = [process.argv[1] ?? 'skelm', 'gateway', 'start']
+  // The detached child must run the gateway inline; bare `gateway start` now
+  // prints guidance and exits, so pass --foreground explicitly.
+  const argv = [process.argv[1] ?? 'skelm', 'gateway', 'start', '--foreground']
   if (args.httpPort !== undefined) argv.push('--http-port', String(args.httpPort))
   if (args.httpHost !== undefined) argv.push('--http-host', args.httpHost)
   // Ensure SKELM_STATE_DIR is passed to the child process
