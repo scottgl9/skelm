@@ -1,4 +1,5 @@
-import type { Pipeline, Step } from '@skelm/core'
+import type { PersistentWorkflow, Pipeline, Step } from '@skelm/core'
+import { isPersistentWorkflow } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { writeJsonOutput } from './internal/output.js'
 import { CliError, loadWorkflowFromFile } from './load-workflow.js'
@@ -53,9 +54,9 @@ export async function validateCommand(
   io: ValidateCommandIO,
 ): Promise<ValidateCommandResult> {
   const issues: ValidationIssue[] = []
-  let pipeline: Pipeline | undefined
+  let workflow: Pipeline | PersistentWorkflow | undefined
   try {
-    pipeline = await loadWorkflowFromFile(args.path)
+    workflow = await loadWorkflowFromFile(args.path)
   } catch (err) {
     const code: ValidationCode =
       err instanceof CliError && err.code === 'workflow-invalid'
@@ -69,6 +70,21 @@ export async function validateCommand(
     return finish(args, io, issues)
   }
 
+  // A minimal persistent workflow has no `steps` (just the terminal agent), so
+  // the pipeline step checks below don't apply — its id is the only static
+  // invariant to enforce here.
+  if (isPersistentWorkflow(workflow)) {
+    if (!workflow.id || workflow.id.length === 0) {
+      issues.push({
+        at: 'workflow.id',
+        code: 'pipeline-id-missing',
+        message: 'workflow.id is required',
+      })
+    }
+    return finish(args, io, issues)
+  }
+
+  const pipeline = workflow
   if (!pipeline.id || pipeline.id.length === 0) {
     issues.push({
       at: 'pipeline.id',
