@@ -168,7 +168,40 @@ describe('consumeStream', () => {
     ).rejects.toThrow(/codex turn failed: context exceeded/)
   })
 
-  it('throws on stream-level error events', async () => {
+  it('recovers from a transient error event when the turn still completes', async () => {
+    // Codex's responses_retry loop surfaces "Reconnecting... N/5 (...)" as an
+    // `error` event mid-stream, then recovers and finishes the turn. The old
+    // behavior threw on the first such event, aborting a run codex would have
+    // completed. Now the completed turn supersedes the transient notice.
+    const onError = vi.fn()
+    const result = await consumeStream(
+      scripted([
+        {
+          type: 'error',
+          message: 'Reconnecting... 2/5 (timeout waiting for child process to exit)',
+        },
+        { type: 'item.completed', item: { id: 'a', type: 'agent_message', text: 'done' } },
+        {
+          type: 'turn.completed',
+          usage: {
+            input_tokens: 5,
+            cached_input_tokens: 0,
+            output_tokens: 2,
+            reasoning_output_tokens: 0,
+          },
+        },
+      ]),
+      { onError },
+    )
+    expect(result.finalText).toBe('done')
+    expect(result.stopReason).toBe('turn.completed')
+    // The transient notice is still surfaced for audit, but is not fatal.
+    expect(onError).toHaveBeenCalledWith(
+      'Reconnecting... 2/5 (timeout waiting for child process to exit)',
+    )
+  })
+
+  it('throws when the stream ends after an error without completing the turn', async () => {
     await expect(
       consumeStream(scripted([{ type: 'error', message: 'connection reset' }]), {}),
     ).rejects.toThrow(/codex stream error: connection reset/)

@@ -53,6 +53,42 @@ describe('mapPermissionsToCodex', () => {
     ).toThrow(CodexPermissionError)
   })
 
+  it('osSandbox:false maps workspace-write roots to danger-full-access (gateway trust boundary)', () => {
+    const mapped = mapPermissionsToCodex({
+      policy: resolve({ fsWrite: ['/work'] }),
+      osSandbox: false,
+    })
+    // Codex runs unsandboxed; the gateway is the trust boundary. Still pins the
+    // cwd so codex operates in the intended directory.
+    expect(mapped.sandboxMode).toBe('danger-full-access')
+    expect(mapped.workingDirectory).toBe('/work')
+  })
+
+  it('osSandbox:true (default) keeps workspace-write for fsWrite roots', () => {
+    const mapped = mapPermissionsToCodex({
+      policy: resolve({ fsWrite: ['/work'] }),
+      osSandbox: true,
+    })
+    expect(mapped.sandboxMode).toBe('workspace-write')
+  })
+
+  it('osSandbox:false still refuses to escalate past an explicit approval policy', () => {
+    expect(() =>
+      mapPermissionsToCodex({
+        policy: resolve({ fsWrite: ['/work'], approval: { on: ['executable'] } }),
+        osSandbox: false,
+      }),
+    ).toThrow(CodexPermissionError)
+  })
+
+  it('osSandbox:false leaves a read-only policy read-only (no escalation)', () => {
+    const mapped = mapPermissionsToCodex({
+      policy: resolve({ fsWrite: [], fsRead: [] }),
+      osSandbox: false,
+    })
+    expect(mapped.sandboxMode).toBe('read-only')
+  })
+
   it('maps networkEgress: "deny" → networkAccessEnabled + webSearch all disabled', () => {
     const mapped = mapPermissionsToCodex({ policy: resolve({ networkEgress: 'deny' }) })
     expect(mapped.networkAccessEnabled).toBe(false)

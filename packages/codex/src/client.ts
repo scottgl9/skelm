@@ -132,6 +132,17 @@ export async function consumeStream(
   let finalText = ''
   let usage: IterateResult['usage'] = undefined
   let stopReason = 'turn.completed'
+  let completed = false
+  // Codex emits `error` events for TRANSIENT, recoverable conditions — most
+  // notably its model-stream retry notices ("Reconnecting... N/5 (...)" from
+  // codex's responses_retry loop), which it recovers from on a later attempt
+  // and then finishes the turn. Treating each such notice as fatal aborted the
+  // run (and the SDK's stream-cleanup then killed the codex child mid-retry),
+  // surfacing as `BackendUpstreamError: codex stream error: Reconnecting...`.
+  // So keep consuming on `error`: the terminal failure signal is `turn.failed`
+  // (thrown below); a bare `error` only fails the turn if the stream ENDS
+  // without a `turn.completed`, in which case we surface the last one.
+  let lastError: string | undefined
 
   for await (const ev of events) {
     switch (ev.type) {
@@ -156,21 +167,32 @@ export async function consumeStream(
           reasoningTokens: ev.usage.reasoning_output_tokens,
         }
         stopReason = 'turn.completed'
+        completed = true
+        // A completed turn supersedes any transient retry notice seen earlier.
+        lastError = undefined
         break
       case 'turn.failed':
         stopReason = 'turn.failed'
         callbacks.onError?.(ev.error.message)
         throw new BackendUpstreamError(`codex turn failed: ${ev.error.message}`, 'codex')
       case 'error':
-        stopReason = 'error'
+        // Non-fatal: a transient stream/retry notice. Surface it for audit but
+        // keep consuming so codex's own retry can recover the turn.
+        lastError = ev.message
         callbacks.onError?.(ev.message)
-        throw new BackendUpstreamError(`codex stream error: ${ev.message}`, 'codex')
+        break
       // thread.started, turn.started, item.started, item.updated: not
       // material to the final response; surface via onItem if the caller
       // wants per-item audit (it doesn't, by default).
       default:
         break
     }
+  }
+  // The stream ended after an `error` with no recovering `turn.completed` — now
+  // it's terminal (e.g. codex exhausted its retries, "max retry times reached").
+  if (!completed && lastError !== undefined) {
+    stopReason = 'error'
+    throw new BackendUpstreamError(`codex stream error: ${lastError}`, 'codex')
   }
   return { finalText, usage, stopReason }
 }

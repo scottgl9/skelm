@@ -10,7 +10,17 @@ import { createTerminalFrontend } from './chatui-frontend.mts'
 // pi-sdk backend pointed at a local OpenAI-compatible endpoint. This is true
 // per-request failover, not a static load-time probe. Set SKELM_BUILDER_BACKEND
 // to 'codex' or 'pi-sdk' to pin one backend and skip the fallback.
-const codex = createCodexBackend({ id: 'codex' })
+// `osSandbox: false` runs codex with no OS sandbox (the gateway is the trust
+// boundary, same posture as the in-process pi-sdk failover below). Set
+// SKELM_CODEX_OS_SANDBOX=0 in environments where codex's user-namespace /
+// bubblewrap sandbox can't initialize (many CI runners + containers) — there,
+// the default sandbox silently blocks every file write and shell command, so
+// the builder can't author files. Leave it set (the default) wherever codex's
+// sandbox works so codex keeps enforcing it natively.
+const codex = createCodexBackend({
+  id: 'codex',
+  osSandbox: process.env.SKELM_CODEX_OS_SANDBOX !== '0',
+})
 const piSdk = createPiSdkBackend({
   id: 'pi-sdk',
   baseUrl: process.env.OPENAI_BASE_URL ?? 'http://localhost:8000/v1',
