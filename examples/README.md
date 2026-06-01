@@ -14,7 +14,7 @@ Runnable workflow examples. Each subdirectory is a self-contained workflow you c
 | `sprint-planning/`       | Cron-triggered LLM story selection feeding from `code()` capacity calc.    |
 | `agentmemory/`           | Cross-session recall via the agentmemory integration (two-run pattern).    |
 | `telegram-assistant/`    | Persistent agent over Telegram: durable per-chat conversation + agentmemory.|
-| `tui-assistant/`         | Persistent agent over a local terminal UI: durable session + agentmemory.  |
+| `chatui-assistant/`      | Persistent agent over a local chat UI — terminal **or** browser — from one integration: durable session + agentmemory. |
 | `agent-delegation/`      | Multi-agent: a router `agent()` delegates to a specialist via the `delegate` tool. |
 
 ## Run
@@ -33,4 +33,4 @@ Once `skelm` is installed globally (`npm i -g skelm`), the same commands shorten
 
 `telegram-bot/` is a standalone runner that long-polls the Telegram Bot API and drives the pipeline directly — see [`telegram-bot/README.md`](./telegram-bot/README.md) for the bot token + pi setup.
 
-Trigger-driven examples (`telegram-assistant/`, `tui-assistant/`) run under the gateway: `skelm gateway start` from the example directory. `tui-assistant/` binds to your terminal, so run the gateway in the foreground; you can also exercise its UI alone with `node examples/tui-assistant/drive.mts` (no gateway, no model). See each example's README.
+Trigger-driven examples (`telegram-assistant/`, `chatui-assistant/`) run under the gateway: `skelm gateway start` from the example directory. `chatui-assistant/` serves both a terminal frontend (`skelm run examples/chatui-assistant/`) and a static web page (`web-chat.html`, gateway started with `SKELM_DEV_CORS=1`); you can also exercise the terminal UI alone with `node examples/chatui-assistant/drive.mts` (no gateway, no model). See each example's README.

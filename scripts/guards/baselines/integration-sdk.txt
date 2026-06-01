@@ -3,6 +3,7 @@ value:IntegrationBase
 value:IntegrationWorkflowPlugin
 value:createIntegrationPlugin
 value:defineIntegration
+type:ChatUiConfig
 type:DefineIntegrationOptions
 type:EmailTrigger
 type:GitHubIssueTrigger
@@ -23,5 +24,4 @@ type:SlackWebhookEvent
 type:TelegramConfig
 type:TelegramMessageTrigger
 type:TelegramWebhookEvent
-type:TuiConfig
 type:WebhookConfig

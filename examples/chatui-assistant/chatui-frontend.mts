@@ -1,14 +1,16 @@
-import type { TuiFrontend, TuiFrontendFactory, TuiFrontendIo } from '@skelm/integrations'
+import type { ChatUiFrontend, ChatUiFrontendFactory, ChatUiFrontendIo } from '@skelm/integrations'
 import { Box, Text, render } from 'ink'
 import TextInput from 'ink-text-input'
 import { type ReactElement, createElement, useEffect, useState } from 'react'
 
 /**
- * The terminal-UI frontend for the tui-assistant, built on Ink
+ * The terminal-UI frontend for the chatui-assistant, built on Ink
  * (https://github.com/vadimdemedes/ink) — a React renderer for the terminal.
- * The `tui` integration knows nothing about this: it just calls `render` /
- * `renderPartial` on the {@link TuiFrontend} we return, and we call `io.submit`
- * when the user enters a line. Swapping this for any other terminal-UI library
+ * This is the `tui` transport of the `chatui` integration; the integration knows
+ * nothing about this code — it just calls `render` / `renderPartial` on the
+ * {@link ChatUiFrontend} we return, and we call `io.submit` when the user enters
+ * a line. The `web` transport renders in a browser instead (see `web-chat.html`)
+ * and needs no frontend here. Swapping this for any other terminal-UI library
  * (or the plain `readline` version) needs no change to skelm.
  *
  * Written with `createElement` rather than JSX so the example needs no JSX build
@@ -26,11 +28,11 @@ interface ChatMessage {
   text: string
 }
 
-export function createTerminalFrontend(options: InkFrontendOptions = {}): TuiFrontendFactory {
+export function createTerminalFrontend(options: InkFrontendOptions = {}): ChatUiFrontendFactory {
   const promptLabel = options.promptLabel ?? 'you'
   const banner = options.banner
 
-  return (io: TuiFrontendIo): TuiFrontend => {
+  return (io: ChatUiFrontendIo): ChatUiFrontend => {
     // The chat transcript and the in-flight streaming reply live here; the Ink
     // component reads them and re-renders whenever `notify()` bumps a tick.
     const messages: ChatMessage[] = []

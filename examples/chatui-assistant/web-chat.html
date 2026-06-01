@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>skelm chatui-assistant — web</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font: 15px/1.5 system-ui, sans-serif; margin: 0; height: 100vh; display: flex; flex-direction: column; }
+      header { padding: 8px 12px; border-bottom: 1px solid #8884; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      header input { font: inherit; padding: 4px 6px; }
+      header input[name="gateway"] { width: 22ch; }
+      header input[name="session"] { width: 14ch; }
+      #log { flex: 1; overflow-y: auto; padding: 12px; }
+      .msg { margin: 6px 0; white-space: pre-wrap; word-break: break-word; }
+      .you { color: #2a7; }
+      .agent { color: #49c; }
+      .err { color: #d44; }
+      form { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid #8884; }
+      form input { flex: 1; font: inherit; padding: 8px; }
+      form button { font: inherit; padding: 8px 14px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>chatui-assistant</strong>
+      <label>gateway <input name="gateway" value="http://127.0.0.1:14738" /></label>
+      <label>source <input name="source" value="web" size="6" /></label>
+      <label>session <input name="session" value="web-1" /></label>
+    </header>
+    <div id="log"></div>
+    <form id="composer">
+      <input id="text" autocomplete="off" placeholder="Type a message and press Enter…" autofocus />
+      <button type="submit">Send</button>
+    </form>
+
+    <!--
+      The `web` transport of the skelm `chatui` integration. This page is a plain
+      client of the gateway's existing contract — the same one the `skelm run`
+      terminal host uses:
+
+        1. POST {gateway}/v1/chat/{source}/submit  { sessionId, text }  -> { runId }
+        2. EventSource {gateway}/runs/{runId}/stream
+             - `step.partial` frames carry the cumulative reply (delta) -> stream it
+             - `run.completed` carries output.reply -> commit it
+
+      Cross-origin from a static file requires the gateway started with
+      SKELM_DEV_CORS=1 (a dev-only, default-off affordance). Serve this file from
+      the same origin as the gateway and no CORS is needed.
+    -->
+    <script>
+      const log = document.getElementById('log')
+      const form = document.getElementById('composer')
+      const textInput = document.getElementById('text')
+      const gatewayInput = document.querySelector('input[name="gateway"]')
+      const sourceInput = document.querySelector('input[name="source"]')
+      const sessionInput = document.querySelector('input[name="session"]')
+
+      function addMsg(role, text) {
+        const el = document.createElement('div')
+        el.className = 'msg ' + role
+        el.textContent = (role === 'you' ? 'you › ' : role === 'agent' ? 'agent › ' : '') + text
+        log.appendChild(el)
+        log.scrollTop = log.scrollHeight
+        return el
+      }
+
+      async function send(text) {
+        const gateway = gatewayInput.value.replace(/\/$/, '')
+        const source = sourceInput.value.trim() || 'web'
+        const sessionId = sessionInput.value.trim() || 'web-1'
+        addMsg('you', text)
+        const replyEl = addMsg('agent', '· thinking…')
+
+        let runId
+        try {
+          const res = await fetch(`${gateway}/v1/chat/${encodeURIComponent(source)}/submit`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sessionId, text }),
+          })
+          if (!res.ok) throw new Error(`submit failed: ${res.status}`)
+          ;({ runId } = await res.json())
+        } catch (err) {
+          replyEl.className = 'msg err'
+          replyEl.textContent = String(err)
+          return
+        }
+
+        const es = new EventSource(`${gateway}/runs/${encodeURIComponent(runId)}/stream`)
+        let acc = ''
+        const onPartial = (ev) => {
+          const data = JSON.parse(ev.data)
+          if (typeof data.delta === 'string') {
+            acc += data.delta
+            replyEl.textContent = 'agent › ' + acc
+            log.scrollTop = log.scrollHeight
+          }
+        }
+        es.addEventListener('step.partial', onPartial)
+        es.addEventListener('run.completed', (ev) => {
+          const data = JSON.parse(ev.data)
+          const reply = data?.output?.reply
+          if (typeof reply === 'string' && reply !== '') replyEl.textContent = 'agent › ' + reply
+          else if (acc === '') replyEl.textContent = 'agent › (no reply)'
+          es.close()
+        })
+        es.addEventListener('run.failed', (ev) => {
+          replyEl.className = 'msg err'
+          replyEl.textContent = 'run failed'
+          es.close()
+        })
+        es.onerror = () => {
+          // The stream closes after the terminal frame; only flag a true early error.
+          if (acc === '' && replyEl.textContent.includes('thinking')) {
+            replyEl.className = 'msg err'
+            replyEl.textContent = 'stream error (is the gateway up with SKELM_DEV_CORS=1?)'
+          }
+          es.close()
+        }
+      }
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault()
+        const text = textInput.value.trim()
+        if (text === '') return
+        textInput.value = ''
+        void send(text)
+      })
+    </script>
+  </body>
+</html>

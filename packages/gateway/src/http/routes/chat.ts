@@ -8,21 +8,24 @@ interface SubmitBody {
   from?: unknown
 }
 
-interface RemoteTuiDriver {
+interface RemoteChatUiDriver {
   transport?: string
   submit?(input: { sessionId: string; text: string; from?: string }): Promise<{ runId: string }>
 }
 
+const CHAT_TRANSPORTS = new Set(['tui', 'web'])
+
 /**
- * POST /v1/tui/:sourceId/submit — inject one user line into a CLI-hosted TUI
- * session and return the turn's `{ runId }`. The terminal UI lives in the
- * `skelm run` process; this drives the gateway-side headless TUI source
- * (createRemoteTriggerSource) which fires the workflow and reports the runId so
- * the CLI can tail `/runs/:runId/stream` for partials and the final reply.
+ * POST /v1/chat/:sourceId/submit — inject one user line into a client-hosted
+ * chat-UI session and return the turn's `{ runId }`. The UI lives in the client
+ * (the `skelm run` process for the `tui` transport, a browser for `web`); this
+ * drives the gateway-side headless chat-UI source (createRemoteTriggerSource)
+ * which fires the workflow and reports the runId so the client can tail
+ * `/runs/:runId/stream` for partials and the final reply.
  */
-export function registerTuiRoutes(router: Router, gateway: Gateway): void {
+export function registerChatRoutes(router: Router, gateway: Gateway): void {
   router.post(
-    '/v1/tui/:sourceId/submit',
+    '/v1/chat/:sourceId/submit',
     eventHandler(async (event) => {
       const sourceId = decodeMaybe(event.context.params?.sourceId)
       if (sourceId === undefined || sourceId.length === 0) {
@@ -33,14 +36,15 @@ export function registerTuiRoutes(router: Router, gateway: Gateway): void {
         throw createError({ statusCode: 400, message: 'sessionId and text are required' })
       }
       const driver = gateway.managers.triggers.getQueueDriver(sourceId) as
-        | RemoteTuiDriver
+        | RemoteChatUiDriver
         | undefined
       if (
         driver === undefined ||
-        driver.transport !== 'tui' ||
+        typeof driver.transport !== 'string' ||
+        !CHAT_TRANSPORTS.has(driver.transport) ||
         typeof driver.submit !== 'function'
       ) {
-        throw createError({ statusCode: 404, message: `no TUI source registered: ${sourceId}` })
+        throw createError({ statusCode: 404, message: `no chat-UI source registered: ${sourceId}` })
       }
       return await driver.submit({
         sessionId: body.sessionId,

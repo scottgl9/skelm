@@ -27,7 +27,7 @@ interface GatewayClient {
 /**
  * `skelm run <tui-dir>`: activate the project on the gateway, then host the
  * terminal chat in THIS process. Each line is POSTed to
- * `/v1/tui/:sourceId/submit`, which returns the turn's runId; the CLI tails
+ * `/v1/chat/:sourceId/submit`, which returns the turn's runId; the CLI tails
  * `/runs/:runId/stream` for partials and the final reply. On EOF / Ctrl-C the
  * workflow is deactivated (its durable conversation is kept) and the CLI exits.
  */
@@ -170,7 +170,7 @@ export async function runTurn(
   onPartial?: (cumulative: string) => void,
 ): Promise<string | null> {
   const submitRes = await fetchHttp(
-    `${client.discovery.url}/v1/tui/${encodeURIComponent(sourceId)}/submit`,
+    `${client.discovery.url}/v1/chat/${encodeURIComponent(sourceId)}/submit`,
     {
       method: 'POST',
       headers: { ...client.headers, 'content-type': 'application/json' },
