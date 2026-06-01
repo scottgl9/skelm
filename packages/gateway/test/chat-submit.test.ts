@@ -135,6 +135,12 @@ describe('dev CORS affordance (SKELM_DEV_CORS)', () => {
       // A normal request carries the header too (the SSE stream relies on this).
       const res = await fetch(`${base}/health`, { headers: { origin: 'http://example.test' } })
       expect(res.headers.get('access-control-allow-origin')).toBe('http://example.test')
+
+      // A request with NO Origin is not a CORS request — emit nothing (no
+      // `Access-Control-Allow-Origin`, no `Vary`), even with the flag enabled.
+      const noOrigin = await fetch(`${base}/health`)
+      expect(noOrigin.headers.get('access-control-allow-origin')).toBeNull()
+      expect(noOrigin.headers.get('vary')).toBeNull()
     } finally {
       await gw.stop()
     }

@@ -70,13 +70,20 @@ export function createServer(
       ? undefined
       : devCors
   if (devCorsOrigin !== undefined) {
+    const reflectOrigin = devCorsOrigin === '1' || devCorsOrigin === 'true'
     app.use(
       eventHandler((event: H3Event) => {
+        // No Origin header → not a CORS request; emit nothing (don't advertise a
+        // CORS policy on same-origin/non-browser requests).
         const origin = event.headers.get('origin')
-        const allow =
-          devCorsOrigin === '1' || devCorsOrigin === 'true' ? (origin ?? '*') : devCorsOrigin
-        setResponseHeader(event, 'Access-Control-Allow-Origin', allow)
-        setResponseHeader(event, 'Vary', 'Origin')
+        if (origin === null) return undefined
+        setResponseHeader(
+          event,
+          'Access-Control-Allow-Origin',
+          reflectOrigin ? origin : devCorsOrigin,
+        )
+        // Vary only matters when the value depends on the request Origin.
+        if (reflectOrigin) setResponseHeader(event, 'Vary', 'Origin')
         setResponseHeader(event, 'Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         setResponseHeader(event, 'Access-Control-Allow-Headers', 'authorization, content-type')
         if ((event.node.req.method ?? 'GET').toUpperCase() === 'OPTIONS') {
