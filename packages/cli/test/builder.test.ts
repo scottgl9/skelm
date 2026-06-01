@@ -25,6 +25,10 @@ describe('skelm builder', () => {
     const config = readFileSync(join(target, 'skelm.config.mts'), 'utf8')
     expect(config).toContain('createRoutingBackend')
     expect(config).toContain("transport: 'tui'")
+    // The config must raise the default permission ceiling, or the persistent
+    // turn's default-deny would clobber the agent's grants (egress/fs/exec/skill).
+    expect(config).toContain('defaults:')
+    expect(config).toContain("networkEgress: 'allow'")
     const wf = readFileSync(join(target, 'builder.workflow.mts'), 'utf8')
     expect(wf).toContain("id: 'skelm-builder'")
     expect(wf).toContain('persistentWorkflow')
