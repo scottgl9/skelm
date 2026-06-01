@@ -67,6 +67,7 @@ import type {
   WorkspaceHandle,
 } from '../types.js'
 import { WorkspaceManager } from '../workspace.js'
+import { resolveBackendForStep } from './backend-chain.js'
 import {
   assertBackendSupportsPermissions,
   collectResolvedPermissionDimensions,
@@ -346,7 +347,7 @@ async function runInferStep(
       `step "${step.id}" requires a backend registry but none was provided to runPipeline()`,
     )
   }
-  const backend = backends.resolveForLlm({ backendId: step.backend as string | undefined })
+  const backend = resolveBackendForStep(backends, step.id, step.backend, 'llm')
   const resolvedSecrets = await resolveDeclaredSecrets(
     step,
     undefined,
@@ -417,7 +418,7 @@ async function runAgentStep(
       `step "${step.id}" requires a backend registry but none was provided to runPipeline()`,
     )
   }
-  const backend = backends.resolveForAgent({ backendId: step.backend as string | undefined })
+  const backend = resolveBackendForStep(backends, step.id, step.backend, 'agent')
   let preparedWorkspace: Awaited<ReturnType<WorkspaceManager['prepare']>> | undefined
   let finishedWorkspace = false
   try {

@@ -59,6 +59,18 @@ agent({ id: 'implement', backend: 'pi', prompt: '...' })
 
 If `backend` is omitted on the step, the runtime resolves it from (in order): `config.backends.agent`, `config.backends.default`, `config.backend`, `config.defaults.backend`. If none of those is set the step fails at start.
 
+### Backend fallback (`backend: ['a', 'b', …]`)
+
+Give `backend` an ordered list to fail over at runtime: the step tries each backend in turn and uses the first that succeeds. If a backend throws, the next is attempted; if **all** fail the step fails with a `BackendChainExhaustedError` that carries the per-backend causes in order.
+
+```ts
+agent({ id: 'implement', backend: ['codex', 'pi-sdk'], prompt: '...' })
+```
+
+The chain is resolved at step start: every id must be registered and support the step kind (`run` for `agent()`, single-shot inference for `infer()`), and **all members must declare identical capabilities** (`toolPermissions`, `mcp`, `skills`, `vision`, `agentmemory`, …). That constraint is a security invariant, not a convenience check: the step's fail-closed permission, MCP, vision, and agentmemory gates run against the resolved backend once, so a fallover must not be able to hand the turn to a backend that enforces less than the gate already cleared. A heterogeneous chain is rejected at step start (fail closed). For a hand-tuned wrapper with differing capabilities, use `createRoutingBackend` at config time instead.
+
+Fallover is silent on success (the first working backend serves the turn); only full exhaustion surfaces an error.
+
 ### Pi backends (`@skelm/pi`)
 
 Two pi backends ship in `@skelm/pi`. Prefer the **SDK** backend — it gives you native enforcement of the skelm permission policy and supports both `agent()` and `infer()` steps.

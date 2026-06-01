@@ -23,7 +23,7 @@ import {
   WaitTimeoutError,
   serializeError,
 } from './errors.js'
-export { ApprovalDeniedError } from './errors.js'
+export { ApprovalDeniedError, BackendChainExhaustedError } from './errors.js'
 import { EventBus, type EventListener } from './events.js'
 import { runStepWithRetry } from './execution/handlers.js'
 import type { ExecutionRuntime } from './execution/runtime.js'
@@ -221,22 +221,6 @@ export interface RunOptions {
   delegationDepth?: number
   /** Cap on delegation depth; defaults to DEFAULT_MAX_DELEGATION_DEPTH. */
   maxDelegationDepth?: number
-}
-
-export class BackendChainExhaustedError extends Error {
-  override readonly name = 'BackendChainExhaustedError'
-  constructor(
-    readonly stepId: string,
-    readonly attempts: ReadonlyArray<{ backendId: string; cause: unknown }>,
-  ) {
-    const summary = attempts.map((a) => `${a.backendId}: ${fallbackReason(a.cause)}`).join('; ')
-    super(`step "${stepId}" exhausted backend chain — ${summary}`)
-  }
-}
-
-function fallbackReason(cause: unknown): string {
-  if (cause instanceof Error) return cause.message
-  return String(cause)
 }
 
 export interface WaitRequest {
