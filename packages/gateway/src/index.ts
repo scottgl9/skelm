@@ -1,8 +1,5 @@
-// @skelm/gateway
-//
-// The skelm gateway is the long-running process that owns the trust boundary,
-// configuration, registries (workflows / skills / MCP servers / agents),
-// agent process lifecycle, audit, and the HTTP/SSE surface.
+// Public surface of @skelm/gateway — the long-running process that owns the
+// trust boundary: config, registries, agent lifecycle, audit, and HTTP/SSE.
 
 export const GATEWAY_PACKAGE_VERSION = '0.2.0'
 
