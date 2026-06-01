@@ -17,6 +17,7 @@ Usage:
   skelm validate <pipeline.ts> [--json]
   skelm logs [--lines <n>] [--since <iso>] [--level <lvl>] [--filter <s>] [--json]
   skelm init [<dir>] [--force]
+  skelm builder [<dir>] [--force]
   skelm --version
   skelm --help
 
@@ -140,6 +141,18 @@ Run flags:
   skelm init [<dir>] [--force]
 
 Init flags:
+  --force                 Allow scaffolding into a non-empty directory
+`,
+  builder: `Usage:
+  skelm builder [<dir>] [--force]
+
+Scaffold a conversational workflow-builder project (default dir: builder) and
+drop into its terminal chat UI. Re-running is idempotent: it reuses an existing
+project. Install dependencies once (npm install) before the chat UI launches.
+The agent backend defaults to codex and falls over to the in-process pi-sdk
+backend (override with SKELM_BUILDER_BACKEND=codex|pi-sdk).
+
+Builder flags:
   --force                 Allow scaffolding into a non-empty directory
 `,
   list: `Usage:
