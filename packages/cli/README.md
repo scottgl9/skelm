@@ -14,7 +14,7 @@ As of v0.5, the CLI dispatches every non-exempt command (`run`, `list`, `describ
 
 Exempt commands (still work with no gateway running): `help`, `version`, `gateway *`, `init`, `validate`.
 
-When a non-exempt command runs with no gateway live, the CLI auto-starts one. If the platform's service manager has the unit installed (`systemctl --user start skelm-gateway` on linux, `launchctl kickstart` on macOS) it delegates; otherwise it spawns `skelm gateway start` detached and prints a one-time hint suggesting `skelm gateway install --systemd` (linux) or `--launchd` (macOS) for a supervised service.
+When a non-exempt command runs with no gateway live, the CLI auto-starts one. If the platform's service manager has the unit installed (`systemctl --user start skelm-gateway` on linux, `launchctl kickstart` on macOS) it delegates; otherwise it spawns `skelm gateway start --foreground` detached and prints a one-time hint suggesting `skelm gateway install` for a supervised service.
 
 Opt out of auto-start with `SKELM_NO_AUTOSTART=1` (the CLI then exits non-zero with an actionable message). In CI auto-spawn is refused unless `SKELM_AUTOSTART_IN_CI=1`.
 
@@ -51,11 +51,13 @@ skelm approvals list                  List pending approval requests
 skelm approvals approve <id>          Approve a suspended step
 skelm approvals deny <id>             Deny a suspended step
 skelm logs                            Tail gateway logs
-skelm gateway start                   Run the gateway (foreground; Ctrl-C drains and exits)
+skelm gateway start --foreground      Run the gateway in this process (Ctrl-C drains and exits)
+skelm gateway start                   Print how to run it (install, or --foreground)
 skelm gateway status                  Inspect a running gateway
 skelm gateway stop                    Stop a running gateway
-skelm gateway install --systemd       Install a user-level systemd unit (linux)
-skelm gateway install --launchd       Install a user-level launchd LaunchAgent (macOS)
+skelm gateway install                 Install as a service; auto-detects systemd (linux) / launchd (macOS)
+skelm gateway install --systemd       Force a systemd user unit
+skelm gateway install --launchd       Force a launchd LaunchAgent
 skelm --version
 skelm --help
 ```

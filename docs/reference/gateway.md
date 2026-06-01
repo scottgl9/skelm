@@ -20,22 +20,25 @@ The gateway is a long-running process that is the **trust boundary** for all ske
 ## Starting the gateway
 
 ```bash
-skelm gateway install              # install + start as a systemd user service (recommended)
-skelm gateway start                # start in the foreground; Ctrl-C to stop
+skelm gateway install              # install + start as a persistent service (recommended); auto-detects systemd / launchd
+skelm gateway start --foreground   # run in the foreground; Ctrl-C to stop
+skelm gateway start                # print how to run it (install, or --foreground)
 skelm gateway start --detach       # start as a detached background process
 skelm gateway status               # pid, URL, reachability, state
-skelm gateway stop                 # stop the running gateway (systemd-aware)
+skelm gateway stop                 # stop the running gateway (service-aware)
 skelm gateway reload               # SIGHUP — hot-reloads skelm.config.ts
 ```
 
 ### Background service (recommended)
 
-`skelm gateway install` is the recommended way to run the gateway in production:
+`skelm gateway install` is the recommended way to run the gateway in production. It auto-detects the platform's service manager — **systemd** on linux, **launchd** on macOS — so the bare command works on either OS. Pass `--systemd` or `--launchd` to force a specific manager (e.g. on an unusual platform). On linux it:
 
 1. Writes `~/.config/systemd/user/skelm-gateway.service`
 2. Runs `systemctl --user daemon-reload`
 3. Runs `systemctl --user enable --now skelm-gateway` to start immediately and enable on login
 4. Warns if user lingering is not enabled
+
+On macOS it writes `~/Library/LaunchAgents/com.skelm.gateway.plist` and bootstraps it with `launchctl`.
 
 If the service cannot be started because user lingering is not enabled (no D-Bus session at boot), you will see:
 
@@ -48,18 +51,24 @@ and will not start automatically at boot. To fix this:
 
 `skelm gateway stop` delegates to `systemctl --user stop` when the unit is installed, keeping systemd's state in sync and preventing auto-restart. It falls back to SIGTERM if systemctl fails.
 
-### Foreground start
+### Running in the foreground
 
-`skelm gateway start` is now context-aware:
+`skelm gateway start` is context-aware and never silently takes over your terminal:
 
-- **If the systemd unit is installed** — delegates to `systemctl --user start` and returns immediately, leaving the gateway running as a managed background service. Equivalent to having run `skelm gateway install` once and then just using `start` going forward.
-- **If the systemd unit is not installed** — runs in the foreground (blocks your terminal) and prints a tip:
+- **If the service unit is installed** — delegates to `systemctl --user start` (or `launchctl kickstart` on macOS) and returns immediately, leaving the gateway running as a managed background service. Equivalent to having run `skelm gateway install` once and then just using `start` going forward.
+- **If no unit is installed** — prints guidance pointing at the two supported ways to run the gateway and exits without starting anything:
 
   ```
-  tip: run `skelm gateway install` to install the gateway as a persistent background service.
+  skelm gateway start does not run the gateway on its own. Choose how to run it:
+
+    • Install it as a persistent background service (recommended):
+        skelm gateway install
+
+    • Run it in the foreground (Ctrl-C to stop):
+        skelm gateway start --foreground
   ```
 
-Pass `--foreground` to force foreground mode even when the unit is installed.
+Pass `--foreground` to run the gateway inline in the current process (blocks your terminal until Ctrl-C), regardless of whether a unit is installed.
 
 Pass `--detach` to spawn an unmanaged background process and return immediately (useful when systemd is not available):
 
