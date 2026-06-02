@@ -167,6 +167,11 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
               ? (pipeline as { id: string }).id
               : ctx.workflowId,
           ),
+          ...opts.gateway.defaultBackendRunOptions(
+            typeof (pipeline as { id?: unknown }).id === 'string'
+              ? (pipeline as { id: string }).id
+              : ctx.workflowId,
+          ),
           ...opts.gateway.egressRunOptions(),
           ...opts.gateway.agentmemoryRunOptions(),
           ...(onEvent !== undefined && { onEvent }),

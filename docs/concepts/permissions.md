@@ -26,6 +26,21 @@ runner.enforcement // canonical instances actually in use
 
 In production the **gateway** owns the canonical instances and hands them to every Runner it constructs (Phase 11). `gateway.enforcement` exposes them after `start()` and throws after `stop()`. Rebuilding via `gateway.reload({ defaults: { permissions: ... } })` is allowed and atomic.
 
+### Per-workflow project ceilings
+
+`skelm run <dir>` activation pins the project's `defaults.permissions` and `defaults.permissionProfiles` to **just that project's workflows**. The gateway stores them keyed by workflow id and consults them — before the operator-wide `config.defaults.permissions` — whenever a run of that workflow starts (persistent turn, queue/cron-dispatched pipeline, or HTTP `POST /pipelines/:id/run`). The fallback chain is:
+
+```
+step.permissions  ∩  (per-workflow project ceiling || operator-wide ceiling || none)  ∩  delegation ceiling
+```
+
+Two consequences worth knowing:
+
+1. **No cross-contamination across projects.** If project A activates with `defaults.permissions.networkEgress: { allowHosts: ['a.example'] }` and project B activates with `'allow'`, project B's workflows still resolve to `'allow'`. A's narrower ceiling does not silently bind B's runs.
+2. **A workflow whose project's `skelm.config.*` declares no `defaults.permissions` falls back to the gateway's operator-wide defaults.** With neither set, the agent's own declared `permissions` are the only ceiling, intersected only with `delegation` upstream — i.e. there is no extra narrowing, not a deny-all. (The framework's typed deny-all baseline in `DEFAULT_CONFIG` is never propagated as an operator ceiling — see `loadSkelmConfig` and the `Gateway` constructor.)
+
+The same per-workflow scoping applies to `config.backends.{agent,infer}`: an `agent()` step with no explicit `backend:` resolves to its **project's** default backend before falling through to "first registered with `run()`". This is what lets a project's `skelm.config.mts` be the authoritative source for the workflow's backend choice, model selection (carried on the registered backend instance), and permission ceiling — without one project's config silently overriding another's on a shared gateway.
+
 ## Default-deny is structural
 
 `AgentPermissions` fields default to `undefined`, which the runtime treats as deny. The enforcement seams above never widen — only narrow. Adding a new permission dimension keeps these guarantees:

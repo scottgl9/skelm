@@ -48,10 +48,16 @@ When the argument is a **directory**, `skelm run` behaves one of two ways:
   declares `triggerSources`, or its entrypoint is a `persistentWorkflow()`, the
   CLI **activates** the project on the gateway (`POST /v1/projects/activate`):
   the gateway imports the config, registers the trigger sources + backends +
-  workflow, arms the triggers, and takes ownership. The CLI prints a summary and
-  **exits** — the workflow keeps running on the gateway, driven by its triggers.
-  Re-running is an idempotent refresh. A project outside the gateway's trusted
-  roots is refused (exit `1`); see [activate](./http.md#projects).
+  workflow, arms the triggers, and takes ownership. The project's
+  `defaults.permissions`, `defaults.permissionProfiles`, and
+  `backends.{agent,infer}` are pinned per workflow id — they apply when that
+  workflow runs and do not bind another active project's workflows (see
+  [Permissions › Per-workflow project
+  ceilings](../concepts/permissions.md#per-workflow-project-ceilings)). The CLI
+  prints a summary and **exits** — the workflow keeps running on the gateway,
+  driven by its triggers. Re-running is an idempotent refresh. A project
+  outside the gateway's trusted roots is refused (exit `1`); see
+  [activate](./http.md#projects).
 
 - **One-shot pipeline** — otherwise the CLI resolves the directory to a single
   workflow file and runs it inline, waiting for completion, in order:
