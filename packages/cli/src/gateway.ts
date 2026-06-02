@@ -800,7 +800,21 @@ export async function syncDeclaredTriggers(gateway: Gateway, io: MainIO): Promis
   for (const entry of gateway.registries.workflows.list()) {
     liveWorkflowIds.add(entry.id)
     try {
-      const mod = (await import(pathToFileURL(entry.path).href)) as Record<string, unknown>
+      // Cache-bust the ESM import by the file's mtime. A workflow whose
+      // `triggers:` array is edited IN PLACE (same path) would otherwise return
+      // the STALE cached module on reload — so an added/changed declared trigger
+      // is never registered (a brand-new file imports fresh and works; a mutated
+      // existing file did not — issue #164's "trigger added to a live workflow"
+      // half). Unchanged files keep the same mtime → same URL → cached (no
+      // re-import cost on a no-op reload).
+      // INTEGER mtime (Math.trunc): a fractional value like `…789.077` makes
+      // esbuild/vitest read the trailing `.077` as a file extension ("Invalid
+      // loader value"). Truncating keeps the query a plain integer.
+      const mtimeMs = Math.trunc((await fs.stat(entry.path)).mtimeMs)
+      const mod = (await import(`${pathToFileURL(entry.path).href}?mtime=${mtimeMs}`)) as Record<
+        string,
+        unknown
+      >
 
       // `pickExport` strips the `{ default: { default: <value> } }` wrap
       // Node 22+ produces under CJS interop. Without it, workflows
