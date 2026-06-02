@@ -565,6 +565,13 @@ export function createServer(
     async start() {
       const http = await import('node:http')
       server = http.createServer(toNodeListener(app))
+      // Bound how long a client may take to send headers / the full request so
+      // a slow-loris client can't hold a connection open indefinitely. These
+      // govern *receiving* the request, not the response, so long-lived SSE
+      // streams (GET /runs/:id/stream) are unaffected. Tighter than Node's
+      // defaults (headers 60s / request 300s).
+      server.headersTimeout = 20_000
+      server.requestTimeout = 60_000
       // F042: an EADDRINUSE (or any other listen-time error) used to fall
       // through as an unhandled `error` event because the Promise only
       // resolved on the listening callback. That crashed the process and
