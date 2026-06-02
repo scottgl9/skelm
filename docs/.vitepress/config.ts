@@ -139,6 +139,7 @@ export default defineConfig({
             { text: 'CLI', link: '/reference/cli' },
             { text: 'HTTP', link: '/reference/http' },
             { text: 'Config', link: '/reference/config' },
+            { text: 'Environment Variables', link: '/reference/environment-variables' },
             { text: 'Permissions', link: '/reference/permissions' },
             { text: 'Pipeline Authoring', link: '/reference/pipeline-authoring' },
             { text: 'Agent Step', link: '/reference/agent-step' },
