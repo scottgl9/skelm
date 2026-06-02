@@ -454,18 +454,6 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         )
         return { exitCode: result.exitCode }
       }
-      case 'acp': {
-        // P5.2 — ACP serve placeholder. Reserves the CLI flag namespace for
-        // M4. The transport wiring is not yet implemented; exit 1 with a
-        // clear message so callers aren't left guessing.
-        const sub = parsed.positional[0]
-        if (sub !== 'serve') {
-          io.stderr.write('error: acp requires serve subcommand\n  skelm acp serve\n')
-          return { exitCode: EXIT.CLI_ERROR }
-        }
-        io.stderr.write('error: skelm acp serve is not yet implemented (reserved for M4)\n')
-        return { exitCode: EXIT.CLI_ERROR }
-      }
       default: {
         const exhaustive: never = parsed.command
         io.stderr.write(`internal: unhandled command ${exhaustive as string}\n`)

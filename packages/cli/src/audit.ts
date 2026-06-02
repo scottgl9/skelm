@@ -22,8 +22,6 @@ export interface SecretsArgs {
   name?: string | undefined
   value?: string | undefined
   json?: boolean | undefined
-  /** @deprecated Kept for source compatibility; secrets are now resolved by the gateway. */
-  path?: string | undefined
 }
 
 interface AuditEntry {

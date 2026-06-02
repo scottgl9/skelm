@@ -13,7 +13,6 @@ Usage:
   skelm debug <breakpoints|add|remove|runs|release> [args]
   skelm sessions <list|prune> [--expired] [--older-than-ms <ms>] [--json]
   skelm schedule <add|list|stop|fire> [args]
-  skelm acp serve
   skelm validate <pipeline.ts> [--json]
   skelm logs [--lines <n>] [--since <iso>] [--level <lvl>] [--filter <s>] [--json]
   skelm init [<dir>] [--force]
@@ -85,9 +84,6 @@ Sessions flags:
   skelm sessions list [--json]                  List ACP sessions tracked by the gateway
   skelm sessions prune [--expired] [--older-than-ms <ms>] [--json]
                                                 Drop sessions matching either filter
-
-Acp flags:
-  skelm acp serve                               Not yet implemented (reserved for M4)
 
 Schedule flags:
   skelm schedule list [--json]                  List registered schedules
@@ -259,12 +255,6 @@ Sessions flags:
   skelm sessions list [--json]                  List ACP sessions tracked by the gateway
   skelm sessions prune [--expired] [--older-than-ms <ms>] [--json]
                                                 Drop sessions matching either filter
-`,
-  acp: `Usage:
-  skelm acp serve
-
-Acp flags:
-  skelm acp serve                               Not yet implemented (reserved for M4)
 `,
   schedule: `Usage:
   skelm schedule <add|list|stop|fire> [args]
