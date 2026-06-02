@@ -107,19 +107,19 @@ export async function createMcpHost(
           )
         }
 
-        const executable = requestedExecutable(toolName, args)
-        if (executable !== undefined) {
-          const execDecision = enforcer.canExec(executable)
+        const exec = requestedExecutable(toolName, args)
+        if (exec !== undefined) {
+          const execDecision = enforcer.canExec(exec.binary, exec.commandLine)
           if (!execDecision.allow) {
             publishPermissionDenied(
               opts,
               toolId,
               execDecision.dimension,
               execDecision.reason,
-              `tool "${toolId}" requested executable "${executable}"`,
+              `tool "${toolId}" requested executable "${exec.binary}"`,
             )
             throw new PermissionDeniedError(
-              `tool "${toolId}" requested executable "${executable}" which is not allowed (${execDecision.reason})`,
+              `tool "${toolId}" requested executable "${exec.binary}" which is not allowed (${execDecision.reason})`,
             )
           }
         }
@@ -244,11 +244,22 @@ const SHELL_TOOL_NAMES = new Set([
   'spawn',
 ])
 
-function requestedExecutable(toolName: string, args: unknown): string | undefined {
+// The binary to gate plus the full command line (for command-line patterns in
+// allowedExecutables). `binary` keeps the historical basename extraction;
+// `commandLine` is the best-effort full command so patterns like `node build*`
+// can match an MCP shell call.
+function requestedExecutable(
+  toolName: string,
+  args: unknown,
+): { binary: string; commandLine: string } | undefined {
   if (SHELL_TOOL_NAMES.has(toolName)) {
     // bash and sh always resolve to themselves regardless of args content
-    if (toolName === 'bash' || toolName === 'sh') return toolName
-    return extractBinary(args)
+    if (toolName === 'bash' || toolName === 'sh') {
+      return { binary: toolName, commandLine: extractCommandLine(args) ?? toolName }
+    }
+    const binary = extractBinary(args)
+    if (binary === undefined) return undefined
+    return { binary, commandLine: extractCommandLine(args) ?? binary }
   }
   // Fail-closed for UNRECOGNISED tool names: tool-name matching is a blocklist
   // (an MCP server can expose a shell under any name), so also gate any tool
@@ -259,8 +270,26 @@ function requestedExecutable(toolName: string, args: unknown): string | undefine
   // tools. Such string-command shells must be scoped via allowedTools instead.
   if (args !== null && typeof args === 'object') {
     const argv = (args as Record<string, unknown>).argv
-    if (Array.isArray(argv) && typeof argv[0] === 'string') return basename(argv[0])
+    if (Array.isArray(argv) && typeof argv[0] === 'string') {
+      const parts = argv.filter((a): a is string => typeof a === 'string')
+      return { binary: basename(argv[0]), commandLine: parts.join(' ') }
+    }
   }
+  return undefined
+}
+
+// Best-effort full command line from a shell tool's arguments: a command/cmd
+// string verbatim, or an argv array space-joined. Undefined when neither is
+// present (the caller falls back to the binary name).
+function extractCommandLine(args: unknown): string | undefined {
+  if (typeof args === 'string') return args
+  if (args === null || typeof args !== 'object') return undefined
+  const record = args as Record<string, unknown>
+  if (Array.isArray(record.argv)) {
+    return record.argv.filter((a): a is string => typeof a === 'string').join(' ')
+  }
+  if (typeof record.command === 'string') return record.command
+  if (typeof record.cmd === 'string') return record.cmd
   return undefined
 }
 

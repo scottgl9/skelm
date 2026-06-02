@@ -54,6 +54,18 @@ Beyond the core dimensions (tools, executables, MCP servers, skills, secrets, ne
 
 The `delegation` dimension gates agent-to-agent [delegation](/concepts/delegation): which agents/pipelines an agent may hand off to via the `delegate` tool. It is matched like `allowedTools` (exact ids, `foo.*` prefixes, or `*`) and follows every rule above — omitted ⇒ deny (proven by `packages/core/test/security/delegation-default-deny.test.ts`), intersection-only composition. Critically, a delegated child's *entire* resolved policy is intersected with the delegating agent's, so delegation can only ever narrow authority down the chain. See [Delegation](/concepts/delegation).
 
+### Executable patterns
+
+`allowedExecutables` accepts two entry kinds. A plain binary — `node`,
+`/usr/bin/git` — matches that binary with **any arguments** (a path-bearing
+binary must be listed by its exact path; there is no basename fallback). An entry
+containing a `*` or whitespace is a **command-line glob** matched against the full
+command line: `node *` allows node with any arguments, `node build*` allows only
+commands starting with `node build`. This applies to both `ctx.exec` and exec/shell
+MCP tools. Glob matching is a coarse string check, **not shell-aware** — it bounds
+which command shapes may run, not their runtime effects, so it does not prevent
+argument or shell injection inside a matched command.
+
 ### MCP filesystem & exec enforcement is best-effort
 
 For MCP tool calls, the gateway enforces the `executable` and `fs.read`/`fs.write`
