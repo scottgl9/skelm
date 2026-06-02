@@ -63,6 +63,19 @@ export interface EgressProxyOptions {
 /** HTTP request methods we forward to handleHttp() (anything not CONNECT). */
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'TRACE'])
 
+/** Cap the request head buffered before a complete request line is seen, so a
+ *  client streaming a headless blob can't grow proxy memory unbounded. */
+const MAX_REQUEST_HEAD_BYTES = 64 * 1024
+/** A client must send a complete request line within this window or the
+ *  pre-tunnel socket is closed (slow-loris guard). Cleared once a request is
+ *  handed off, so it never applies to an established tunnel. */
+const HEADER_PHASE_TIMEOUT_MS = 10_000
+/** Bound destination DNS resolution so a slow/dead resolver can't hold the
+ *  connection (and a tunnel setup) open while a lookup hangs — fall back to
+ *  dialing by name on timeout. Generous for real DNS (cloud resolvers answer in
+ *  well under a second) while keeping a hung lookup from pinning the tunnel. */
+const DNS_LOOKUP_TIMEOUT_MS = 3_000
+
 /**
  * Embedded CONNECT proxy server.
  */
@@ -110,14 +123,35 @@ export class EgressProxy {
       return { ip: host, blocked: false }
     }
     try {
-      const addrs = await this.lookup(host)
+      const addrs = await this.lookupWithTimeout(host)
       if (!this.allowMetadataEgress && addrs.some((a) => isMetadataAddress(a.address))) {
         return { blocked: true }
       }
       const ip = addrs[0]?.address
       return ip !== undefined ? { ip, blocked: false } : { blocked: false }
     } catch {
+      // Resolution failed or timed out — fall through to dialing by name so an
+      // unresolvable/slow host fails at connect rather than hanging here. The
+      // literal-IP metadata block above already ran synchronously.
       return { blocked: false }
+    }
+  }
+
+  private async lookupWithTimeout(host: string): Promise<ReadonlyArray<{ address: string }>> {
+    let timer: NodeJS.Timeout | undefined
+    try {
+      return await Promise.race([
+        this.lookup(host),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`dns lookup for "${host}" timed out`)),
+            DNS_LOOKUP_TIMEOUT_MS,
+          )
+          timer.unref?.()
+        }),
+      ])
+    } finally {
+      if (timer !== undefined) clearTimeout(timer)
     }
   }
 
@@ -187,8 +221,30 @@ export class EgressProxy {
   private handleConnection(socket: Socket): void {
     let buffer = ''
 
+    // Slow-loris guard: close the socket if a full request line never arrives.
+    // Cleared on hand-off (below), so it never fires on an established tunnel.
+    const headerTimer = setTimeout(() => {
+      this.rejectConnection(socket, '408 Request Timeout', 'Timed out reading request head')
+      socket.end()
+    }, HEADER_PHASE_TIMEOUT_MS)
+    headerTimer.unref?.()
+
     const onData = (chunk: Buffer): void => {
       buffer += chunk.toString()
+
+      // Reject a client that streams a large blob without ever completing a
+      // request line — bounds the pre-parse buffer.
+      if (buffer.length > MAX_REQUEST_HEAD_BYTES) {
+        clearTimeout(headerTimer)
+        socket.removeListener('data', onData)
+        this.rejectConnection(
+          socket,
+          '431 Request Header Fields Too Large',
+          'Request head too large',
+        )
+        socket.end()
+        return
+      }
 
       // Wait for at least one complete request line.
       const lines = buffer.split('\r\n')
@@ -200,6 +256,7 @@ export class EgressProxy {
       if (!firstLine) {
         return // Need more data
       }
+      clearTimeout(headerTimer)
       const method = firstLine.split(' ')[0]
       const target = firstLine.split(' ')[1]
 
@@ -233,9 +290,10 @@ export class EgressProxy {
 
     // Handle socket errors silently — connection-level errors aren't
     // actionable from the proxy's perspective.
-    socket.on('error', () => {})
+    socket.on('error', () => clearTimeout(headerTimer))
 
     socket.on('close', () => {
+      clearTimeout(headerTimer)
       socket.removeListener('data', onData)
     })
   }
