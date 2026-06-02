@@ -1,6 +1,6 @@
 {
   "name": "@skelm/vercel-ai",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "Vercel AI SDK backend for skelm — wrap any AI SDK model under skelm's permission policy",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
