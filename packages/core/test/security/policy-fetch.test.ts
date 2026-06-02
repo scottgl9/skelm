@@ -77,6 +77,36 @@ describe('createPolicyFetch', () => {
     expect(base).not.toHaveBeenCalled()
   })
 
+  it('blocks a cloud-metadata IP even under an "allow" policy', async () => {
+    const enforcer = new TrustEnforcer(resolvePermissions({ networkEgress: 'allow' }, undefined))
+    const base = vi.fn()
+    const pf = createPolicyFetch(enforcer, undefined, base as unknown as typeof fetch)
+    await expect(pf('http://169.254.169.254/latest/meta-data/iam/')).rejects.toBeInstanceOf(
+      PermissionDeniedError,
+    )
+    expect(base).not.toHaveBeenCalled()
+  })
+
+  it('blocks a cloud-metadata IP even when it is in the allowlist', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions({ networkEgress: { allowHosts: ['169.254.169.254'] } }, undefined),
+    )
+    const base = vi.fn()
+    const pf = createPolicyFetch(enforcer, undefined, base as unknown as typeof fetch)
+    await expect(pf('http://169.254.169.254/')).rejects.toBeInstanceOf(PermissionDeniedError)
+    expect(base).not.toHaveBeenCalled()
+  })
+
+  it('still allows a metadata IP under an operator unrestricted bypass', async () => {
+    const enforcer = new TrustEnforcer(
+      resolvePermissions({ requestUnrestricted: true }, undefined, {}, { grantUnrestricted: true }),
+    )
+    const base = vi.fn(async () => new Response('ok', { status: 200 }))
+    const pf = createPolicyFetch(enforcer, undefined, base as unknown as typeof fetch)
+    await pf('http://169.254.169.254/')
+    expect(base).toHaveBeenCalledOnce()
+  })
+
   it('accepts URL objects in addition to strings', async () => {
     const enforcer = new TrustEnforcer(
       resolvePermissions({ networkEgress: { allowHosts: ['api.example.com'] } }, undefined),

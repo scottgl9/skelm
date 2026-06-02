@@ -19,7 +19,7 @@ export interface NetworkEgressEvent {
   stepId?: string
   host: string
   decision: 'allow' | 'deny'
-  reason?: 'egress-denied' | 'not-in-allowlist' | 'unknown-token' | 'unknown'
+  reason?: 'egress-denied' | 'not-in-allowlist' | 'unknown-token' | 'blocked-address' | 'unknown'
   timestamp: string
   /**
    * Remote peer of the proxy connection (the agent subprocess, a probe,

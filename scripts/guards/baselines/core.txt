@@ -132,6 +132,7 @@ value:imagePartFromFile
 value:infer
 value:intersectResolvedPolicies
 value:invoke
+value:isMetadataAddress
 value:isMultimodal
 value:isPersistentWorkflow
 value:loadAgentDefinition
