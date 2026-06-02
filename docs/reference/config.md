@@ -240,6 +240,8 @@ OPENAI_MODEL=gpt-4-turbo skelm run my.workflow.mts
 
 For secrets accessed via `step.secrets` declarations, the existing `secrets.driver` mechanism is the right channel — the `.env` layer is intended for non-secret defaults and for operators who already manage secrets via `.env` files.
 
+For the full list of variables skelm reads at runtime, see the [Environment variables reference](./environment-variables.md).
+
 ## entrypoint
 
 When `skelm run <directory>` targets a directory, the CLI looks for a
