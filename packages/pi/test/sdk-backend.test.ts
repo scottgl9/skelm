@@ -9,13 +9,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../src/sdk-client.js', async () => {
   const actual =
     await vi.importActual<typeof import('../src/sdk-client.js')>('../src/sdk-client.js')
-  const MockPiSdkClient = vi.fn().mockImplementation(() => ({
-    prompt: vi.fn().mockResolvedValue({
-      text: 'agent output',
-      stopReason: 'stop',
-      usage: { inputTokens: 10, outputTokens: 5 },
-    }),
-  }))
+  const MockPiSdkClient = vi.fn().mockImplementation(function () {
+    return {
+      prompt: vi.fn().mockResolvedValue({
+        text: 'agent output',
+        stopReason: 'stop',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
+    }
+  })
   return { ...actual, PiSdkClient: MockPiSdkClient }
 })
 
@@ -132,12 +134,14 @@ describe('createPiSdkBackend', () => {
   })
 
   it('inference parses structured JSON when outputSchema is provided', async () => {
-    ;(PiSdkClient as ReturnType<typeof vi.fn>).mockImplementationOnce(() => ({
-      prompt: vi.fn().mockResolvedValue({
-        text: '```json\n{"answer":"42"}\n```',
-        stopReason: 'stop',
-      }),
-    }))
+    ;(PiSdkClient as ReturnType<typeof vi.fn>).mockImplementationOnce(function () {
+      return {
+        prompt: vi.fn().mockResolvedValue({
+          text: '```json\n{"answer":"42"}\n```',
+          stopReason: 'stop',
+        }),
+      }
+    })
     const backend = createPiSdkBackend()
     const ctx = { signal: new AbortController().signal }
     const result = await backend.inference?.(
@@ -203,9 +207,11 @@ describe('createPiSdkBackend', () => {
 
   it('injects skill bodies into the system content (not the user message)', async () => {
     const mockPrompt = vi.fn().mockResolvedValue({ text: 'ok', stopReason: 'stop' })
-    ;(PiSdkClient as ReturnType<typeof vi.fn>).mockImplementationOnce(() => ({
-      prompt: mockPrompt,
-    }))
+    ;(PiSdkClient as ReturnType<typeof vi.fn>).mockImplementationOnce(function () {
+      return {
+        prompt: mockPrompt,
+      }
+    })
     const loadSkill = vi.fn(
       async (id: string): Promise<Skill | null> => makeSkill(id, `Body of ${id}.`),
     )
@@ -440,9 +446,11 @@ describe('createPiSdkBackend', () => {
       'error',
       '401 Incorrect API key provided.',
     )
-    ;(PiSdkClient as ReturnType<typeof vi.fn>).mockImplementationOnce(() => ({
-      prompt: vi.fn().mockRejectedValue(upstream),
-    }))
+    ;(PiSdkClient as ReturnType<typeof vi.fn>).mockImplementationOnce(function () {
+      return {
+        prompt: vi.fn().mockRejectedValue(upstream),
+      }
+    })
     const backend = createPiSdkBackend()
     let caught: unknown
     try {
@@ -463,9 +471,11 @@ describe('createPiSdkBackend', () => {
       'error',
       'rate-limited',
     )
-    ;(PiSdkClient as ReturnType<typeof vi.fn>).mockImplementationOnce(() => ({
-      prompt: vi.fn().mockRejectedValue(upstream),
-    }))
+    ;(PiSdkClient as ReturnType<typeof vi.fn>).mockImplementationOnce(function () {
+      return {
+        prompt: vi.fn().mockRejectedValue(upstream),
+      }
+    })
     const backend = createPiSdkBackend()
     let caught: unknown
     try {

@@ -39,5 +39,17 @@
       "trailingCommas": "all",
       "arrowParentheses": "always"
     }
-  }
+  },
+  "overrides": [
+    {
+      "include": ["**/test/**/*.ts", "**/*.test.ts"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "useArrowFunction": "off"
+          }
+        }
+      }
+    }
+  ]
 }

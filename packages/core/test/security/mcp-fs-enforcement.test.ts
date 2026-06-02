@@ -5,23 +5,25 @@ import { TrustEnforcer, resolvePermissions } from '../../src/permissions.js'
 
 // Mock McpClient so we can simulate tool calls without spawning real processes.
 vi.mock('../../src/mcp/client.js', () => {
-  const MockMcpClient = vi.fn().mockImplementation(() => ({
-    connectHttp: vi.fn().mockResolvedValue(undefined),
-    listTools: vi.fn().mockResolvedValue({
-      tools: [
-        { name: 'read_file', description: 'Read a file', inputSchema: {} },
-        { name: 'read_text_file', description: 'Read a text file', inputSchema: {} },
-        { name: 'read_media_file', description: 'Read a media file', inputSchema: {} },
-        { name: 'write_file', description: 'Write a file', inputSchema: {} },
-        { name: 'list_directory', description: 'List a dir', inputSchema: {} },
-        { name: 'create_file', description: 'Create a file', inputSchema: {} },
-        { name: 'move_file', description: 'Move a file', inputSchema: {} },
-        { name: 'copy_file', description: 'Copy a file', inputSchema: {} },
-      ],
-    }),
-    callTool: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] }),
-    stop: vi.fn().mockResolvedValue(undefined),
-  }))
+  const MockMcpClient = vi.fn().mockImplementation(function () {
+    return {
+      connectHttp: vi.fn().mockResolvedValue(undefined),
+      listTools: vi.fn().mockResolvedValue({
+        tools: [
+          { name: 'read_file', description: 'Read a file', inputSchema: {} },
+          { name: 'read_text_file', description: 'Read a text file', inputSchema: {} },
+          { name: 'read_media_file', description: 'Read a media file', inputSchema: {} },
+          { name: 'write_file', description: 'Write a file', inputSchema: {} },
+          { name: 'list_directory', description: 'List a dir', inputSchema: {} },
+          { name: 'create_file', description: 'Create a file', inputSchema: {} },
+          { name: 'move_file', description: 'Move a file', inputSchema: {} },
+          { name: 'copy_file', description: 'Copy a file', inputSchema: {} },
+        ],
+      }),
+      callTool: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] }),
+      stop: vi.fn().mockResolvedValue(undefined),
+    }
+  })
   return { McpClient: MockMcpClient }
 })
 
