@@ -74,7 +74,12 @@ export function createServer(
         message: error.message || error.statusMessage || 'Internal Server Error',
       }
       if (error.data !== undefined) body.data = error.data
-      if (process.env.NODE_ENV !== 'production' && typeof error.stack === 'string') {
+      // Stack frames are gated behind an explicit opt-in. Ad-hoc and
+      // --foreground gateways run with NODE_ENV unset, so a NODE_ENV gate
+      // would leak absolute server paths to every HTTP client. Operators
+      // who want stacks set SKELM_DEBUG_HTTP_ERRORS=1; default OFF for
+      // every gateway flavor (supervised, ad-hoc, foreground).
+      if (process.env.SKELM_DEBUG_HTTP_ERRORS === '1' && typeof error.stack === 'string') {
         body.stack = error.stack
       }
       setResponseStatus(event, statusCode, error.statusMessage)
