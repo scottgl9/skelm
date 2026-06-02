@@ -144,7 +144,7 @@ export class TriggerCoordinator {
       // overlap policy on the registration decides what happens when a
       // fresh fire arrives while the previous one is still running.
       this.scheduleNextCron(triggerId, parsed)
-      void this.fire(triggerId, next)
+      this.fireDetached(triggerId, next)
     })
     this.cronTimers.set(triggerId, t)
   }
@@ -207,7 +207,7 @@ export class TriggerCoordinator {
     if (queued !== undefined && queued.length > 0) {
       this.queues.set(id, [])
       for (const ctx of queued) {
-        void this.fire(id, undefined, ctx.payload).catch(() => undefined)
+        this.fireDetached(id, undefined, ctx.payload)
       }
     }
     reg.inflight = false
@@ -247,7 +247,7 @@ export class TriggerCoordinator {
           break
         }
         const t = setInterval(() => {
-          void this.fire(spec.id)
+          this.fireDetached(spec.id)
         }, spec.everyMs)
         t.unref?.()
         this.intervalTimers.set(spec.id, t)
@@ -265,7 +265,7 @@ export class TriggerCoordinator {
       case 'immediate':
         // Fire on the next tick so register() can return before dispatch.
         setImmediate(() => {
-          void this.fire(spec.id)
+          this.fireDetached(spec.id)
         }).unref?.()
         break
       case 'at': {
@@ -277,7 +277,7 @@ export class TriggerCoordinator {
         const delay = ts - Date.now()
         if (delay <= 0) {
           setImmediate(() => {
-            void this.fire(spec.id)
+            this.fireDetached(spec.id)
           }).unref?.()
         } else {
           // A far-future `when` (> 2^31-1 ms ≈ 24.8 days out) would overflow
@@ -285,7 +285,7 @@ export class TriggerCoordinator {
           // instead of at the scheduled time. LongTimer chunks the delay so
           // an `at` weeks/months away fires exactly once, when it should.
           const t = new LongTimer(delay, () => {
-            void this.fire(spec.id)
+            this.fireDetached(spec.id)
           })
           this.atTimers.set(spec.id, t)
         }
@@ -354,7 +354,7 @@ export class TriggerCoordinator {
         try {
           const watcher = new FileWatchTrigger(spec)
           watcher.start((payload) => {
-            void this.fire(spec.id, undefined, payload)
+            this.fireDetached(spec.id, undefined, payload)
           })
           this.fileWatchers.set(spec.id, watcher)
         } catch (err) {
@@ -367,7 +367,7 @@ export class TriggerCoordinator {
           const manager = new EventSourceManager(
             spec,
             (payload) => {
-              void this.fire(spec.id, undefined, payload)
+              this.fireDetached(spec.id, undefined, payload)
             },
             // Async errors from `source: 'custom'` start() that returns a
             // rejecting promise used to be silently swallowed; surface them
@@ -465,6 +465,17 @@ export class TriggerCoordinator {
     this.pollLastKey.delete(id)
     this.registrations.delete(id)
     this.queues.delete(id)
+  }
+
+  /**
+   * Fire-and-forget a fire() from a timer/interval/poll callback. fire() catches
+   * onFire errors inside dispatch(), but a synchronous throw before that — or any
+   * stray rejection — would otherwise surface as an UnhandledPromiseRejection on
+   * the gateway loop (forbidden). Route every escape to onFireError instead of
+   * letting it propagate or swallowing it silently.
+   */
+  private fireDetached(id: string, when?: Date, payload?: unknown): void {
+    void this.fire(id, when, payload).catch((err) => this.opts.onFireError?.(id, err))
   }
 
   async fire(id: string, when?: Date, payload?: unknown): Promise<FireStatus> {
