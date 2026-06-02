@@ -47,7 +47,9 @@ export function createExec(
   const canAudit = events !== undefined && runId !== undefined && stepId !== undefined
   return async function exec(req: ExecRequest): Promise<ExecResult> {
     const { binary, argv } = resolveCommand(req)
-    const decision = enforcer.canExec(binary)
+    // Pass the full command line so command-line patterns in allowedExecutables
+    // (`node build*`) can match; plain entries still match the binary alone.
+    const decision = enforcer.canExec(binary, [binary, ...argv].join(' '))
     if (!decision.allow) {
       if (canAudit) {
         const denyEvent: Extract<RunEvent, { type: 'permission.denied' }> = {

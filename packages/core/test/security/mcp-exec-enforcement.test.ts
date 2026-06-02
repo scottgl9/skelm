@@ -103,3 +103,30 @@ describe('MCP host — requestedExecutable covers all SHELL_TOOL_NAMES', () => {
     await host2.dispose()
   })
 })
+
+describe('MCP host — command-line patterns in allowedExecutables', () => {
+  function patternEnforcer(): TrustEnforcer {
+    return new TrustEnforcer(
+      resolvePermissions(undefined, {
+        allowedMcpServers: ['shell'],
+        allowedTools: ['shell.run_command'],
+        allowedExecutables: ['node build*'],
+      }),
+    )
+  }
+
+  it('allows a shell command matching the command-line pattern', async () => {
+    const host = await createMcpHost(servers, { enforcer: patternEnforcer() })
+    const result = await host.invokeTool('shell.run_command', { command: 'node build src' })
+    expect(result).toBeDefined()
+    await host.dispose()
+  })
+
+  it('denies a shell command outside the command-line pattern', async () => {
+    const host = await createMcpHost(servers, { enforcer: patternEnforcer() })
+    await expect(
+      host.invokeTool('shell.run_command', { command: 'node deploy prod' }),
+    ).rejects.toThrow(/not allowed/)
+    await host.dispose()
+  })
+})

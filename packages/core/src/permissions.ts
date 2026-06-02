@@ -108,7 +108,16 @@ export interface AgentPermissions {
   allowedTools?: ToolMatcher
   /** Tool ids explicitly forbidden even if `allowedTools` would permit. */
   deniedTools?: ToolMatcher
-  /** Executables allowed for any exec/bash tool. */
+  /**
+   * Executables allowed for `ctx.exec` and exec/shell MCP tools. Each entry is
+   * either a plain binary (`node`, `/usr/bin/git`) — matched exactly, with any
+   * arguments — or, when it contains a `*` or whitespace, a command-line glob
+   * matched against the full command (`node *` = node with any args,
+   * `node build*` = commands starting with `node build`). Path-bearing binaries
+   * never match a bare-name entry (no basename fallback). Glob matching is a
+   * coarse string check, not shell-aware: it bounds which command shapes may
+   * run, not their effects.
+   */
   allowedExecutables?: readonly string[]
   /** MCP server ids permitted to attach. */
   allowedMcpServers?: readonly string[]
@@ -436,6 +445,21 @@ function intersectAgentmemory(
   return acc ?? AGENTMEMORY_DENY
 }
 
+// An allowedExecutables entry is a command-line glob (rather than a plain
+// binary name) when it contains a `*` wildcard or any whitespace — i.e. it
+// describes a command shape (`node *`, `node build*`) instead of a bare binary.
+function isCommandPattern(entry: string): boolean {
+  return entry.includes('*') || /\s/.test(entry)
+}
+
+// Match a command line against a glob pattern: every regex metacharacter is
+// escaped except `*`, which becomes `.*`. Anchored at both ends so `node` (were
+// it ever a pattern) matches only `node`, never a substring.
+function matchesCommandPattern(pattern: string, command: string): boolean {
+  const re = `^${pattern.replace(/[.*+?^${}()|[\]\\]/g, (c) => (c === '*' ? '.*' : `\\${c}`))}$`
+  return new RegExp(re).test(command)
+}
+
 /**
  * Lightweight enforcer: exposes `canX` predicates that return a structured
  * decision. The runtime calls these before performing any privileged action.
@@ -462,15 +486,27 @@ export class TrustEnforcer {
     return { allow: true }
   }
 
-  canExec(binary: string): EnforceDecision {
+  canExec(binary: string, commandLine?: string): EnforceDecision {
     if (this.policy.unrestricted === true) return { allow: true }
-    // A binary is allowed only by an exact allowlist entry. We deliberately do
-    // NOT fall back to the basename of a path-bearing binary: an allowlist of
-    // ['git'] must never accept '/tmp/evil/git' (the basename-bypass closed in
-    // 0366b65). Bare names match as-is (basename === name); invoking by path
-    // requires the exact path to be allowlisted.
-    if (this.policy.allowedExecutables.has(binary)) {
-      return { allow: true }
+    // Two entry kinds in allowedExecutables:
+    //   - PLAIN (no `*`, no whitespace, e.g. `node`, `/usr/bin/git`) → matches
+    //     the binary exactly, with any arguments. We deliberately do NOT fall
+    //     back to the basename of a path-bearing binary: an allowlist of
+    //     ['git'] must never accept '/tmp/evil/git' (basename-bypass closed in
+    //     0366b65). Bare names match as-is; invoking by path requires the exact
+    //     path to be allowlisted.
+    //   - PATTERN (contains `*` or whitespace, e.g. `node *`, `node build*`) →
+    //     glob-matched against the full command line, `*` matching any run of
+    //     characters. NOTE: a coarse string match, NOT shell-aware — it bounds
+    //     which command shapes may run, not their effects (no protection
+    //     against argument/shell injection inside the matched command).
+    const cmd = commandLine ?? binary
+    for (const entry of this.policy.allowedExecutables) {
+      if (isCommandPattern(entry)) {
+        if (matchesCommandPattern(entry, cmd)) return { allow: true }
+      } else if (entry === binary) {
+        return { allow: true }
+      }
     }
     const hasPathSeparator = binary.includes('/') || binary.includes('\\')
     return {
