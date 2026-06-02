@@ -89,6 +89,13 @@ export interface GitHubIssueCommentEvent {
 export interface GitHubTriggerConfig extends TriggerConfig {
   /** GitHub webhook secret */
   secret?: string
+  /**
+   * Maximum request body size in bytes. Bodies over this are rejected with 413
+   * before the body is fully buffered and before signature verification, so an
+   * unauthenticated client cannot exhaust memory on the public webhook port.
+   * Default: 1 MiB (mirrors the generic webhook trigger).
+   */
+  maxBodyBytes?: number
   /** Port to listen on */
   port: number
   /** Path to listen on */
@@ -202,10 +209,19 @@ export class GitHubTrigger extends TriggerPluginBase {
       return
     }
 
-    // Verify GitHub signature
+    // Read (and cap) the body BEFORE signature verification: the listener is a
+    // public port, so an oversized body must be rejected before it is buffered,
+    // not after an auth check the attacker can't pass anyway.
     const signature = req.headers['x-hub-signature-256'] as string | undefined
     const event = req.headers['x-github-event'] as string | undefined
-    const body = await this.readBody(req)
+    let body: string
+    try {
+      body = await this.readBody(req, config.maxBodyBytes ?? 1_048_576)
+    } catch {
+      res.writeHead(413)
+      res.end('Payload Too Large')
+      return
+    }
 
     if (config.secret !== undefined) {
       // Fail-closed: secret configured ⇒ signature required. The previous
@@ -241,20 +257,29 @@ export class GitHubTrigger extends TriggerPluginBase {
   /**
    * Read request body
    */
-  private readBody(req: IncomingMessage): Promise<string> {
-    return new Promise((resolve) => {
+  private readBody(req: IncomingMessage, maxBytes: number): Promise<string> {
+    return new Promise((resolve, reject) => {
       const chunks: Buffer[] = []
+      let received = 0
+      let exceeded = false
 
       req.on('data', (chunk: Buffer) => {
+        if (exceeded) return
+        received += chunk.length
+        if (received > maxBytes) {
+          exceeded = true
+          reject(new Error(`body exceeds maxBodyBytes (${maxBytes})`))
+          return
+        }
         chunks.push(chunk)
       })
 
       req.on('end', () => {
-        resolve(Buffer.concat(chunks).toString('utf8'))
+        if (!exceeded) resolve(Buffer.concat(chunks).toString('utf8'))
       })
 
-      req.on('error', () => {
-        resolve('')
+      req.on('error', (err) => {
+        if (!exceeded) reject(err)
       })
     })
   }
