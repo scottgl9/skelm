@@ -35,10 +35,8 @@ skelm/
 │   ├── integration-sdk/  — authoring SDK for custom integrations
 │   ├── metrics/          — Prometheus-format metrics
 │   └── otel/             — OpenTelemetry tracing
-├── pipelines/internal/   — dogfooding (review, test-gen, release)
 ├── examples/
 ├── scripts/guards/       — architectural-invariant checks
-├── tests/
 └── docs/
 ```
 
@@ -55,13 +53,13 @@ skelm/
 
 ## Implementation discipline
 
-**Before every commit, run `pnpm check` and confirm it passes.** This is non-negotiable — not "when in doubt", not "for big changes", every commit. Documentation-only commits included; the doc-links and docs-orphans guards live in the same pipeline and have caught real breakage. If `pnpm check` is red, the work is not done.
+**Before every commit, run `pnpm check` and confirm it passes.** This is non-negotiable — not "when in doubt", not "for big changes", every commit. Documentation-only commits included; the docs-orphans guard lives in the same pipeline and has caught real breakage. If `pnpm check` is red, the work is not done.
 
 Every feature, fix, or behavior change follows this loop:
 
 1. **Build.** `pnpm build` succeeds — no TS errors, no escalated warnings.
 2. **Update or write tests.** New behavior gets new tests; changed behavior gets existing tests updated.
-3. **Run all gates.** `pnpm check` passes top to bottom (build → typecheck → lint → unit → guards → adversarial → contract → doc-links).
+3. **Run all gates.** `pnpm check` passes top to bottom (build → typecheck → lint → guards → test). `pnpm guards` runs default-deny-permissions, public-export-baseline, gateway-only-enforcement, docs-orphans, dist-invariants, cli-no-core-runtime, and backend-contract-exhaustive.
 4. **Commit only when green.** A commit on a red tree is a defect.
 
 If a failing test is verifiably pre-existing and unrelated to your change (same failure on `main`, environment-specific, etc.), call it out explicitly in the commit body or PR description rather than silently committing through. Don't normalize red trees.
@@ -103,20 +101,22 @@ When you write code that takes a privileged action (exec, network, fs-write, too
 
 1. Field is optional and defaults to `undefined`.
 2. Runtime treats `undefined` as deny.
-3. Add an adversarial fixture under `tests/security/` proving the deny path fires.
+3. Add an adversarial fixture under `packages/core/test/security/` (the directory `scripts/guards/default-deny-permissions.ts` scans) proving the deny path fires.
 4. Document the dimension in the relevant `docs/` page.
 
 `scripts/guards/default-deny-permissions.ts` checks 1–3 mechanically as part of `pnpm guards`.
 
 ## Self-review before opening a PR
 
-Run the internal branch-review pipeline before requesting human review:
+Review your own branch diff before requesting human review, weighting the
+security tenet first: every new privileged action (exec, network, fs-write, tool
+dispatch) routes through the gateway enforcement helper; every new permission
+dimension defaults to deny and has an adversarial fixture; no secret value
+reaches logs, audit, or error messages.
 
-```
-skelm run pipelines/internal/branch-review.pipeline.ts --input '{"branch":"my-branch"}'
-```
-
-The security section must be non-empty (or carry an explicit justified-empty marker). Address every actionable finding or note in the PR description why you're deferring.
+State the security implications explicitly in the PR description — or "no
+security impact" with a one-line reason. Address every actionable finding, or
+note in the PR why you're deferring.
 
 ## Public API
 
@@ -150,7 +150,7 @@ Anything exported from a package's top-level `index.ts` is public. Anything insi
 
 - Use focused edits over full-file rewrites — diffs are easier to review.
 - Use `pnpm` for everything Node-related; this repo is a pnpm workspace. Never `npm` or `yarn`.
-- Run long-lived processes (`pnpm dev`, `skelm gateway start`, watch modes) in the background and read output later.
+- Run long-lived processes (`pnpm test:watch`, `skelm gateway start`, watch modes) in the background and read output later.
 - Never run destructive git operations (`reset --hard`, `push --force`, `branch -D`) without explicit user approval.
 - Track multi-step work in your agent's task list when available, and update status as you go.
 - Stay within the scope of the task. Don't expand scope without permission; don't shrink it either.
@@ -168,8 +168,7 @@ Anything exported from a package's top-level `index.ts` is public. Anything insi
 pnpm install
 pnpm check                  # full gates
 pnpm test                   # unit + integration
-pnpm test --watch           # watch mode
-pnpm dev                    # vitest watch on the workspace
+pnpm test:watch             # watch mode
 
 skelm run path/to/foo.pipeline.ts
 skelm run path/to/foo.pipeline.ts --events json 2> events.log > result.json
