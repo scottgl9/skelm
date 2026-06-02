@@ -59,22 +59,29 @@ describe('gateway error envelope', () => {
     expect(body.message.length).toBeGreaterThan(0)
   })
 
-  it('does not include stack when NODE_ENV=production', async () => {
-    const prev = process.env.NODE_ENV
-    process.env.NODE_ENV = 'production'
+  it('does not include stack by default (any NODE_ENV)', async () => {
+    const res = await fetch(`${base}/pipelines/run-file`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { stack?: string }
+    expect(body.stack).toBeUndefined()
+  })
+
+  it('includes stack only when SKELM_DEBUG_HTTP_ERRORS=1', async () => {
+    const prev = process.env.SKELM_DEBUG_HTTP_ERRORS
+    process.env.SKELM_DEBUG_HTTP_ERRORS = '1'
     try {
-      const res = await fetch(`${base}/pipelines/run-file`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({}),
-      })
-      expect(res.status).toBe(400)
+      const res = await fetch(`${base}/runs/does-not-exist`)
+      expect(res.status).toBe(404)
       const body = (await res.json()) as { stack?: string }
-      expect(body.stack).toBeUndefined()
+      expect(typeof body.stack).toBe('string')
     } finally {
       // biome-ignore lint/performance/noDelete: env var must be removed, not blanked
-      if (prev === undefined) delete process.env.NODE_ENV
-      else process.env.NODE_ENV = prev
+      if (prev === undefined) delete process.env.SKELM_DEBUG_HTTP_ERRORS
+      else process.env.SKELM_DEBUG_HTTP_ERRORS = prev
     }
   })
 })
