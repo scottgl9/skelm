@@ -84,7 +84,7 @@
     "better-sqlite3": "12.9.0"
   },
   "peerDependencies": {
-    "vitest": "^2.1.5"
+    "vitest": "^4.1.0"
   },
   "peerDependenciesMeta": {
     "vitest": {

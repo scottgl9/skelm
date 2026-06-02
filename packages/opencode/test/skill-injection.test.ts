@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock the OpencodeClientWrapper so run() can be exercised without a live process.
 vi.mock('../src/client.js', () => {
-  const MockWrapper = vi.fn().mockImplementation(() => ({
-    prompt: vi.fn().mockResolvedValue({ text: 'done', stopReason: 'end_turn' }),
-    cancel: vi.fn(),
-    dispose: vi.fn().mockResolvedValue(undefined),
-  }))
+  const MockWrapper = vi.fn().mockImplementation(function () {
+    return {
+      prompt: vi.fn().mockResolvedValue({ text: 'done', stopReason: 'end_turn' }),
+      cancel: vi.fn(),
+      dispose: vi.fn().mockResolvedValue(undefined),
+    }
+  })
   return { OpencodeClientWrapper: MockWrapper }
 })
 
@@ -29,11 +31,13 @@ describe('opencode backend — skill injection via injectSkills', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockPrompt = vi.fn().mockResolvedValue({ text: 'done', stopReason: 'end_turn' })
-    ;(OpencodeClientWrapper as ReturnType<typeof vi.fn>).mockImplementation(() => ({
-      prompt: mockPrompt,
-      cancel: vi.fn(),
-      dispose: vi.fn().mockResolvedValue(undefined),
-    }))
+    ;(OpencodeClientWrapper as ReturnType<typeof vi.fn>).mockImplementation(function () {
+      return {
+        prompt: mockPrompt,
+        cancel: vi.fn(),
+        dispose: vi.fn().mockResolvedValue(undefined),
+      }
+    })
   })
 
   it('injects skill bodies into the system prompt before forwarding', async () => {

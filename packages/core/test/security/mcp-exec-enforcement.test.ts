@@ -19,14 +19,20 @@ const SHELL_TOOLS = [
 ]
 
 vi.mock('../../src/mcp/client.js', () => {
-  const MockMcpClient = vi.fn().mockImplementation(() => ({
-    connectHttp: vi.fn().mockResolvedValue(undefined),
-    listTools: vi.fn().mockResolvedValue({
-      tools: SHELL_TOOLS.map((name) => ({ name, description: `Run via ${name}`, inputSchema: {} })),
-    }),
-    callTool: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] }),
-    stop: vi.fn().mockResolvedValue(undefined),
-  }))
+  const MockMcpClient = vi.fn().mockImplementation(function () {
+    return {
+      connectHttp: vi.fn().mockResolvedValue(undefined),
+      listTools: vi.fn().mockResolvedValue({
+        tools: SHELL_TOOLS.map((name) => ({
+          name,
+          description: `Run via ${name}`,
+          inputSchema: {},
+        })),
+      }),
+      callTool: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] }),
+      stop: vi.fn().mockResolvedValue(undefined),
+    }
+  })
   return { McpClient: MockMcpClient }
 })
 

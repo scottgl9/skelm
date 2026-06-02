@@ -45,6 +45,6 @@
     "@skelm/core": "workspace:*",
     "@types/node": "^22.9.0",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.5"
+    "vitest": "^4.1.0"
   }
 }

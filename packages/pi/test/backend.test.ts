@@ -3,12 +3,14 @@ import { PermissionDeniedError } from '@skelm/core'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../src/rpc-client.js', () => {
-  const MockPiRpcClient = vi.fn().mockImplementation(() => ({
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn().mockResolvedValue(undefined),
-    abort: vi.fn().mockResolvedValue(undefined),
-    prompt: vi.fn().mockResolvedValue({ text: 'ok', stopReason: 'stop' }),
-  }))
+  const MockPiRpcClient = vi.fn().mockImplementation(function () {
+    return {
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+      abort: vi.fn().mockResolvedValue(undefined),
+      prompt: vi.fn().mockResolvedValue({ text: 'ok', stopReason: 'stop' }),
+    }
+  })
   return { PiRpcClient: MockPiRpcClient }
 })
 
