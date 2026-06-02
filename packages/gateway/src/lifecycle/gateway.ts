@@ -134,6 +134,21 @@ export class Gateway {
       permissionProfiles?: Readonly<Record<string, AgentPermissions>>
     }
   >()
+  /**
+   * Per-workflow default backend ids registered by `skelm run <dir>`
+   * activation from the project's `config.backends.{agent,infer}`. Keyed by
+   * workflow id so each workflow uses its own project's choice when an
+   * `agent()` / `infer()` step omits `backend:` — without it the runtime
+   * fell back to "first backend with run()", which is non-deterministic
+   * across project configs that absorb multiple instances.
+   */
+  private readonly workflowProjectBackends = new Map<
+    string,
+    {
+      defaultAgentBackend?: string
+      defaultInferBackend?: string
+    }
+  >()
 
   constructor(private readonly options: GatewayOptions = {}) {
     // A config-less gateway (embedded / probe / test construction) that is
@@ -499,6 +514,7 @@ export class Gateway {
         }),
         pipelineRegistry: makeGatewayPipelineRegistry(this),
         ...this.defaultPermissionRunOptions(pipeline.id),
+        ...this.defaultBackendRunOptions(pipeline.id),
         ...this.egressRunOptions(),
         ...this.agentmemoryRunOptions(),
       })
@@ -723,6 +739,63 @@ export class Gateway {
   /** Drop a workflow's per-project permission ceiling — paired with deactivate. */
   unregisterWorkflowProjectPermissions(workflowId: string): void {
     this.workflowProjectPermissions.delete(workflowId)
+  }
+
+  /**
+   * Per-workflow default backend ids, sourced from the activated project's
+   * `config.backends.{agent,infer}`. Spread into `runner.start(...)` so an
+   * `agent()` / `infer()` step that omits `backend:` resolves to the
+   * project's declared default instead of an arbitrary first-registered
+   * instance.
+   */
+  defaultBackendRunOptions(workflowId?: string): {
+    defaultAgentBackend?: string
+    defaultInferBackend?: string
+  } {
+    if (workflowId !== undefined) {
+      const project = this.workflowProjectBackends.get(workflowId)
+      if (project !== undefined) {
+        return {
+          ...(project.defaultAgentBackend !== undefined && {
+            defaultAgentBackend: project.defaultAgentBackend,
+          }),
+          ...(project.defaultInferBackend !== undefined && {
+            defaultInferBackend: project.defaultInferBackend,
+          }),
+        }
+      }
+    }
+    // Operator-wide fallback: read the gateway's own `backends.{agent,infer}`
+    // if it was started against a config that set them.
+    const cfg = this.config.backends ?? {}
+    const agent = typeof cfg.agent === 'string' ? cfg.agent : undefined
+    const infer = typeof cfg.infer === 'string' ? cfg.infer : undefined
+    return {
+      ...(agent !== undefined && { defaultAgentBackend: agent }),
+      ...(infer !== undefined && { defaultInferBackend: infer }),
+    }
+  }
+
+  /**
+   * Register a project's default backend ids for a specific workflow id, so
+   * subsequent runs of that workflow resolve `agent()`/`infer()` steps with
+   * no explicit `backend:` to the project's choice. Called by
+   * `ProjectActivationService` once per workflow per activation.
+   */
+  registerWorkflowProjectBackends(
+    workflowId: string,
+    backends: { defaultAgentBackend?: string; defaultInferBackend?: string },
+  ): void {
+    if (backends.defaultAgentBackend === undefined && backends.defaultInferBackend === undefined) {
+      this.workflowProjectBackends.delete(workflowId)
+      return
+    }
+    this.workflowProjectBackends.set(workflowId, backends)
+  }
+
+  /** Drop a workflow's per-project backend defaults — paired with deactivate. */
+  unregisterWorkflowProjectBackends(workflowId: string): void {
+    this.workflowProjectBackends.delete(workflowId)
   }
 
   private async initAgentmemory(): Promise<void> {

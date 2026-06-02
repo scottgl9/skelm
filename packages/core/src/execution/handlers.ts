@@ -346,7 +346,10 @@ async function runInferStep(
       `step "${step.id}" requires a backend registry but none was provided to runPipeline()`,
     )
   }
-  const backend = backends.resolveForLlm({ backendId: step.backend as string | undefined })
+  const requestedInferBackend = step.backend ?? runtime?.defaultInferBackend
+  const backend = backends.resolveForLlm({
+    backendId: requestedInferBackend as string | undefined,
+  })
   const resolvedSecrets = await resolveDeclaredSecrets(
     step,
     undefined,
@@ -417,7 +420,16 @@ async function runAgentStep(
       `step "${step.id}" requires a backend registry but none was provided to runPipeline()`,
     )
   }
-  const backend = backends.resolveForAgent({ backendId: step.backend as string | undefined })
+  // Resolve the backend: an explicit `backend:` on the step wins; otherwise
+  // fall back to the runtime's `defaultAgentBackend` (the activated project's
+  // `config.backends.agent`); finally fall through to the registry's
+  // first-with-run() behavior. Without the runtime fallback, a workflow that
+  // omits `backend:` and relies on its project config was at the mercy of
+  // registry insertion order across concurrent projects.
+  const requestedAgentBackend = step.backend ?? runtime?.defaultAgentBackend
+  const backend = backends.resolveForAgent({
+    backendId: requestedAgentBackend as string | undefined,
+  })
   let preparedWorkspace: Awaited<ReturnType<WorkspaceManager['prepare']>> | undefined
   let finishedWorkspace = false
   try {

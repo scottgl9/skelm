@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+
+- **Per-workflow project configuration.** `skelm run <dir>` activation now scopes the project's `defaults.permissions`, `defaults.permissionProfiles`, and `backends.{agent,infer}` to its own workflows. Two projects activated on one gateway no longer cross-contaminate ceilings: project A's narrower `defaults.permissions` does not silently bind project B's workflows, and an `agent()` step with no explicit `backend:` resolves against ITS project's `config.backends.agent` rather than "first backend with `run()`". The gateway-wide `config.defaults.permissions` / `config.backends.*` still apply as the operator-wide fallback when no per-workflow registration exists. New `Gateway.registerWorkflowProjectPermissions(id, …)` / `registerWorkflowProjectBackends(id, …)` (called by activation), and new `RunOptions.defaultAgentBackend` / `defaultInferBackend`.
+
+### Fixed
+
+- **`skelm gateway start` from a directory with no `skelm.config.*` no longer applies the framework deny-all permission baseline as the operator ceiling.** The CLI loader previously returned `DEFAULT_CONFIG` verbatim on the no-config path, propagating its `networkEgress: 'deny'` / empty allow-lists into `new Gateway({ config })` — surviving the constructor's strip (which only triggers when `options.config` is undefined). The result was that a workflow explicitly granting `networkEgress: 'allow'` still tripped pi-sdk's `assertEgressEnforceable` because the intersection collapsed back to `'deny'`. The loader now strips `defaults.permissions` on its no-config branch too, mirroring the constructor's intent.
+
+- **Runs that fail during the `tui` chat host no longer render as a blank `builder ›` line.** `runTurn` swallowed `run.failed` / `run.cancelled` SSE events and returned an empty string, so a turn that died (e.g. on a backend permission error) looked like the agent had silently moved on. The host now captures the error message from the SSE event (or refetches the run record when the stream missed it) and renders `(failed) <message>`.
+
 ## [0.4.5] - 2026-05-31
 
 ### Breaking Changes

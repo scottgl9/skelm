@@ -77,7 +77,13 @@ running gateway. The gateway imports the directory's `skelm.config.*` **in its
 own process** (the trigger-source drivers and backend instances are live
 objects that cannot cross HTTP), registers its queue drivers, absorbs its
 backend instances, registers its workflow files, arms their declared triggers,
-and merges its `unrestrictedGrants` + `agentmemory` into the running config.
+and merges its `unrestrictedGrants` + `agentmemory` into the running config. In
+addition, the project's `defaults.permissions`, `defaults.permissionProfiles`,
+and `backends.{agent,infer}` are pinned **per workflow id** — they apply when
+the gateway dispatches that workflow's runs (persistent turn, queue/cron, or
+HTTP `POST /pipelines/:id/run`) and do not bind another activated project's
+workflows on the same gateway. See [Permissions › Per-workflow project
+ceilings](../concepts/permissions.md#per-workflow-project-ceilings).
 
 **Security (path-gated).** A `dir` outside the gateway's trusted `projectRoot` /
 `allowedRegistrationDirs` is refused **wholesale and before its config is
