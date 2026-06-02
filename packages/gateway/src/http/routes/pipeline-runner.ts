@@ -63,6 +63,8 @@ export async function runPipelineSync(
         registry: gateway.registries.skills,
         workflowPath: entry.path,
       }),
+      ...gateway.defaultPermissionRunOptions(pipeline.id),
+      ...gateway.defaultBackendRunOptions(pipeline.id),
       ...gateway.egressRunOptions(),
       ...gateway.agentmemoryRunOptions(),
     })
