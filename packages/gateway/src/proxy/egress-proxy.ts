@@ -20,9 +20,10 @@
  *   <token>` and `Authorization: Bearer <token>`.
  */
 
-import { type Server, type Socket, createConnection, createServer } from 'node:net'
+import { lookup as dnsLookup } from 'node:dns/promises'
+import { type Server, type Socket, createConnection, createServer, isIP } from 'node:net'
 import type { AuditWriter } from '@skelm/core'
-import type { NetworkPolicy } from '@skelm/core'
+import { type NetworkPolicy, isMetadataAddress } from '@skelm/core'
 import { type NetworkEgressEvent, emitEgressAudit } from './egress-audit.js'
 import {
   type TokenPolicyMap,
@@ -45,6 +46,18 @@ export interface EgressProxyOptions {
   auditWriter: AuditWriter
   /** Default policy when token is unknown/missing. Default: 'deny'. */
   defaultPolicy?: NetworkPolicy
+  /**
+   * Permit egress to cloud instance-metadata addresses (169.254.0.0/16,
+   * fd00:ec2::254). Default: false — reaching metadata is the canonical
+   * SSRF→credential-theft path, never a legitimate egress target. Set true
+   * only for an operator that genuinely needs to proxy to a metadata endpoint.
+   */
+  allowMetadataEgress?: boolean
+  /**
+   * Hostname resolver used to pin the dial to a validated IP (and reject names
+   * that resolve to a metadata address). Test seam; defaults to dns.lookup.
+   */
+  lookup?: (hostname: string) => Promise<ReadonlyArray<{ address: string }>>
 }
 
 /** HTTP request methods we forward to handleHttp() (anything not CONNECT). */
@@ -60,6 +73,8 @@ export class EgressProxy {
   private readonly tokenStore: TokenPolicyMap
   private readonly auditWriter: AuditWriter
   private readonly defaultPolicy: NetworkPolicy
+  private readonly allowMetadataEgress: boolean
+  private readonly lookup: (hostname: string) => Promise<ReadonlyArray<{ address: string }>>
   /**
    * Cumulative count of unknown-token deny events since this proxy started.
    * Surfaced on each `network.egress:deny` audit entry whose `reason` is
@@ -74,6 +89,36 @@ export class EgressProxy {
     this.tokenStore = options.tokenStore
     this.auditWriter = options.auditWriter
     this.defaultPolicy = options.defaultPolicy ?? 'deny'
+    this.allowMetadataEgress = options.allowMetadataEgress ?? false
+    this.lookup = options.lookup ?? ((hostname) => dnsLookup(hostname, { all: true }))
+  }
+
+  /**
+   * Resolve a destination and decide whether the dial may proceed. Blocks any
+   * target — a literal IP or a hostname that resolves to one — in a cloud
+   * metadata range (unless `allowMetadataEgress`). Returns the validated IP so
+   * the caller can pin the dial to it (defeating DNS rebinding between this
+   * check and the connect). On resolution failure, falls through to dialing by
+   * name so an offline/unresolvable host fails at connect as before.
+   */
+  private async validateDestination(rawHost: string): Promise<{ ip?: string; blocked: boolean }> {
+    // CONNECT/Host targets carry IPv6 literals in brackets (`[::1]`); strip them
+    // so net.isIP recognises the literal and we dial the bare address.
+    const host = rawHost.startsWith('[') && rawHost.endsWith(']') ? rawHost.slice(1, -1) : rawHost
+    if (isIP(host) !== 0) {
+      if (!this.allowMetadataEgress && isMetadataAddress(host)) return { blocked: true }
+      return { ip: host, blocked: false }
+    }
+    try {
+      const addrs = await this.lookup(host)
+      if (!this.allowMetadataEgress && addrs.some((a) => isMetadataAddress(a.address))) {
+        return { blocked: true }
+      }
+      const ip = addrs[0]?.address
+      return ip !== undefined ? { ip, blocked: false } : { blocked: false }
+    } catch {
+      return { blocked: false }
+    }
   }
 
   /**
@@ -169,10 +214,12 @@ export class EgressProxy {
       socket.removeListener('data', onData)
 
       if (method === 'CONNECT' && target) {
-        this.handleConnect(socket, buffer, target)
+        // Destination validation resolves DNS, so the handler is async; never
+        // let a rejection escape to the gateway loop as an unhandled rejection.
+        void this.handleConnect(socket, buffer, target).catch(() => socket.end())
       } else if (method !== undefined && HTTP_METHODS.has(method)) {
         // Any standard HTTP verb gets forwarded as a plain-HTTP request.
-        this.handleHttp(socket, buffer)
+        void this.handleHttp(socket, buffer).catch(() => socket.end())
       } else {
         // Unknown / unsupported request type
         this.rejectConnection(socket, '501 Not Implemented', 'Unknown request type')
@@ -194,7 +241,7 @@ export class EgressProxy {
   /**
    * Handle CONNECT request.
    */
-  private handleConnect(socket: Socket, request: string, target: string): void {
+  private async handleConnect(socket: Socket, request: string, target: string): Promise<void> {
     const hostname = extractHostnameFromConnectTarget(target)
     const token = this.extractToken(request)
     const tokenPresent = hasAuthHeader(request)
@@ -204,40 +251,48 @@ export class EgressProxy {
 
     const result = checkHostPolicy(effectivePolicy, hostname)
 
+    // Resolve + classify the destination only once the policy already allows;
+    // a policy deny short-circuits. A metadata target (literal or resolved)
+    // turns the decision into a deny with reason 'blocked-address'.
+    const dest = result.allowed ? await this.validateDestination(hostname) : { blocked: false }
+    const allowed = result.allowed && !dest.blocked
+
     this.emitDecision({
       token,
       tokenPresent,
       host: hostname,
-      allowed: result.allowed,
-      policyReason: result.reason,
+      allowed,
+      policyReason: dest.blocked ? 'blocked-address' : result.reason,
       // No matched policy ⇒ treat as unknown-token regardless of whether the
       // request had an auth header. Covers (a) no header at all, (b) malformed
       // header that didn't yield a token, and (c) a well-formed token that is
-      // not (any longer) in the store. All three are operationally
-      // "unidentified caller".
-      isUnknownToken: policy === undefined,
+      // not (any longer) in the store. A metadata block takes precedence — it
+      // is an identified-but-forbidden destination, not an unidentified caller.
+      isUnknownToken: policy === undefined && !dest.blocked,
       socket,
     })
 
-    if (!result.allowed) {
-      this.rejectConnection(socket, '403 Forbidden', `Egress denied: ${result.reason ?? 'unknown'}`)
+    if (!allowed) {
+      const reason = dest.blocked ? 'blocked-address' : (result.reason ?? 'unknown')
+      this.rejectConnection(socket, '403 Forbidden', `Egress denied: ${reason}`)
       socket.end()
       return
     }
 
     socket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
 
-    // Forward bytes between the client and the destination.
+    // Forward bytes between the client and the destination. Pin to the resolved
+    // IP when available so a name can't rebind to metadata after validation.
     const parts = target.split(':')
-    const destHost = parts[0]
     const destPortStr = parts[1]
-    if (!destHost) {
+    const dialHost = dest.ip ?? parts[0]
+    if (!dialHost) {
       socket.end()
       return
     }
     const destPort = Number.parseInt(destPortStr || '443', 10) || 443
 
-    const destSocket = connectToHost(destHost, destPort, () => {
+    const destSocket = connectToHost(dialHost, destPort, () => {
       // Resume the (paused) client socket so buffered + future bytes flow.
       socket.pipe(destSocket)
       destSocket.pipe(socket)
@@ -251,7 +306,7 @@ export class EgressProxy {
   /**
    * Handle HTTP request (non-TLS).
    */
-  private handleHttp(socket: Socket, request: string): void {
+  private async handleHttp(socket: Socket, request: string): Promise<void> {
     const hostMatch = request.match(/Host:\s*([^\r\n]+)/i)
     if (!hostMatch) {
       this.rejectConnection(socket, '400 Bad Request', 'Missing Host header')
@@ -274,20 +329,24 @@ export class EgressProxy {
 
     const result = checkHostPolicy(effectivePolicy, hostname)
 
+    const dest = result.allowed ? await this.validateDestination(hostname) : { blocked: false }
+    const allowed = result.allowed && !dest.blocked
+
     this.emitDecision({
       token,
       tokenPresent,
       host: hostname,
-      allowed: result.allowed,
-      policyReason: result.reason,
+      allowed,
+      policyReason: dest.blocked ? 'blocked-address' : result.reason,
       // See note in handleConnect: any unmatched policy ⇒ unknown-token,
-      // independent of header presence.
-      isUnknownToken: policy === undefined,
+      // independent of header presence; a metadata block takes precedence.
+      isUnknownToken: policy === undefined && !dest.blocked,
       socket,
     })
 
-    if (!result.allowed) {
-      this.rejectConnection(socket, '403 Forbidden', `Egress denied: ${result.reason ?? 'unknown'}`)
+    if (!allowed) {
+      const reason = dest.blocked ? 'blocked-address' : (result.reason ?? 'unknown')
+      this.rejectConnection(socket, '403 Forbidden', `Egress denied: ${reason}`)
       socket.end()
       return
     }
@@ -301,6 +360,8 @@ export class EgressProxy {
       return
     }
     const destPort = Number.parseInt(destPortStr || '80', 10) || 80
+    // Pin to the resolved IP when available (DNS-rebinding defense).
+    const dialHost = dest.ip ?? destHost
 
     // Rewrite the request line: HTTP/1.1 servers expect origin-form
     // (`GET /path HTTP/1.1`), but proxy clients send absolute-form
@@ -330,7 +391,7 @@ export class EgressProxy {
     }
     const destRequest = destLines.join('\r\n')
 
-    const destSocket = connectToHost(destHost, destPort, () => {
+    const destSocket = connectToHost(dialHost, destPort, () => {
       destSocket.write(destRequest)
       socket.pipe(destSocket)
       destSocket.pipe(socket)
@@ -442,7 +503,12 @@ export class EgressProxy {
   }
 }
 
-const POLICY_REASONS = ['egress-denied', 'not-in-allowlist', 'unknown-token'] as const
+const POLICY_REASONS = [
+  'egress-denied',
+  'not-in-allowlist',
+  'unknown-token',
+  'blocked-address',
+] as const
 type PolicyReason = (typeof POLICY_REASONS)[number]
 function isPolicyReason(value: string | undefined): value is PolicyReason {
   return value !== undefined && (POLICY_REASONS as readonly string[]).includes(value)
