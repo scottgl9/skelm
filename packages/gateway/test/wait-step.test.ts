@@ -93,6 +93,69 @@ describe('wait() step — gateway HTTP integration', () => {
     expect(stored?.status).toBe('completed')
   })
 
+  it('rejects a schema-invalid resume with 400 and keeps the run suspended', async () => {
+    const { gw, stateDir, base } = await startGateway()
+    cleanups.push(async () => {
+      await gw.stop()
+      await rm(stateDir, { recursive: true, force: true })
+    })
+
+    const wf = pipeline<{ x: number }, { result: number }>({
+      id: 'wait-validate-test',
+      steps: [
+        // A leading step so run.waiting publishes AFTER the first await — a
+        // post-start subscribe (below) would miss it if wait() were first.
+        code({ id: 'prep', run: () => ({ ok: true }) }),
+        wait({ id: 'gate', output: z.object({ approved: z.boolean() }) }),
+        code({
+          id: 'finish',
+          run: (ctx) => ({ result: (ctx.steps.gate as { approved: boolean }).approved ? 10 : 0 }),
+        }),
+      ],
+    })
+
+    const { Runner } = await import('@skelm/core')
+    const runner = new Runner({ store: gw.runStore })
+    const handle = runner.start(wf, { x: 0 })
+    gw.registerRun(handle.runId, new AbortController(), runner)
+    cleanups.push(async () => gw.unregisterRun(handle.runId))
+
+    await new Promise<void>((res) => {
+      const unsub = runner.events.subscribe((e) => {
+        if (e.type === 'run.waiting') {
+          unsub()
+          res()
+        }
+      })
+    })
+
+    // Schema-INVALID resume: the wait step declared `approved: boolean`.
+    // The resume must be rejected synchronously (400), NOT accepted (200) and
+    // then fail the run asynchronously.
+    const badResp = await fetch(`${base}/runs/${handle.runId}/resume`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ output: { approved: 'yes-please' } }),
+    })
+    expect(badResp.status).toBe(400)
+
+    // The run stays SUSPENDED after the rejected resume — a subsequent valid
+    // resume still drives it to completion.
+    const stored = await gw.runStore.getRun(handle.runId)
+    expect(stored?.status).toBe('waiting')
+
+    const goodResp = (await fetch(`${base}/runs/${handle.runId}/resume`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ output: { approved: true } }),
+    }).then((r) => r.json())) as { resumed: boolean }
+    expect(goodResp.resumed).toBe(true)
+
+    const result = await handle.wait()
+    expect(result.status).toBe('completed')
+    expect((result.output as Record<string, unknown>)?.result).toBe(10)
+  })
+
   it('Run.waiting snapshot is populated while parked and cleared on resume', async () => {
     const { gw, stateDir } = await startGateway()
     cleanups.push(async () => {

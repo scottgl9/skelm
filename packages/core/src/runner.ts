@@ -286,7 +286,12 @@ export class Runner {
   readonly enforcement: Required<RunnerEnforcement>
   private readonly pendingWaits = new Map<
     string,
-    { resolve: (value: unknown) => void; reject: (error: Error) => void; timer?: NodeJS.Timeout }
+    {
+      resolve: (value: unknown) => void
+      reject: (error: Error) => void
+      timer?: NodeJS.Timeout
+      outputSchema?: import('./schema.js').SkelmSchema<unknown>
+    }
   >()
 
   constructor(
@@ -443,6 +448,16 @@ export class Runner {
     if (!pending) {
       throw new RunStateError(runId, `run ${runId} is not waiting`)
     }
+    // Validate the resume value against the wait step's declared output schema
+    // BEFORE resolving. A schema-invalid resume is rejected synchronously (the
+    // HTTP /runs/:id/resume route turns the throw into a 400) and the run stays
+    // suspended — rather than resolving, then failing the run asynchronously
+    // inside the pipeline continuation (where handlers re-validates the resumed
+    // value). The continuation's validation remains the authoritative one, so we
+    // resolve with the original `value`.
+    if (pending.outputSchema !== undefined) {
+      await validate(pending.outputSchema, value, 'output')
+    }
     this.pendingWaits.delete(runId)
     if (pending.timer !== undefined) {
       clearTimeout(pending.timer)
@@ -459,9 +474,11 @@ export class Runner {
         resolve: (value: unknown) => void
         reject: (error: Error) => void
         timer?: NodeJS.Timeout
+        outputSchema?: import('./schema.js').SkelmSchema<unknown>
       } = {
         resolve,
         reject,
+        ...(request.outputSchema !== undefined && { outputSchema: request.outputSchema }),
       }
       this.pendingWaits.set(request.runId, pending)
 
