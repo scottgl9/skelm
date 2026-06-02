@@ -71,6 +71,26 @@ describe('interval everyMs validation (tight-loop DoS)', () => {
       expect(pipelineTriggerToSpec('wf', { kind: 'interval', every: 'garbage' }, 0)).toBeUndefined()
       expect(pipelineTriggerToSpec('wf', { kind: 'interval', every: '' }, 0)).toBeUndefined()
     })
+
+    it('accepts the canonical `cron` field', () => {
+      const spec = pipelineTriggerToSpec('wf', { kind: 'cron', cron: '0 9 * * *' }, 0)
+      expect(spec).toMatchObject({ kind: 'cron', workflowId: 'wf', cron: '0 9 * * *' })
+    })
+
+    // A declared trigger written in the POST /schedules shape
+    // (`{ kind: 'cron', expression }`) used to yield `cron: undefined`, then threw
+    // `undefined.trim()` in the parser at arm time — aborting the workflow's whole
+    // trigger discovery and dropping its sibling triggers. Accept `expression` as
+    // an alias.
+    it('accepts `expression` as an alias for `cron`', () => {
+      const spec = pipelineTriggerToSpec('wf', { kind: 'cron', expression: '* * * * *' }, 0)
+      expect(spec).toMatchObject({ kind: 'cron', workflowId: 'wf', cron: '* * * * *' })
+    })
+
+    it('refuses (does not crash on) a cron trigger with neither cron nor expression', () => {
+      expect(pipelineTriggerToSpec('wf', { kind: 'cron' }, 0)).toBeUndefined()
+      expect(pipelineTriggerToSpec('wf', { kind: 'cron', cron: '' }, 0)).toBeUndefined()
+    })
   })
 
   describe('TriggerCoordinator', () => {
