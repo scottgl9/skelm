@@ -19,14 +19,18 @@ import { Gateway, InMemoryQueueDriver } from '../src/index.js'
 // (the routing happens in Gateway.defaultPermissionRunOptions(workflowId)).
 
 interface SeenTurn {
-  workflow: string
+  /** Tag of the backend that actually handled this run. */
+  backendTag: string
+  /** Prompt the backend received — uniquely identifies the firing workflow
+   *  in these tests, since each driver pushes a distinct `text:` payload. */
+  prompt: string
   allowedExecutables: readonly string[]
   networkEgress: NetworkPolicy | undefined
 }
 
-function capturingBackend(seen: SeenTurn[], workflowTag: string): SkelmBackend {
+function capturingBackend(seen: SeenTurn[], backendTag: string): SkelmBackend {
   return {
-    id: `cap-${workflowTag}`,
+    id: `cap-${backendTag}`,
     capabilities: {
       prompt: true,
       run: true,
@@ -37,9 +41,10 @@ function capturingBackend(seen: SeenTurn[], workflowTag: string): SkelmBackend {
       modelSelection: false,
       toolPermissions: 'native',
     },
-    async run(_request, context: BackendContext) {
+    async run(request, context: BackendContext) {
       seen.push({
-        workflow: workflowTag,
+        backendTag,
+        prompt: typeof request.prompt === 'string' ? request.prompt : '',
         allowedExecutables: [...(context.permissions?.allowedExecutables ?? [])],
         networkEgress: context.permissions?.networkEgress,
       })
@@ -140,8 +145,17 @@ describe('per-workflow project permissions', () => {
     await new Promise((r) => setTimeout(r, 200))
 
     expect(seen).toHaveLength(2)
-    const turnA = seen.find((t) => t.workflow === 'a')
-    const turnB = seen.find((t) => t.workflow === 'b')
+    // Identify each turn by the unique payload text — the payload is what we
+    // pushed onto a specific driver, so it tags the firing workflow without
+    // having to round-trip through BackendContext (which doesn't expose
+    // pipelineId). Each agent explicitly declares its own `backend:`, so the
+    // backendTag check ALSO confirms routing didn't cross-fire.
+    const turnA = seen.find((t) => t.prompt === 'hi-a')
+    const turnB = seen.find((t) => t.prompt === 'hi-b')
+    expect(turnA).toBeDefined()
+    expect(turnB).toBeDefined()
+    expect(turnA?.backendTag).toBe('a')
+    expect(turnB?.backendTag).toBe('b')
 
     // bot-a sees the intersection of project-A ceiling × agent grants:
     //   allowedExecutables: ['node'] (skelm narrowed out by the ceiling),
@@ -225,8 +239,18 @@ describe('per-workflow project permissions', () => {
     await new Promise((r) => setTimeout(r, 200))
 
     expect(seen).toHaveLength(2)
-    expect(seen.find((t) => t.workflow === 'a')).toBeDefined()
-    expect(seen.find((t) => t.workflow === 'b')).toBeDefined()
+    // The substantive claim: bot-a's `backend:`-less agent step resolved to
+    // cap-a (its project's registered default), and bot-b's resolved to
+    // cap-b — NOT first-with-run() (which would land both on cap-a since
+    // registry insertion order would deterministically pick it). The
+    // distinct payload texts identify which workflow caused each call;
+    // backendTag identifies which backend was actually invoked.
+    const turnA = seen.find((t) => t.prompt === 'hi-a')
+    const turnB = seen.find((t) => t.prompt === 'hi-b')
+    expect(turnA).toBeDefined()
+    expect(turnB).toBeDefined()
+    expect(turnA?.backendTag).toBe('a')
+    expect(turnB?.backendTag).toBe('b')
 
     await gw.stop()
   })
