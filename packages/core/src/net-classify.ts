@@ -30,6 +30,12 @@ function ipv4MappedToV4(host: string): string | undefined {
  * IPv6 form, or the AWS IMDS IPv6 address `fd00:ec2::254`). Hostnames return
  * `false` — they cannot be classified without DNS resolution, which the caller
  * performs before dialing so a name that resolves to metadata is still blocked.
+ *
+ * The IPv4 `169.254.0.0/16` block covers metadata over IPv4 for every major
+ * cloud (AWS/GCP/Azure/Oracle/DO all expose it at `169.254.169.254`). The IPv6
+ * coverage is AWS-only (`fd00:ec2::254`); other clouds' IPv6 IMDS addresses
+ * (e.g. Azure) are not yet enumerated. Extend `METADATA_BLOCK` if multi-cloud
+ * IPv6 metadata enters scope.
  */
 export function isMetadataAddress(host: string): boolean {
   const h = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host

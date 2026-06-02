@@ -216,10 +216,12 @@ export class EgressProxy {
       if (method === 'CONNECT' && target) {
         // Destination validation resolves DNS, so the handler is async; never
         // let a rejection escape to the gateway loop as an unhandled rejection.
-        void this.handleConnect(socket, buffer, target).catch(() => socket.end())
+        void this.handleConnect(socket, buffer, target).catch((err) =>
+          this.onHandlerError(socket, err),
+        )
       } else if (method !== undefined && HTTP_METHODS.has(method)) {
         // Any standard HTTP verb gets forwarded as a plain-HTTP request.
-        void this.handleHttp(socket, buffer).catch(() => socket.end())
+        void this.handleHttp(socket, buffer).catch((err) => this.onHandlerError(socket, err))
       } else {
         // Unknown / unsupported request type
         this.rejectConnection(socket, '501 Not Implemented', 'Unknown request type')
@@ -399,6 +401,19 @@ export class EgressProxy {
 
     destSocket.on('error', () => socket.end())
     socket.on('error', () => destSocket.end())
+  }
+
+  /**
+   * Last-resort handler for an UNEXPECTED throw in the async connect/HTTP
+   * chain. The normal deny/block paths return cleanly (and are audited), so
+   * reaching here means a bug or an unforeseen runtime error — surface it to
+   * stderr instead of silently swallowing it, then close the socket so the
+   * rejection never escapes to the gateway loop.
+   */
+  private onHandlerError(socket: Socket, err: unknown): void {
+    const detail = err instanceof Error ? (err.stack ?? err.message) : String(err)
+    process.stderr.write(`[skelm egress-proxy] unexpected error handling connection: ${detail}\n`)
+    socket.end()
   }
 
   /**
