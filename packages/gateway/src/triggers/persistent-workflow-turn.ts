@@ -56,17 +56,25 @@ export interface RunPersistentWorkflowTurnOptions {
  *  the store's casState. */
 const sessionLocks = new Map<string, Promise<unknown>>()
 
-async function withSessionLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+/** Live size of the in-process session-lock map. Exported for tests asserting
+ * the map does not leak entries (it is internal to this module otherwise). */
+export function sessionLockCount(): number {
+  return sessionLocks.size
+}
+
+export async function withSessionLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const prev = sessionLocks.get(key) ?? Promise.resolve()
   const next = prev.then(fn, fn)
-  sessionLocks.set(
-    key,
-    next.catch(() => undefined),
-  )
+  // Store the settle-swallowing promise and compare the SAME reference on
+  // cleanup. Building a fresh `next.catch(...)` for the comparison (the previous
+  // bug) is never `===` the stored one, so the entry was never deleted — an
+  // unbounded leak keyed by (workflowId, sessionKey).
+  const guarded = next.catch(() => undefined)
+  sessionLocks.set(key, guarded)
   try {
     return await next
   } finally {
-    if (sessionLocks.get(key) === next.catch(() => undefined)) sessionLocks.delete(key)
+    if (sessionLocks.get(key) === guarded) sessionLocks.delete(key)
   }
 }
 
