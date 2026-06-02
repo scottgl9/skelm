@@ -163,6 +163,8 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
             workflowPath: entry.path,
           }),
           pipelineRegistry: makeGatewayPipelineRegistry(gateway),
+          ...gateway.defaultPermissionRunOptions(pipeline.id),
+          ...gateway.defaultBackendRunOptions(pipeline.id),
           ...gateway.egressRunOptions(),
           ...gateway.agentmemoryRunOptions(),
         })
@@ -247,6 +249,8 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
             workflowPath: filePath,
           }),
           pipelineRegistry: makeGatewayPipelineRegistry(gateway),
+          ...gateway.defaultPermissionRunOptions(pipeline.id),
+          ...gateway.defaultBackendRunOptions(pipeline.id),
           ...gateway.egressRunOptions(),
           ...gateway.agentmemoryRunOptions(),
         })
@@ -310,6 +314,8 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
             workflowPath: filePath,
           }),
           pipelineRegistry: makeGatewayPipelineRegistry(gateway),
+          ...gateway.defaultPermissionRunOptions(pipeline.id),
+          ...gateway.defaultBackendRunOptions(pipeline.id),
           ...gateway.egressRunOptions(),
           ...gateway.agentmemoryRunOptions(),
         })
