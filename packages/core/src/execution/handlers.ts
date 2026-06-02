@@ -217,15 +217,6 @@ async function runCodeStep(
         ? ctx
         : freezeContext({ ...ctx, workspace: preparedWorkspace.handle })
 
-    const resolvedSecrets = await resolveDeclaredSecrets(
-      step,
-      undefined,
-      runtime?.secretResolver,
-      undefined,
-      ctx.run.runId,
-    )
-    const secretsAccessor = createSecretsAccessor(resolvedSecrets)
-
     const resolvedPolicy = resolvePermissions(
       runtime?.defaultPermissions,
       applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
@@ -239,6 +230,24 @@ async function runCodeStep(
         : resolvedPolicy
     emitBypassIfUnrestricted(policy, events, ctx.run.runId, step.id)
     const enforcer = new TrustEnforcer(policy)
+
+    // Mirror runAgentStep: enforce canAccessSecret when the author declared a
+    // policy or a delegation ceiling is in force. Passing `undefined` here would
+    // skip the gate entirely, letting the step read any declared secret and a
+    // delegated child escape its parent's allowedSecrets (a default-deny breach).
+    // A top-level step with no declared policy keeps resolving unconditionally.
+    const secretPolicy =
+      step.permissions !== undefined || runtime?.delegationCeiling !== undefined
+        ? policy
+        : undefined
+    const resolvedSecrets = await resolveDeclaredSecrets(
+      step,
+      secretPolicy,
+      runtime?.secretResolver,
+      events,
+      ctx.run.runId,
+    )
+    const secretsAccessor = createSecretsAccessor(resolvedSecrets)
 
     // Same per-step timeout pattern used by runAgentStep: chain a fresh
     // AbortController to ctx.signal so a runaway code step's budget aborts
@@ -350,11 +359,15 @@ async function runInferStep(
   const backend = backends.resolveForLlm({
     backendId: requestedInferBackend as string | undefined,
   })
+  // infer() has no `permissions` field, so its only secret ceiling is an active
+  // delegation ceiling. Pass it (and the event bus) so a delegated child cannot
+  // read secrets outside its parent's allowedSecrets and the access is audited;
+  // a top-level infer keeps resolving declared secrets unconditionally.
   const resolvedSecrets = await resolveDeclaredSecrets(
     step,
-    undefined,
+    runtime?.delegationCeiling,
     runtime?.secretResolver,
-    undefined,
+    events,
     ctx.run.runId,
   )
   const secretsAccessor = createSecretsAccessor(resolvedSecrets)
