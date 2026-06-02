@@ -308,7 +308,23 @@ export async function fetchHttp(
 }
 
 export async function httpError(res: Response, io: MainIO): Promise<MainResult> {
-  io.stderr.write(`error: gateway returned ${res.status}: ${await res.text()}\n`)
+  const raw = await res.text()
+  let detail = raw
+  // Gateway error body is JSON with top-level `message` (plus `name`,
+  // `statusCode`, optional `data`). Fall back to the raw body when the
+  // response isn't our shape (older gateway, proxy, plaintext).
+  try {
+    const parsed = JSON.parse(raw) as { name?: string; message?: string }
+    if (typeof parsed?.message === 'string' && parsed.message !== '') {
+      detail =
+        parsed.name && parsed.name !== 'Error' && parsed.name !== 'H3Error'
+          ? `${parsed.name}: ${parsed.message}`
+          : parsed.message
+    }
+  } catch {
+    // not JSON — keep raw text
+  }
+  io.stderr.write(`error: gateway returned ${res.status}: ${detail}\n`)
   return { exitCode: EXIT.CLI_ERROR }
 }
 

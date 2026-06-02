@@ -9,6 +9,7 @@ import {
   discoveryFromEnvUrl,
   findFreePort,
   gatewayStateDir,
+  httpError,
   isServiceInstalled,
   loadDiscovery,
   requireGateway,
@@ -190,6 +191,40 @@ describe('gateway-client', () => {
     } finally {
       await new Promise<void>((r) => server.close(() => r()))
     }
+  })
+
+  describe('httpError', () => {
+    it('extracts message from structured gateway error body', async () => {
+      const io = mkIo()
+      const res = new Response(
+        JSON.stringify({ name: 'H3Error', message: 'workflow not found', statusCode: 404 }),
+        { status: 404, headers: { 'content-type': 'application/json' } },
+      )
+      const result = await httpError(res, io.io)
+      expect(result.exitCode).toBe(1)
+      expect(io.err()).toContain('404')
+      expect(io.err()).toContain('workflow not found')
+    })
+
+    it('falls back to raw text when body is not the gateway envelope', async () => {
+      const io = mkIo()
+      const res = new Response('plain text body', { status: 500 })
+      await httpError(res, io.io)
+      expect(io.err()).toContain('500')
+      expect(io.err()).toContain('plain text body')
+    })
+
+    it('falls back to raw text when JSON has no message field', async () => {
+      const io = mkIo()
+      const res = new Response(JSON.stringify({ ok: false }), {
+        status: 502,
+        headers: { 'content-type': 'application/json' },
+      })
+      await httpError(res, io.io)
+      expect(io.err()).toContain('502')
+      // raw body kept since no top-level `message`
+      expect(io.err()).toContain('"ok":false')
+    })
   })
 })
 
