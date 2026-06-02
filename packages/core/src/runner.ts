@@ -104,6 +104,20 @@ export interface RunOptions {
   /** Optional named permission profiles referenced by permissions.profile. */
   permissionProfiles?: Readonly<Record<string, AgentPermissions>>
   /**
+   * Optional default backend id for agent() steps whose own `backend` is
+   * undefined — supplied by the gateway from the activated project's
+   * `config.backends.agent`. Without this, `resolveForAgent` falls back to
+   * the first registered backend with `run()` capability, which is
+   * non-deterministic across project configs that absorb multiple instances.
+   */
+  defaultAgentBackend?: string
+  /**
+   * Optional default backend id for `infer()` steps whose own `backend` is
+   * undefined — supplied by the gateway from the activated project's
+   * `config.backends.infer`. Same rationale as `defaultAgentBackend`.
+   */
+  defaultInferBackend?: string
+  /**
    * Operator grant for the unrestricted bypass. Supplied only by the gateway
    * (the trust boundary) for workflows / persistent workflows it has allowlisted.
    * A step's `requestUnrestricted` is inert unless this is true. See
@@ -902,6 +916,12 @@ export async function runPipeline<TInput, TOutput>(
           }),
           ...(options.permissionProfiles !== undefined && {
             permissionProfiles: options.permissionProfiles,
+          }),
+          ...(options.defaultAgentBackend !== undefined && {
+            defaultAgentBackend: options.defaultAgentBackend,
+          }),
+          ...(options.defaultInferBackend !== undefined && {
+            defaultInferBackend: options.defaultInferBackend,
           }),
           ...(options.unrestrictedGrant !== undefined && {
             unrestrictedGrant: options.unrestrictedGrant,

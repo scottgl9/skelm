@@ -18,6 +18,20 @@ export interface ExecutionRuntime {
   readonly defaultPermissions?: AgentPermissions
   readonly permissionProfiles?: Readonly<Record<string, AgentPermissions>>
   /**
+   * Default backend id for `agent()` steps whose own `backend` is undefined.
+   * Threaded by the gateway from the activated project's
+   * `config.backends.agent` so each workflow inherits its project's choice
+   * instead of falling back to "first registered backend with run()". A
+   * workflow that explicitly declares `backend:` on the step still wins.
+   */
+  readonly defaultAgentBackend?: string
+  /**
+   * Default backend id for `infer()` steps whose own `backend` is undefined.
+   * Same intent as `defaultAgentBackend`, sourced from the activated
+   * project's `config.backends.infer`.
+   */
+  readonly defaultInferBackend?: string
+  /**
    * Operator grant for the unrestricted bypass, supplied only by the trust
    * boundary (gateway). When true, an agent/code step whose resolved policy
    * requested the bypass runs `unrestricted`. Never derived from author input.

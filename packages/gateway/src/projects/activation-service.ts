@@ -206,6 +206,17 @@ export class ProjectActivationService {
           permissionProfiles: dirConfig.defaults.permissionProfiles,
         }),
       })
+      // Mirror the same per-workflow scoping for backend defaults: each
+      // workflow resolves agent()/infer() steps with no explicit `backend:`
+      // against ITS OWN project's `config.backends.{agent,infer}`.
+      const projectAgentBackend =
+        typeof dirConfig.backends?.agent === 'string' ? dirConfig.backends.agent : undefined
+      const projectInferBackend =
+        typeof dirConfig.backends?.infer === 'string' ? dirConfig.backends.infer : undefined
+      this.gateway.registerWorkflowProjectBackends(id, {
+        ...(projectAgentBackend !== undefined && { defaultAgentBackend: projectAgentBackend }),
+        ...(projectInferBackend !== undefined && { defaultInferBackend: projectInferBackend }),
+      })
       this.workflowProjectDirs.set(id, realDir)
       for (const [i, t] of (wf.triggers ?? []).entries()) {
         triggers.push(this.armTrigger(id, t, i))
@@ -397,6 +408,7 @@ export class ProjectActivationService {
     await this.gateway.getWorkflowRegistrationService().remove(id)
     this.persistentIds.delete(id)
     this.gateway.unregisterWorkflowProjectPermissions(id)
+    this.gateway.unregisterWorkflowProjectBackends(id)
     this.workflowProjectDirs.delete(id)
 
     const runsCancelled: string[] = []

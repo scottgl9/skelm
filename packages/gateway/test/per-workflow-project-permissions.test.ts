@@ -158,6 +158,79 @@ describe('per-workflow project permissions', () => {
     await gw.stop()
   })
 
+  it('scopes a registered project default backend to ONLY its workflow id', async () => {
+    // Two backends registered. With no per-workflow default, the runtime
+    // falls through to "first backend with run()" — non-deterministic across
+    // configs. With per-workflow defaults set, each workflow's omitted
+    // `backend:` resolves to ITS OWN project's choice.
+    const seen: SeenTurn[] = []
+    const registry = new BackendRegistry()
+    registry.register(capturingBackend(seen, 'a'))
+    registry.register(capturingBackend(seen, 'b'))
+
+    const botA = persistentWorkflow<{ chatId: string; text: string }>({
+      id: 'bot-a',
+      agent: {
+        // No `backend:` — relies on the per-workflow default.
+        sessionKey: (p) => p.chatId,
+        permissions: { networkEgress: 'allow' },
+      },
+    })
+    const botB = persistentWorkflow<{ chatId: string; text: string }>({
+      id: 'bot-b',
+      agent: {
+        sessionKey: (p) => p.chatId,
+        permissions: { networkEgress: 'allow' },
+      },
+    })
+
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      backends: registry,
+      auditWriter: { write: async () => {} },
+      config: {
+        registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
+      },
+      loadWorkflow: async (id) => ({
+        default: id.endsWith('a.workflow.mts') ? botA : botB,
+      }),
+    })
+    await gw.start()
+
+    gw.registerWorkflowProjectBackends('bot-a', { defaultAgentBackend: 'cap-a' })
+    gw.registerWorkflowProjectBackends('bot-b', { defaultAgentBackend: 'cap-b' })
+
+    const driverA = new InMemoryQueueDriver()
+    const driverB = new InMemoryQueueDriver()
+    gw.managers.triggers.registerQueueDriver('memqA', driverA)
+    gw.managers.triggers.registerQueueDriver('memqB', driverB)
+    gw.managers.triggers.register({
+      kind: 'queue',
+      id: 'qA',
+      workflowId: 'workflows/a.workflow.mts',
+      driver: 'memqA',
+    })
+    gw.managers.triggers.register({
+      kind: 'queue',
+      id: 'qB',
+      workflowId: 'workflows/b.workflow.mts',
+      driver: 'memqB',
+    })
+
+    driverA.push({ chatId: 'a1', text: 'hi-a' })
+    await new Promise((r) => setTimeout(r, 200))
+    driverB.push({ chatId: 'b1', text: 'hi-b' })
+    await new Promise((r) => setTimeout(r, 200))
+
+    expect(seen).toHaveLength(2)
+    expect(seen.find((t) => t.workflow === 'a')).toBeDefined()
+    expect(seen.find((t) => t.workflow === 'b')).toBeDefined()
+
+    await gw.stop()
+  })
+
   it('falls back to gateway-wide defaults when no per-workflow registration exists', async () => {
     const seen: SeenTurn[] = []
     const registry = new BackendRegistry()
