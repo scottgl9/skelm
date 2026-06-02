@@ -158,7 +158,15 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
           workflowPath,
           triggerId: ctx.triggerId,
           unrestrictedGrant: opts.gateway.isUnrestrictedGranted(ctx.workflowId),
-          ...opts.gateway.defaultPermissionRunOptions(),
+          // Use the LOADED workflow's declared id, not the trigger spec's
+          // workflowId (which can be the registry id / file path). The
+          // per-workflow ceiling registered on activation keys on the
+          // declared id; persistent-workflow-turn does the same.
+          ...opts.gateway.defaultPermissionRunOptions(
+            typeof (pipeline as { id?: unknown }).id === 'string'
+              ? (pipeline as { id: string }).id
+              : ctx.workflowId,
+          ),
           ...opts.gateway.egressRunOptions(),
           ...opts.gateway.agentmemoryRunOptions(),
           ...(onEvent !== undefined && { onEvent }),

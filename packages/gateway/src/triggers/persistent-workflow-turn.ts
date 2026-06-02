@@ -164,7 +164,7 @@ export async function runPersistentWorkflowTurn(
         triggerId,
         unrestrictedGrant: gateway.isUnrestrictedGranted(wf.id),
         ...(opts.workflowPath !== undefined && { workflowPath: opts.workflowPath }),
-        ...gateway.defaultPermissionRunOptions(),
+        ...gateway.defaultPermissionRunOptions(wf.id),
         ...gateway.egressRunOptions(),
         ...gateway.agentmemoryRunOptions(),
         ...(opts.onEvent !== undefined && { onEvent: opts.onEvent }),

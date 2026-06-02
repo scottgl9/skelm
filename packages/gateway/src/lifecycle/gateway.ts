@@ -120,6 +120,20 @@ export class Gateway {
   private reloadInFlight: Promise<void> | null = null
   /** Coalesced follow-up reload promise — at most one outstanding. */
   private reloadPendingAfter: Promise<void> | null = null
+  /**
+   * Per-workflow project permission ceilings registered by `skelm run <dir>`
+   * activation. Keyed by workflow id; isolates one project's
+   * `defaults.permissions` to only that project's workflows so two activated
+   * projects can't cross-contaminate ceilings. Unset → fall back to the
+   * gateway's operator-wide `config.defaults.permissions`.
+   */
+  private readonly workflowProjectPermissions = new Map<
+    string,
+    {
+      defaultPermissions?: AgentPermissions
+      permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+    }
+  >()
 
   constructor(private readonly options: GatewayOptions = {}) {
     // A config-less gateway (embedded / probe / test construction) that is
@@ -484,7 +498,7 @@ export class Gateway {
           workflowPath,
         }),
         pipelineRegistry: makeGatewayPipelineRegistry(this),
-        ...this.defaultPermissionRunOptions(),
+        ...this.defaultPermissionRunOptions(pipeline.id),
         ...this.egressRunOptions(),
         ...this.agentmemoryRunOptions(),
       })
@@ -648,10 +662,28 @@ export class Gateway {
    * gateway's no-config fallback strips it too, so an unset default stays
    * `undefined` (no narrowing) rather than denying every step.
    */
-  defaultPermissionRunOptions(): {
+  defaultPermissionRunOptions(workflowId?: string): {
     defaultPermissions?: AgentPermissions
     permissionProfiles?: Readonly<Record<string, AgentPermissions>>
   } {
+    // Per-workflow project permissions (registered on `skelm run <dir>`
+    // activation) take precedence so each activated project's
+    // defaults.permissions binds ONLY its own workflows. This keeps two
+    // active projects from cross-contaminating ceilings — without it, the
+    // last one to activate would silently override the other's.
+    if (workflowId !== undefined) {
+      const project = this.workflowProjectPermissions.get(workflowId)
+      if (project !== undefined) {
+        return {
+          ...(project.defaultPermissions !== undefined && {
+            defaultPermissions: project.defaultPermissions,
+          }),
+          ...(project.permissionProfiles !== undefined && {
+            permissionProfiles: project.permissionProfiles,
+          }),
+        }
+      }
+    }
     const defaults = this.config.defaults
     return {
       ...(defaults?.permissions !== undefined && { defaultPermissions: defaults.permissions }),
@@ -659,6 +691,38 @@ export class Gateway {
         permissionProfiles: defaults.permissionProfiles,
       }),
     }
+  }
+
+  /**
+   * Register a project's `defaults.permissions` + `defaults.permissionProfiles`
+   * for a specific workflow id, so subsequent runs of that workflow use the
+   * project's ceiling instead of the operator-wide one. Called by
+   * `ProjectActivationService` once per workflow per activation.
+   *
+   * Per-workflow keying is intentional: it isolates each project's policy to
+   * its own workflows so `skelm run a/` followed by `skelm run b/` doesn't
+   * leak a's ceiling onto b's workflows (or vice versa).
+   */
+  registerWorkflowProjectPermissions(
+    workflowId: string,
+    permissions: {
+      defaultPermissions?: AgentPermissions
+      permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+    },
+  ): void {
+    if (
+      permissions.defaultPermissions === undefined &&
+      permissions.permissionProfiles === undefined
+    ) {
+      this.workflowProjectPermissions.delete(workflowId)
+      return
+    }
+    this.workflowProjectPermissions.set(workflowId, permissions)
+  }
+
+  /** Drop a workflow's per-project permission ceiling — paired with deactivate. */
+  unregisterWorkflowProjectPermissions(workflowId: string): void {
+    this.workflowProjectPermissions.delete(workflowId)
   }
 
   private async initAgentmemory(): Promise<void> {
