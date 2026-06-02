@@ -5,6 +5,7 @@
 
 import { isAbsolute, resolve as resolvePath } from 'node:path'
 import { PermissionDeniedError } from './errors.js'
+import { isMetadataAddress } from './net-classify.js'
 
 /** Dimensions of the permission model. Each defaults to deny when omitted. */
 export type PermissionDimension =
@@ -735,6 +736,23 @@ export function createPolicyFetch(
     } catch {
       // Unparseable URL — deny to be safe.
       throw new PermissionDeniedError(`network request denied: URL could not be parsed: ${url}`)
+    }
+    // Block cloud instance-metadata literals (e.g. 169.254.169.254) even under
+    // an `allow`/allowHosts policy — reaching them is the canonical SSRF
+    // credential-theft path, never a legitimate `networkEgress` target.
+    if (isMetadataAddress(host)) {
+      const detail = `network request to cloud-metadata address "${host}" denied`
+      if (events !== undefined) {
+        events.publish({
+          type: 'permission.denied',
+          runId: events.runId,
+          stepId: events.stepId,
+          dimension: 'network',
+          detail,
+          at: Date.now(),
+        })
+      }
+      throw new PermissionDeniedError(detail)
     }
     const decision = enforcer.canFetch(host)
     if (!decision.allow) {
