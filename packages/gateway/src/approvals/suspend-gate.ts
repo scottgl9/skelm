@@ -193,9 +193,14 @@ export class SuspendApprovalGate implements ApprovalGate {
     if (this.opts.auditWriter === undefined) return
     try {
       await this.opts.auditWriter.write(event)
-    } catch {
-      // Audit failures must not affect approval flow; ChainAuditWriter is
-      // best-effort from the gate's perspective.
+    } catch (err) {
+      // Audit failures must not affect approval flow, but they must not vanish
+      // either — an approval decision dropping out of the durable record is a
+      // forensic gap. Surface it instead of swallowing silently.
+      const detail = err instanceof Error ? err.message : String(err)
+      process.stderr.write(
+        `[skelm audit] approval write failed (action=${event.action} run=${event.runId}): ${detail}\n`,
+      )
     }
   }
 
