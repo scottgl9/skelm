@@ -224,6 +224,10 @@ Code 8 is `EXIT.RUN_PAUSED`. The workflow has a `wait()` step parked, and the CL
 
 When the CLI does have a TTY (or an injected stdin in the test harness), it prompts for the resume JSON inline and continues streaming.
 
+### Exit code 9 — `BACKEND_CAPABILITY`
+
+The selected backend does not support an operation the step asked for (vision input, agent memory, a tool call shape it doesn't implement, etc.). Distinguished from a generic run failure (3) so CI scripts can detect a configuration-class problem without parsing the error text. The stderr message names the capability — either pick a backend that supports it, or remove the dependency from the step.
+
 ### I added a schedule, but nothing fires
 
 Start the gateway:

@@ -128,7 +128,13 @@ async function scheduleAdd(
     trigger = { kind: 'at', when: args.at }
   } else {
     io.stderr.write(
-      'error: skelm schedule add requires one of --cron, --every, --every-ms, --webhook, or --at\n',
+      'error: skelm schedule add requires a trigger flag.\n' +
+        '  --cron "<expr>"       e.g. --cron "0 * * * *"\n' +
+        '  --every <duration>    e.g. --every 30s | 5m | 2h\n' +
+        '  --every-ms <number>   millisecond interval\n' +
+        '  --webhook <path>      e.g. --webhook /hooks/build\n' +
+        '  --at <ISO timestamp>  one-shot, e.g. --at 2026-01-01T00:00:00Z\n' +
+        'See `skelm schedule --help` for full usage.\n',
     )
     return { exitCode: EXIT.CLI_ERROR }
   }
