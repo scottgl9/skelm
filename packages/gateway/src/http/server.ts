@@ -10,13 +10,16 @@ import type { Pipeline, Run, RunStatus, RunStore, RunSummary } from '@skelm/core
 import type { Runner } from '@skelm/core'
 import type { RunEvent } from '@skelm/core'
 import type { H3Event } from 'h3'
+import type { H3Error } from 'h3'
 import {
   createApp,
   createError,
   createRouter,
   eventHandler,
   readBody,
+  send,
   setResponseHeader,
+  setResponseStatus,
   toNodeListener,
 } from 'h3'
 import type { AuthMode, ServerConfig } from './config.js'
@@ -56,7 +59,29 @@ export function createServer(
   let server: ReturnType<typeof import('node:http').createServer> | null = null
   let isRunningFlag = false
 
-  const app = createApp()
+  // h3's default error serialization drops the `message` field, leaving
+  // clients with `{statusCode, statusMessage, stack: [], data}` and no
+  // useful body. This handler adds `name` and `message` while keeping
+  // the existing top-level fields, so callers reading either shape work.
+  const app = createApp({
+    onError: async (error: H3Error, event) => {
+      if (event.handled) return
+      const statusCode = typeof error.statusCode === 'number' ? error.statusCode : 500
+      const body: Record<string, unknown> = {
+        statusCode,
+        statusMessage: error.statusMessage,
+        name: error.name && error.name !== 'Error' ? error.name : 'H3Error',
+        message: error.message || error.statusMessage || 'Internal Server Error',
+      }
+      if (error.data !== undefined) body.data = error.data
+      if (process.env.NODE_ENV !== 'production' && typeof error.stack === 'string') {
+        body.stack = error.stack
+      }
+      setResponseStatus(event, statusCode, error.statusMessage)
+      setResponseHeader(event, 'Content-Type', 'application/json')
+      await send(event, JSON.stringify(body))
+    },
+  })
 
   // Middleware: opt-in dev CORS (default-OFF, preserving default-deny). Only
   // when SKELM_DEV_CORS is set does the gateway emit CORS headers, so a static
