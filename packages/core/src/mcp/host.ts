@@ -245,10 +245,23 @@ const SHELL_TOOL_NAMES = new Set([
 ])
 
 function requestedExecutable(toolName: string, args: unknown): string | undefined {
-  if (!SHELL_TOOL_NAMES.has(toolName)) return undefined
-  // bash and sh always resolve to themselves regardless of args content
-  if (toolName === 'bash' || toolName === 'sh') return toolName
-  return extractBinary(args)
+  if (SHELL_TOOL_NAMES.has(toolName)) {
+    // bash and sh always resolve to themselves regardless of args content
+    if (toolName === 'bash' || toolName === 'sh') return toolName
+    return extractBinary(args)
+  }
+  // Fail-closed for UNRECOGNISED tool names: tool-name matching is a blocklist
+  // (an MCP server can expose a shell under any name), so also gate any tool
+  // whose args carry an `argv` array — a strong, low-false-positive signal of a
+  // process spawn (`[binary, ...args]`). A bare `command`/`cmd` STRING is
+  // deliberately NOT treated as exec here: on an unknown tool it's ambiguous
+  // (e.g. a subcommand selector like `command: "status"`) and would deny benign
+  // tools. Such string-command shells must be scoped via allowedTools instead.
+  if (args !== null && typeof args === 'object') {
+    const argv = (args as Record<string, unknown>).argv
+    if (Array.isArray(argv) && typeof argv[0] === 'string') return basename(argv[0])
+  }
+  return undefined
 }
 
 function extractBinary(args: unknown): string | undefined {
@@ -338,36 +351,48 @@ function firstStringField(
   return undefined
 }
 
+// Argument field names that denote a filesystem destination the tool writes to.
+// Their presence is an unambiguous write signal regardless of the tool's name.
+const FS_DEST_FIELDS = ['destination', 'dest', 'to', 'target', 'new_path', 'newPath', 'output']
+// Argument field names that denote the primary path a tool operates on.
+const FS_PRIMARY_FIELDS = ['path', 'file_path', 'filename', 'source']
+
 /**
  * Extract every filesystem path a tool call touches, each tagged read/write.
- * Returns one entry for ordinary single-path fs tools, and a second entry (the
- * write destination) for two-path tools (move/copy/rename). Empty when the tool
- * is not a filesystem tool or no path can be extracted (best-effort: unknown
- * argument shapes contribute nothing).
+ *
+ * Recognised fs tool names keep their precise read/write classification (and
+ * two-path move/copy/rename write their destination). For an UNRECOGNISED tool
+ * name, name-matching gives us nothing, so we fail closed: any extractable path
+ * (primary or destination field) is treated as a WRITE, so an unknown tool
+ * cannot read/write outside the fsWrite allowlist by simply not matching a known
+ * name. Tools that carry no path-shaped argument contribute nothing.
+ *
+ * Residual limitation: a tool can still act on a path hardcoded server-side or
+ * passed under an argument name we don't recognise — only attach trusted MCP
+ * servers. See docs/concepts/permissions.md.
  */
 function requestedFsPaths(toolName: string, args: unknown): { path: string; write: boolean }[] {
-  const isWrite = FS_WRITE_NAMES.has(toolName)
-  const isRead = FS_READ_NAMES.has(toolName)
-  if (!isWrite && !isRead) return []
   if (args === null || typeof args !== 'object') return []
   const record = args as Record<string, unknown>
+  const isWrite = FS_WRITE_NAMES.has(toolName)
+  const isRead = FS_READ_NAMES.has(toolName)
+  const known = isWrite || isRead
 
   const reqs: { path: string; write: boolean }[] = []
-  // Common path argument names from mcp-server-filesystem and similar servers.
-  const primary = firstStringField(record, ['path', 'file_path', 'filename', 'source'])
-  if (primary !== undefined) reqs.push({ path: primary, write: isWrite })
+  const primary = firstStringField(record, FS_PRIMARY_FIELDS)
+  const dest = firstStringField(record, FS_DEST_FIELDS)
 
-  if (FS_TWO_PATH_NAMES.has(toolName)) {
-    const dest = firstStringField(record, [
-      'destination',
-      'dest',
-      'to',
-      'target',
-      'new_path',
-      'newPath',
-    ])
-    if (dest !== undefined) reqs.push({ path: dest, write: true })
+  if (known) {
+    if (primary !== undefined) reqs.push({ path: primary, write: isWrite })
+    if (FS_TWO_PATH_NAMES.has(toolName) && dest !== undefined) {
+      reqs.push({ path: dest, write: true })
+    }
+    return reqs
   }
+
+  // Unrecognised tool name → fail closed: treat any path it touches as a write.
+  if (primary !== undefined) reqs.push({ path: primary, write: true })
+  if (dest !== undefined) reqs.push({ path: dest, write: true })
   return reqs
 }
 
