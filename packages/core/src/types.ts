@@ -682,7 +682,17 @@ export type PipelineTrigger =
       /** Optional payload filter; equality on each key. */
       filter?: Record<string, unknown>
     }
-  | { kind: 'cron'; id?: string; cron: string; tz?: string }
+  | {
+      kind: 'cron'
+      id?: string
+      /** Cron expression. `expression` is accepted as an alias (the POST
+       *  /schedules field name); supply exactly one. Both empty/omitted ⇒ the
+       *  trigger is skipped at discovery rather than crashing the parser. */
+      cron?: string
+      /** Alias for `cron` (matches the POST /schedules API shape). */
+      expression?: string
+      tz?: string
+    }
   | { kind: 'interval'; id?: string; everyMs?: number; every?: string }
   | {
       /**
