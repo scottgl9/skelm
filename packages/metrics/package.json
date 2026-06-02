@@ -1,6 +1,6 @@
 {
   "name": "@skelm/metrics",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "Prometheus-format metrics for skelm event streams",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",

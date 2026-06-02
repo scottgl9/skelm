@@ -6,15 +6,82 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-06-02
+
+### Breaking Changes
+
+- **`tui` integration replaced by general `chatui`.** The legacy `TuiIntegration` is gone; the replacement covers both the terminal frontend and a web frontend behind a single integration. Imports that named `TuiIntegration` / `tui.createTriggerSource(...)` must move to `chatui`. The CLI-hosted `createRemoteTriggerSource` flow continues to work unchanged.
+
 ### Added
 
 - **Per-workflow project configuration.** `skelm run <dir>` activation now scopes the project's `defaults.permissions`, `defaults.permissionProfiles`, and `backends.{agent,infer}` to its own workflows. Two projects activated on one gateway no longer cross-contaminate ceilings: project A's narrower `defaults.permissions` does not silently bind project B's workflows, and an `agent()` step with no explicit `backend:` resolves against ITS project's `config.backends.agent` rather than "first backend with `run()`". The gateway-wide `config.defaults.permissions` / `config.backends.*` still apply as the operator-wide fallback when no per-workflow registration exists. New `Gateway.registerWorkflowProjectPermissions(id, …)` / `registerWorkflowProjectBackends(id, …)` (called by activation), and new `RunOptions.defaultAgentBackend` / `defaultInferBackend`.
+
+- **`skelm builder` command.** New CLI for scaffolding skelm projects with `--force` overwrite, surfaced skill version, and an explicit egress note. The builder's permission ceiling is opened where required so persistent turns work end-to-end; the root `builder/` directory is now the single source for builder assets across the repo.
+
+- **`skelm gateway start` guides operators to `install` or `--foreground`** when a service is already running or the start would otherwise be ambiguous; `skelm gateway install` documents the OS-autodetect behavior (systemd / launchd).
 
 ### Fixed
 
 - **`skelm gateway start` from a directory with no `skelm.config.*` no longer applies the framework deny-all permission baseline as the operator ceiling.** The CLI loader previously returned `DEFAULT_CONFIG` verbatim on the no-config path, propagating its `networkEgress: 'deny'` / empty allow-lists into `new Gateway({ config })` — surviving the constructor's strip (which only triggers when `options.config` is undefined). The result was that a workflow explicitly granting `networkEgress: 'allow'` still tripped pi-sdk's `assertEgressEnforceable` because the intersection collapsed back to `'deny'`. The loader now strips `defaults.permissions` on its no-config branch too, mirroring the constructor's intent.
 
 - **Runs that fail during the `tui` chat host no longer render as a blank `builder ›` line.** `runTurn` swallowed `run.failed` / `run.cancelled` SSE events and returned an empty string, so a turn that died (e.g. on a backend permission error) looked like the agent had silently moved on. The host now captures the error message from the SSE event (or refetches the run record when the stream missed it) and renders `(failed) <message>`.
+
+- **Gateway HTTP error responses now carry the underlying error message** instead of an opaque status string, so CLI and dashboard surfaces can show why a request failed. Error stack traces are gated on `SKELM_DEBUG_HTTP_ERRORS` rather than `NODE_ENV`, so a dev-mode gateway no longer leaks stacks to clients by default.
+
+- **CLI streams partial agent deltas** as they arrive (no more silent waits for the final frame), maps `BackendCapabilityError` to a clear exit message, and produces clearer errors from the `schedule` subcommands.
+
+- **Declared cron triggers accept the `expression` field** and refuse empty expressions instead of crashing the config import.
+
+- **Approval-audit and trigger-dispatch failures surface** through the gateway error path instead of being swallowed; **core audit and `wait()`/resume write failures** likewise surface instead of disappearing into background tasks.
+
+- **Detached trigger fires route through `onFireError`** instead of becoming unhandled promise rejections that can take down the gateway main loop.
+
+- **`withSessionLock` no longer leaks its lock-map entry** after a session completes — long-running gateways no longer grow a per-session lock entry forever.
+
+- **Unexpected egress-proxy errors are logged** (with a noted multi-cloud IPv6 metadata gap to follow up on) rather than being swallowed silently.
+
+- **`syncDeclaredTriggers` cache-busts workflow imports on reload**, so triggers added to a live workflow file are armed on the next sync instead of being missed because Node served a cached module.
+
+- **`wait()` resume values are validated against the step's schema synchronously** at resume time, so a malformed resume fails fast on the resuming caller rather than corrupting the run mid-flight.
+
+- **Operator permission and backend defaults are threaded into registered-pipeline run paths**, restoring parity between gateway-run pipelines and locally-dispatched runs.
+
+- **Codex backend survives transient stream retries** and now runs unsandboxed in environments where the codex CLI cannot sandbox (CI containers, restricted hosts).
+
+- **Gateway HTTP CONNECT proxy stops dropping tunnel bytes during the upstream dial** — TLS handshakes through the proxy no longer race against early client bytes.
+
+- **CLI loads minimal persistent workflows in the gateway dispatcher** so the dispatch path doesn't import full project trees just to fire one persistent-workflow turn.
+
+- **Repaired the `AGENTS.md` dead link** that was failing the docs Pages deploy.
+
+- **Removed unimplemented `acp serve` placeholder and the dead `SecretsArgs.path` field** from the CLI surface.
+
+### Security
+
+- **GitHub webhook trigger caps the request body size** so an unauthenticated caller cannot exhaust gateway memory by streaming a giant payload.
+
+- **Gateway request timeouts + egress-proxy DoS limits.** Requests through the gateway and its egress proxy now have bounded duration and bounded in-flight bytes; a slow or runaway client can no longer pin a worker indefinitely.
+
+- **Cloud-metadata egress blocked (SSRF).** Outbound requests to AWS / GCP / Azure / DigitalOcean metadata endpoints are refused at the egress proxy, so a compromised tool cannot pivot to instance credentials. A multi-cloud IPv6 metadata gap is noted for a follow-up.
+
+- **`allowedSecrets` enforced for `code()` and `infer()` steps**, matching agent steps — a step can only read secrets in the author-declared allowlist, regardless of backend.
+
+- **Dev-mode CORS tightened** to only respond to actual CORS requests, so a same-origin request is no longer accidentally widened by reflective `Access-Control-Allow-Origin` headers.
+
+### Perf
+
+- **SQLite indexes added on the hot run-store read paths** (run listing, event lookup), measurably reducing latency on gateways with large run histories.
+
+### Docs
+
+- New **environment-variables reference page** under `docs/reference/`.
+- Fixed a split header comment in the core/gateway sources; aligned the gateway dashboard index banner.
+- Added TSDoc on the public backend error classes (`BackendAuthenticationError`, `BackendRateLimitError`, `BackendTimeoutError`, `BackendCapabilityError`).
+- Moved the package architecture table into `docs/reference/`.
+
+### Chore
+
+- **Upgraded vitest 2 → 4.1.8** to clear critical advisories surfaced by `pnpm audit`.
 
 ## [0.4.5] - 2026-05-31
 
