@@ -110,6 +110,9 @@ export class ProjectActivationService {
   /** Declared ids of persistent workflows activated this lifetime, so the
    *  running view lists them before their first fire sets `parallel`. */
   private readonly persistentIds = new Set<string>()
+  /** workflowId → project dir, so deactivate can clear its per-workflow
+   *  permission ceiling and other per-project bookkeeping. */
+  private readonly workflowProjectDirs = new Map<string, string>()
 
   constructor(private readonly gateway: Gateway) {}
 
@@ -191,6 +194,19 @@ export class ProjectActivationService {
       const persistent = isPersistentWorkflow(wf)
       if (persistent) this.persistentIds.add(id)
       workflows.push({ id, path: real, kind: persistent ? 'persistent-workflow' : 'pipeline' })
+      // Pin the project's defaults.permissions + permissionProfiles to THIS
+      // workflow id so the runtime ceiling is the project's, not whatever
+      // operator-wide defaults the gateway happens to have. Keyed per
+      // workflow so two activated projects don't cross-contaminate.
+      this.gateway.registerWorkflowProjectPermissions(id, {
+        ...(dirConfig.defaults?.permissions !== undefined && {
+          defaultPermissions: dirConfig.defaults.permissions,
+        }),
+        ...(dirConfig.defaults?.permissionProfiles !== undefined && {
+          permissionProfiles: dirConfig.defaults.permissionProfiles,
+        }),
+      })
+      this.workflowProjectDirs.set(id, realDir)
       for (const [i, t] of (wf.triggers ?? []).entries()) {
         triggers.push(this.armTrigger(id, t, i))
       }
@@ -380,6 +396,8 @@ export class ProjectActivationService {
     }
     await this.gateway.getWorkflowRegistrationService().remove(id)
     this.persistentIds.delete(id)
+    this.gateway.unregisterWorkflowProjectPermissions(id)
+    this.workflowProjectDirs.delete(id)
 
     const runsCancelled: string[] = []
     if (opts.cancelInflight === true) {
