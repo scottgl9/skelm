@@ -92,12 +92,26 @@ export function pipelineTriggerToSpec(
         ...(trigger.debounceMs !== undefined && { debounceMs: trigger.debounceMs as number }),
       }
     case 'cron': {
+      // Accept both `cron` (the declared-trigger field) and `expression` (the
+      // POST /schedules field) — a declared trigger written in the API shape
+      // (`{ kind: 'cron', expression }`) previously yielded `cron: undefined`,
+      // which then threw `undefined.trim()` deep in the cron parser at arm time,
+      // aborting the whole workflow's trigger discovery and silently dropping
+      // its sibling triggers. Validate up front and return undefined (refused,
+      // not crashed) when neither field is a non-empty string.
+      const expr =
+        typeof trigger.cron === 'string' && trigger.cron !== ''
+          ? trigger.cron
+          : typeof trigger.expression === 'string' && trigger.expression !== ''
+            ? trigger.expression
+            : undefined
+      if (expr === undefined) return undefined
       const tz = typeof trigger.tz === 'string' ? trigger.tz : undefined
       return {
         kind: 'cron',
         id,
         workflowId,
-        cron: trigger.cron as string,
+        cron: expr,
         ...(tz !== undefined && { tz }),
       }
     }
