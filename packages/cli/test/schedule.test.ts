@@ -222,7 +222,14 @@ describe('skelm schedule — CLI smoke', () => {
     try {
       const result = await invoke(['schedule', 'add', 'wf'])
       expect(result.exitCode).toBe(EXIT.CLI_ERROR)
+      // Error message now enumerates every accepted trigger flag with an
+      // example, instead of just naming them in a single line.
       expect(result.stderr).toContain('--cron')
+      expect(result.stderr).toContain('--every')
+      expect(result.stderr).toContain('--every-ms')
+      expect(result.stderr).toContain('--webhook')
+      expect(result.stderr).toContain('--at')
+      expect(result.stderr).toContain('skelm schedule --help')
     } finally {
       await gw.stop()
     }

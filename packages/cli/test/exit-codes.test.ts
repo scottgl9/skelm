@@ -75,6 +75,12 @@ describe('skelm run — documented exit codes', () => {
     expect(r.stderr).toMatch(/wait|timeout/i)
   })
 
+  it('EXIT.BACKEND_CAPABILITY (9) when a step throws BackendCapabilityError', async () => {
+    const r = await runWorkflow('backend-capability.workflow.mts')
+    expect(r.exitCode).toBe(EXIT.BACKEND_CAPABILITY)
+    expect(r.stderr).toMatch(/BackendCapabilityError|vision/i)
+  })
+
   it('EXIT.RUN_PAUSED (8) when a wait step parks indefinitely with no resume', async () => {
     // With no interactive input source (the test pipes an empty stdin
     // and stderr isn't a TTY), the CLI cannot drive the resume prompt.

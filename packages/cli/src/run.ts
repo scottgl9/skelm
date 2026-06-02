@@ -2,6 +2,7 @@ import { accessSync, createReadStream, createWriteStream, constants as fsConstan
 import { readFile } from 'node:fs/promises'
 import { createInterface } from 'node:readline/promises'
 import {
+  BackendCapabilityError,
   PermissionDeniedError,
   SchemaValidationError,
   StepTimeoutError,
@@ -375,8 +376,10 @@ async function maybeHandleWait(
 /**
  * Render a single SSE event to stderr. Mirrors the human/json formats
  * the pre-refactor in-process bus produced.
+ *
+ * @internal Exported for unit tests; not part of the public CLI surface.
  */
-function renderEvent(ev: SseEvent, mode: 'human' | 'json' | 'none', io: RunCommandIO): void {
+export function renderEvent(ev: SseEvent, mode: 'human' | 'json' | 'none', io: RunCommandIO): void {
   if (mode === 'none') return
   // The initial run.state frame from the gateway carries a Run snapshot,
   // not a RunEvent — skip it in user-facing output.
@@ -407,6 +410,16 @@ function renderEvent(ev: SseEvent, mode: 'human' | 'json' | 'none', io: RunComma
       )
       break
     }
+    case 'step.partial': {
+      // Streaming text from an agent step. Each event carries a non-cumulative
+      // delta; mirror TUI behavior and write straight through to stderr with no
+      // prefix so output reads as a single growing message.
+      const delta = (data as { delta?: unknown }).delta
+      if (typeof delta === 'string' && delta !== '') {
+        io.stderr.write(safeForTty(delta))
+      }
+      break
+    }
     default:
       break
   }
@@ -422,6 +435,8 @@ function mapRunErrorToExit(errorName: string | undefined): ExitCode {
       return EXIT.PERMISSION_DENIED
     case StepTimeoutError.name:
       return EXIT.STEP_TIMEOUT
+    case BackendCapabilityError.name:
+      return EXIT.BACKEND_CAPABILITY
     default:
       return EXIT.RUN_FAILED
   }
