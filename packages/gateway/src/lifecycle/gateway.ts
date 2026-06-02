@@ -1218,7 +1218,24 @@ export class Gateway {
     // a createTriggerDispatcher() callback when GatewayOptions.loadWorkflow
     // is supplied — production wires this to native dynamic import(); tests can
     // pass a fake loader.
-    const triggers = new TriggerCoordinator({ onFire: async () => {} })
+    //
+    // onFireError / onQueueDrop default to no-ops on the coordinator, so a
+    // triggered workflow failing on every fire, or a full queue silently
+    // dropping fires, would only surface on an in-memory reg field stderr never
+    // sees. Wire both to the operator log here so a continuously-failing trigger
+    // isn't invisible.
+    const triggers = new TriggerCoordinator({
+      onFire: async () => {},
+      onFireError: (triggerId, err) => {
+        const detail = err instanceof Error ? (err.stack ?? err.message) : String(err)
+        process.stderr.write(`[skelm trigger] dispatch failed for "${triggerId}": ${detail}\n`)
+      },
+      onQueueDrop: (triggerId, queueDepth) => {
+        process.stderr.write(
+          `[skelm trigger] queue full for "${triggerId}" (depth ${queueDepth}); fire dropped\n`,
+        )
+      },
+    })
     await mcp.startAll(this.config.registries?.mcpServers ?? [])
     await codingAgents.startAll(this.config.registries?.agents ?? [])
     await acpSessions.reconcile()
