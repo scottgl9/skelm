@@ -268,7 +268,3 @@ Stream structured logs from a running gateway.
 ```
 skelm logs [--lines <n>] [--since <iso>] [--level <lvl>] [--filter <s>] [--json]
 ```
-
-### `skelm acp serve`
-
-Reserved. Currently emits a "not yet implemented" notice and exits 1.
