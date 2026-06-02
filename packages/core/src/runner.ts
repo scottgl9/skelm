@@ -7,6 +7,7 @@ import {
 } from './backend.js'
 import {
   type ApprovalGate,
+  type AuditEvent,
   type AuditWriter,
   AutoApproveGate,
   EnvSecretResolver,
@@ -279,6 +280,37 @@ export interface RunnerEnforcement {
   approvalGate?: ApprovalGate
 }
 
+/**
+ * Write an audit entry, surfacing (not swallowing) a writer failure. The audit
+ * log is the durable record of every privileged decision, so a silent write
+ * failure would let a denial / bypass / tool call vanish from the record with no
+ * operator signal. We still must not poison the run — a failing AuditWriter
+ * cannot abort execution — so the returned promise always resolves, but the
+ * failure is logged to stderr. Returns the (resolved) promise so callers that
+ * track audit writes (and await them before exit) keep working.
+ */
+function writeAudit(writer: AuditWriter, entry: AuditEvent): Promise<void> {
+  return writer.write(entry).catch((err) => {
+    const detail = err instanceof Error ? err.message : String(err)
+    process.stderr.write(
+      `[skelm audit] write failed (action=${entry.action} run=${entry.runId ?? '-'}): ${detail}\n`,
+    )
+  })
+}
+
+/**
+ * Surface a swallowed run-store write failure to stderr. The wait/resume status
+ * writes are load-bearing: if the `waiting` flip is lost, the gateway's
+ * recoverInterruptedRuns() sees a parked run as `running` and finalizes it as
+ * crashed on the next restart. Swallowing the failure made that divergence
+ * invisible. We still don't poison the run (the write is best-effort tracked in
+ * storeWrites), but the operator now sees the failure.
+ */
+function logStoreFailure(label: string, runId: string, err: unknown): void {
+  const detail = err instanceof Error ? err.message : String(err)
+  process.stderr.write(`[skelm run-store] ${label} write failed for run ${runId}: ${detail}\n`)
+}
+
 export class Runner {
   readonly events: EventBus
   /** Trust-boundary instances. The gateway supplies canonical writers in production; */
@@ -315,34 +347,27 @@ export class Runner {
     // The bus emits denial/secret/tool events for observability; the audit
     // writer is the durable record, so translate the relevant events here.
     this.events.subscribe((event) => {
+      const writer = this.enforcement.auditWriter
       if (event.type === 'permission.denied') {
-        void this.enforcement.auditWriter
-          .write({
-            runId: event.runId,
-            actor: 'runtime',
-            action: 'permission.denied',
-            details: {
-              stepId: event.stepId,
-              dimension: event.dimension,
-              detail: event.detail,
-              at: event.at,
-            },
-          })
-          .catch(() => {
-            // audit writer failures must not poison the run.
-          })
+        void writeAudit(writer, {
+          runId: event.runId,
+          actor: 'runtime',
+          action: 'permission.denied',
+          details: {
+            stepId: event.stepId,
+            dimension: event.dimension,
+            detail: event.detail,
+            at: event.at,
+          },
+        })
       }
       if (event.type === 'secret.not_found') {
-        void this.enforcement.auditWriter
-          .write({
-            runId: event.runId,
-            actor: 'runtime',
-            action: 'secret.not_found',
-            details: { stepId: event.stepId, name: event.name, at: event.at },
-          })
-          .catch(() => {
-            // audit writer failures must not poison the run.
-          })
+        void writeAudit(writer, {
+          runId: event.runId,
+          actor: 'runtime',
+          action: 'secret.not_found',
+          details: { stepId: event.stepId, name: event.name, at: event.at },
+        })
       }
       // A full permission bypass is a security event: record it durably so the
       // audit log shows when default-deny was intentionally short-circuited.
@@ -353,57 +378,48 @@ export class Runner {
       // enumerate exactly what the bypass enabled, which the prior single
       // summary row could not surface (plan §1.4).
       if (event.type === 'permission.bypassed') {
-        const summary = this.enforcement.auditWriter
-          .write({
+        void writeAudit(writer, {
+          runId: event.runId,
+          actor: 'step-author',
+          action: 'permission.bypassed',
+          details: {
+            stepId: event.stepId,
+            detail: event.detail,
+            at: event.at,
+            dimensions: [...ALL_PERMISSION_DIMENSIONS],
+          },
+        })
+        for (const dimension of ALL_PERMISSION_DIMENSIONS) {
+          void writeAudit(writer, {
             runId: event.runId,
             actor: 'step-author',
-            action: 'permission.bypassed',
-            details: {
-              stepId: event.stepId,
-              detail: event.detail,
-              at: event.at,
-              dimensions: [...ALL_PERMISSION_DIMENSIONS],
-            },
+            action: `permission.bypass.${dimension}`,
+            details: { stepId: event.stepId, dimension, at: event.at },
           })
-          .catch(() => {})
-        void summary
-        for (const dimension of ALL_PERMISSION_DIMENSIONS) {
-          void this.enforcement.auditWriter
-            .write({
-              runId: event.runId,
-              actor: 'step-author',
-              action: `permission.bypass.${dimension}`,
-              details: { stepId: event.stepId, dimension, at: event.at },
-            })
-            .catch(() => {})
         }
       }
       // Record successful tool calls so the audit log captures legitimate
       // privileged operations, not just denials.
       if (event.type === 'tool.call') {
-        void this.enforcement.auditWriter
-          .write({
-            runId: event.runId,
-            actor: 'runtime',
-            action: 'tool.call',
-            details: { stepId: event.stepId, tool: event.tool, at: event.at },
-          })
-          .catch(() => {})
+        void writeAudit(writer, {
+          runId: event.runId,
+          actor: 'runtime',
+          action: 'tool.call',
+          details: { stepId: event.stepId, tool: event.tool, at: event.at },
+        })
       }
       if (event.type === 'tool.result') {
-        void this.enforcement.auditWriter
-          .write({
-            runId: event.runId,
-            actor: 'runtime',
-            action: 'tool.result',
-            details: {
-              stepId: event.stepId,
-              tool: event.tool,
-              durationMs: event.durationMs,
-              at: event.at,
-            },
-          })
-          .catch(() => {})
+        void writeAudit(writer, {
+          runId: event.runId,
+          actor: 'runtime',
+          action: 'tool.result',
+          details: {
+            stepId: event.stepId,
+            tool: event.tool,
+            durationMs: event.durationMs,
+            at: event.at,
+          },
+        })
       }
     })
   }
@@ -641,11 +657,13 @@ export async function runPipeline<TInput, TOutput>(
                 since: event.at,
               },
             })
-            .catch(() => {}),
+            .catch((err) => logStoreFailure('waiting-status', event.runId, err)),
         )
       } else if (event.type === 'run.resumed') {
         storeWrites.push(
-          store.updateRun(event.runId, { status: 'running', waiting: undefined }).catch(() => {}),
+          store
+            .updateRun(event.runId, { status: 'running', waiting: undefined })
+            .catch((err) => logStoreFailure('resume-status', event.runId, err)),
         )
       }
     })
@@ -663,14 +681,12 @@ export async function runPipeline<TInput, TOutput>(
     events.subscribe((event) => {
       const queue = (entry: { action: string; details: Record<string, unknown> }) => {
         auditWrites.push(
-          auditWriter
-            .write({
-              ...(event.runId !== undefined && { runId: event.runId }),
-              actor: 'runtime',
-              action: entry.action,
-              details: entry.details,
-            })
-            .catch(() => {}),
+          writeAudit(auditWriter, {
+            ...(event.runId !== undefined && { runId: event.runId }),
+            actor: 'runtime',
+            action: entry.action,
+            details: entry.details,
+          }),
         )
       }
       if (event.type === 'permission.denied') {
@@ -690,30 +706,26 @@ export async function runPipeline<TInput, TOutput>(
         // the same shape. Step-author is the responsible actor: the
         // workflow requested the bypass, the operator merely confirmed.
         auditWrites.push(
-          auditWriter
-            .write({
-              ...(event.runId !== undefined && { runId: event.runId }),
-              actor: 'step-author',
-              action: 'permission.bypassed',
-              details: {
-                stepId: event.stepId,
-                detail: event.detail,
-                at: event.at,
-                dimensions: [...ALL_PERMISSION_DIMENSIONS],
-              },
-            })
-            .catch(() => {}),
+          writeAudit(auditWriter, {
+            ...(event.runId !== undefined && { runId: event.runId }),
+            actor: 'step-author',
+            action: 'permission.bypassed',
+            details: {
+              stepId: event.stepId,
+              detail: event.detail,
+              at: event.at,
+              dimensions: [...ALL_PERMISSION_DIMENSIONS],
+            },
+          }),
         )
         for (const dimension of ALL_PERMISSION_DIMENSIONS) {
           auditWrites.push(
-            auditWriter
-              .write({
-                ...(event.runId !== undefined && { runId: event.runId }),
-                actor: 'step-author',
-                action: `permission.bypass.${dimension}`,
-                details: { stepId: event.stepId, dimension, at: event.at },
-              })
-              .catch(() => {}),
+            writeAudit(auditWriter, {
+              ...(event.runId !== undefined && { runId: event.runId }),
+              actor: 'step-author',
+              action: `permission.bypass.${dimension}`,
+              details: { stepId: event.stepId, dimension, at: event.at },
+            }),
           )
         }
       } else if (event.type === 'secret.not_found') {
