@@ -908,6 +908,14 @@ export class SqliteRunStore implements RunStore {
         created_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS artifacts_run_idx ON artifacts(run_id, step_id, created_at, artifact_id);
+      -- The events table is the fastest-growing, most-read table (SSE replay,
+      -- GET /runs/:id/events, skelm history, crash recovery). listEvents is
+      -- WHERE run_id = ? [AND at >= ?] ORDER BY at, id — index that exactly.
+      CREATE INDEX IF NOT EXISTS events_run_idx ON events(run_id, at, id);
+      -- listRuns sorts by started_at DESC with optional time-range / status
+      -- filters; recoverInterruptedRuns scans WHERE status = 'running'.
+      CREATE INDEX IF NOT EXISTS runs_started_at_idx ON runs(started_at);
+      CREATE INDEX IF NOT EXISTS runs_status_idx ON runs(status, started_at);
     `)
     // Migration: add columns added after initial schema. Idempotent — only
     // runs when the column is missing, so re-applies cleanly on every boot.
