@@ -105,6 +105,28 @@ describe('syncDeclaredTriggers — reconcile and sweep (PR #165 follow-up)', () 
     if (after?.spec.kind === 'cron') expect(after.spec.tz).toBe('America/Chicago')
   })
 
+  it('arms a trigger ADDED to an already-loaded workflow on reload (cache-busts the stale module)', async () => {
+    // import #1: the workflow loads with NO triggers.
+    await writeWorkflow('added.workflow.mts', 'added', [])
+    await gw.registries.workflows.refresh()
+    expect(await syncDeclaredTriggers(gw, ioStub)).toBe(0)
+    expect(gw.managers.triggers.get('workflows/added.workflow.mts#cron')).toBeUndefined()
+
+    // Edit the SAME file in place to ADD a cron trigger. Before the mtime
+    // cache-bust, import() returned the stale (trigger-less) cached module and
+    // the new trigger was never registered — the "trigger added to a live
+    // workflow" gap (s31 reload-arms-new-trigger). The 10ms gap guarantees a
+    // distinct mtime so the cache-bust URL differs.
+    await new Promise((r) => setTimeout(r, 10))
+    await writeWorkflow('added.workflow.mts', 'added', [{ kind: 'cron', cron: '0 9 * * *' }])
+    await gw.registries.workflows.refresh()
+    const armed = await syncDeclaredTriggers(gw, ioStub)
+    expect(armed).toBe(1)
+    const reg = gw.managers.triggers.get('workflows/added.workflow.mts#cron')
+    expect(reg).toBeDefined()
+    expect(reg?.declared).toBe(true)
+  })
+
   it('sweeps a declared trigger removed from a still-live workflow', async () => {
     // Workflow on disk declares ONE trigger. We seed the coordinator with
     // a stale extra declared trigger as if its prior `triggers:` entry
