@@ -14,10 +14,7 @@ export interface TuiCommandArgs {
 }
 
 /** A single turn: submit `text`, stream partials to `onPartial`, resolve the reply. */
-export type TurnFn = (
-  text: string,
-  onPartial: (cumulative: string) => void,
-) => Promise<string | null>
+export type TurnFn = (text: string, onPartial: (cumulative: string) => void) => Promise<string>
 
 interface GatewayClient {
   discovery: { url: string }
@@ -115,7 +112,7 @@ export function createFrontendHost(
     const payload = { sessionId, from: 'you', text, seq }
     try {
       const reply = await turn(text, (cumulative) => ui.renderPartial?.(cumulative))
-      ui.render(reply ?? '', payload)
+      ui.render(reply, payload)
     } finally {
       active -= 1
       const next = queue.shift()
@@ -149,7 +146,7 @@ async function chatLoop(turn: TurnFn, io: MainIO): Promise<void> {
       const text = line.trim()
       if (text.length === 0) continue
       const reply = await turn(text, () => {})
-      if (reply !== null) io.stdout.write(`${reply}\n`)
+      if (reply !== '') io.stdout.write(`${reply}\n`)
     }
   } finally {
     rl.close()
@@ -168,7 +165,7 @@ export async function runTurn(
   client: GatewayClient,
   io: MainIO,
   onPartial?: (cumulative: string) => void,
-): Promise<string | null> {
+): Promise<string> {
   const submitRes = await fetchHttp(
     `${client.discovery.url}/v1/chat/${encodeURIComponent(sourceId)}/submit`,
     {
@@ -179,20 +176,30 @@ export async function runTurn(
     io,
   )
   if (submitRes === null || !submitRes.ok) {
-    io.stderr.write('> turn failed\n')
-    return null
+    const detail =
+      submitRes === null
+        ? 'gateway unreachable'
+        : `gateway returned ${submitRes.status} ${submitRes.statusText}`
+    io.stderr.write(`> turn failed: ${detail}\n`)
+    return `(submit failed) ${detail}`
   }
   const { runId } = (await submitRes.json()) as { runId: string }
 
   let acc = ''
   let reply: string | null = null
+  let failure: { kind: 'failed' | 'cancelled'; message?: string } | undefined
   try {
     for await (const ev of openSse(
       `${client.discovery.url}/runs/${runId}/stream`,
       client.headers,
     )) {
       if (ev.event === 'ping') continue
-      const data = ev.data as { type?: string; delta?: string; output?: { reply?: unknown } }
+      const data = ev.data as {
+        type?: string
+        delta?: string
+        output?: { reply?: unknown }
+        error?: { message?: unknown }
+      }
       const type = ev.event !== 'message' ? ev.event : (data?.type ?? 'message')
       if (type === 'step.partial' && typeof data?.delta === 'string') {
         acc += data.delta
@@ -202,6 +209,11 @@ export async function runTurn(
         reply = typeof out === 'string' ? out : acc
         break
       } else if (type === 'run.failed' || type === 'run.cancelled') {
+        const msg = typeof data?.error?.message === 'string' ? data.error.message : undefined
+        failure = {
+          kind: type === 'run.failed' ? 'failed' : 'cancelled',
+          ...(msg && { message: msg }),
+        }
         break
       }
     }
@@ -209,6 +221,10 @@ export async function runTurn(
     // Stream interrupted — fall back to the final run state below.
   }
 
+  // Failure paths: refetch the run record to pick up an error message the
+  // SSE stream may have missed (e.g. when the failure landed before the
+  // subscriber attached) and turn the failure into a visible reply so a
+  // silent "thinking…" forever is impossible.
   if (reply === null) {
     const stateRes = await fetchHttp(
       `${client.discovery.url}/runs/${runId}`,
@@ -216,11 +232,27 @@ export async function runTurn(
       io,
     )
     if (stateRes?.ok) {
-      const run = (await stateRes.json()) as { output?: { reply?: unknown } }
-      if (typeof run.output?.reply === 'string') reply = run.output.reply
+      const run = (await stateRes.json()) as {
+        status?: string
+        output?: { reply?: unknown }
+        error?: { message?: unknown }
+      }
+      if (typeof run.output?.reply === 'string' && run.output.reply !== '') {
+        reply = run.output.reply
+      } else if (run.status === 'failed' || run.status === 'cancelled') {
+        const msg = typeof run.error?.message === 'string' ? run.error.message : undefined
+        failure = {
+          kind: run.status === 'failed' ? 'failed' : 'cancelled',
+          ...(msg && { message: msg }),
+        }
+      }
     }
   }
-  return reply ?? acc
+
+  if (reply === null && failure !== undefined) {
+    return `(${failure.kind}) ${failure.message ?? 'no error message'}`
+  }
+  return reply ?? (acc === '' ? '(no reply)' : acc)
 }
 
 async function deactivate(workflowId: string, client: GatewayClient, io: MainIO): Promise<void> {
