@@ -18,6 +18,13 @@ export const EXIT = {
    * the CLI is on the follow-up roadmap (needs live SSE event consumption).
    */
   RUN_PAUSED: 8,
+  /**
+   * The run failed because the selected backend does not support an
+   * operation a step required (vision, agentmemory, tool calls, etc.).
+   * Distinct from a generic RUN_FAILED so CI / scripts can detect a
+   * configuration-class problem without parsing the error message.
+   */
+  BACKEND_CAPABILITY: 9,
 } as const
 
 export type ExitCode = (typeof EXIT)[keyof typeof EXIT]

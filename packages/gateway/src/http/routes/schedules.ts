@@ -88,8 +88,11 @@ export function registerScheduleRoutes(router: Router, gateway: Gateway): void {
         overlap = rawOverlap as 'skip' | 'queue' | 'cancel'
       }
       const spec = scheduleTriggerToSpec(id, workflowId, trigger as { kind: string })
-      if (spec === 'invalid') {
-        throw createError({ statusCode: 400, message: 'invalid trigger configuration' })
+      if ('error' in spec) {
+        throw createError({
+          statusCode: 400,
+          message: `invalid trigger configuration: ${spec.error}`,
+        })
       }
       // Persist the optional `input` JSON so cron / interval / manual / at /
       // immediate fires can pass it as the pipeline input. Queue / webhook
@@ -125,7 +128,7 @@ function scheduleTriggerToSpec(
   id: string,
   workflowId: string,
   trigger: { kind: string } & Record<string, unknown>,
-): TriggerSpec | 'invalid' {
+): TriggerSpec | { error: string } {
   switch (trigger.kind) {
     case 'immediate':
       return { kind: 'immediate', id, workflowId }
@@ -133,12 +136,13 @@ function scheduleTriggerToSpec(
       return { kind: 'manual', id, workflowId }
     case 'at': {
       const when = trigger.when
-      if (typeof when !== 'string') return 'invalid'
+      if (typeof when !== 'string')
+        return { error: 'at trigger requires string `when` (ISO timestamp)' }
       return { kind: 'at', id, workflowId, when }
     }
     case 'cron': {
       const expr = trigger.expression
-      if (typeof expr !== 'string') return 'invalid'
+      if (typeof expr !== 'string') return { error: 'cron trigger requires string `expression`' }
       const spec: TriggerSpec = { kind: 'cron', id, workflowId, cron: expr }
       if (typeof trigger.tz === 'string') spec.tz = trigger.tz
       return spec
@@ -146,22 +150,30 @@ function scheduleTriggerToSpec(
     case 'interval': {
       const everyMs = trigger.everyMs
       const every = trigger.every
-      if (typeof everyMs !== 'number' && typeof every !== 'string') return 'invalid'
+      if (typeof everyMs !== 'number' && typeof every !== 'string') {
+        return {
+          error: 'interval trigger requires `everyMs` (number) or `every` (duration string)',
+        }
+      }
       let resolvedEveryMs: number
       if (typeof everyMs === 'number') {
         resolvedEveryMs = everyMs
       } else {
         try {
           resolvedEveryMs = parseDuration(every as string)
-        } catch {
-          return 'invalid'
+        } catch (e) {
+          return { error: `interval trigger: cannot parse \`every\` (${(e as Error).message})` }
         }
       }
       // Reject intervals outside setInterval's effective range. Node silently
       // clamps delays <= 0 (and > 2^31-1) to 1ms, so an unvalidated everyMs of
       // -5 / 0 / 1e12 would arm a ~1ms tight loop and fire the workflow ~1000x/s
       // — a denial of service. The cron path already validates its expression.
-      if (!isValidIntervalMs(resolvedEveryMs)) return 'invalid'
+      if (!isValidIntervalMs(resolvedEveryMs)) {
+        return {
+          error: `interval trigger: everyMs=${resolvedEveryMs} out of supported range`,
+        }
+      }
       return {
         kind: 'interval',
         id,
@@ -172,7 +184,9 @@ function scheduleTriggerToSpec(
     }
     case 'webhook': {
       const path = trigger.path
-      if (typeof path !== 'string' || path === '') return 'invalid'
+      if (typeof path !== 'string' || path === '') {
+        return { error: 'webhook trigger requires non-empty `path`' }
+      }
       const spec: TriggerSpec = { kind: 'webhook', id, workflowId, path }
       if (typeof trigger.method === 'string') spec.method = trigger.method
       if (typeof trigger.secret === 'string') spec.secret = trigger.secret
@@ -186,14 +200,16 @@ function scheduleTriggerToSpec(
       // the webhook URL would be the only authentication boundary.
       // Refuse to register an unauthenticated ms-graph trigger (issue #161).
       if (spec.provider === 'ms-graph' && spec.clientState === undefined) {
-        return 'invalid'
+        return { error: 'ms-graph webhook requires `clientState` for authentication' }
       }
       return spec
     }
     case 'event-source': {
       const source = trigger.source
       if (source !== 'websocket' && source !== 'sse' && source !== 'rss' && source !== 'custom') {
-        return 'invalid'
+        return {
+          error: `event-source trigger: \`source\` must be websocket|sse|rss|custom (got ${JSON.stringify(source)})`,
+        }
       }
       const options =
         typeof trigger.options === 'object' && trigger.options !== null
@@ -213,7 +229,9 @@ function scheduleTriggerToSpec(
     }
     case 'file-watch': {
       const path = trigger.path
-      if (typeof path !== 'string' || path === '') return 'invalid'
+      if (typeof path !== 'string' || path === '') {
+        return { error: 'file-watch trigger requires non-empty `path`' }
+      }
       const spec: TriggerSpec = { kind: 'file-watch', id, workflowId, path }
       if (Array.isArray(trigger.events)) {
         const events = trigger.events.filter(
@@ -228,16 +246,20 @@ function scheduleTriggerToSpec(
     case 'poll': {
       const everyMs = trigger.everyMs
       const sourceFnId = trigger.sourceFnId
-      if (typeof everyMs !== 'number' || typeof sourceFnId !== 'string') return 'invalid'
+      if (typeof everyMs !== 'number' || typeof sourceFnId !== 'string') {
+        return { error: 'poll trigger requires `everyMs` (number) and `sourceFnId` (string)' }
+      }
       // Same setInterval tight-loop guard as the interval kind.
-      if (!isValidIntervalMs(everyMs)) return 'invalid'
+      if (!isValidIntervalMs(everyMs)) {
+        return { error: `poll trigger: everyMs=${everyMs} out of supported range` }
+      }
       const spec: TriggerSpec = { kind: 'poll', id, workflowId, everyMs, sourceFnId }
       if (typeof trigger.dedupeKeyFnId === 'string') spec.dedupeKeyFnId = trigger.dedupeKeyFnId
       return spec
     }
     case 'queue': {
       const driver = trigger.driver
-      if (typeof driver !== 'string') return 'invalid'
+      if (typeof driver !== 'string') return { error: 'queue trigger requires string `driver`' }
       const spec: TriggerSpec = { kind: 'queue', id, workflowId, driver }
       if (typeof trigger.config === 'object' && trigger.config !== null) {
         spec.config = trigger.config as Record<string, unknown>
@@ -245,7 +267,7 @@ function scheduleTriggerToSpec(
       return spec
     }
     default:
-      return 'invalid'
+      return { error: `unknown trigger kind: ${JSON.stringify(trigger.kind)}` }
   }
 }
 
