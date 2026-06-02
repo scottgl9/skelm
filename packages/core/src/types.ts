@@ -288,10 +288,12 @@ export interface CodeStep<TOutput = unknown> {
   readonly state?: StateConfig
   readonly retry?: RetryPolicy
   /**
-   * Permission policy for this step. Today only `allowedExecutables` is
-   * enforced (via `ctx.exec`); other dimensions are accepted for forward
-   * compatibility. Default-deny: omitting this field denies every
-   * `ctx.exec` call.
+   * Permission policy for this step. `allowedExecutables` is enforced via
+   * `ctx.exec`, and `allowedSecrets` gates each declared `secrets` name via
+   * `ctx.secrets`; other dimensions are accepted for forward compatibility.
+   * Default-deny: omitting this field denies every `ctx.exec` call, and once
+   * the field is present an omitted `allowedSecrets` denies every declared
+   * secret.
    */
   readonly permissions?: import('./permissions.js').AgentPermissions
   /** Aborts ctx.signal and rejects with StepTimeoutError after this many ms. */

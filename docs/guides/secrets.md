@@ -81,7 +81,7 @@ export default pipeline({
 })
 ```
 
-Authorisation: when a step has `permissions: { allowedSecrets: [...] }`, the runner gates each declared name through `TrustEnforcer.canAccessSecret` and emits `permission.denied` (dimension `'secret'`) on a violation. Steps without an explicit `permissions` field skip this gate — the secret reaches the callback unconditionally.
+Authorisation: when a `code()` or `agent()` step has `permissions: { allowedSecrets: [...] }`, the runner gates each declared name through `TrustEnforcer.canAccessSecret` and emits `permission.denied` (dimension `'secret'`) on a violation. Once a step declares a `permissions` policy, an omitted `allowedSecrets` denies every declared secret (default-deny within the policy). The same gate binds every step kind — `code()`, `infer()`, and `agent()` — to the delegation ceiling when the step runs as a delegated child, so a child can never read a secret outside its parent's `allowedSecrets`. A top-level step that declares no policy (and no ceiling) skips the gate — the secret reaches the callback unconditionally.
 
 Failure modes:
 
