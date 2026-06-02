@@ -44,8 +44,18 @@ export async function loadSkelmConfig(opts?: {
   const found = walkUpForConfig(opts?.fromDir ?? process.cwd())
   if (found === null) {
     const projectRoot = opts?.fromDir ?? process.cwd()
+    // No user config: surface DEFAULT_CONFIG but DROP its framework deny-all
+    // permission baseline. Otherwise that baseline lands on the gateway via
+    // `new Gateway({ config })` (which only strips in its own no-config
+    // fallback, not when `options.config` is supplied) and becomes the
+    // operator ceiling — every step's resolved policy is intersected with
+    // deny, so a workflow that explicitly grants `networkEgress: 'allow'`
+    // still routes to a backend that throws PermissionDeniedError. Mirrors
+    // the same intent as the Gateway constructor's no-config branch and
+    // matches the loader's documented contract: framework permission
+    // defaults are non-authoritative.
     return {
-      config: applyEnvLayers(DEFAULT_CONFIG, projectRoot),
+      config: applyEnvLayers(withoutFrameworkPermissionDefaults(DEFAULT_CONFIG), projectRoot),
       source: null,
       projectRoot,
       hasExplicitDefaultPermissions: false,
@@ -90,6 +100,12 @@ export function applyEnvLayers(config: SkelmConfig, projectRoot: string): SkelmC
   }
 
   return { ...config, env: Object.freeze({ ...merged }) }
+}
+
+function withoutFrameworkPermissionDefaults(config: SkelmConfig): SkelmConfig {
+  if (config.defaults?.permissions === undefined) return config
+  const { permissions: _drop, ...restDefaults } = config.defaults
+  return { ...config, defaults: restDefaults }
 }
 
 const CONFIG_FILENAMES = [
