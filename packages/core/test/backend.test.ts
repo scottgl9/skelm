@@ -9,6 +9,8 @@ import {
   type SkelmBackend,
 } from '../src/backend.js'
 import { agent, code, infer, pipeline } from '../src/builders.js'
+import type { AuditEvent, AuditWriter } from '../src/enforcement/audit-writer.js'
+import { EventBus, type RunEvent } from '../src/events.js'
 import { runPipeline } from '../src/runner.js'
 import { fixtureBackend } from '../src/testing/contract.js'
 
@@ -281,6 +283,13 @@ describe('infer() step', () => {
 })
 
 describe('backend list fallback', () => {
+  class CapturingAuditWriter implements AuditWriter {
+    readonly entries: AuditEvent[] = []
+    async write(entry: AuditEvent): Promise<void> {
+      this.entries.push(entry)
+    }
+  }
+
   function agentBackend(id: string, run: NonNullable<SkelmBackend['run']>): SkelmBackend {
     return {
       id,
@@ -328,6 +337,58 @@ describe('backend list fallback', () => {
     expect(run.status).toBe('completed')
     expect(run.output).toEqual({ text: 'ok' })
     expect(calls).toEqual(['missing-agent', 'working-agent'])
+  })
+
+  it('emits and audits agent backend failover', async () => {
+    const reg = new BackendRegistry()
+    reg.register(
+      agentBackend('missing-agent', async () => {
+        throw new BackendUnavailableError('agent not installed', 'missing-agent')
+      }),
+    )
+    reg.register(agentBackend('working-agent', async () => ({ text: 'ok' })))
+    const events = new EventBus()
+    const seen: RunEvent[] = []
+    events.subscribe((event) => seen.push(event))
+    const auditWriter = new CapturingAuditWriter()
+
+    const wf = pipeline({
+      id: 'agent-backend-list-audit',
+      steps: [
+        agent({
+          id: 'work',
+          backend: ['missing-agent', 'working-agent'],
+          prompt: 'hello',
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, undefined, { backends: reg, events, auditWriter })
+
+    expect(run.status).toBe('completed')
+    const event = seen.find(
+      (e): e is Extract<RunEvent, { type: 'backend.failover' }> => e.type === 'backend.failover',
+    )
+    expect(event).toMatchObject({
+      type: 'backend.failover',
+      stepId: 'work',
+      kind: 'agent',
+      from: 'missing-agent',
+      to: 'working-agent',
+      error: 'agent not installed',
+    })
+    expect(auditWriter.entries).toContainEqual(
+      expect.objectContaining({
+        action: 'backend.failover',
+        actor: 'runtime',
+        details: expect.objectContaining({
+          stepId: 'work',
+          kind: 'agent',
+          from: 'missing-agent',
+          to: 'working-agent',
+          error: 'agent not installed',
+        }),
+      }),
+    )
   })
 
   it('falls over to the next infer backend when the first is unavailable', async () => {
@@ -381,6 +442,31 @@ describe('backend list fallback', () => {
     expect(run.status).toBe('failed')
     expect(run.error?.name).toBe('BackendUnavailableError')
     expect(run.error?.message).toContain('agent not installed')
+  })
+
+  it('preserves BackendUnavailableError for an unavailable default infer backend', async () => {
+    const reg = new BackendRegistry()
+    reg.register(
+      fixtureBackend({
+        id: 'missing-infer',
+        respond: async () => {
+          throw new BackendUnavailableError('infer not installed', 'missing-infer')
+        },
+      }),
+    )
+
+    const wf = pipeline({
+      id: 'default-infer-unavailable',
+      steps: [infer({ id: 'ask', prompt: 'hi' })],
+    })
+    const run = await runPipeline(wf, undefined, {
+      backends: reg,
+      defaultInferBackend: 'missing-infer',
+    })
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('BackendUnavailableError')
+    expect(run.error?.message).toContain('infer not installed')
   })
 
   it('does not fall over on non-availability backend errors', async () => {
