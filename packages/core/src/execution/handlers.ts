@@ -1,3 +1,4 @@
+import pRetry, { AbortError as RetryAbortError } from 'p-retry'
 import { loadAgentDefinition } from '../agent-def.js'
 import {
   type AgentRequest,
@@ -50,7 +51,6 @@ import {
   isRetryableError,
   resolveIdempotentKey,
   restoreSerializedError,
-  sleep,
   uniqueStrings,
 } from '../runner-utils.js'
 import { runPipeline } from '../runner.js'
@@ -162,33 +162,46 @@ export async function runStepWithRetry(
   runtime: ExecutionRuntime,
 ): Promise<unknown> {
   const maxAttempts = step.retry?.maxAttempts ?? 1
-  const backoffMultiplier = step.retry?.backoffMultiplier ?? 1
-  let delayMs = step.retry?.delayMs ?? 0
-  let attempt = 1
+  let abortedOriginal: unknown
 
-  while (true) {
-    try {
-      return await runStep(step, ctx, backends, waitForInput, events, runtime)
-    } catch (err) {
-      if (attempt >= maxAttempts || !isRetryableError(err)) {
-        throw err
-      }
-      events.publish({
-        type: 'step.retry',
-        runId: ctx.run.runId,
-        stepId: step.id,
-        kind: step.kind,
-        attempt,
-        error: serializeError(err),
-        ...(delayMs > 0 && { delayMs }),
-        at: Date.now(),
-      })
-      if (delayMs > 0) {
-        await sleep(delayMs, ctx.signal)
-      }
-      attempt += 1
-      delayMs *= backoffMultiplier
-    }
+  try {
+    return await pRetry(
+      async () => {
+        try {
+          return await runStep(step, ctx, backends, waitForInput, events, runtime)
+        } catch (err) {
+          if (!isRetryableError(err)) {
+            abortedOriginal = err
+            throw new RetryAbortError(err instanceof Error ? err : new Error(String(err)))
+          }
+          throw err
+        }
+      },
+      {
+        retries: maxAttempts - 1,
+        factor: step.retry?.backoffMultiplier ?? 1,
+        minTimeout: step.retry?.delayMs ?? 0,
+        maxTimeout: Number.POSITIVE_INFINITY,
+        randomize: false,
+        signal: ctx.signal,
+        unref: true,
+        onFailedAttempt: ({ error, attemptNumber, retryDelay }) => {
+          events.publish({
+            type: 'step.retry',
+            runId: ctx.run.runId,
+            stepId: step.id,
+            kind: step.kind,
+            attempt: attemptNumber,
+            error: serializeError(error),
+            ...(retryDelay > 0 && { delayMs: retryDelay }),
+            at: Date.now(),
+          })
+        },
+      },
+    )
+  } catch (err) {
+    if (err instanceof RetryAbortError && abortedOriginal !== undefined) throw abortedOriginal
+    throw err
   }
 }
 async function runStep(

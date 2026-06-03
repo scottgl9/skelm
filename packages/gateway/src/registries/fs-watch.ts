@@ -1,4 +1,4 @@
-import { type FSWatcher, watch } from 'node:fs'
+import { type FSWatcher, watch } from 'chokidar'
 
 export interface FsWatchOptions {
   /** Absolute path to a directory to watch recursively. */
@@ -9,9 +9,8 @@ export interface FsWatchOptions {
 }
 
 /**
- * Thin wrapper around node:fs.watch with debouncing. The recursive option
- * is supported on macOS / Windows / Linux 6.5+ — older Linux falls back to
- * a single-level watch. Either way, refresh() can always be called manually.
+ * Thin wrapper around chokidar with debouncing. Watcher errors are best-effort:
+ * manual refresh remains available when the platform cannot keep a watcher.
  */
 export class FsWatcher {
   private watcher: FSWatcher | null = null
@@ -22,15 +21,15 @@ export class FsWatcher {
 
   start(): void {
     if (this.watcher !== null) return
-    try {
-      this.watcher = watch(this.options.dir, { recursive: true }, () => this.schedule())
-    } catch {
-      try {
-        this.watcher = watch(this.options.dir, () => this.schedule())
-      } catch {
-        this.watcher = null
-      }
-    }
+    this.watcher = watch(this.options.dir, {
+      ignoreInitial: true,
+      persistent: false,
+    })
+    this.watcher.on('add', () => this.schedule())
+    this.watcher.on('change', () => this.schedule())
+    this.watcher.on('unlink', () => this.schedule())
+    this.watcher.on('addDir', () => this.schedule())
+    this.watcher.on('unlinkDir', () => this.schedule())
     this.watcher?.on('error', () => {
       // Swallow watcher errors; manual refresh remains available.
     })
