@@ -10,6 +10,8 @@
  * Phase 8 alongside the coding-agent supervisor.
  */
 
+import { parseDocument } from 'yaml'
+
 export interface Skill {
   id: string
   description?: string
@@ -54,8 +56,8 @@ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/
 
 /**
  * Parse a SKILL.md document. The frontmatter parser is intentionally tiny
- * (key: value, key: [a, b], string-only) — skills are short docs, not
- * arbitrary YAML configs.
+ * around the YAML library: fenced frontmatter is required, while the YAML
+ * parser owns value parsing and syntax validation.
  */
 export function parseSkill(source: string, raw: string): Skill {
   const trimmed = raw.replace(/^﻿/, '')
@@ -85,31 +87,20 @@ export function parseSkill(source: string, raw: string): Skill {
 }
 
 function parseFrontmatter(fm: string, source: string): Record<string, unknown> {
-  const out: Record<string, unknown> = {}
-  for (const lineRaw of fm.split(/\r?\n/)) {
-    const line = lineRaw.trim()
-    if (line === '' || line.startsWith('#')) continue
-    const colon = line.indexOf(':')
-    if (colon === -1) {
-      throw new SkillParseError(`frontmatter line missing ':' — ${line}`, source)
-    }
-    const key = line.slice(0, colon).trim()
-    const value = line.slice(colon + 1).trim()
-    if (value.startsWith('[') && value.endsWith(']')) {
-      const inner = value.slice(1, -1).trim()
-      out[key] = inner === '' ? [] : inner.split(',').map((s) => unquote(s.trim()))
-    } else {
-      out[key] = unquote(value)
-    }
+  const doc = parseDocument(fm)
+  const [error] = doc.errors
+  if (error !== undefined) {
+    throw new SkillParseError(`malformed frontmatter: ${error.message}`, source)
   }
-  return out
+  const metadata = doc.toJSON()
+  if (!isRecord(metadata)) {
+    throw new SkillParseError('frontmatter must be a YAML mapping', source)
+  }
+  return metadata
 }
 
-function unquote(s: string): string {
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-    return s.slice(1, -1)
-  }
-  return s
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function readString(meta: Record<string, unknown>, key: string): string | null {

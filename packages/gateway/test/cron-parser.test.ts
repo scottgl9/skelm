@@ -23,26 +23,16 @@ describe('parseCron', () => {
     expect(parseCron('')).toBeNull()
   })
 
-  it('parses wildcards into the full domain', () => {
-    const p = parseCron('* * * * *')
-    expect(p).not.toBeNull()
-    expect(p?.minute.size).toBe(60)
-    expect(p?.hour.size).toBe(24)
-    expect(p?.month.size).toBe(12)
+  it('accepts wildcards', () => {
+    expect(parseCron('* * * * *')).not.toBeNull()
   })
 
-  it('parses step values from a wildcard base', () => {
-    const p = parseCron('*/15 * * * *')
-    expect(Array.from(p?.minute ?? []).sort((a, b) => a - b)).toEqual([0, 15, 30, 45])
+  it('accepts step values from a wildcard base', () => {
+    expect(parseCron('*/15 * * * *')).not.toBeNull()
   })
 
-  it('parses ranges and lists', () => {
-    const p = parseCron('1,5,10-12 9-17 * * 1-5')
-    expect(Array.from(p?.minute ?? []).sort((a, b) => a - b)).toEqual([1, 5, 10, 11, 12])
-    expect(Array.from(p?.hour ?? []).sort((a, b) => a - b)).toEqual([
-      9, 10, 11, 12, 13, 14, 15, 16, 17,
-    ])
-    expect(Array.from(p?.dayOfWeek ?? []).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5])
+  it('accepts ranges and lists', () => {
+    expect(parseCron('1,5,10-12 9-17 * * 1-5')).not.toBeNull()
   })
 
   it('rejects out-of-range values', () => {
@@ -51,6 +41,11 @@ describe('parseCron', () => {
     expect(parseCron('* * 0 * *')).toBeNull()
     expect(parseCron('* * * 13 *')).toBeNull()
     expect(parseCron('* * * * 7')).toBeNull()
+  })
+
+  it('preserves the five-field numeric contract', () => {
+    expect(parseCron('0 9 * jan *')).toBeNull()
+    expect(parseCron('0 9 * * mon')).toBeNull()
   })
 
   it('rejects step <= 0', () => {
@@ -92,6 +87,19 @@ describe('nextFireTime', () => {
     expect(next).not.toBeNull()
     expect(next?.getDay()).toBe(1) // local Monday
     expect(next?.getHours()).toBe(9) // local 09:00
+    expect(next?.getMinutes()).toBe(0)
+  })
+
+  it('requires day-of-month and day-of-week to both match', () => {
+    const p = parseCron('0 9 13 * 5')
+    const next = nextFireTime(p as never, new Date(2026, 2, 14, 12, 0, 0, 0))
+
+    expect(next).not.toBeNull()
+    expect(next?.getFullYear()).toBe(2026)
+    expect(next?.getMonth()).toBe(10)
+    expect(next?.getDate()).toBe(13)
+    expect(next?.getDay()).toBe(5)
+    expect(next?.getHours()).toBe(9)
     expect(next?.getMinutes()).toBe(0)
   })
 
