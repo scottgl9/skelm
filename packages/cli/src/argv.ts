@@ -1,31 +1,76 @@
-/**
- * Tiny argv parser sized for skelm's CLI. We deliberately avoid a heavy
- * argv library at this stage; we have one canonical command (`run`) plus
- * `--help` / `--version`. When the surface grows, swap this out.
- */
+import { Command } from 'commander'
+
+const COMMANDS = [
+  'run',
+  'init',
+  'list',
+  'stop',
+  'describe',
+  'history',
+  'workspace',
+  'gateway',
+  'approvals',
+  'audit',
+  'secrets',
+  'debug',
+  'sessions',
+  'schedule',
+  'validate',
+  'logs',
+  'builder',
+] as const
+
+type Subcommand = (typeof COMMANDS)[number]
+
+const COMMAND_SET = new Set<string>(COMMANDS)
+
+const VALUE_FLAGS = [
+  'action',
+  'actor',
+  'approver',
+  'at',
+  'cron',
+  'events',
+  'every',
+  'every-ms',
+  'filter',
+  'format',
+  'http-host',
+  'http-port',
+  'id',
+  'input',
+  'input-file',
+  'last',
+  'level',
+  'limit',
+  'lines',
+  'older-than-ms',
+  'overlap',
+  'reason',
+  'run',
+  'since',
+  'tz',
+  'until',
+  'value',
+  'webhook',
+  'workflow',
+] as const
+
+const BOOLEAN_FLAGS = [
+  'all',
+  'cancel-inflight',
+  'detach',
+  'expired',
+  'force',
+  'foreground',
+  'input-stdin',
+  'json',
+  'launchd',
+  'systemd',
+] as const
 
 export interface ParsedArgv {
-  command:
-    | 'run'
-    | 'init'
-    | 'list'
-    | 'stop'
-    | 'describe'
-    | 'history'
-    | 'workspace'
-    | 'gateway'
-    | 'approvals'
-    | 'audit'
-    | 'secrets'
-    | 'debug'
-    | 'sessions'
-    | 'schedule'
-    | 'validate'
-    | 'logs'
-    | 'builder'
-    | 'version'
-    | 'help'
-    | 'unknown'
+  command: Subcommand | 'version' | 'help' | 'unknown'
   positional: string[]
   flags: Record<string, string | boolean>
 }
@@ -44,101 +89,77 @@ export function parseArgv(argv: readonly string[]): ParsedArgv {
   if (first === '--help' || first === '-h') {
     return { command: 'help', positional: [], flags: {} }
   }
-  if (first === 'run') {
-    return parseSubcommand('run', argv.slice(1))
+  if (!COMMAND_SET.has(first)) {
+    return { command: 'unknown', positional: [first], flags: {} }
   }
-  if (first === 'init') {
-    return parseSubcommand('init', argv.slice(1))
-  }
-  if (first === 'builder') {
-    return parseSubcommand('builder', argv.slice(1))
-  }
-  if (first === 'list') {
-    return parseSubcommand('list', argv.slice(1))
-  }
-  if (first === 'stop') {
-    return parseSubcommand('stop', argv.slice(1))
-  }
-  if (first === 'describe') {
-    return parseSubcommand('describe', argv.slice(1))
-  }
-  if (first === 'history') {
-    return parseSubcommand('history', argv.slice(1))
-  }
-  if (first === 'workspace') {
-    return parseSubcommand('workspace', argv.slice(1))
-  }
-  if (first === 'gateway') {
-    return parseSubcommand('gateway', argv.slice(1))
-  }
-  if (first === 'approvals') {
-    return parseSubcommand('approvals', argv.slice(1))
-  }
-  if (first === 'audit') {
-    return parseSubcommand('audit', argv.slice(1))
-  }
-  if (first === 'secrets') {
-    return parseSubcommand('secrets', argv.slice(1))
-  }
-  if (first === 'debug') {
-    return parseSubcommand('debug', argv.slice(1))
-  }
-  if (first === 'sessions') {
-    return parseSubcommand('sessions', argv.slice(1))
-  }
-  if (first === 'schedule') {
-    return parseSubcommand('schedule', argv.slice(1))
-  }
-  if (first === 'validate') {
-    return parseSubcommand('validate', argv.slice(1))
-  }
-  if (first === 'logs') {
-    return parseSubcommand('logs', argv.slice(1))
-  }
-  return { command: 'unknown', positional: [first], flags: {} }
+  return parseSubcommand(first as Subcommand, argv.slice(1))
 }
 
-function parseSubcommand(
-  command:
-    | 'run'
-    | 'init'
-    | 'builder'
-    | 'list'
-    | 'stop'
-    | 'describe'
-    | 'history'
-    | 'workspace'
-    | 'gateway'
-    | 'approvals'
-    | 'audit'
-    | 'secrets'
-    | 'debug'
-    | 'sessions'
-    | 'schedule'
-    | 'validate'
-    | 'logs',
-  rest: readonly string[],
-): ParsedArgv {
+function parseSubcommand(command: Subcommand, rest: readonly string[]): ParsedArgv {
   if (rest.includes('--help') || rest.includes('-h')) {
     return { command: 'help', positional: [command], flags: {} }
   }
+
+  const parser = new Command(command)
+    .exitOverride()
+    .allowUnknownOption(true)
+    .allowExcessArguments(true)
+    .helpOption(false)
+    .argument('[args...]')
+    .configureOutput({
+      writeOut: () => {},
+      writeErr: () => {},
+    })
+
+  for (const flag of VALUE_FLAGS) parser.option(`--${flag} <value>`)
+  for (const flag of BOOLEAN_FLAGS) parser.option(`--${flag}`)
+
+  parser.parse([...rest], { from: 'user' })
+
+  const parsedFlags = dashCaseOptions(parser.opts<Record<string, string | boolean>>())
+  const unknown = parseUnknownArgs(parser.args)
+  return {
+    command,
+    positional: unknown.positional,
+    flags: { ...parsedFlags, ...unknown.flags },
+  }
+}
+
+function dashCaseOptions(opts: Record<string, string | boolean>): Record<string, string | boolean> {
+  const out: Record<string, string | boolean> = {}
+  for (const [key, value] of Object.entries(opts)) {
+    if (value === undefined) continue
+    out[key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)] = value
+  }
+  return out
+}
+
+function parseUnknownArgs(args: readonly string[]): {
+  positional: string[]
+  flags: Record<string, string | boolean>
+} {
   const positional: string[] = []
   const flags: Record<string, string | boolean> = {}
-  for (let i = 0; i < rest.length; i++) {
-    const arg = rest[i]
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
     if (arg === undefined) continue
-    if (arg.startsWith('--')) {
-      const name = arg.slice(2)
-      const next = rest[i + 1]
-      if (next !== undefined && !next.startsWith('--')) {
-        flags[name] = next
-        i++
-      } else {
-        flags[name] = true
-      }
-    } else {
+    if (!arg.startsWith('--')) {
       positional.push(arg)
+      continue
+    }
+    const raw = arg.slice(2)
+    const eq = raw.indexOf('=')
+    if (eq >= 0) {
+      flags[raw.slice(0, eq)] = raw.slice(eq + 1)
+      continue
+    }
+    const next = args[i + 1]
+    if (next !== undefined && !next.startsWith('--')) {
+      flags[raw] = next
+      i++
+    } else {
+      flags[raw] = true
     }
   }
-  return { command, positional, flags }
+  return { positional, flags }
 }

@@ -41,6 +41,7 @@
     "@skelm/opencode": "workspace:*",
     "@skelm/pi": "workspace:*",
     "@skelm/gateway": "workspace:*",
+    "commander": "^15.0.0",
     "dotenv": "^16.4.5"
   },
   "devDependencies": {

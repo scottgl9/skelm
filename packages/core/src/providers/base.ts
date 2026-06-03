@@ -9,6 +9,7 @@
  * - Config validation
  */
 
+import pRetry, { AbortError as RetryAbortError } from 'p-retry'
 import type { BackendCapabilities, SkelmBackend } from '../backend.js'
 import type {
   PluginConfig,
@@ -317,33 +318,38 @@ export abstract class ProviderPluginBase {
       retryable = () => true,
     } = options
 
-    let lastError: unknown
-    let delay = initialDelayMs
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        return await fn()
-      } catch (error) {
-        lastError = error
-
-        if (!retryable(error) || attempt === maxRetries) {
-          throw error
-        }
-
-        this.logger.warn(`Retry attempt ${attempt + 1}/${maxRetries}`, {
-          error: error instanceof Error ? error.message : String(error),
-        })
-
-        await this.sleep(delay)
-        delay = Math.min(delay * backoffFactor, maxDelayMs)
-      }
+    let abortedOriginal: unknown
+    try {
+      return await pRetry(
+        async () => {
+          try {
+            return await fn()
+          } catch (error) {
+            if (!retryable(error)) {
+              abortedOriginal = error
+              throw new RetryAbortError(error instanceof Error ? error : new Error(String(error)))
+            }
+            throw error
+          }
+        },
+        {
+          retries: maxRetries,
+          factor: backoffFactor,
+          minTimeout: initialDelayMs,
+          maxTimeout: maxDelayMs,
+          randomize: false,
+          unref: true,
+          onFailedAttempt: ({ error, attemptNumber }) => {
+            this.logger.warn(`Retry attempt ${attemptNumber}/${maxRetries}`, {
+              error: error.message,
+            })
+          },
+        },
+      )
+    } catch (error) {
+      if (error instanceof RetryAbortError && abortedOriginal !== undefined) throw abortedOriginal
+      throw error
     }
-
-    throw lastError
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
   }
 }
 
