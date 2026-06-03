@@ -99,6 +99,18 @@ describe('createVercelAiBackend — inference()', () => {
     )
     expect(result?.usage).toEqual({ inputTokens: 10, outputTokens: 5 })
   })
+
+  it('does not classify provider failures as backend unavailable', async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => {
+        throw new Error('provider rejected request')
+      },
+    })
+    const backend = createVercelAiBackend({ model })
+    await expect(
+      backend.inference?.({ messages: [{ role: 'user', content: 'hi' }] }, makeCtx()),
+    ).rejects.not.toMatchObject({ name: 'BackendUnavailableError' })
+  })
 })
 
 describe('createVercelAiBackend — run()', () => {

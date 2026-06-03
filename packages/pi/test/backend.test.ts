@@ -1,11 +1,15 @@
 import type { BackendContext, ResolvedPolicy } from '@skelm/core'
-import { PermissionDeniedError } from '@skelm/core'
-import { describe, expect, it, vi } from 'vitest'
+import { BackendUnavailableError, PermissionDeniedError } from '@skelm/core'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+let startError: Error | undefined
 
 vi.mock('../src/rpc-client.js', () => {
   const MockPiRpcClient = vi.fn().mockImplementation(function () {
     return {
-      start: vi.fn().mockResolvedValue(undefined),
+      start: vi.fn(() =>
+        startError === undefined ? Promise.resolve() : Promise.reject(startError),
+      ),
       stop: vi.fn().mockResolvedValue(undefined),
       abort: vi.fn().mockResolvedValue(undefined),
       prompt: vi.fn().mockResolvedValue({ text: 'ok', stopReason: 'stop' }),
@@ -36,6 +40,10 @@ function makePolicy(overrides: Partial<ResolvedPolicy> = {}): ResolvedPolicy {
 }
 
 describe('createPiBackend (RPC)', () => {
+  beforeEach(() => {
+    startError = undefined
+  })
+
   it('declares toolPermissions as unsupported', () => {
     expect(createPiBackend().capabilities.toolPermissions).toBe('unsupported')
   })
@@ -51,6 +59,14 @@ describe('createPiBackend (RPC)', () => {
     const backend = createPiBackend()
     const result = await backend.run?.({ prompt: 'go' }, makeCtx())
     expect(result?.text).toBe('ok')
+  })
+
+  it('maps a missing pi command to BackendUnavailableError', async () => {
+    startError = Object.assign(new Error('spawn pi ENOENT'), { code: 'ENOENT' })
+    const backend = createPiBackend({ id: 'pi-local' })
+    await expect(backend.run?.({ prompt: 'go' }, makeCtx())).rejects.toBeInstanceOf(
+      BackendUnavailableError,
+    )
   })
 
   it('runs when only declaredPermissions.networkEgress is set (Pi can rely on the egress proxy)', async () => {

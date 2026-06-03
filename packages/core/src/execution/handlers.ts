@@ -2,8 +2,10 @@ import { loadAgentDefinition } from '../agent-def.js'
 import {
   type AgentRequest,
   BackendCapabilityError,
+  type BackendId,
   BackendNotFoundError,
   type BackendRegistry,
+  BackendUnavailableError,
   type ContentPart,
   type DelegateResult,
   type SkelmBackend,
@@ -78,6 +80,35 @@ import { createSecretsAccessor, resolveValueOrFn, resolveValueOrFnAsync } from '
 import type { ExecutionRuntime } from './runtime.js'
 
 const defaultStateStore = new MemoryRunStore()
+
+function backendCandidates(
+  requested: string | readonly string[] | undefined,
+): readonly BackendId[] | undefined {
+  if (requested === undefined) return undefined
+  if (typeof requested === 'string') return [requested]
+  return requested.filter((id) => id.length > 0)
+}
+
+function noAvailableBackendError(
+  stepId: string,
+  kind: 'infer' | 'agent',
+  attempted: readonly string[],
+  lastUnavailable: BackendUnavailableError | undefined,
+): Error {
+  if (attempted.length === 0) {
+    return new BackendNotFoundError(`step "${stepId}" specified an empty backend list`)
+  }
+  const detail = attempted.join(', ')
+  if (lastUnavailable !== undefined) {
+    return new BackendUnavailableError(
+      `step "${stepId}" could not run ${kind} step: no specified backend is available (tried: ${detail}). Last error: ${lastUnavailable.message}`,
+      lastUnavailable.backendId,
+    )
+  }
+  return new BackendNotFoundError(
+    `step "${stepId}" could not run ${kind} step: no specified backend is available (tried: ${detail})`,
+  )
+}
 
 // Emit the audit signal for an operator-granted full bypass. Called once per
 // step whose resolved policy is `unrestricted`, so the short-circuit is never
@@ -355,10 +386,6 @@ async function runInferStep(
       `step "${step.id}" requires a backend registry but none was provided to runPipeline()`,
     )
   }
-  const requestedInferBackend = step.backend ?? runtime?.defaultInferBackend
-  const backend = backends.resolveForLlm({
-    backendId: requestedInferBackend as string | undefined,
-  })
   // infer() has no `permissions` field, so its only secret ceiling is an active
   // delegation ceiling. Pass it (and the event bus) so a delegated child cannot
   // read secrets outside its parent's allowedSecrets and the access is audited;
@@ -376,14 +403,6 @@ async function runInferStep(
   const promptValue = await resolveValueOrFnAsync(step.prompt, stepCtx)
   const systemText =
     step.system === undefined ? undefined : await resolveValueOrFnAsync(step.system, stepCtx)
-  const isMultimodalPrompt = Array.isArray(promptValue)
-  if (isMultimodalPrompt && backend.capabilities.vision !== true) {
-    throw new BackendCapabilityError(
-      `step "${step.id}": backend "${backend.id}" does not support image content (capabilities.vision is not true). Route image prompts to a vision-capable backend (e.g. anthropic, openai).`,
-      backend.id,
-      'vision' as keyof import('../backend.js').BackendCapabilities,
-    )
-  }
   const req = {
     messages: [{ role: 'user' as const, content: promptValue as string | readonly ContentPart[] }],
     ...(systemText !== undefined && { system: systemText }),
@@ -405,11 +424,53 @@ async function runInferStep(
           })
         }
       : undefined
-  // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForLlm
-  const response = await backend.inference!(req, {
-    signal: stepCtx.signal,
-    ...(onPartial !== undefined && { onPartial }),
-  })
+  const requestedInferBackend = step.backend ?? runtime?.defaultInferBackend
+  const candidates = backendCandidates(requestedInferBackend)
+  const attempted: string[] = []
+  let lastUnavailable: BackendUnavailableError | undefined
+  let response: import('../backend.js').InferenceResponse | undefined
+  const tryBackend = async (backendId: string | undefined): Promise<boolean> => {
+    if (backendId !== undefined) attempted.push(backendId)
+    const backend = backends.resolveForLlm({ backendId })
+    const isMultimodalPrompt = Array.isArray(promptValue)
+    if (isMultimodalPrompt && backend.capabilities.vision !== true) {
+      throw new BackendCapabilityError(
+        `step "${step.id}": backend "${backend.id}" does not support image content (capabilities.vision is not true). Route image prompts to a vision-capable backend (e.g. anthropic, openai).`,
+        backend.id,
+        'vision' as keyof import('../backend.js').BackendCapabilities,
+      )
+    }
+    try {
+      // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForLlm
+      response = await backend.inference!(req, {
+        signal: stepCtx.signal,
+        ...(onPartial !== undefined && { onPartial }),
+      })
+      return true
+    } catch (err) {
+      if (!(err instanceof BackendUnavailableError)) throw err
+      lastUnavailable = err
+      return false
+    }
+  }
+  if (candidates === undefined) {
+    await tryBackend(undefined)
+  } else {
+    for (const candidate of candidates) {
+      try {
+        if (await tryBackend(candidate)) break
+      } catch (err) {
+        if (err instanceof BackendNotFoundError) continue
+        throw err
+      }
+    }
+    if (response === undefined) {
+      throw noAvailableBackendError(step.id, 'infer', attempted, lastUnavailable)
+    }
+  }
+  if (response === undefined) {
+    throw new BackendNotFoundError('no backend with prompt capability is registered')
+  }
   if (step.outputSchema !== undefined) {
     const candidate = response.structured ?? response.text
     return await validate(step.outputSchema, candidate, 'output', {
@@ -440,9 +501,34 @@ async function runAgentStep(
   // omits `backend:` and relies on its project config was at the mercy of
   // registry insertion order across concurrent projects.
   const requestedAgentBackend = step.backend ?? runtime?.defaultAgentBackend
-  const backend = backends.resolveForAgent({
-    backendId: requestedAgentBackend as string | undefined,
-  })
+  const candidates = backendCandidates(requestedAgentBackend)
+  if (candidates !== undefined && candidates.length === 0) {
+    throw noAvailableBackendError(step.id, 'agent', [], undefined)
+  }
+  const attemptedBackends: string[] = []
+  let lastUnavailable: BackendUnavailableError | undefined
+  let backend: SkelmBackend | undefined
+  let firstResolvedCandidateIndex = 0
+  if (candidates === undefined) {
+    backend = backends.resolveForAgent({ backendId: undefined })
+  } else {
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i]
+      if (candidate === undefined) continue
+      attemptedBackends.push(candidate)
+      try {
+        backend = backends.resolveForAgent({ backendId: candidate })
+        firstResolvedCandidateIndex = i
+        break
+      } catch (err) {
+        if (err instanceof BackendNotFoundError) continue
+        throw err
+      }
+    }
+    if (backend === undefined) {
+      throw noAvailableBackendError(step.id, 'agent', attemptedBackends, undefined)
+    }
+  }
   let preparedWorkspace: Awaited<ReturnType<WorkspaceManager['prepare']>> | undefined
   let finishedWorkspace = false
   try {
@@ -664,17 +750,6 @@ async function runAgentStep(
         systemPromptIncludeAgentDef: step.systemPromptIncludeAgentDef,
       }),
     }
-    const mcpHost =
-      mcpServers !== undefined &&
-      mcpServers.length > 0 &&
-      backend.capabilities.toolPermissions === 'wrapped'
-        ? await createMcpHost(mcpServers, {
-            ...(policy !== undefined && { enforcer: new TrustEnforcer(policy) }),
-            ...(events !== undefined && { events }),
-            runId: ctx.run.runId,
-            stepId: step.id,
-          })
-        : undefined
     // Register egress token if the callback is provided and network policy is declared.
     const egressToken =
       policy?.networkEgress !== undefined && runtime?.registerEgressToken !== undefined
@@ -799,38 +874,147 @@ async function runAgentStep(
                 events,
               )
           : undefined
-      let response: import('../backend.js').AgentResponse
-      try {
-        // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
-        response = await backend.run!(req, {
-          signal: stepSignal,
-          ...(policy !== undefined && { permissions: policy }),
-          ...(step.permissions !== undefined && { declaredPermissions: step.permissions }),
-          ...(mcpHost !== undefined && { mcpHost }),
-          ...(policyFetch !== undefined && { fetch: policyFetch }),
-          ...(loadSkill !== undefined && { loadSkill }),
-          ...(egressToken !== undefined && { egressToken }),
-          ...(proxyEnv !== undefined && { proxyEnv }),
-          ...(onPartial !== undefined && { onPartial }),
-          ...(agentmemoryHandle !== undefined && { agentmemory: agentmemoryHandle }),
-          ...(delegate !== undefined && { delegate }),
-          // Plumb the runner's event bus + run/step identifiers so any
-          // McpHost the backend brings up itself can publish tool.call /
-          // tool.result events that the runner audits. Without this,
-          // native-tool backends (toolPermissions:'native') leave no MCP
-          // audit trail.
-          ...(events !== undefined && { events }),
-          runId: ctx.run.runId,
-          stepId: step.id,
-        })
-      } catch (err) {
-        if (stepSignal.aborted && stepSignal.reason instanceof StepTimeoutError) {
-          throw stepSignal.reason
+      let response: import('../backend.js').AgentResponse | undefined
+      const invokeBackend = async (
+        candidateBackend: SkelmBackend,
+      ): Promise<import('../backend.js').AgentResponse | undefined> => {
+        if (isMultimodalAgentPrompt && candidateBackend.capabilities.vision !== true) {
+          throw new BackendCapabilityError(
+            `step "${step.id}": backend "${candidateBackend.id}" does not support image content (capabilities.vision is not true). Route image prompts to a vision-capable backend.`,
+            candidateBackend.id,
+            'vision' as keyof import('../backend.js').BackendCapabilities,
+          )
         }
-        throw err
+        if (
+          mcpServers !== undefined &&
+          mcpServers.length > 0 &&
+          !candidateBackend.capabilities.mcp
+        ) {
+          const detail = `backend ${candidateBackend.id} does not support per-step MCP attachments`
+          events?.publish({
+            type: 'permission.denied',
+            runId: ctx.run.runId,
+            stepId: step.id,
+            dimension: 'mcp',
+            detail,
+            at: Date.now(),
+          })
+          throw new BackendCapabilityError(detail, candidateBackend.id, 'mcp')
+        }
+        if (
+          step.skills !== undefined &&
+          step.skills.length > 0 &&
+          !candidateBackend.capabilities.skills
+        ) {
+          const detail = `backend ${candidateBackend.id} does not support skill loading`
+          events?.publish({
+            type: 'permission.denied',
+            runId: ctx.run.runId,
+            stepId: step.id,
+            dimension: 'skill',
+            detail,
+            at: Date.now(),
+          })
+          throw new BackendCapabilityError(detail, candidateBackend.id, 'skills')
+        }
+        if (policy !== undefined && candidateBackend.capabilities.agentmemory !== true) {
+          const am = policy.agentmemory
+          const explicitlyGranted =
+            am.allowObserve ||
+            am.allowSearch ||
+            am.allowSession ||
+            am.allowContext ||
+            am.allowSave ||
+            am.allowRecall ||
+            am.allowGraph
+          if (explicitlyGranted) {
+            throw new BackendCapabilityError(
+              `backend ${candidateBackend.id} does not declare capabilities.agentmemory but the step's resolved policy permits at least one agentmemory op. Either pick a backend that wires the agentmemory handle, or remove the agentmemory grant from the step's permissions.`,
+              candidateBackend.id,
+              'agentmemory',
+            )
+          }
+        }
+        const mcpHost =
+          mcpServers !== undefined &&
+          mcpServers.length > 0 &&
+          candidateBackend.capabilities.toolPermissions === 'wrapped'
+            ? await createMcpHost(mcpServers, {
+                ...(policy !== undefined && { enforcer: new TrustEnforcer(policy) }),
+                ...(events !== undefined && { events }),
+                runId: ctx.run.runId,
+                stepId: step.id,
+              })
+            : undefined
+        try {
+          // biome-ignore lint/style/noNonNullAssertion: capability checked in resolveForAgent
+          return await candidateBackend.run!(req, {
+            signal: stepSignal,
+            ...(policy !== undefined && { permissions: policy }),
+            ...(step.permissions !== undefined && { declaredPermissions: step.permissions }),
+            ...(mcpHost !== undefined && { mcpHost }),
+            ...(policyFetch !== undefined && { fetch: policyFetch }),
+            ...(loadSkill !== undefined && { loadSkill }),
+            ...(egressToken !== undefined && { egressToken }),
+            ...(proxyEnv !== undefined && { proxyEnv }),
+            ...(onPartial !== undefined && { onPartial }),
+            ...(agentmemoryHandle !== undefined && { agentmemory: agentmemoryHandle }),
+            ...(delegate !== undefined && { delegate }),
+            // Plumb the runner's event bus + run/step identifiers so any
+            // McpHost the backend brings up itself can publish tool.call /
+            // tool.result events that the runner audits. Without this,
+            // native-tool backends (toolPermissions:'native') leave no MCP
+            // audit trail.
+            ...(events !== undefined && { events }),
+            runId: ctx.run.runId,
+            stepId: step.id,
+          })
+        } catch (err) {
+          if (stepSignal.aborted && stepSignal.reason instanceof StepTimeoutError) {
+            throw stepSignal.reason
+          }
+          if (!(err instanceof BackendUnavailableError)) throw err
+          lastUnavailable = err
+          return undefined
+        } finally {
+          await mcpHost?.dispose()
+        }
+      }
+      try {
+        if (candidates === undefined) {
+          response = await invokeBackend(backend)
+          if (response === undefined) {
+            throw (
+              lastUnavailable ??
+              new BackendUnavailableError(`backend ${backend.id} is not available`, backend.id)
+            )
+          }
+        } else {
+          for (let i = firstResolvedCandidateIndex; i < candidates.length; i++) {
+            const candidate = candidates[i]
+            if (candidate === undefined) continue
+            if (i > firstResolvedCandidateIndex) {
+              attemptedBackends.push(candidate)
+              try {
+                backend = backends.resolveForAgent({ backendId: candidate })
+              } catch (err) {
+                if (err instanceof BackendNotFoundError) continue
+                throw err
+              }
+            }
+            response = await invokeBackend(backend)
+            if (response !== undefined) break
+          }
+          if (response === undefined) {
+            throw noAvailableBackendError(step.id, 'agent', attemptedBackends, lastUnavailable)
+          }
+        }
       } finally {
         if (timeoutHandle !== undefined) clearTimeout(timeoutHandle)
         if (onParentAbort !== undefined) ctx.signal.removeEventListener('abort', onParentAbort)
+      }
+      if (response === undefined) {
+        throw noAvailableBackendError(step.id, 'agent', attemptedBackends, lastUnavailable)
       }
       const candidate =
         step.outputSchema !== undefined
@@ -859,7 +1043,6 @@ async function runAgentStep(
       }
       return result
     } finally {
-      await mcpHost?.dispose()
       // Unregister egress token when the step completes.
       if (egressToken !== undefined && runtime?.unregisterEgressToken !== undefined) {
         runtime.unregisterEgressToken(ctx.run.runId, step.id)

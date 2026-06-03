@@ -32,6 +32,17 @@ export default defineConfig({
 
 The CLI does not construct this backend from a string-keyed `backends:` entry — you must pass a `LanguageModel` instance, so it lives under `instances:` (same pattern as `createPiSdkBackend`).
 
+Vercel AI has no local CLI dependency. It can appear in an ordered step-level
+backend list, but only after you register an instance:
+
+```ts
+agent({ id: 'answer', backend: ['codex', 'vercel-ai'], prompt: '...' })
+```
+
+If `codex` is not installed, the runtime can fall over to `vercel-ai`. Missing
+`ai` / provider packages are different: they fail while importing
+`skelm.config.ts`, before a Vercel AI backend instance exists.
+
 ## Pointing at a local OpenAI-compatible server
 
 ```ts

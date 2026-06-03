@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { runWithMemoryTurns } from '@skelm/agentmemory'
 import {
   BackendConfigError,
+  BackendUnavailableError,
   buildSystemPromptFromRequest,
   extractPromptText,
   loadSkillBodies,
@@ -161,26 +162,28 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
             }),
           })
 
-          const sessionId = readSessionId(request)
-          const thread =
-            sessionId !== undefined
-              ? codex.resumeThread(sessionId, threadOpts)
-              : codex.startThread(threadOpts)
-
-          const turnSignal = composeAbortSignal(context.signal, options.timeoutMs ?? 300_000)
-          const codexOutputSchema = await toCodexOutputSchema(request.outputSchema)
-          const { events } = await thread.runStreamed(userPrompt, {
-            ...(codexOutputSchema !== undefined && { outputSchema: codexOutputSchema }),
-            signal: turnSignal.signal,
-          })
-
+          let turnSignal: ReturnType<typeof composeAbortSignal> | undefined
           let result: Awaited<ReturnType<typeof consumeStream>>
           try {
+            const sessionId = readSessionId(request)
+            const thread =
+              sessionId !== undefined
+                ? codex.resumeThread(sessionId, threadOpts)
+                : codex.startThread(threadOpts)
+
+            turnSignal = composeAbortSignal(context.signal, options.timeoutMs ?? 300_000)
+            const codexOutputSchema = await toCodexOutputSchema(request.outputSchema)
+            const { events } = await thread.runStreamed(userPrompt, {
+              ...(codexOutputSchema !== undefined && { outputSchema: codexOutputSchema }),
+              signal: turnSignal.signal,
+            })
             result = await consumeStream(events, {
               ...(context.onPartial !== undefined && { onText: context.onPartial }),
             })
+          } catch (err) {
+            throw classifyCodexUnavailableError(err, options.id ?? 'codex')
           } finally {
-            turnSignal.cancel()
+            turnSignal?.cancel()
             cleanupTempImageRoots(imageRoots)
           }
 
@@ -208,6 +211,28 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
   }
 
   return backend
+}
+
+function classifyCodexUnavailableError(err: unknown, backendId: string): unknown {
+  if (!(err instanceof Error)) return err
+  const code = (err as NodeJS.ErrnoException).code
+  const message = err.message.toLowerCase()
+  if (
+    code === 'ENOENT' ||
+    code === 'EACCES' ||
+    message.includes('enoent') ||
+    message.includes('eacces') ||
+    message.includes('codex: command not found') ||
+    message.includes('codex command not found') ||
+    message.includes('codex executable not found') ||
+    message.includes('spawn codex')
+  ) {
+    return new BackendUnavailableError(
+      'codex backend is not available: command "codex" was not found or is not executable',
+      backendId,
+    )
+  }
+  return err
 }
 
 function extractImageParts(

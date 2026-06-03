@@ -9,6 +9,7 @@
 
 import { runWithMemoryTurns } from '@skelm/agentmemory'
 import {
+  BackendUnavailableError,
   PermissionDeniedError,
   createConcurrencySemaphore,
   extractPromptText,
@@ -164,9 +165,9 @@ export function createPiBackend(options: PiBackendOptions = {}): SkelmBackend {
       } catch (err) {
         if (err instanceof Error) {
           if (err.message.includes('ENOENT') || err.message.includes('EACCES')) {
-            throw new PiBackendAuthenticationError(
-              'pi binary not found or not executable. Install it: npm install -g @earendil-works/pi-coding-agent',
-              err,
+            throw new BackendUnavailableError(
+              'pi backend is not available: command "pi" was not found or is not executable. Install it: npm install -g @earendil-works/pi-coding-agent',
+              options.id ?? 'pi',
             )
           }
           if (err.message.includes('timed out')) {

@@ -18,6 +18,7 @@
  */
 
 import {
+  BackendUnavailableError,
   assertEgressEnforceable as assertEgressEnforceableCore,
   createConcurrencySemaphore,
   extractPromptText,
@@ -274,7 +275,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
         }
         return response
       } catch (err) {
-        throw classifyPiSdkError(err, 'inference')
+        throw classifyPiSdkError(err, 'inference', options.id ?? 'pi-sdk')
       } finally {
         release()
       }
@@ -330,7 +331,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
           }),
         }
       } catch (err) {
-        throw classifyPiSdkError(err, 'agent execution')
+        throw classifyPiSdkError(err, 'agent execution', options.id ?? 'pi-sdk')
       } finally {
         release()
       }
@@ -338,7 +339,11 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
   }
 }
 
-function classifyPiSdkError(err: unknown, action: 'inference' | 'agent execution'): Error {
+function classifyPiSdkError(
+  err: unknown,
+  action: 'inference' | 'agent execution',
+  backendId: string,
+): Error {
   if (err instanceof PiSdkUpstreamError) {
     // Already carries provider/model + upstream errorMessage; surface it as
     // a backend-level error without obscuring the diagnostic.
@@ -346,9 +351,9 @@ function classifyPiSdkError(err: unknown, action: 'inference' | 'agent execution
   }
   if (err instanceof Error) {
     if (err.message.includes('ENOENT') || err.message.includes('not installed')) {
-      return new PiSdkBackendAuthenticationError(
-        'pi SDK not available. Install it: npm install @earendil-works/pi-coding-agent',
-        err,
+      return new BackendUnavailableError(
+        'pi SDK backend is not available. Install it: npm install @earendil-works/pi-coding-agent',
+        backendId,
       )
     }
     if (err.message.includes('timed out')) {
