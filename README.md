@@ -33,17 +33,36 @@ skelm runs on your own infrastructure with security primitives that don't disapp
 import { agent, code, parallel, pipeline } from 'skelm'
 import { z } from 'zod'
 
+const Input = z.object({
+  incidentId: z.string(),
+  service: z.string(),
+  description: z.string(),
+})
+type Input = z.infer<typeof Input>
+
 export default pipeline({
   id: 'incident-response',
-  input: z.object({ incidentId: z.string(), service: z.string(), description: z.string() }),
+  input: Input,
   output: z.object({ rootCause: z.string(), immediateActions: z.array(z.string()) }),
   triggers: [{ kind: 'webhook', path: '/webhooks/incident' }],
   steps: [
     parallel({
       id: 'triage',
       steps: [
-        code({ id: 'search-issues', run: async (ctx) => fetchRelatedIssues(ctx.input.service) }),
-        code({ id: 'open-channel',  run: async (ctx) => createSlackChannel(ctx.input.incidentId) }),
+        code({
+          id: 'search-issues',
+          run: async (ctx) => {
+            const { service } = ctx.input as Input
+            return { issues: [{ title: `[${service}] latency`, url: '…' }] }
+          },
+        }),
+        code({
+          id: 'open-channel',
+          run: async (ctx) => {
+            const { incidentId } = ctx.input as Input
+            return { channel: `inc-${incidentId.toLowerCase()}` }
+          },
+        }),
       ],
     }),
     agent({
@@ -52,10 +71,16 @@ export default pipeline({
       permissions: {
         allowedTools: ['gh.search_issues', 'slack.post_message'],
         allowedMcpServers: ['github'],
-        networkEgress: ['api.github.com', 'slack.com'],
-        fsRead: [], fsWrite: [], allowedExecutables: [], allowedSkills: ['sre-runbook'],
+        allowedSkills: ['sre-runbook'],
+        allowedExecutables: [],
+        fsRead: [],
+        fsWrite: [],
+        networkEgress: { allowHosts: ['api.github.com', 'slack.com'] },
       },
-      prompt: (ctx) => `Analyze this ${ctx.input.service} incident and propose 2-3 actions...`,
+      prompt: (ctx) => {
+        const { service, description } = ctx.input as Input
+        return `Analyze this ${service} incident and propose 2-3 actions:\n${description}`
+      },
       output: z.object({ rootCause: z.string(), immediateActions: z.array(z.string()) }),
       maxTurns: 4,
     }),
