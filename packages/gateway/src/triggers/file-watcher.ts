@@ -38,20 +38,26 @@ export class FileWatchTrigger {
 
   start(onFire: (payload: FileWatchPayload) => void): void {
     this.stop()
+    let acceptingEvents = false
     this.watcher = watch(this.watchedPath, {
       ignoreInitial: false,
       persistent: false,
     })
-    this.watcher.on('add', (path) => this.queueEvent('create', this.normalizePath(path), onFire))
+    const queueWatchedEvent = (event: FileWatchEvent, path: string) => {
+      if (!acceptingEvents) return
+      this.queueEvent(event, this.normalizePath(path), onFire)
+    }
+    this.watcher.on('ready', () => {
+      acceptingEvents = true
+    })
+    this.watcher.on('add', (path) => queueWatchedEvent('create', path))
     this.watcher.on('addDir', (path) => {
       const changedPath = this.normalizePath(path)
-      if (changedPath !== this.watchedPath) this.queueEvent('create', changedPath, onFire)
+      if (changedPath !== this.watchedPath) queueWatchedEvent('create', path)
     })
-    this.watcher.on('change', (path) => this.queueEvent('update', this.normalizePath(path), onFire))
-    this.watcher.on('unlink', (path) => this.queueEvent('delete', this.normalizePath(path), onFire))
-    this.watcher.on('unlinkDir', (path) =>
-      this.queueEvent('delete', this.normalizePath(path), onFire),
-    )
+    this.watcher.on('change', (path) => queueWatchedEvent('update', path))
+    this.watcher.on('unlink', (path) => queueWatchedEvent('delete', path))
+    this.watcher.on('unlinkDir', (path) => queueWatchedEvent('delete', path))
   }
 
   stop(): void {
