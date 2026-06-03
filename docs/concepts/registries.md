@@ -49,7 +49,7 @@ You are a careful test author. Write tests for the changed code in the
 diff. Cover both the happy path and the explicit error cases.
 ```
 
-Frontmatter is a small subset of YAML: `key: value` and `key: [a, b]`. Quoted strings are supported. Unknown keys flow through to `metadata` for forward-compatible additions.
+Frontmatter is parsed as YAML. Unknown keys flow through to `metadata` for forward-compatible additions.
 
 ## Invoking another pipeline (`invoke()`)
 

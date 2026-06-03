@@ -82,7 +82,8 @@
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
     "better-sqlite3": "12.9.0",
-    "p-retry": "^8.0.0"
+    "p-retry": "^8.0.0",
+    "yaml": "^2.9.0"
   },
   "peerDependencies": {
     "vitest": "^4.1.0"

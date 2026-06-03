@@ -234,6 +234,9 @@ importers:
       vitest:
         specifier: ^4.1.0
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@22.19.17)(vite@8.0.16)
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.13
@@ -265,6 +268,9 @@ importers:
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0
+      cron-parser:
+        specifier: ^4.9.0
+        version: 4.9.0
       eventsource-parser:
         specifier: ^3.1.0
         version: 3.1.0
@@ -4249,7 +4255,7 @@ packages:
       markdown-it: 14.1.1
       minimatch: 10.2.5
       typescript: 5.9.3
-      yaml: 2.8.4
+      yaml: 2.9.0
     dev: true
 
   /typescript@5.9.3:
@@ -4728,12 +4734,6 @@ packages:
         optional: true
       utf-8-validate:
         optional: true
-
-  /yaml@2.8.4:
-    resolution: {integrity: sha512-ml/JPOj9fOQK8RNnWojA67GbZ0ApXAUlN2UQclwv2eVgTgn7O9gg9o7paZWKMp4g0H3nTLtS9LVzhkpOFIKzog==}
-    engines: {node: '>= 14.6'}
-    hasBin: true
-    dev: true
 
   /yaml@2.9.0:
     resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}

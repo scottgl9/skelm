@@ -36,6 +36,27 @@ describe('parseSkill', () => {
     expect(s.metadata.owner).toBe('alice')
   })
 
+  it('preserves structured YAML metadata', () => {
+    const s = parseSkill(
+      'memory://structured',
+      [
+        '---',
+        'id: structured',
+        'enabled: true',
+        'limits:',
+        '  maxFiles: 3',
+        'tags:',
+        '  - review',
+        '  - tests',
+        '---',
+        'body',
+      ].join('\n'),
+    )
+    expect(s.metadata.enabled).toBe(true)
+    expect(s.metadata.limits).toEqual({ maxFiles: 3 })
+    expect(s.metadata.tags).toEqual(['review', 'tests'])
+  })
+
   it('skips blank lines and comment lines in frontmatter', () => {
     const s = parseSkill(
       'memory://c',
@@ -70,7 +91,7 @@ describe('parseSkill', () => {
 
   it('throws on a frontmatter line missing colon', () => {
     expect(() => parseSkill('memory://bad', '---\nid: ok\nbroken line\n---\nbody')).toThrow(
-      /missing ':'/,
+      /malformed frontmatter/,
     )
   })
 
