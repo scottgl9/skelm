@@ -94,3 +94,35 @@ describe('Runner — secret.not_found → audit producer', () => {
     expect(Object.keys(details)).not.toContain('value')
   })
 })
+
+describe('Runner — backend.failover → audit producer', () => {
+  it('writes an audit row when an agent backend fails over', async () => {
+    const writer = new CapturingAuditWriter()
+    const runner = new Runner({ auditWriter: writer })
+    runner.events.publish({
+      type: 'backend.failover',
+      runId: 'r4',
+      stepId: 's4',
+      kind: 'agent',
+      from: 'codex',
+      to: 'opencode',
+      error: 'codex backend is not available',
+      at: 1700000000003,
+    })
+    await new Promise((r) => setImmediate(r))
+
+    expect(writer.entries).toHaveLength(1)
+    const row = writer.entries[0]
+    expect(row?.runId).toBe('r4')
+    expect(row?.actor).toBe('runtime')
+    expect(row?.action).toBe('backend.failover')
+    expect(row?.details).toMatchObject({
+      stepId: 's4',
+      kind: 'agent',
+      from: 'codex',
+      to: 'opencode',
+      error: 'codex backend is not available',
+      at: 1700000000003,
+    })
+  })
+})

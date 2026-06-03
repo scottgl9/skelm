@@ -73,6 +73,16 @@ export type RunEvent =
       at: number
     }
   | {
+      type: 'backend.failover'
+      runId: RunId
+      stepId: StepId
+      kind: Extract<StepKind, 'infer' | 'agent'>
+      from: string
+      to: string
+      error: string
+      at: number
+    }
+  | {
       // Emitted once when a step/turn resolves to a full permission bypass
       // (operator-granted `unrestricted`). Never silent: this is the audit
       // signal that the default-deny model was intentionally short-circuited.
