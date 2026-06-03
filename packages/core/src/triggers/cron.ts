@@ -4,6 +4,7 @@
  * Executes workflows on a scheduled basis using cron expressions
  */
 
+import { nextCronFireTime, parseCronExpression } from '../cron-expression.js'
 import { TriggerPluginBase } from './base.js'
 import type { TriggerConfig, TriggerEvent, TriggerHealthStatus, TriggerType } from './types.js'
 
@@ -29,82 +30,14 @@ interface CronJob {
   nextRun: Date | null
 }
 
-/**
- * Simple cron parser (supports basic expressions)
- * Format: minute hour day-of-month month day-of-week
- */
-function parseCronExpression(expression: string): {
-  minutes: number[]
-  hours: number[]
-  days: number[]
-  months: number[]
-  dayOfWeeks: number[]
-} {
-  const parts = expression.split(/\s+/)
-  if (parts.length !== 5) {
-    throw new Error(`Invalid cron expression: ${expression}. Expected 5 parts`)
+function getNextRunTime(schedule: string, timezone?: string, from: Date = new Date()): Date {
+  const parsed = parseCronExpression(schedule, timezone)
+  if (parsed === null) {
+    throw new Error(`Invalid cron expression: ${schedule}. Expected 5 parts`)
   }
-
-  const [minute, hour, day, month, dayOfWeek] = parts as [string, string, string, string, string]
-
-  // Simple parser - supports *, numbers, and ranges (e.g., 1-5)
-  const parseField = (field: string, min: number, max: number): number[] => {
-    if (field === '*') {
-      return Array.from({ length: max - min + 1 }, (_, i) => min + i)
-    }
-
-    if (field.includes('-')) {
-      const parts = field.split('-')
-      const start = Number(parts[0])
-      const end = Number(parts[1])
-      return Array.from({ length: end - start + 1 }, (_, i) => start + i)
-    }
-
-    return [Number(field)]
-  }
-
-  return {
-    minutes: parseField(minute, 0, 59),
-    hours: parseField(hour, 0, 23),
-    days: parseField(day, 1, 31),
-    months: parseField(month, 1, 12),
-    dayOfWeeks: parseField(dayOfWeek, 0, 6),
-  }
-}
-
-/**
- * Calculate next run time from cron expression
- */
-function getNextRunTime(schedule: string, from: Date = new Date()): Date {
-  const parsed = parseCronExpression(schedule)
-  const next = new Date(from)
-
-  // Move to next minute
-  next.setSeconds(0)
-  next.setMilliseconds(0)
-  next.setMinutes(next.getMinutes() + 1)
-
-  // Find next matching time (search up to 1 year ahead)
-  const maxIterations = 366 * 24 * 60 // 1 year in minutes
-  let iterations = 0
-
-  while (iterations < maxIterations) {
-    const matches =
-      parsed.minutes.includes(next.getMinutes()) &&
-      parsed.hours.includes(next.getHours()) &&
-      parsed.days.includes(next.getDate()) &&
-      parsed.months.includes(next.getMonth() + 1) &&
-      parsed.dayOfWeeks.includes(next.getDay())
-
-    if (matches) {
-      return next
-    }
-
-    next.setMinutes(next.getMinutes() + 1)
-    iterations++
-  }
-
-  throw new Error('Could not find next run time within 1 year')
+  const next = nextCronFireTime(parsed, from)
+  if (next === null) throw new Error('Could not find next run time within 1 year')
+  return next
 }
 
 /**
@@ -123,12 +56,11 @@ export class CronTrigger extends TriggerPluginBase {
 
   override async doInitialize(config: CronTriggerConfig): Promise<void> {
     // Validate schedule
-    try {
-      parseCronExpression(config.schedule)
-    } catch (error) {
-      throw new Error(
-        `Invalid cron schedule: ${error instanceof Error ? error.message : String(error)}`,
-      )
+    if (
+      typeof config.schedule !== 'string' ||
+      parseCronExpression(config.schedule, config.timezone) === null
+    ) {
+      throw new Error(`Invalid cron schedule: Invalid cron expression: ${config.schedule}`)
     }
 
     this.logger.info(`Initialized cron trigger with schedule: ${config.schedule}`)
@@ -178,7 +110,7 @@ export class CronTrigger extends TriggerPluginBase {
     }
 
     // Calculate next run time
-    const nextRun = getNextRunTime(config.schedule)
+    const nextRun = getNextRunTime(config.schedule, config.timezone)
     this.job.nextRun = nextRun
 
     // Calculate delay
