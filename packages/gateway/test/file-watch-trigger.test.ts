@@ -25,6 +25,10 @@ async function waitFor<T>(fn: () => T | undefined, timeoutMs = 2_000): Promise<T
   throw new Error('timed out waiting for file-watch trigger')
 }
 
+async function waitForWatcherReady(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 100))
+}
+
 describe('file-watch trigger', () => {
   it('fires with the expected payload when a file is created', async () => {
     const seen: Array<{ path: string; event: string; watchedPath: string; firedAt: string }> = []
@@ -42,6 +46,8 @@ describe('file-watch trigger', () => {
       path: tempDir,
     })
 
+    await waitForWatcherReady()
+
     const createdPath = join(tempDir, 'created.txt')
     await writeFile(createdPath, 'hello')
     const payload = await waitFor(() => seen[0])
@@ -50,6 +56,36 @@ describe('file-watch trigger', () => {
     expect(payload.event).toBe('create')
     expect(payload.watchedPath).toBe(tempDir)
     expect(payload.firedAt).toEqual(expect.any(String))
+    await coordinator.stop()
+  })
+
+  it('does not fire create events for existing files on registration', async () => {
+    const seen: Array<{ path: string; event: string }> = []
+    const existingPath = join(tempDir, 'existing.txt')
+    await writeFile(existingPath, 'already here')
+    const coordinator = new TriggerCoordinator({
+      onFire: async (ctx) => {
+        seen.push(ctx.payload as { path: string; event: string })
+      },
+    })
+    coordinator.register({
+      kind: 'file-watch',
+      id: 'watch-existing',
+      workflowId: 'wf',
+      path: tempDir,
+    })
+
+    await waitForWatcherReady()
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    expect(seen).toHaveLength(0)
+
+    const createdPath = join(tempDir, 'created-after-ready.txt')
+    await writeFile(createdPath, 'new')
+    const payload = await waitFor(() => seen[0])
+
+    expect(payload.path).toBe(createdPath)
+    expect(payload.event).toBe('create')
     await coordinator.stop()
   })
 
@@ -68,7 +104,7 @@ describe('file-watch trigger', () => {
       debounceMs: 75,
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await waitForWatcherReady()
 
     const filePath = join(tempDir, 'debounce.txt')
     await writeFile(filePath, 'one')
@@ -96,6 +132,8 @@ describe('file-watch trigger', () => {
       path: target,
     })
 
+    await waitForWatcherReady()
+
     await writeFile(target, 'changed')
     const payload = await waitFor(() => seen[0])
 
@@ -117,6 +155,8 @@ describe('file-watch trigger', () => {
       workflowId: 'wf',
       path: tempDir,
     })
+
+    await waitForWatcherReady()
 
     const firstPath = join(tempDir, 'before-stop.txt')
     await writeFile(firstPath, 'before')
