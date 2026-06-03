@@ -18,6 +18,7 @@ import type {
 } from '@skelm/core'
 import {
   BackendSessionError,
+  BackendUnavailableError,
   RunCancelledError,
   TrustEnforcer,
   extractPromptText,
@@ -199,8 +200,19 @@ export class OpencodeClientWrapper {
       // its content is no longer parsed for the listen URL.
       proc.stderr?.on('data', () => {})
       proc.once('error', (err) => {
-        if (!resolved) reject(err)
-        else this._handleExit()
+        if (!resolved) {
+          const code = (err as NodeJS.ErrnoException).code
+          if (code === 'ENOENT' || code === 'EACCES') {
+            reject(
+              new BackendUnavailableError(
+                `opencode backend is not available: command "${command}" was not found or is not executable`,
+                this.options.id ?? 'opencode',
+              ),
+            )
+            return
+          }
+          reject(err)
+        } else this._handleExit()
       })
       proc.once('exit', () => {
         if (!resolved) reject(new Error('opencode serve exited before becoming ready'))

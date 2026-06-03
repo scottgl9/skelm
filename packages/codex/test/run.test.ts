@@ -16,6 +16,7 @@ import {
   type AgentPermissions,
   type AgentRequest,
   type BackendContext,
+  BackendUnavailableError,
   resolvePermissions,
 } from '@skelm/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -99,6 +100,19 @@ describe('createCodexBackend.run', () => {
     expect(res.text).toBe('ok')
     expect(res.usage).toEqual({ inputTokens: 1, outputTokens: 1, reasoningTokens: 0 })
     expect(res.stopReason).toBe('turn.completed')
+  })
+
+  it('maps a missing codex CLI failure to BackendUnavailableError', async () => {
+    startThread.mockImplementation(() => {
+      throw Object.assign(new Error('spawn codex ENOENT'), { code: 'ENOENT' })
+    })
+    const backend = createCodexBackend({ id: 'codex-local' })
+    await expect(
+      backend.run?.(
+        { prompt: 'say ok', permissions: policy({ fsWrite: [], fsRead: [] }) } as AgentRequest,
+        makeContext(),
+      ),
+    ).rejects.toBeInstanceOf(BackendUnavailableError)
   })
 
   it('streams agent_message text to context.onPartial', async () => {
