@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // ─── spawn mock ─────────────────────────────────────────────────────────────
 
 let spawnEnv: Record<string, string> = {}
+let spawnErrorCode: string | undefined
 
 vi.mock('node:child_process', () => {
   const proc = new EventEmitter() as EventEmitter & {
@@ -29,6 +30,13 @@ vi.mock('node:child_process', () => {
   return {
     spawn: vi.fn((_cmd: string, _args: string[], opts: { env: Record<string, string> }) => {
       spawnEnv = opts.env
+      if (spawnErrorCode !== undefined) {
+        queueMicrotask(() => {
+          const err = Object.assign(new Error(spawnErrorCode), { code: spawnErrorCode })
+          proc.emit('error', err)
+        })
+        return proc
+      }
       // Emit the listening URL synchronously on next tick
       queueMicrotask(() => {
         proc.stdout.emit(
@@ -138,12 +146,23 @@ function errorEvent(sessionID: string, error: unknown) {
 describe('OpencodeClientWrapper — OPENCODE_CONFIG_CONTENT (#1 + #2)', () => {
   beforeEach(() => {
     spawnEnv = {}
+    spawnErrorCode = undefined
     mockSubscribeStream = makeSseStream([idleEvent('sess-123')])
   })
 
   it('sets OPENCODE_CONFIG_CONTENT in the spawn env', async () => {
     await new OpencodeClientWrapper({}).prompt({ prompt: 'hi' }, makeSignal())
     expect(spawnEnv.OPENCODE_CONFIG_CONTENT).toBeDefined()
+  })
+
+  it('maps missing opencode command to BackendUnavailableError', async () => {
+    spawnErrorCode = 'ENOENT'
+    await expect(
+      new OpencodeClientWrapper({ id: 'opencode-local' }).prompt({ prompt: 'hi' }, makeSignal()),
+    ).rejects.toMatchObject({
+      name: 'BackendUnavailableError',
+      backendId: 'opencode-local',
+    })
   })
 
   it('injects model into OPENCODE_CONFIG_CONTENT', async () => {

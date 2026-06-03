@@ -57,6 +57,18 @@ Reference by id at the step level:
 agent({ id: 'implement', backend: 'pi', prompt: '...' })
 ```
 
+Use an ordered list when a step can run on multiple equivalent backends and
+should continue past a locally unavailable backend:
+
+```ts
+agent({ id: 'implement', backend: ['codex', 'opencode', 'pi', 'vercel-ai'], prompt: '...' })
+```
+
+Fallback is intentionally narrow: the runtime tries the next id only when the
+previous backend throws `BackendUnavailableError` (for example, a missing
+`codex`, `opencode`, or `pi` local install). Authentication, provider/model,
+permission, timeout, schema, and capability failures stop the step.
+
 If `backend` is omitted on the step, the runtime resolves it from (in order): `config.backends.agent`, `config.backends.default`, `config.backend`, `config.defaults.backend`. If none of those is set the step fails at start.
 
 ### Pi backends (`@skelm/pi`)

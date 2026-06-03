@@ -1,5 +1,5 @@
 import type { BackendContext, ResolvedPolicy, Skill } from '@skelm/core'
-import { PermissionDeniedError } from '@skelm/core'
+import { BackendUnavailableError, PermissionDeniedError } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock PiSdkClient so no real pi process is required. Pass through the
@@ -163,6 +163,18 @@ describe('createPiSdkBackend', () => {
     const result = await backend.run?.({ prompt: 'hello' }, makeCtx())
     expect(result?.text).toBe('agent output')
     expect(result?.usage).toEqual({ inputTokens: 10, outputTokens: 5 })
+  })
+
+  it('maps a missing pi SDK package to BackendUnavailableError', async () => {
+    ;(PiSdkClient as ReturnType<typeof vi.fn>).mockImplementationOnce(function () {
+      return {
+        prompt: vi.fn().mockRejectedValue(new Error('pi SDK not installed')),
+      }
+    })
+    const backend = createPiSdkBackend({ id: 'pi-sdk-local' })
+    await expect(backend.run?.({ prompt: 'hello' }, makeCtx())).rejects.toBeInstanceOf(
+      BackendUnavailableError,
+    )
   })
 
   // --- system prompt ---

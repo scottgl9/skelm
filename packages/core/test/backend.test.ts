@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { BackendCapabilityError, BackendNotFoundError, BackendRegistry } from '../src/backend.js'
-import { code, infer, pipeline } from '../src/builders.js'
+import {
+  BackendAuthenticationError,
+  BackendCapabilityError,
+  BackendNotFoundError,
+  BackendRegistry,
+  BackendUnavailableError,
+  type SkelmBackend,
+} from '../src/backend.js'
+import { agent, code, infer, pipeline } from '../src/builders.js'
 import { runPipeline } from '../src/runner.js'
 import { fixtureBackend } from '../src/testing/contract.js'
 
@@ -270,5 +277,150 @@ describe('infer() step', () => {
     const run = await runPipeline(wf, undefined, { backends: reg })
     expect(run.status).toBe('completed')
     expect(run.output).toEqual({ classified: 'feature' })
+  })
+})
+
+describe('backend list fallback', () => {
+  function agentBackend(id: string, run: NonNullable<SkelmBackend['run']>): SkelmBackend {
+    return {
+      id,
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'native',
+      },
+      run,
+    }
+  }
+
+  it('falls over to the next agent backend when the first is unavailable', async () => {
+    const calls: string[] = []
+    const reg = new BackendRegistry()
+    reg.register(
+      agentBackend('missing-agent', async () => {
+        calls.push('missing-agent')
+        throw new BackendUnavailableError('agent not installed', 'missing-agent')
+      }),
+    )
+    reg.register(
+      agentBackend('working-agent', async () => {
+        calls.push('working-agent')
+        return { text: 'ok' }
+      }),
+    )
+
+    const wf = pipeline({
+      id: 'agent-backend-list',
+      steps: [
+        agent({
+          id: 'work',
+          backend: ['missing-agent', 'working-agent'],
+          prompt: 'hello',
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, undefined, { backends: reg })
+
+    expect(run.status).toBe('completed')
+    expect(run.output).toEqual({ text: 'ok' })
+    expect(calls).toEqual(['missing-agent', 'working-agent'])
+  })
+
+  it('falls over to the next infer backend when the first is unavailable', async () => {
+    const calls: string[] = []
+    const reg = new BackendRegistry()
+    reg.register(
+      fixtureBackend({
+        id: 'missing-infer',
+        respond: async () => {
+          calls.push('missing-infer')
+          throw new BackendUnavailableError('infer not installed', 'missing-infer')
+        },
+      }),
+    )
+    reg.register(
+      fixtureBackend({
+        id: 'working-infer',
+        respond: () => {
+          calls.push('working-infer')
+          return { text: 'ok' }
+        },
+      }),
+    )
+
+    const wf = pipeline({
+      id: 'infer-backend-list',
+      steps: [infer({ id: 'ask', backend: ['missing-infer', 'working-infer'], prompt: 'hi' })],
+    })
+    const run = await runPipeline(wf, undefined, { backends: reg })
+
+    expect(run.status).toBe('completed')
+    expect(run.output).toEqual({ text: 'ok', usage: undefined })
+    expect(calls).toEqual(['missing-infer', 'working-infer'])
+  })
+
+  it('fails a single unavailable backend without trying registry fallback', async () => {
+    const reg = new BackendRegistry()
+    reg.register(
+      agentBackend('missing-agent', async () => {
+        throw new BackendUnavailableError('agent not installed', 'missing-agent')
+      }),
+    )
+    reg.register(agentBackend('working-agent', async () => ({ text: 'unreachable' })))
+
+    const wf = pipeline({
+      id: 'single-unavailable-agent',
+      steps: [agent({ id: 'work', backend: 'missing-agent', prompt: 'hello' })],
+    })
+    const run = await runPipeline(wf, undefined, { backends: reg })
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('BackendUnavailableError')
+    expect(run.error?.message).toContain('agent not installed')
+  })
+
+  it('does not fall over on non-availability backend errors', async () => {
+    const calls: string[] = []
+    const reg = new BackendRegistry()
+    reg.register(
+      agentBackend('bad-auth', async () => {
+        calls.push('bad-auth')
+        throw new BackendAuthenticationError('bad key', 'bad-auth')
+      }),
+    )
+    reg.register(
+      agentBackend('working-agent', async () => {
+        calls.push('working-agent')
+        return { text: 'unreachable' }
+      }),
+    )
+
+    const wf = pipeline({
+      id: 'agent-backend-list-auth',
+      steps: [agent({ id: 'work', backend: ['bad-auth', 'working-agent'], prompt: 'hello' })],
+    })
+    const run = await runPipeline(wf, undefined, { backends: reg })
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('BackendAuthenticationError')
+    expect(calls).toEqual(['bad-auth'])
+  })
+
+  it('skips unknown ids in an explicit list when a later backend works', async () => {
+    const reg = new BackendRegistry()
+    reg.register(agentBackend('working-agent', async () => ({ text: 'ok' })))
+
+    const wf = pipeline({
+      id: 'agent-backend-list-unknown',
+      steps: [agent({ id: 'work', backend: ['unknown-agent', 'working-agent'], prompt: 'hello' })],
+    })
+    const run = await runPipeline(wf, undefined, { backends: reg })
+
+    expect(run.status).toBe('completed')
+    expect(run.output).toEqual({ text: 'ok' })
   })
 })
