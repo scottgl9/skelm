@@ -5,10 +5,11 @@
 #     bash scripts/install-git-hooks.sh
 #
 # This sets the repo's `core.hooksPath` to scripts/git-hooks/, so any
-# developer who runs the installer gets the same pre-push gate that CI
-# enforces. Without this, the workflow at .github/workflows/ci.yml is
-# the only line of defense — and CI catches regressions only after they
-# land on a branch. The local hook catches them before push.
+# developer who runs the installer gets the same commit-message and
+# pre-push gates. Without this, the workflow at .github/workflows/ci.yml
+# is the only line of defense for code — and CI catches regressions only
+# after they land on a branch. The local hooks catch issues before commit
+# or push.
 #
 # Uninstall:
 #     git config --unset core.hooksPath
@@ -30,7 +31,9 @@ echo "  bypass with: git push --no-verify"
 pnpm check
 HOOK
 chmod +x scripts/git-hooks/pre-push
+chmod +x scripts/git-hooks/commit-msg
 
 echo "✓ git hooks installed at scripts/git-hooks/ (core.hooksPath set)"
+echo "  commit-msg will validate conventional, descriptive commit messages."
 echo "  pre-push will run \`pnpm check\` before every push."
-echo "  bypass with: git push --no-verify"
+echo "  bypass with: git commit --no-verify or git push --no-verify"
