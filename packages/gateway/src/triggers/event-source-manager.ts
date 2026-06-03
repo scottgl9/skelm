@@ -1,6 +1,8 @@
 import { get as httpGet } from 'node:http'
 import { get as httpsGet } from 'node:https'
 import { URL } from 'node:url'
+import { parseFeed } from '@rowanmanning/feed-parser'
+import { createParser } from 'eventsource-parser'
 import WebSocket from 'ws'
 import type { TriggerSpec } from './types.js'
 
@@ -183,50 +185,28 @@ export class EventSourceManager {
         return
       }
       reconnectScheduled = false
-      let buffer = ''
-      let dataLines: string[] = []
-      let eventField: string | undefined
-      let idField: string | undefined
-
-      const flushEvent = () => {
-        if (dataLines.length === 0) {
-          eventField = undefined
-          idField = undefined
-          return
-        }
-        const data = dataLines.join('\n')
-        if (idField !== undefined) this.lastEventId = idField
-        this.fire({
-          data: parseMaybeJson(data),
-          event: eventField ?? 'message',
-          ...(idField !== undefined && { id: idField }),
-          source: 'sse',
-          url,
-          receivedAt: new Date().toISOString(),
-        })
-        dataLines = []
-        eventField = undefined
-        idField = undefined
-      }
+      const parser = createParser({
+        maxBufferSize: 1_000_000,
+        onEvent: (message) => {
+          if (message.id !== undefined) this.lastEventId = message.id
+          const id = message.id
+          this.fire({
+            data: parseMaybeJson(message.data),
+            event: message.event ?? 'message',
+            ...(id !== undefined && { id }),
+            source: 'sse',
+            url,
+            receivedAt: new Date().toISOString(),
+          })
+        },
+      })
 
       res.setEncoding('utf8')
       res.on('data', (chunk) => {
-        buffer += chunk
-        const lines = buffer.split(/\r?\n/)
-        buffer = lines.pop() ?? ''
-        for (const line of lines) {
-          if (line === '') {
-            flushEvent()
-            continue
-          }
-          if (line.startsWith(':')) continue
-          if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
-          else if (line.startsWith('event:')) eventField = line.slice(6).trimStart()
-          else if (line.startsWith('id:')) idField = line.slice(3).trimStart()
-        }
+        parser.feed(chunk)
       })
       res.on('end', () => {
-        flushEvent()
+        parser.reset({ consume: true })
         scheduleReconnect()
       })
       res.on('error', () => {
@@ -336,43 +316,24 @@ async function fetchText(url: string | undefined): Promise<string | null> {
 }
 
 function parseFeedItems(xml: string): ParsedFeedItem[] {
-  const blocks = [...xml.matchAll(/<(item|entry)\b[^>]*>([\s\S]*?)<\/\1>/gi)]
-  return blocks
-    .map((match) => parseFeedItemBlock(match[2] ?? ''))
-    .filter((item): item is ParsedFeedItem => item !== null)
-}
-
-function parseFeedItemBlock(block: string): ParsedFeedItem | null {
-  const guid =
-    firstXmlValue(block, ['guid', 'id']) ??
-    firstXmlAttr(block, 'link', 'href') ??
-    firstXmlValue(block, ['link'])
-  if (guid === undefined) return null
-  const link = firstXmlAttr(block, 'link', 'href') ?? firstXmlValue(block, ['link'])
-  const title = firstXmlValue(block, ['title'])
-  const pubDate = firstXmlValue(block, ['pubDate', 'updated'])
-  const description = firstXmlValue(block, ['description', 'summary'])
-  return {
-    guid,
-    ...(link !== undefined && { link }),
-    ...(title !== undefined && { title }),
-    ...(pubDate !== undefined && { pubDate }),
-    ...(description !== undefined && { description }),
+  try {
+    return parseFeed(xml)
+      .items.map((item) => {
+        const guid = item.id ?? item.url
+        if (guid === null) return null
+        const pubDate = item.published ?? item.updated
+        return {
+          guid,
+          ...(item.url !== null && { link: item.url }),
+          ...(item.title !== null && { title: item.title }),
+          ...(pubDate !== null && { pubDate: pubDate.toISOString() }),
+          ...(item.description !== null && { description: item.description }),
+        }
+      })
+      .filter((item): item is ParsedFeedItem => item !== null)
+  } catch {
+    return []
   }
-}
-
-function firstXmlValue(block: string, tags: string[]): string | undefined {
-  for (const tag of tags) {
-    const match = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(block)
-    const value = match?.[1]?.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim()
-    if (value) return value
-  }
-  return undefined
-}
-
-function firstXmlAttr(block: string, tag: string, attr: string): string | undefined {
-  const match = new RegExp(`<${tag}\\b[^>]*\\s${attr}="([^"]+)"[^>]*>`, 'i').exec(block)
-  return match?.[1]?.trim() || undefined
 }
 
 function compareFeedItemsDesc(a: ParsedFeedItem, b: ParsedFeedItem): number {
