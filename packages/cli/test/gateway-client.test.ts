@@ -12,6 +12,7 @@ import {
   httpError,
   isServiceInstalled,
   loadDiscovery,
+  openSse,
   requireGateway,
   waitForReady,
 } from '../src/internal/gateway-client.js'
@@ -225,6 +226,38 @@ describe('gateway-client', () => {
       // raw body kept since no top-level `message`
       expect(io.err()).toContain('"ok":false')
     })
+  })
+
+  it('openSse parses split SSE frames with event names, ids, and JSON data', async () => {
+    const { createServer } = await import('node:http')
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      res.write(': ignored comment\n\n')
+      res.write('id: 1\nevent: run\n')
+      res.write('data: {"ok":true}\n\n')
+      res.write('event: note\ndata: plain\n\n')
+      res.end('data: incomplete')
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    const addr = server.address()
+    if (addr === null || typeof addr === 'string') {
+      server.close()
+      throw new Error('no port')
+    }
+
+    try {
+      const events = []
+      for await (const event of openSse(`http://127.0.0.1:${addr.port}/events`, {})) {
+        events.push(event)
+      }
+
+      expect(events).toEqual([
+        { event: 'run', id: '1', raw: '{"ok":true}', data: { ok: true } },
+        { event: 'note', id: undefined, raw: 'plain', data: 'plain' },
+      ])
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()))
+    }
   })
 })
 

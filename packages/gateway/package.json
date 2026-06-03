@@ -42,10 +42,10 @@
     "@skelm/metrics": "workspace:*",
     "@skelm/otel": "workspace:*",
     "chokidar": "^5.0.0",
-    "cron-parser": "^4.9.0",
     "eventsource-parser": "^3.1.0",
     "fast-glob": "^3.3.3",
     "fflate": "^0.8.2",
+    "get-port": "^7.2.0",
     "h3": "^1.15.0",
     "ws": "^8.20.1"
   },

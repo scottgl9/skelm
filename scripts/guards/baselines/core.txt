@@ -23,6 +23,7 @@ value:BackendTimeoutError
 value:BackendUnavailableError
 value:BackendUpstreamError
 value:CONFIG_FILENAMES
+value:CRON_LOOKAHEAD_MS
 value:CronTrigger
 value:CustomTrigger
 value:DEFAULT_ARTIFACT_QUOTA_BYTES
@@ -141,7 +142,9 @@ value:loadSkillBodies
 value:loadTsModule
 value:loop
 value:messageHasImage
+value:nextCronFireTime
 value:parallel
+value:parseCronExpression
 value:parseDuration
 value:parseSkill
 value:persistentWorkflow
@@ -264,6 +267,7 @@ type:ParallelWaitFor
 type:PermissionDenialReason
 type:PermissionDimension
 type:PermissionResolverOptions
+type:ParsedCronExpression
 type:PersistentSessionRecord
 type:PersistentWorkflow
 type:PersistentWorkflowAgentDef
