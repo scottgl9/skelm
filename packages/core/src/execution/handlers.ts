@@ -110,6 +110,29 @@ function noAvailableBackendError(
   )
 }
 
+function emitBackendFailover(
+  events: EventBus | undefined,
+  input: {
+    runId: string
+    stepId: string
+    kind: 'infer' | 'agent'
+    from: string
+    to: string
+    error: BackendUnavailableError
+  },
+): void {
+  events?.publish({
+    type: 'backend.failover',
+    runId: input.runId,
+    stepId: input.stepId,
+    kind: input.kind,
+    from: input.from,
+    to: input.to,
+    error: input.error.message,
+    at: Date.now(),
+  })
+}
+
 // Emit the audit signal for an operator-granted full bypass. Called once per
 // step whose resolved policy is `unrestricted`, so the short-circuit is never
 // silent (see docs/concepts/permissions.md). The runner's audit subscription
@@ -454,14 +477,33 @@ async function runInferStep(
     }
   }
   if (candidates === undefined) {
-    await tryBackend(undefined)
+    const ok = await tryBackend(undefined)
+    if (!ok) {
+      throw (
+        lastUnavailable ??
+        new BackendUnavailableError(`backend for step "${step.id}" is not available`, 'unknown')
+      )
+    }
   } else {
-    for (const candidate of candidates) {
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i]
+      if (candidate === undefined) continue
       try {
         if (await tryBackend(candidate)) break
       } catch (err) {
         if (err instanceof BackendNotFoundError) continue
         throw err
+      }
+      const next = candidates[i + 1]
+      if (next !== undefined && lastUnavailable !== undefined) {
+        emitBackendFailover(events, {
+          runId: ctx.run.runId,
+          stepId: step.id,
+          kind: 'infer',
+          from: candidate,
+          to: next,
+          error: lastUnavailable,
+        })
       }
     }
     if (response === undefined) {
@@ -1004,6 +1046,17 @@ async function runAgentStep(
             }
             response = await invokeBackend(backend)
             if (response !== undefined) break
+            const next = candidates[i + 1]
+            if (next !== undefined && lastUnavailable !== undefined) {
+              emitBackendFailover(events, {
+                runId: ctx.run.runId,
+                stepId: step.id,
+                kind: 'agent',
+                from: backend.id,
+                to: next,
+                error: lastUnavailable,
+              })
+            }
           }
           if (response === undefined) {
             throw noAvailableBackendError(step.id, 'agent', attemptedBackends, lastUnavailable)

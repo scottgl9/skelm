@@ -369,6 +369,21 @@ export class Runner {
           details: { stepId: event.stepId, name: event.name, at: event.at },
         })
       }
+      if (event.type === 'backend.failover') {
+        void writeAudit(writer, {
+          runId: event.runId,
+          actor: 'runtime',
+          action: 'backend.failover',
+          details: {
+            stepId: event.stepId,
+            kind: event.kind,
+            from: event.from,
+            to: event.to,
+            error: event.error,
+            at: event.at,
+          },
+        })
+      }
       // A full permission bypass is a security event: record it durably so the
       // audit log shows when default-deny was intentionally short-circuited.
       // We emit ONE summary row plus one row PER dimension, all flagged
@@ -732,6 +747,18 @@ export async function runPipeline<TInput, TOutput>(
         queue({
           action: 'secret.not_found',
           details: { stepId: event.stepId, name: event.name, at: event.at },
+        })
+      } else if (event.type === 'backend.failover') {
+        queue({
+          action: 'backend.failover',
+          details: {
+            stepId: event.stepId,
+            kind: event.kind,
+            from: event.from,
+            to: event.to,
+            error: event.error,
+            at: event.at,
+          },
         })
       } else if (event.type === 'tool.call') {
         queue({
