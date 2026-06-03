@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Commit message gate — keeps local history descriptive and readable.
+set -euo pipefail
+node scripts/validate-commit-message.mjs "$1"
