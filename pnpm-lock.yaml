@@ -193,6 +193,12 @@ importers:
       dotenv:
         specifier: ^16.4.5
         version: 16.6.1
+      eventsource-parser:
+        specifier: ^3.1.0
+        version: 3.1.0
+      get-port:
+        specifier: ^7.2.0
+        version: 7.2.0
     devDependencies:
       typescript:
         specifier: ^5.6.3
@@ -228,6 +234,9 @@ importers:
       better-sqlite3:
         specifier: 12.9.0
         version: 12.9.0
+      cron-parser:
+        specifier: ^4.9.0
+        version: 4.9.0
       p-retry:
         specifier: ^8.0.0
         version: 8.0.0
@@ -268,9 +277,6 @@ importers:
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0
-      cron-parser:
-        specifier: ^4.9.0
-        version: 4.9.0
       eventsource-parser:
         specifier: ^3.1.0
         version: 3.1.0
@@ -280,6 +286,9 @@ importers:
       fflate:
         specifier: ^0.8.2
         version: 0.8.2
+      get-port:
+        specifier: ^7.2.0
+        version: 7.2.0
       h3:
         specifier: ^1.15.0
         version: 1.15.11
@@ -3107,6 +3116,11 @@ packages:
   /get-east-asian-width@1.6.0:
     resolution: {integrity: sha512-QRbvDIbx6YklUe6RxeTeleMR0yv3cYH6PsPZHcnVn7xv7zO1BHN8r0XETu8n6Ye3Q+ahtSarc3WgtNWmehIBfA==}
     engines: {node: '>=18'}
+
+  /get-port@7.2.0:
+    resolution: {integrity: sha512-afP4W205ONCuMoPBqcR6PSXnzX35KTcJygfJfcp+QY+uwm3p20p1YczWXhlICIzGMCxYBQcySEcOgsJcrkyobg==}
+    engines: {node: '>=16'}
+    dev: false
 
   /github-from-package@0.0.0:
     resolution: {integrity: sha512-SyHy3T1v2NUXn29OsWdxmK6RwHD+vkj3v8en8AOBZ1wBQ/hCAQ5bAQTD02kW4W9tUp/3Qh6J8r9EvntiyCmOOw==}

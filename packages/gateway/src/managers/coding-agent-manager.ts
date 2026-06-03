@@ -1,6 +1,6 @@
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
-import { createServer } from 'node:net'
 import type { SkelmConfigAgentEntry } from '@skelm/core'
+import getPort from 'get-port'
 
 export type CodingAgentStatus = 'stopped' | 'starting' | 'running' | 'crashed'
 
@@ -260,21 +260,7 @@ export class CodingAgentManager {
 }
 
 async function pickFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer()
-    srv.unref()
-    srv.once('error', reject)
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address()
-      if (addr === null || typeof addr === 'string') {
-        srv.close()
-        reject(new Error('failed to bind ephemeral port'))
-        return
-      }
-      const port = addr.port
-      srv.close(() => resolve(port))
-    })
-  })
+  return getPort({ host: '127.0.0.1' })
 }
 
 function withInjectedPort(args: readonly string[], port: number): string[] {

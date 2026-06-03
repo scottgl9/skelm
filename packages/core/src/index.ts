@@ -229,6 +229,8 @@ export {
 } from './errors.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
+export { CRON_LOOKAHEAD_MS, nextCronFireTime, parseCronExpression } from './cron-expression.js'
+export type { ParsedCronExpression } from './cron-expression.js'
 export { parseDuration } from './duration.js'
 export { describePipeline, describeStep } from './introspect.js'
 export type { DescribedStep, PipelineDescription } from './introspect.js'

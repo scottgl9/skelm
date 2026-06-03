@@ -1,9 +1,10 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { promises as fs } from 'node:fs'
-import { type AddressInfo, createServer } from 'node:net'
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 import { type DiscoveryRecord, readDiscovery } from '@skelm/gateway'
+import { type EventSourceMessage, createParser } from 'eventsource-parser'
+import getPort from 'get-port'
 import { EXIT } from '../exit-codes.js'
 import type { MainIO, MainResult } from './io.js'
 
@@ -30,15 +31,7 @@ export function defaultStateDir(): string {
  * won't collide with the conventional shared gateway's fixed port.
  */
 export async function findFreePort(): Promise<number> {
-  return new Promise<number>((resolve, reject) => {
-    const srv = createServer()
-    srv.once('error', reject)
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address() as AddressInfo | null
-      const port = addr?.port ?? 0
-      srv.close(() => (port > 0 ? resolve(port) : reject(new Error('no free port'))))
-    })
-  })
+  return getPort({ host: '127.0.0.1', reserve: true })
 }
 
 export async function loadDiscovery(stateDir?: string): Promise<DiscoveryRecord | null> {
@@ -361,21 +354,33 @@ export async function* openSse(
   }
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
-  let buffer = ''
+  const pending: SseEvent[] = []
+  const parser = createParser({
+    onEvent(message) {
+      const event = toSseEvent(message)
+      if (event !== null) pending.push(event)
+    },
+    onError() {
+      // Match the previous parser: malformed/unknown fields are ignored.
+    },
+  })
   try {
     while (true) {
       const { value, done } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      // SSE event boundary is a blank line.
-      let sepIdx = buffer.indexOf('\n\n')
-      while (sepIdx !== -1) {
-        const frame = buffer.slice(0, sepIdx)
-        buffer = buffer.slice(sepIdx + 2)
-        const ev = parseSseFrame(frame)
-        if (ev !== null) yield ev
-        sepIdx = buffer.indexOf('\n\n')
+      if (done) {
+        const tail = decoder.decode()
+        if (tail !== '') parser.feed(tail)
+        break
       }
+      parser.feed(decoder.decode(value, { stream: true }))
+      while (pending.length > 0) {
+        const event = pending.shift()
+        if (event !== undefined) yield event
+      }
+    }
+    while (pending.length > 0) {
+      const event = pending.shift()
+      if (event !== undefined) yield event
     }
   } finally {
     try {
@@ -386,22 +391,14 @@ export async function* openSse(
   }
 }
 
-function parseSseFrame(frame: string): SseEvent | null {
-  let event = 'message'
-  let id: string | undefined
-  const dataLines: string[] = []
-  for (const line of frame.split('\n')) {
-    if (line === '' || line.startsWith(':')) continue
-    const colon = line.indexOf(':')
-    const field = colon === -1 ? line : line.slice(0, colon)
-    let val = colon === -1 ? '' : line.slice(colon + 1)
-    if (val.startsWith(' ')) val = val.slice(1)
-    if (field === 'event') event = val
-    else if (field === 'id') id = val
-    else if (field === 'data') dataLines.push(val)
-  }
-  if (dataLines.length === 0 && event === 'message') return null
-  const raw = dataLines.join('\n')
+function toSseEvent(message: EventSourceMessage): SseEvent | null {
+  const event = message.event ?? 'message'
+  const raw = message.data
+  if (raw === '' && event === 'message') return null
+  return { event, id: message.id, data: parseSseData(raw), raw }
+}
+
+function parseSseData(raw: string): unknown {
   let data: unknown = raw
   if (raw !== '') {
     try {
@@ -410,5 +407,5 @@ function parseSseFrame(frame: string): SseEvent | null {
       // leave as raw string
     }
   }
-  return { event, id, data, raw }
+  return data
 }
