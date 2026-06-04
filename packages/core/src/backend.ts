@@ -6,6 +6,7 @@
 // implement only one. The capability flags tell the runtime what the
 // backend can and cannot enforce natively.
 
+import { RegistryError } from './errors.js'
 import type { McpHost } from './mcp/host.js'
 import type { ResolvedPolicy } from './permissions.js'
 import type { SkelmSchema } from './schema.js'
@@ -679,7 +680,7 @@ export class BackendRegistry {
 
   register(backend: SkelmBackend): void {
     if (this.backends.has(backend.id)) {
-      throw new Error(`backend already registered: ${backend.id}`)
+      throw new RegistryError(`backend already registered: ${backend.id}`, 'backend', backend.id)
     }
     this.backends.set(backend.id, backend)
   }

@@ -1,3 +1,4 @@
+import { IntegrationRateLimitError } from './errors.js'
 import type { Integration, IntegrationCapabilities, IntegrationConfig } from './types.js'
 
 /**
@@ -107,6 +108,6 @@ export abstract class IntegrationBase implements Integration {
       retries++
     }
 
-    throw new Error(`Rate limit exceeded after ${maxRetries} retries`)
+    throw new IntegrationRateLimitError(`Rate limit exceeded after ${maxRetries} retries`)
   }
 }

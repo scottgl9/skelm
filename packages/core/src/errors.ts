@@ -151,6 +151,41 @@ export class DelegationDepthError extends Error {
   }
 }
 
+/** Thrown when a registry operation violates uniqueness or lookup invariants. */
+export class RegistryError extends Error {
+  override readonly name = 'RegistryError'
+  constructor(
+    message: string,
+    readonly registry: string,
+    readonly id?: string,
+  ) {
+    super(message)
+  }
+}
+
+/** Thrown when a static framework configuration is malformed. */
+export class ConfigError extends Error {
+  override readonly name = 'ConfigError'
+  constructor(
+    message: string,
+    readonly scope?: string,
+  ) {
+    super(message)
+  }
+}
+
+/** Return a stable, human-readable message for any thrown value. */
+export function toErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'string') return err
+  try {
+    const serialized = JSON.stringify(err)
+    return serialized === undefined ? String(err) : serialized
+  } catch {
+    return String(err)
+  }
+}
+
 /** Convert any thrown value to the serializable error shape we record. */
 export function serializeError(err: unknown): SerializedError {
   if (err instanceof Error) {
@@ -162,6 +197,6 @@ export function serializeError(err: unknown): SerializedError {
   }
   return {
     name: 'NonError',
-    message: typeof err === 'string' ? err : JSON.stringify(err),
+    message: toErrorMessage(err),
   }
 }

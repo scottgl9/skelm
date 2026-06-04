@@ -1,8 +1,12 @@
 value:ChatUiIntegration
 value:GitHubApiError
 value:GitHubIntegration
+value:IntegrationApiError
 value:IntegrationBase
+value:IntegrationConfigError
+value:IntegrationError
 value:IntegrationRegistry
+value:IntegrationStateError
 value:MatrixIntegration
 value:MsGraphIntegration
 value:SlackIntegration

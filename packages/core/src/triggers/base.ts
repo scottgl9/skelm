@@ -9,6 +9,7 @@
  * - Config validation
  */
 
+import { toErrorMessage } from '../errors.js'
 import type {
   TriggerConfig,
   TriggerEvent,
@@ -185,10 +186,11 @@ export abstract class TriggerPluginBase {
       this.logger.info(`Trigger initialized: ${this.id}`)
     } catch (error) {
       this.state = TriggerState.ERROR
-      this.logger.error(
-        `Failed to initialize trigger: ${error instanceof Error ? error.message : String(error)}`,
+      this.logger.error(`Failed to initialize trigger: ${toErrorMessage(error)}`)
+      throw new TriggerInitializationError(
+        `Failed to initialize trigger: ${toErrorMessage(error)}`,
+        error,
       )
-      throw error
     }
   }
 
@@ -208,13 +210,8 @@ export abstract class TriggerPluginBase {
       this.logger.info(`Trigger started: ${this.id}`)
     } catch (error) {
       this.state = TriggerState.ERROR
-      this.logger.error(
-        `Failed to start trigger: ${error instanceof Error ? error.message : String(error)}`,
-      )
-      throw new TriggerStartError(
-        `Failed to start trigger: ${error instanceof Error ? error.message : String(error)}`,
-        error,
-      )
+      this.logger.error(`Failed to start trigger: ${toErrorMessage(error)}`)
+      throw new TriggerStartError(`Failed to start trigger: ${toErrorMessage(error)}`, error)
     }
   }
 
@@ -235,13 +232,8 @@ export abstract class TriggerPluginBase {
       this.logger.info(`Trigger stopped: ${this.id}`)
     } catch (error) {
       this.state = TriggerState.ERROR
-      this.logger.error(
-        `Failed to stop trigger: ${error instanceof Error ? error.message : String(error)}`,
-      )
-      throw new TriggerStopError(
-        `Failed to stop trigger: ${error instanceof Error ? error.message : String(error)}`,
-        error,
-      )
+      this.logger.error(`Failed to stop trigger: ${toErrorMessage(error)}`)
+      throw new TriggerStopError(`Failed to stop trigger: ${toErrorMessage(error)}`, error)
     }
   }
 

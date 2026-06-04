@@ -1,7 +1,14 @@
 import { createServer } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { BackendConfigError } from '../../src/backend.js'
+import {
+  BackendAuthenticationError,
+  BackendConfigError,
+  BackendNetworkError,
+  BackendRateLimitError,
+  BackendTimeoutError,
+  BackendUpstreamError,
+} from '../../src/backend.js'
 import { createOpenAIBackend } from '../../src/openai/backend.js'
 
 describe('OpenAI backend', () => {
@@ -185,7 +192,80 @@ describe('OpenAI backend', () => {
       ),
     ).rejects.toBeInstanceOf(BackendConfigError)
   })
+
+  it('classifies upstream authentication, rate-limit, timeout, and server errors', async () => {
+    await expectOpenAIStatus(401, BackendAuthenticationError)
+    await expectOpenAIStatus(403, BackendAuthenticationError)
+    await expectOpenAIStatus(429, BackendRateLimitError)
+    await expectOpenAIStatus(504, BackendTimeoutError)
+    await expectOpenAIStatus(500, BackendUpstreamError)
+  })
+
+  it('classifies malformed upstream responses and invalid structured JSON as upstream errors', async () => {
+    const malformed = createOpenAIBackend({
+      apiKey: 'test-key',
+      fetch: async () => new Response(JSON.stringify({ choices: 'wrong' }), { status: 200 }),
+    })
+    await expect(
+      malformed.inference?.(
+        { messages: [{ role: 'user', content: 'ping' }] },
+        { signal: AbortSignal.timeout(5_000) },
+      ),
+    ).rejects.toBeInstanceOf(BackendUpstreamError)
+
+    const invalidJson = createOpenAIBackend({
+      apiKey: 'test-key',
+      fetch: async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: 'not json' } }] }), {
+          status: 200,
+        }),
+    })
+    await expect(
+      invalidJson.inference?.(
+        {
+          messages: [{ role: 'user', content: 'ping' }],
+          outputSchema: z.object({ ok: z.boolean() }),
+        },
+        { signal: AbortSignal.timeout(5_000) },
+      ),
+    ).rejects.toBeInstanceOf(BackendUpstreamError)
+  })
+
+  it('classifies fetch failures as BackendNetworkError', async () => {
+    const backend = createOpenAIBackend({
+      apiKey: 'test-key',
+      fetch: async () => {
+        throw new Error('econnrefused')
+      },
+    })
+    await expect(
+      backend.inference?.(
+        { messages: [{ role: 'user', content: 'ping' }] },
+        { signal: AbortSignal.timeout(5_000) },
+      ),
+    ).rejects.toBeInstanceOf(BackendNetworkError)
+  })
 })
+
+async function expectOpenAIStatus(
+  status: number,
+  klass: new (...args: never[]) => Error,
+): Promise<void> {
+  const backend = createOpenAIBackend({
+    apiKey: 'test-key',
+    fetch: async () =>
+      new Response(JSON.stringify({ error: { message: `status ${status}` } }), {
+        status,
+        statusText: 'Nope',
+      }),
+  })
+  await expect(
+    backend.inference?.(
+      { messages: [{ role: 'user', content: 'ping' }] },
+      { signal: AbortSignal.timeout(5_000) },
+    ),
+  ).rejects.toBeInstanceOf(klass)
+}
 
 async function startServer(
   respond: (body: unknown) => Promise<unknown> | unknown,
