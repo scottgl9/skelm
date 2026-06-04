@@ -12,6 +12,7 @@ Usage:
   skelm secrets <get|set|list> [args]
   skelm debug <breakpoints|add|remove|runs|release> [args]
   skelm sessions <list|prune> [--expired] [--older-than-ms <ms>] [--json]
+  skelm acp serve
   skelm schedule <add|list|stop|fire> [args]
   skelm validate <pipeline.ts> [--json]
   skelm logs [--lines <n>] [--since <iso>] [--level <lvl>] [--filter <s>] [--json]
@@ -84,6 +85,9 @@ Sessions flags:
   skelm sessions list [--json]                  List ACP sessions tracked by the gateway
   skelm sessions prune [--expired] [--older-than-ms <ms>] [--json]
                                                 Drop sessions matching either filter
+
+ACP flags:
+  skelm acp serve                               Reserved placeholder; not implemented yet
 
 Schedule flags:
   skelm schedule list [--json]                  List registered schedules
