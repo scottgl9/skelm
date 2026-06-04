@@ -115,8 +115,8 @@ function parseSubcommand(command: Subcommand, rest: readonly string[]): ParsedAr
       writeErr: () => {},
     })
 
-  for (const flag of VALUE_FLAGS) parser.option(`--${flag} <value>`)
-  for (const flag of BOOLEAN_FLAGS) parser.option(`--${flag}`)
+  for (const flag of valueFlagsFor(command)) parser.option(`--${flag} <value>`)
+  for (const flag of booleanFlagsFor(command)) parser.option(`--${flag}`)
 
   try {
     parser.parse([...rest], { from: 'user' })
@@ -132,6 +132,16 @@ function parseSubcommand(command: Subcommand, rest: readonly string[]): ParsedAr
     positional: unknown.positional,
     flags: { ...parsedFlags, ...unknown.flags },
   }
+}
+
+function valueFlagsFor(command: Subcommand): readonly string[] {
+  if (command === 'history') return VALUE_FLAGS.filter((flag) => flag !== 'events')
+  return VALUE_FLAGS
+}
+
+function booleanFlagsFor(command: Subcommand): readonly string[] {
+  if (command === 'history') return [...BOOLEAN_FLAGS, 'events']
+  return BOOLEAN_FLAGS
 }
 
 function dashCaseOptions(opts: Record<string, string | boolean>): Record<string, string | boolean> {
