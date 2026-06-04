@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type TurnFn, createFrontendHost } from '../src/tui.js'
+import { type TurnFn, createFrontendHost, hostFrontend } from '../src/tui.js'
 
 // Exercises the frontend-driving logic without a TTY: a fake frontend captures
 // the bridge io and records render/renderPartial; a fake turn returns canned
@@ -47,6 +47,47 @@ describe('createFrontendHost', () => {
     submit?.('   ')
     await host.idle()
     expect(rendered).toEqual([])
+  })
+
+  it('passes an optional close hook to the frontend', () => {
+    let close: (() => void) | undefined
+    let closed = false
+    createFrontendHost(
+      (io) => {
+        close = io.close
+        return { render: () => {} }
+      },
+      'sess',
+      async (text) => text,
+      () => {
+        closed = true
+      },
+    )
+    close?.()
+    expect(closed).toBe(true)
+  })
+
+  it('keeps host SIGINT shutdown wired after the frontend is initially idle', async () => {
+    const before = process.listenerCount('SIGINT')
+    let closed = false
+    const hosted = hostFrontend(
+      () => ({
+        render: () => {},
+        close: async () => {
+          closed = true
+        },
+      }),
+      'sess',
+      async (text) => text,
+    )
+
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(process.listenerCount('SIGINT')).toBe(before + 1)
+    process.emit('SIGINT')
+    await hosted
+    expect(closed).toBe(true)
+    expect(process.listenerCount('SIGINT')).toBe(before)
   })
 
   it('serializes turns submitted while one is in flight', async () => {

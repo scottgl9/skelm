@@ -68,13 +68,13 @@ export default defineConfig({
     // ceiling and INTERSECTS it with the agent's declared permissions. skelm is
     // default-deny, so without raising the ceiling here the agent's grants in
     // builder.workflow.mts (fsWrite, exec, skill, network) would collapse to
-    // nothing — the builder couldn't write files or reach its backend. This
+    // nothing — the builder couldn't write files, run validation, or reach its backend. This
     // ceiling mirrors the agent's least-privilege needs; it is NOT an
     // unrestricted bypass. (A one-shot `skelm run` doesn't apply this ceiling,
     // which is why the gap only bites the persistent/triggered path.)
     permissions: {
       networkEgress: 'allow',
-      allowedExecutables: ['skelm', 'node'],
+      allowedExecutables: ['skelm', 'node', 'bash'],
       allowedSkills: ['skelm'],
       fsRead: ['./'],
       fsWrite: ['./'],

@@ -1,5 +1,5 @@
 import type { ChatUiFrontend, ChatUiFrontendFactory, ChatUiFrontendIo } from '@skelm/integrations'
-import { Box, Text, render } from 'ink'
+import { Box, Text, render, useApp, useInput } from 'ink'
 import TextInput from 'ink-text-input'
 import { type ReactElement, createElement, useEffect, useState } from 'react'
 
@@ -35,6 +35,7 @@ export function createTerminalFrontend(options: InkFrontendOptions = {}): ChatUi
     }
 
     function App(): ReactElement {
+      const { exit } = useApp()
       const [, setTick] = useState(0)
       const [value, setValue] = useState('')
       useEffect(() => {
@@ -44,6 +45,12 @@ export function createTerminalFrontend(options: InkFrontendOptions = {}): ChatUi
           listeners.delete(onChange)
         }
       }, [])
+      useInput((input, key) => {
+        if (key.ctrl && input === 'c') {
+          io.close?.()
+          exit()
+        }
+      })
 
       const lines: ReactElement[] = []
       if (banner !== undefined && banner !== '') {
@@ -86,7 +93,7 @@ export function createTerminalFrontend(options: InkFrontendOptions = {}): ChatUi
       return createElement(Box, { flexDirection: 'column' }, ...lines, input)
     }
 
-    const instance = render(createElement(App))
+    const instance = render(createElement(App), { exitOnCtrlC: false })
 
     return {
       renderPartial(text: string): void {

@@ -9,6 +9,7 @@ import { bootGatewayWithRetry } from '../utils/boot-gateway.js'
 
 let stateDir: string
 let projectRoot: string
+const rmOptions = { recursive: true, force: true, maxRetries: 5, retryDelay: 25 } as const
 
 beforeEach(async () => {
   stateDir = await mkdtemp(join(tmpdir(), 'skelm-wfreg-'))
@@ -18,8 +19,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  await rm(stateDir, { recursive: true, force: true })
-  await rm(projectRoot, { recursive: true, force: true })
+  await rm(stateDir, rmOptions)
+  await rm(projectRoot, rmOptions)
 })
 
 const goodPipeline = pipeline({
@@ -116,7 +117,7 @@ describe('/v1/workflows/*', () => {
       expect(list.find((e: { id: string }) => e.id === 'outside')).toBeUndefined()
     } finally {
       await gw.stop()
-      await rm(outside, { recursive: true, force: true })
+      await rm(outside, rmOptions)
     }
   })
 
@@ -134,7 +135,7 @@ describe('/v1/workflows/*', () => {
       expect(res.status).toBe(200)
     } finally {
       await gw.stop()
-      await rm(outside, { recursive: true, force: true })
+      await rm(outside, rmOptions)
     }
   })
 
