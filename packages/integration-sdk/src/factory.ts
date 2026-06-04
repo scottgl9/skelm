@@ -1,5 +1,6 @@
 import type { ZodType } from 'zod'
 import { IntegrationBase } from './base.js'
+import { IntegrationCredentialsError, IntegrationUnsupportedOperationError } from './errors.js'
 import type {
   Integration,
   IntegrationCapabilities,
@@ -144,7 +145,7 @@ export function defineIntegration<
 
     private get creds(): TCreds {
       if (this.parsedCredentials === null) {
-        throw new Error(
+        throw new IntegrationCredentialsError(
           `Integration "${options.id}" credentials accessed before init() — call init() first`,
         )
       }
@@ -155,7 +156,7 @@ export function defineIntegration<
       const result = options.credentialsSchema.safeParse(this.config.credentials)
       if (!result.success) {
         const messages = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`)
-        throw new Error(
+        throw new IntegrationCredentialsError(
           `Invalid credentials for integration "${options.id}": ${messages.join('; ')}`,
         )
       }
@@ -188,7 +189,9 @@ export function defineIntegration<
 
     async sendNotification(message: string, opts?: Record<string, unknown>): Promise<void> {
       if (!options.sendNotification) {
-        throw new Error(`Integration "${options.id}" does not support sendNotification`)
+        throw new IntegrationUnsupportedOperationError(
+          `Integration "${options.id}" does not support sendNotification`,
+        )
       }
       await options.sendNotification(message, opts, this.creds, this.config)
     }
@@ -277,7 +280,7 @@ export class IntegrationWorkflowPlugin {
         healthy: false,
         status: 'error',
         lastCheck: new Date().toISOString(),
-        errors: [error instanceof Error ? error.message : String(error)],
+        errors: [toErrorMessage(error)],
       }
     }
   }
@@ -316,4 +319,8 @@ export class IntegrationWorkflowPlugin {
   getIntegration(): Integration {
     return this.integration
   }
+}
+
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

@@ -2,7 +2,7 @@ import type { BackendContext } from '@skelm/core'
 import { MockLanguageModelV3, convertArrayToReadableStream } from 'ai/test'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { createVercelAiBackend } from '../src/index.js'
+import { VercelAiBackendError, createVercelAiBackend } from '../src/index.js'
 
 function makeCtx(overrides: Partial<BackendContext> = {}): BackendContext {
   return { signal: new AbortController().signal, ...overrides }
@@ -111,6 +111,24 @@ describe('createVercelAiBackend — inference()', () => {
       backend.inference?.({ messages: [{ role: 'user', content: 'hi' }] }, makeCtx()),
     ).rejects.not.toMatchObject({ name: 'BackendUnavailableError' })
   })
+
+  it('throws a vercel-ai backend error when generateText finishes with error', async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: 'text', text: '' }],
+        finishReason: { unified: 'error', raw: 'error' },
+        usage: { inputTokens: { total: 1 }, outputTokens: { total: 0 }, totalTokens: 1 },
+        warnings: [],
+      }),
+    })
+    const backend = createVercelAiBackend({ model })
+    await expect(
+      backend.inference?.({ messages: [{ role: 'user', content: 'hi' }] }, makeCtx()),
+    ).rejects.toBeInstanceOf(VercelAiBackendError)
+    await expect(
+      backend.inference?.({ messages: [{ role: 'user', content: 'hi' }] }, makeCtx()),
+    ).rejects.toThrow(/generateText terminated/)
+  })
 })
 
 describe('createVercelAiBackend — run()', () => {
@@ -168,6 +186,22 @@ describe('createVercelAiBackend — run()', () => {
     // Either no responseFormat, or the SDK's default 'text' mode.
     const fmt = (capturedResponseFormat as { type?: string })?.type
     expect(fmt === undefined || fmt === 'text').toBe(true)
+  })
+
+  it('throws a vercel-ai backend error when run finishes with error', async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: 'text', text: '' }],
+        finishReason: { unified: 'error', raw: 'error' },
+        usage: { inputTokens: { total: 1 }, outputTokens: { total: 0 }, totalTokens: 1 },
+        warnings: [],
+      }),
+    })
+    const backend = createVercelAiBackend({ model })
+    await expect(backend.run?.({ prompt: 'p' }, makeCtx())).rejects.toBeInstanceOf(
+      VercelAiBackendError,
+    )
+    await expect(backend.run?.({ prompt: 'p' }, makeCtx())).rejects.toThrow(/run terminated/)
   })
 
   it('streams text chunks through onPartial when context.onPartial is provided', async () => {
