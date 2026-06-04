@@ -4,6 +4,7 @@ import type {
   TelegramMessageTrigger,
   TelegramWebhookEvent,
 } from '@skelm/integration-sdk'
+import { IntegrationApiError, IntegrationConfigError, IntegrationStateError } from './errors.js'
 
 /**
  * Flat shape suitable for use as a pipeline input. Mirrors the runtime
@@ -170,11 +171,11 @@ export class TelegramIntegration extends IntegrationBase {
   protected async validateCredentials(): Promise<void> {
     const token = this.config.credentials.botToken
     if (typeof token !== 'string' || token.length === 0) {
-      throw new Error('Telegram credentials missing: botToken required')
+      throw new IntegrationConfigError('Telegram credentials missing: botToken required', this.id)
     }
     // Format: <bot_id>:<35-char-secret>. Reject obvious mistakes early.
     if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(token)) {
-      throw new Error('Invalid Telegram bot token format')
+      throw new IntegrationConfigError('Invalid Telegram bot token format', this.id)
     }
     this.botToken = token
   }
@@ -269,7 +270,10 @@ export class TelegramIntegration extends IntegrationBase {
   ): Promise<void> {
     const chatId = options?.chatId ?? this.config.credentials.chatId
     if (chatId === undefined || chatId === '') {
-      throw new Error('Telegram sendNotification requires chatId in options or config.credentials')
+      throw new IntegrationConfigError(
+        'Telegram sendNotification requires chatId in options or config.credentials',
+        this.id,
+      )
     }
     await this.sendMessage({
       chatId,
@@ -449,7 +453,10 @@ export class TelegramIntegration extends IntegrationBase {
     signal?: AbortSignal,
   ): Promise<T> {
     if (this.botToken === null) {
-      throw new Error('TelegramIntegration not initialized — call init() first')
+      throw new IntegrationStateError(
+        'TelegramIntegration not initialized — call init() first',
+        this.id,
+      )
     }
     const url = `${TELEGRAM_API_BASE}/bot${this.botToken}/${method}`
     const res = await this.fetchImpl(url, {
@@ -460,7 +467,12 @@ export class TelegramIntegration extends IntegrationBase {
     })
     const json = (await res.json()) as TelegramApiResponse<T>
     if (!json.ok || json.result === undefined) {
-      throw new Error(`Telegram API ${method} failed: ${json.description ?? `HTTP ${res.status}`}`)
+      throw new IntegrationApiError(
+        `Telegram API ${method} failed: ${json.description ?? `HTTP ${res.status}`}`,
+        this.id,
+        res.status,
+        { cause: json },
+      )
     }
     return json.result
   }

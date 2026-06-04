@@ -5,3 +5,11 @@ export class IntegrationSdkError extends Error {
 export class IntegrationRateLimitError extends IntegrationSdkError {
   override readonly name: string = 'IntegrationRateLimitError'
 }
+
+export class IntegrationCredentialsError extends IntegrationSdkError {
+  override readonly name: string = 'IntegrationCredentialsError'
+}
+
+export class IntegrationUnsupportedOperationError extends IntegrationSdkError {
+  override readonly name: string = 'IntegrationUnsupportedOperationError'
+}

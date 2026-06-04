@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { IntegrationBase } from '../src/base.js'
+import { IntegrationCredentialsError, IntegrationUnsupportedOperationError } from '../src/errors.js'
 import {
   INTEGRATION_PLUGIN_BRAND,
   createIntegrationPlugin,
@@ -78,11 +79,13 @@ describe('defineIntegration', () => {
   it('throws on invalid credentials (Zod validation)', async () => {
     const inst = new TestIntegration(makeConfig({ credentials: { apiKey: '' } }))
     await expect(inst.init()).rejects.toThrow(/Invalid credentials/)
+    await expect(inst.init()).rejects.toBeInstanceOf(IntegrationCredentialsError)
   })
 
   it('throws on missing credential fields', async () => {
     const inst = new TestIntegration(makeConfig({ credentials: {} }))
     await expect(inst.init()).rejects.toThrow(/Invalid credentials/)
+    await expect(inst.init()).rejects.toBeInstanceOf(IntegrationCredentialsError)
   })
 
   it('calls validateCredentials hook after Zod passes', async () => {
@@ -187,6 +190,9 @@ describe('defineIntegration', () => {
     await inst.init()
     await expect(inst.sendNotification('hello')).rejects.toThrow(
       'does not support sendNotification',
+    )
+    await expect(inst.sendNotification('hello')).rejects.toBeInstanceOf(
+      IntegrationUnsupportedOperationError,
     )
   })
 
