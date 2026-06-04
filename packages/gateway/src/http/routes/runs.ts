@@ -64,7 +64,9 @@ export function registerRunRoutes(router: Router, gateway: Gateway): void {
       // `output` is the documented field; accept `input` as an alias so
       // callers that think of the resume value as the wait step's input
       // (the CLI recipe and HTTP clients alike) work uniformly.
-      const resumeValue = body.output ?? body.input ?? {}
+      const hasOutput = Object.hasOwn(body, 'output')
+      const hasInput = Object.hasOwn(body, 'input')
+      const resumeValue = hasOutput ? body.output : hasInput ? body.input : {}
       try {
         await runner.resume(runId, resumeValue)
         return { resumed: true, runId }
