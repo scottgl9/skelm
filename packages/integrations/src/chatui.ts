@@ -32,6 +32,8 @@ export interface ChatUiMessageInput {
 export interface ChatUiFrontendIo {
   /** Submit a user line. Blank input is ignored. */
   submit(text: string): void
+  /** Ask the CLI host to close the terminal UI. */
+  close?(): void
 }
 
 /**

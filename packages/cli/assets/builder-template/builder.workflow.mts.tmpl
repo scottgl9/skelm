@@ -42,7 +42,7 @@ export default persistentWorkflow<ChatMessage>({
     // No `backend`: inherits skelm.config.mts `backends.agent` (codex → pi-sdk).
     system: SYSTEM,
     // Least-privilege, explicitly declared (no unrestricted bypass): read the
-    // project, write generated files, run skelm/node, load the skelm skill.
+    // project, write generated files, run validation commands, load the skelm skill.
     // `fsWrite: ['./']` is scoped to this project — authoring workflow files
     // here is the builder's whole job.
     //
@@ -57,7 +57,9 @@ export default persistentWorkflow<ChatMessage>({
     permissions: {
       fsRead: ['./'],
       fsWrite: ['./'],
-      allowedExecutables: ['skelm', 'node'],
+      // Include bash so the pi-sdk fallback exposes its shell tool; the
+      // builder prompt requires running `skelm validate <path>` after writing.
+      allowedExecutables: ['skelm', 'node', 'bash'],
       allowedSkills: ['skelm'],
       networkEgress: 'allow',
     },

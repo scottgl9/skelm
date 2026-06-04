@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { chdir, cwd } from 'node:process'
 import { Readable, Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -53,6 +54,25 @@ describe('skelm builder', () => {
     expect(exitCode).toBe(EXIT.OK)
     expect(stdout).not.toContain('scaffolded skelm builder')
     expect(readFileSync(wfPath, 'utf8')).toBe('// edited by user\n')
+  })
+
+  it('uses the current directory when run inside a scaffolded builder project', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-builder-'))
+    const target = join(dir, 'builder')
+
+    await invoke(['builder', target])
+    const previousCwd = cwd()
+    try {
+      chdir(target)
+      const { exitCode, stdout } = await invoke(['builder'])
+      expect(exitCode).toBe(EXIT.OK)
+      expect(stdout).not.toContain('scaffolded skelm builder')
+      expect(stdout).toContain('npm install')
+      expect(stdout).not.toContain('cd builder')
+      expect(() => readFileSync(join(target, 'builder', 'builder.workflow.mts'), 'utf8')).toThrow()
+    } finally {
+      chdir(previousCwd)
+    }
   })
 
   it('--force re-scaffolds an already-scaffolded project (refreshes templates)', async () => {
