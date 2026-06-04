@@ -1,6 +1,10 @@
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
 import type { SkelmConfigMcpServerEntry } from '@skelm/core'
 
+export class McpServerManagerError extends Error {
+  override readonly name = 'McpServerManagerError'
+}
+
 export type McpServerStatus = 'stopped' | 'starting' | 'running' | 'crashed'
 
 export interface McpServerHandle {
@@ -69,7 +73,7 @@ export class McpServerManager {
     }
 
     if (entry.command === undefined) {
-      throw new Error(`mcp server ${entry.id}: stdio transport requires command`)
+      throw new McpServerManagerError(`mcp server ${entry.id}: stdio transport requires command`)
     }
     this.spawnStdio(entry, existing?.restarts ?? 0)
   }

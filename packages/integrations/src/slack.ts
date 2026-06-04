@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import { defineIntegration } from '@skelm/integration-sdk'
 import type { SlackWebhookEvent } from '@skelm/integration-sdk'
 import { z } from 'zod'
+import { IntegrationConfigError } from './errors.js'
 
 const slackCredentialsSchema = z.object({
   botToken: z.string().startsWith('xoxb-', 'Slack bot token must start with xoxb-'),
@@ -107,7 +108,10 @@ export const SlackIntegration = defineIntegration({
   async sendNotification(message, options, creds) {
     const channelId = (options?.channelId as string | undefined) ?? creds.channelId
     if (!channelId && !options?.userId) {
-      throw new Error('No channel or user specified for Slack notification')
+      throw new IntegrationConfigError(
+        'No channel or user specified for Slack notification',
+        'slack',
+      )
     }
     // In production: call slack.chat.postMessage
     console.log(`Slack message to ${channelId ?? String(options?.userId)}: ${message}`)

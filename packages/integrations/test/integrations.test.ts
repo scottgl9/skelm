@@ -1,5 +1,6 @@
 import type { GitHubConfig, SlackConfig } from '@skelm/integration-sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { IntegrationError, IntegrationStateError } from '../src/errors.js'
 import { GitHubIntegration } from '../src/github.js'
 import { IntegrationRegistry } from '../src/registry.js'
 import { SlackIntegration } from '../src/slack.js'
@@ -105,7 +106,23 @@ describe('IntegrationRegistry', () => {
   })
 
   it('handles missing integration gracefully', async () => {
-    await expect(registry.handleWebhook('nonexistent', {})).rejects.toThrow('not found')
+    await expect(registry.handleWebhook('nonexistent', {})).rejects.toBeInstanceOf(IntegrationError)
+  })
+
+  it('throws a typed error when a disabled integration receives a webhook', async () => {
+    const slackConfig: SlackConfig = {
+      id: 'slack',
+      name: 'Slack Disabled',
+      enabled: false,
+      credentials: {
+        botToken: 'xoxb-testtoken',
+        signingSecret: 'secret',
+      },
+    }
+
+    await registry.register(new SlackIntegration(slackConfig))
+
+    await expect(registry.handleWebhook('slack', {})).rejects.toBeInstanceOf(IntegrationStateError)
   })
 
   it('shuts down all integrations', async () => {

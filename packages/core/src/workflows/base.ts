@@ -8,6 +8,7 @@
  * - Config validation
  */
 
+import { toErrorMessage } from '../errors.js'
 import type {
   WorkflowConfig,
   WorkflowExecutionResult,
@@ -34,6 +35,10 @@ export class WorkflowInitializationError extends WorkflowError {
 
 export class WorkflowExecutionError extends WorkflowError {
   override readonly name: string = 'WorkflowExecutionError'
+}
+
+export class WorkflowLifecycleError extends WorkflowError {
+  override readonly name: string = 'WorkflowLifecycleError'
 }
 
 /**
@@ -122,7 +127,7 @@ export abstract class WorkflowPluginBase {
    */
   async start(): Promise<void> {
     if (this.state !== WorkflowState.INITIALIZED) {
-      throw new Error(`Cannot start workflow in state: ${this.state}`)
+      throw new WorkflowLifecycleError(`Cannot start workflow in state: ${this.state}`)
     }
 
     this.state = WorkflowState.STARTING
@@ -133,10 +138,8 @@ export abstract class WorkflowPluginBase {
       this.logger.info(`Workflow started: ${this.id}`)
     } catch (error) {
       this.state = WorkflowState.ERROR
-      this.logger.error(
-        `Failed to start workflow: ${error instanceof Error ? error.message : String(error)}`,
-      )
-      throw error
+      this.logger.error(`Failed to start workflow: ${toErrorMessage(error)}`)
+      throw new WorkflowLifecycleError(`Failed to start workflow: ${toErrorMessage(error)}`, error)
     }
   }
 
@@ -157,10 +160,8 @@ export abstract class WorkflowPluginBase {
       this.logger.info(`Workflow stopped: ${this.id}`)
     } catch (error) {
       this.state = WorkflowState.ERROR
-      this.logger.error(
-        `Failed to stop workflow: ${error instanceof Error ? error.message : String(error)}`,
-      )
-      throw error
+      this.logger.error(`Failed to stop workflow: ${toErrorMessage(error)}`)
+      throw new WorkflowLifecycleError(`Failed to stop workflow: ${toErrorMessage(error)}`, error)
     }
   }
 
@@ -178,7 +179,7 @@ export abstract class WorkflowPluginBase {
       return {
         healthy: false,
         status: 'check-failed',
-        error: error instanceof Error ? error.message : String(error),
+        error: toErrorMessage(error),
         lastCheck: new Date(),
       }
     }

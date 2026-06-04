@@ -6,8 +6,18 @@
  */
 
 import type { SkelmBackend } from './backend.js'
+import { RegistryError } from './errors.js'
 import type { AgentStep, Context } from './types.js'
-import type { RunMetadata } from './types.js'
+
+/** Base class for legacy agent-provider registry errors. */
+export class AgentProviderError extends Error {
+  override readonly name: string = 'AgentProviderError'
+}
+
+/** Thrown when a legacy agent provider lookup cannot resolve a usable provider. */
+export class AgentProviderNotFoundError extends AgentProviderError {
+  override readonly name: string = 'AgentProviderNotFoundError'
+}
 
 /**
  * Agent provider configuration
@@ -152,7 +162,7 @@ export abstract class AgentProviderBase implements AgentProvider {
 
   async createBackend(config?: Partial<AgentProviderConfig>): Promise<SkelmBackend> {
     if (!this.initialized) {
-      throw new Error(`Agent provider not initialized: ${this.id}`)
+      throw new AgentProviderNotFoundError(`Agent provider not initialized: ${this.id}`)
     }
     return this.doCreateBackend(config)
   }
@@ -161,7 +171,7 @@ export abstract class AgentProviderBase implements AgentProvider {
 
   async execute(request: AgentRequest): Promise<AgentResponse> {
     if (!this.initialized) {
-      throw new Error(`Agent provider not initialized: ${this.id}`)
+      throw new AgentProviderNotFoundError(`Agent provider not initialized: ${this.id}`)
     }
     return this.doExecute(request)
   }
@@ -174,7 +184,7 @@ export abstract class AgentProviderBase implements AgentProvider {
 
   getConfig(): AgentProviderConfig {
     if (!this.config) {
-      throw new Error(`Agent provider not initialized: ${this.id}`)
+      throw new AgentProviderNotFoundError(`Agent provider not initialized: ${this.id}`)
     }
     return this.config
   }
@@ -192,7 +202,11 @@ export class AgentRegistry {
    */
   register(provider: AgentProvider): void {
     if (this.providers.has(provider.id)) {
-      throw new Error(`Agent provider already registered: ${provider.id}`)
+      throw new RegistryError(
+        `Agent provider already registered: ${provider.id}`,
+        'agent',
+        provider.id,
+      )
     }
     this.providers.set(provider.id, provider)
   }
@@ -278,12 +292,12 @@ export async function executeAgentStep(
   const explicit = typeof step.backend === 'string' ? step.backend : step.backend?.[0]
   const providerId = explicit || (registry.getDefault()?.id as string | undefined)
   if (!providerId) {
-    throw new Error('No agent provider specified or available')
+    throw new AgentProviderNotFoundError('No agent provider specified or available')
   }
 
   const provider = registry.get(providerId)
   if (!provider) {
-    throw new Error(`Agent provider not found: ${providerId}`)
+    throw new AgentProviderNotFoundError(`Agent provider not found: ${providerId}`)
   }
 
   // Resolve prompt — this legacy AgentRegistry path predates multimodal

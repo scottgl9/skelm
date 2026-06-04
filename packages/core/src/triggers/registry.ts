@@ -2,6 +2,7 @@
  * Registry for managing trigger plugins
  */
 
+import { RegistryError, toErrorMessage } from '../errors.js'
 import type { TriggerPluginBase } from './base.js'
 import type {
   TriggerConfig,
@@ -34,7 +35,11 @@ export class TriggerRegistry {
    */
   register(trigger: TriggerPluginBase): void {
     if (this.triggers.has(trigger.id)) {
-      throw new Error(`Trigger with id '${trigger.id}' is already registered`)
+      throw new RegistryError(
+        `Trigger with id '${trigger.id}' is already registered`,
+        'trigger',
+        trigger.id,
+      )
     }
 
     this.triggers.set(trigger.id, trigger)
@@ -101,7 +106,7 @@ export class TriggerRegistry {
         try {
           await trigger.initialize(config)
         } catch (error) {
-          console.error(`Failed to initialize trigger '${trigger.id}':`, error)
+          console.error(`Failed to initialize trigger '${trigger.id}': ${toErrorMessage(error)}`)
         }
       }
     })
@@ -117,7 +122,7 @@ export class TriggerRegistry {
       try {
         await trigger.start()
       } catch (error) {
-        console.error(`Failed to start trigger '${trigger.id}':`, error)
+        console.error(`Failed to start trigger '${trigger.id}': ${toErrorMessage(error)}`)
       }
     })
 
@@ -135,7 +140,7 @@ export class TriggerRegistry {
       try {
         await trigger.stop()
       } catch (error) {
-        console.error(`Failed to stop trigger '${trigger.id}':`, error)
+        console.error(`Failed to stop trigger '${trigger.id}': ${toErrorMessage(error)}`)
       }
     })
 
@@ -185,7 +190,7 @@ export class TriggerRegistry {
       try {
         await handler(event)
       } catch (error) {
-        console.error(`Event handler error for ${event.eventId}:`, error)
+        console.error(`Event handler error for ${event.eventId}: ${toErrorMessage(error)}`)
       }
     })
 
@@ -205,7 +210,7 @@ export class TriggerRegistry {
         results[trigger.id] = {
           healthy: false,
           status: 'check-failed',
-          error: error instanceof Error ? error.message : String(error),
+          error: toErrorMessage(error),
           lastCheck: new Date(),
         }
       }

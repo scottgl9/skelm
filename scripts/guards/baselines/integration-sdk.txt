@@ -1,5 +1,7 @@
 value:INTEGRATION_PLUGIN_BRAND
 value:IntegrationBase
+value:IntegrationRateLimitError
+value:IntegrationSdkError
 value:IntegrationWorkflowPlugin
 value:createIntegrationPlugin
 value:defineIntegration

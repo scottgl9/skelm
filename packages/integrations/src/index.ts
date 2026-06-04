@@ -40,6 +40,12 @@ export type { DefineIntegrationOptions, IntegrationClass } from '@skelm/integrat
 
 // Built-in integration implementations
 export {
+  IntegrationApiError,
+  IntegrationConfigError,
+  IntegrationError,
+  IntegrationStateError,
+} from './errors.js'
+export {
   GitHubIntegration,
   GitHubApiError,
   githubFetch,

@@ -174,6 +174,8 @@ export type {
   AgentPlugin,
   WorkflowPlugin,
 } from './plugins.js'
+export { PluginError, PluginLifecycleError, PluginLoadError } from './plugins.js'
+export { WorkflowLifecycleError } from './workflows/base.js'
 export {
   agent,
   branch,
@@ -214,18 +216,21 @@ export {
 } from './persistent-workflow-store.js'
 export type { PersistentSessionRecord } from './persistent-workflow-store.js'
 export {
+  ConfigError,
   DEFAULT_MAX_DELEGATION_DEPTH,
   DelegationCycleError,
   DelegationDepthError,
   ExecConfigError,
   InvokePipelineNotFoundError,
   PermissionDeniedError,
+  RegistryError,
   RunCancelledError,
   RunStateError,
   StepError,
   StepTimeoutError,
   WaitTimeoutError,
   serializeError,
+  toErrorMessage,
 } from './errors.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
@@ -259,7 +264,13 @@ export type {
 } from './model-provider.js'
 // Model providers: OpenAI, Anthropic, vllm, sglang, ollama, etc.
 // Agent providers: ACP, opencode, pi, github-copilot, etc.
-export { AgentProviderBase, AgentRegistry, executeAgentStep } from './agent-provider.js'
+export {
+  AgentProviderBase,
+  AgentProviderError,
+  AgentProviderNotFoundError,
+  AgentRegistry,
+  executeAgentStep,
+} from './agent-provider.js'
 export type {
   AgentProvider,
   AgentProviderConfig,

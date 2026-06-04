@@ -1,5 +1,6 @@
 import { IntegrationBase } from '@skelm/integration-sdk'
 import type { MatrixConfig, MatrixMessageTrigger } from '@skelm/integration-sdk'
+import { IntegrationApiError, IntegrationConfigError, IntegrationStateError } from './errors.js'
 
 /**
  * Flat shape suitable for use as a pipeline input. Mirrors the runtime input
@@ -158,10 +159,13 @@ export class MatrixIntegration extends IntegrationBase {
   protected async validateCredentials(): Promise<void> {
     const { homeserverUrl, accessToken, userId } = this.config.credentials
     if (typeof homeserverUrl !== 'string' || homeserverUrl.length === 0) {
-      throw new Error('Matrix credentials missing: homeserverUrl required')
+      throw new IntegrationConfigError(
+        'Matrix credentials missing: homeserverUrl required',
+        this.id,
+      )
     }
     if (typeof accessToken !== 'string' || accessToken.length === 0) {
-      throw new Error('Matrix credentials missing: accessToken required')
+      throw new IntegrationConfigError('Matrix credentials missing: accessToken required', this.id)
     }
     this.baseUrl = `${homeserverUrl.replace(/\/+$/, '')}/_matrix/client/v3`
     this.accessToken = accessToken
@@ -241,7 +245,10 @@ export class MatrixIntegration extends IntegrationBase {
   async sendNotification(message: string, options?: { roomId?: string }): Promise<void> {
     const roomId = options?.roomId
     if (roomId === undefined || roomId === '') {
-      throw new Error('Matrix sendNotification requires roomId in options')
+      throw new IntegrationConfigError(
+        'Matrix sendNotification requires roomId in options',
+        this.id,
+      )
     }
     await this.sendMessage({ roomId, body: message })
   }
@@ -397,7 +404,10 @@ export class MatrixIntegration extends IntegrationBase {
     opts: { query?: Record<string, string | number>; body?: unknown; signal?: AbortSignal },
   ): Promise<T> {
     if (this.accessToken === null || this.baseUrl === null) {
-      throw new Error('MatrixIntegration not initialized — call init() first')
+      throw new IntegrationStateError(
+        'MatrixIntegration not initialized — call init() first',
+        this.id,
+      )
     }
     const url = new URL(`${this.baseUrl}${path}`)
     if (opts.query !== undefined) {
@@ -415,8 +425,11 @@ export class MatrixIntegration extends IntegrationBase {
     })
     const json = (await res.json()) as T & { errcode?: string; error?: string }
     if (!res.ok) {
-      throw new Error(
+      throw new IntegrationApiError(
         `Matrix API ${path} failed: ${json.error ?? json.errcode ?? `HTTP ${res.status}`}`,
+        this.id,
+        res.status,
+        { cause: json },
       )
     }
     return json

@@ -5,6 +5,8 @@ value:AcpProtocolError
 value:AgentDefinitionError
 value:AgentMaxTurnsError
 value:AgentProviderBase
+value:AgentProviderError
+value:AgentProviderNotFoundError
 value:AgentRegistry
 value:ApprovalDeniedError
 value:ArtifactQuotaExceededError
@@ -24,6 +26,7 @@ value:BackendUnavailableError
 value:BackendUpstreamError
 value:CONFIG_FILENAMES
 value:CRON_LOOKAHEAD_MS
+value:ConfigError
 value:CronTrigger
 value:CustomTrigger
 value:DEFAULT_ARTIFACT_QUOTA_BYTES
@@ -57,6 +60,9 @@ value:PROTOCOL_VERSION
 value:PermissionDeniedError
 value:PermissionResolver
 value:PersistentSessionLockedError
+value:PluginError
+value:PluginLifecycleError
+value:PluginLoadError
 value:PostgresRunStore
 value:ProviderAuthenticationError
 value:ProviderCapabilityRegistry
@@ -66,6 +72,7 @@ value:ProviderPluginBase
 value:ProviderRateLimitError
 value:ProviderSelectionError
 value:ProviderTimeoutError
+value:RegistryError
 value:RunCancelledError
 value:RunStateError
 value:Runner
@@ -88,6 +95,7 @@ value:TrustEnforcer
 value:VERSION
 value:WaitTimeoutError
 value:WebhookTrigger
+value:WorkflowLifecycleError
 value:WorkspaceManager
 value:acquireSession
 value:agent
@@ -162,6 +170,7 @@ value:terminalEventTypeFor
 value:textPart
 value:timeoutSignal
 value:timingSafeStringEqual
+value:toErrorMessage
 value:wait
 type:AcpBackendOptions
 type:AcpPromptResult
@@ -264,10 +273,10 @@ type:OpenAIBackendOptions
 type:ParallelOnError
 type:ParallelStep
 type:ParallelWaitFor
+type:ParsedCronExpression
 type:PermissionDenialReason
 type:PermissionDimension
 type:PermissionResolverOptions
-type:ParsedCronExpression
 type:PersistentSessionRecord
 type:PersistentWorkflow
 type:PersistentWorkflowAgentDef

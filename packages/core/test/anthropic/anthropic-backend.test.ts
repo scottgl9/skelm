@@ -2,7 +2,14 @@ import { createServer } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createAnthropicBackend } from '../../src/anthropic/backend.js'
-import { BackendConfigError } from '../../src/backend.js'
+import {
+  BackendAuthenticationError,
+  BackendConfigError,
+  BackendNetworkError,
+  BackendRateLimitError,
+  BackendTimeoutError,
+  BackendUpstreamError,
+} from '../../src/backend.js'
 
 describe('Anthropic backend', () => {
   afterEach(() => {
@@ -223,7 +230,68 @@ describe('Anthropic backend', () => {
   it('throws BackendConfigError when neither explicit, resolver, nor env key is available', () => {
     expect(() => createAnthropicBackend()).toThrow(BackendConfigError)
   })
+
+  it('classifies upstream authentication, rate-limit, timeout, and server errors', async () => {
+    await expectAnthropicStatus(401, BackendAuthenticationError)
+    await expectAnthropicStatus(403, BackendAuthenticationError)
+    await expectAnthropicStatus(429, BackendRateLimitError)
+    await expectAnthropicStatus(504, BackendTimeoutError)
+    await expectAnthropicStatus(500, BackendUpstreamError)
+  })
+
+  it('classifies malformed upstream responses and invalid structured JSON as upstream errors', async () => {
+    const malformed = createAnthropicBackend({
+      apiKey: 'test-key',
+      fetch: async () => new Response(JSON.stringify({ content: 'wrong' }), { status: 200 }),
+    })
+    await expect(
+      malformed.run?.({ prompt: 'ping' }, { signal: AbortSignal.timeout(5_000) }),
+    ).rejects.toBeInstanceOf(BackendUpstreamError)
+
+    const invalidJson = createAnthropicBackend({
+      apiKey: 'test-key',
+      fetch: async () =>
+        new Response(JSON.stringify({ content: [{ type: 'text', text: 'not json' }] }), {
+          status: 200,
+        }),
+    })
+    await expect(
+      invalidJson.run?.(
+        { prompt: 'ping', outputSchema: z.object({ ok: z.boolean() }) },
+        { signal: AbortSignal.timeout(5_000) },
+      ),
+    ).rejects.toBeInstanceOf(BackendUpstreamError)
+  })
+
+  it('classifies fetch failures as BackendNetworkError', async () => {
+    const backend = createAnthropicBackend({
+      apiKey: 'test-key',
+      fetch: async () => {
+        throw new Error('econnrefused')
+      },
+    })
+    await expect(
+      backend.run?.({ prompt: 'ping' }, { signal: AbortSignal.timeout(5_000) }),
+    ).rejects.toBeInstanceOf(BackendNetworkError)
+  })
 })
+
+async function expectAnthropicStatus(
+  status: number,
+  klass: new (...args: never[]) => Error,
+): Promise<void> {
+  const backend = createAnthropicBackend({
+    apiKey: 'test-key',
+    fetch: async () =>
+      new Response(JSON.stringify({ error: { message: `status ${status}` } }), {
+        status,
+        statusText: 'Nope',
+      }),
+  })
+  await expect(
+    backend.run?.({ prompt: 'ping' }, { signal: AbortSignal.timeout(5_000) }),
+  ).rejects.toBeInstanceOf(klass)
+}
 
 async function startServer(
   respond: (body: unknown) => Promise<unknown> | unknown,
