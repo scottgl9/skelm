@@ -59,6 +59,19 @@ describe('parseArgv', () => {
     expect(r.flags).toEqual({ 'input-stdin': true })
   })
 
+  it('parses command-specific --events forms', () => {
+    expect(parseArgv(['run', 'x.ts', '--events', 'json'])).toEqual({
+      command: 'run',
+      positional: ['x.ts'],
+      flags: { events: 'json' },
+    })
+    expect(parseArgv(['history', '--run', 'r1', '--events'])).toEqual({
+      command: 'history',
+      positional: [],
+      flags: { run: 'r1', events: true },
+    })
+  })
+
   it('returns unknown for unrecognized commands', () => {
     expect(parseArgv(['nope']).command).toBe('unknown')
   })
