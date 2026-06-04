@@ -110,6 +110,13 @@ describe('main — integration', () => {
     expect(stderr).toMatch(/requires a workflow file path/)
   })
 
+  it('returns CLI_ERROR when a value flag is missing its value', async () => {
+    const { stderr, exitCode } = await invoke(['run', 'foo.workflow.mts', '--input'])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+    expect(stderr).toContain("option '--input <value>' argument missing")
+    expect(stderr).not.toContain('CommanderError')
+  })
+
   it('prints subcommand help and exits OK', async () => {
     const { stdout, stderr, exitCode } = await invoke(['run', '--help'])
     expect(exitCode).toBe(EXIT.OK)
