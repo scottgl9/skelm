@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { type TurnFn, createFrontendHost, hostFrontend } from '../src/tui.js'
 
 // Exercises the frontend-driving logic without a TTY: a fake frontend captures
@@ -88,6 +88,31 @@ describe('createFrontendHost', () => {
     await hosted
     expect(closed).toBe(true)
     expect(process.listenerCount('SIGINT')).toBe(before)
+  })
+
+  it('bounds frontend close during SIGINT shutdown', async () => {
+    vi.useFakeTimers()
+    const before = process.listenerCount('SIGINT')
+    try {
+      const hosted = hostFrontend(
+        () => ({
+          render: () => {},
+          close: async () => new Promise<void>(() => {}),
+        }),
+        'sess',
+        async (text) => text,
+      )
+
+      await Promise.resolve()
+      expect(process.listenerCount('SIGINT')).toBe(before + 1)
+
+      process.emit('SIGINT')
+      await vi.advanceTimersByTimeAsync(1_000)
+      await hosted
+      expect(process.listenerCount('SIGINT')).toBe(before)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('serializes turns submitted while one is in flight', async () => {

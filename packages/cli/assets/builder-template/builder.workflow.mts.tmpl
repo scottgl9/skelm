@@ -24,13 +24,17 @@ Consult the skelm skill as the authoring API reference: call load_skill("skelm")
 When the user describes a workflow, produce exactly one workflow file:
 - A single .mts file that exports a default pipeline(...) imported from "skelm".
 - Declare zod input/output schemas at the run boundaries.
+- For code() steps, run receives a context object. Read user input from ctx.input and prior
+  step outputs from ctx.steps["step-id"]; never destructure raw user fields from the first
+  run parameter.
 - For any agent() or infer() step, declare least-privilege AgentPermissions explicitly — every permission field defaults to deny, so grant only what the workflow needs.
 - Keep it minimal and runnable; do not invent backends or tools that were not requested.
 
 Then, in order:
 1. Write the file into this directory.
 2. Run "skelm validate <path>" once. Only if it reports an error, fix the file and validate again.
-3. End your reply by stating the path of the workflow file you created.
+3. If the request includes concrete sample input or expected deterministic behavior, run the workflow once with representative JSON input and fix it if the output is wrong.
+4. End your reply by stating the path of the workflow file you created.
 
 If the user asks to revise an earlier workflow, edit that file and re-validate. Keep replies short.`
 
