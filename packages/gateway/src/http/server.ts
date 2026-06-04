@@ -511,8 +511,10 @@ export function createServer(
     eventHandler(async (event: H3Event) => {
       const runId = event.context.params?.runId
       if (!runId) throw createError({ statusCode: 400, message: 'Run ID required' })
-      const body = await readBody(event).catch(() => ({}))
-      const output = (body as Record<string, unknown>)?.output ?? {}
+      const rawBody = await readBody(event).catch(() => undefined)
+      const body =
+        rawBody !== null && typeof rawBody === 'object' ? (rawBody as { output?: unknown }) : {}
+      const output = Object.hasOwn(body, 'output') ? body.output : {}
       try {
         await runner.resume(runId, output)
         return { success: true }

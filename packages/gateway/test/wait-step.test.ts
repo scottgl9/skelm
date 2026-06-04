@@ -156,6 +156,52 @@ describe('wait() step — gateway HTTP integration', () => {
     expect((result.output as Record<string, unknown>)?.result).toBe(10)
   })
 
+  it('preserves explicit null resume output', async () => {
+    const { gw, stateDir, base } = await startGateway()
+    cleanups.push(async () => {
+      await gw.stop()
+      await rm(stateDir, { recursive: true, force: true })
+    })
+
+    const wf = pipeline<undefined, { resumedWith: null }>({
+      id: 'wait-null-resume',
+      steps: [
+        wait({ id: 'gate', output: z.null() }),
+        code({
+          id: 'finish',
+          run: (ctx) => ({ resumedWith: ctx.steps.gate }),
+        }),
+      ],
+    })
+
+    const { Runner } = await import('@skelm/core')
+    const runner = new Runner({ store: gw.runStore })
+    const waiting = new Promise<void>((res) => {
+      const unsub = runner.events.subscribe((e) => {
+        if (e.type === 'run.waiting') {
+          unsub()
+          res()
+        }
+      })
+    })
+    const handle = runner.start(wf, undefined)
+    gw.registerRun(handle.runId, new AbortController(), runner)
+    cleanups.push(async () => gw.unregisterRun(handle.runId))
+
+    await waiting
+
+    const resumeResp = await fetch(`${base}/runs/${handle.runId}/resume`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ output: null }),
+    })
+    expect(resumeResp.status).toBe(200)
+
+    const result = await handle.wait()
+    expect(result.status).toBe('completed')
+    expect(result.output).toEqual({ resumedWith: null })
+  })
+
   it('Run.waiting snapshot is populated while parked and cleared on resume', async () => {
     const { gw, stateDir } = await startGateway()
     cleanups.push(async () => {
