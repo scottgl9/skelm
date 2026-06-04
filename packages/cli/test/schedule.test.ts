@@ -217,6 +217,26 @@ describe('skelm schedule — CLI smoke', () => {
     }
   })
 
+  it('add rejects non-numeric --every-ms before contacting the gateway', async () => {
+    const result = await invoke(['schedule', 'add', 'wf', '--every-ms', 'nope'])
+    expect(result.exitCode).toBe(EXIT.CLI_ERROR)
+    expect(result.stderr).toContain('--every-ms must be a non-negative integer')
+  })
+
+  it('add rejects an unknown --overlap before contacting the gateway', async () => {
+    const result = await invoke([
+      'schedule',
+      'add',
+      'wf',
+      '--cron',
+      '0 * * * *',
+      '--overlap',
+      'later',
+    ])
+    expect(result.exitCode).toBe(EXIT.CLI_ERROR)
+    expect(result.stderr).toContain('--overlap must be one of: skip, queue, cancel')
+  })
+
   it('add without trigger flag exits CLI_ERROR', async () => {
     const gw = await startGatewayOnFreePort(stateDir)
     try {

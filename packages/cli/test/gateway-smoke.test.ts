@@ -56,6 +56,19 @@ describe('skelm gateway — CLI smoke', () => {
     expect(stderr).toContain('gateway requires one of')
   })
 
+  it('rejects a non-numeric --http-port before starting the gateway', async () => {
+    const { stderr, stdout, exitCode } = await invoke([
+      'gateway',
+      'start',
+      '--foreground',
+      '--http-port',
+      'nope',
+    ])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+    expect(stderr).toContain('--http-port must be a non-negative integer')
+    expect(stdout).toBe('')
+  })
+
   it('--detach no longer prints the legacy "use nohup" pointer', { timeout: 10_000 }, async () => {
     // Detach now actually forks a child via child_process.spawn. The child
     // runs in the background and writes the lockfile under the test's
