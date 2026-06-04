@@ -47,6 +47,16 @@ export default pipeline({
       },
       maxTurns: 4,
       timeoutMs: 120_000,
+      permissions: {
+        allowedTools: [],
+        allowedExecutables: [],
+        allowedMcpServers: [],
+        allowedSkills: [],
+        allowedSecrets: [],
+        fsRead: [],
+        fsWrite: [],
+        networkEgress: 'deny',
+      },
     }),
   ],
   finalize: (ctx) => ({

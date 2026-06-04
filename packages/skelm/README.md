@@ -61,12 +61,12 @@ skelm run my.workflow.mts --input '{"name":"world"}'
 
 ```bash
 skelm init                            # Scaffold a project
-skelm run workflow.ts                 # Run a workflow once
-skelm run workflow.ts --events json   # Stream JSON events to stderr
-skelm schedule add workflow.ts --cron '0 9 * * 1-5'   # Schedule on a cron
+skelm run workflow.mts                # Run a workflow once
+skelm run workflow.mts --events json  # Stream JSON events to stderr
+skelm schedule add workflow.mts --cron '0 9 * * 1-5'  # Schedule on a cron
 skelm schedule list                   # List schedules
 skelm history --last 20               # Recent runs
-skelm gateway start                   # Start the long-running orchestrator (foreground)
+skelm gateway start --foreground      # Start the gateway in this process
 skelm gateway status                  # Inspect a running gateway
 skelm gateway stop                    # Stop it
 skelm gateway install --systemd       # Install as a systemd user service

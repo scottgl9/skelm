@@ -109,13 +109,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 - **`skelm stop <id>`** deactivates a workflow on the gateway — unregisters triggers, drops the registration, keeps persisted sessions for re-activation. `--cancel-inflight` also cancels running turns. Distinct from `skelm gateway stop` and `skelm schedule stop <trigger-id>`.
 
-- **CLI-hosted TUI (`createRemoteTriggerSource`).** The gateway side is headless; `skelm run` hosts the project's terminal frontend in the CLI process and streams each turn over the run SSE (`step.partial` → `renderPartial`, final → `render`) via `POST /v1/tui/:sourceId/submit`. Lets the gateway run as a daemon while you chat from your own terminal; the embedded `TuiIntegration.createTriggerSource({ frontend })` form still works.
+- **CLI-hosted chat UI (`createRemoteTriggerSource`).** The gateway side is headless; `skelm run` hosts the project's terminal frontend in the CLI process and streams each turn over the run SSE (`step.partial` → `renderPartial`, final → `render`) via `POST /v1/tui/:sourceId/submit`. Lets the gateway run as a daemon while you chat from your own terminal; the embedded `ChatUiIntegration.createTriggerSource({ frontend })` form still works.
 
 - **Matrix chat trigger/response integration** — drive a persistent workflow from a Matrix room. See the Matrix recipe under `docs/recipes/`.
 
 - **Telegram who-can-talk allowlist.** `telegram.createTriggerSource({ allowedChatIds, allowedUsers })` drops inbound updates from non-allowlisted chats/senders before they fire a workflow — the recommended inbound gate for a privileged or unrestricted agent.
 
-- **`examples/telegram-assistant/`** — persistent-workflow + agentmemory + unrestricted Telegram assistant behind a who-can-talk allowlist. **`examples/tui-assistant/`** — the same pattern over a local TUI in the minimal no-preamble shape.
+- **`examples/telegram-assistant/`** — persistent-workflow + agentmemory + unrestricted Telegram assistant behind a who-can-talk allowlist. **`examples/chatui-assistant/`** — the same pattern over local terminal and browser chat frontends in the minimal no-preamble shape.
 
 - **`@skelm/otel` wired into the gateway** for OpenTelemetry trace export. The workspace reaper also sweeps stale ephemeral workspaces on gateway start.
 
