@@ -1038,7 +1038,8 @@ export async function runPipeline<TInput, TOutput>(
       })
     } catch (err) {
       const completedAt = Date.now()
-      const serialized = serializeError(err)
+      const runCancelled = err instanceof RunCancelledError || controller.signal.aborted
+      const serialized = serializeError(runCancelled ? new RunCancelledError() : err)
       stepResults.push({
         id: step.id,
         kind: step.kind,
@@ -1056,7 +1057,7 @@ export async function runPipeline<TInput, TOutput>(
         error: serialized,
         at: completedAt,
       })
-      if (err instanceof RunCancelledError) {
+      if (runCancelled) {
         runStatus = 'cancelled'
         runError = serialized
         break
