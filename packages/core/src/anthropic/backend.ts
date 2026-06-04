@@ -2,9 +2,14 @@ import { inspect } from 'node:util'
 import {
   type AgentRequest,
   type AgentResponse,
+  BackendAuthenticationError,
   type BackendCapabilities,
   BackendConfigError,
   type BackendContext,
+  BackendNetworkError,
+  BackendRateLimitError,
+  BackendTimeoutError,
+  BackendUpstreamError,
   type InferenceRequest,
   type InferenceResponse,
   type SkelmBackend,
@@ -86,86 +91,96 @@ export function createAnthropicBackend(opts: AnthropicBackendOptions = {}): Skel
     },
     getApiKey: debug.getApiKey,
     async inference(req: InferenceRequest, ctx: BackendContext): Promise<InferenceResponse> {
-      const request: AnthropicMessageRequest = {
-        messages: toAnthropicMessages(req.messages),
-        model: req.model ?? opts.model ?? 'claude-3-5-haiku-latest',
-        maxTokens: req.maxTokens ?? 1024,
-        outputSchema: req.outputSchema !== undefined,
-      }
-      if (req.system !== undefined) {
-        request.system = req.system
-      }
-      const body = await requestMessage(request, ctx, opts, await debug.getApiKey())
-      const text = extractText(body)
-      const usage = toUsage(body.usage)
-      if (req.outputSchema !== undefined) {
+      const backendId = opts.id ?? 'anthropic'
+      try {
+        const request: AnthropicMessageRequest = {
+          messages: toAnthropicMessages(req.messages),
+          model: req.model ?? opts.model ?? 'claude-3-5-haiku-latest',
+          maxTokens: req.maxTokens ?? 1024,
+          outputSchema: req.outputSchema !== undefined,
+        }
+        if (req.system !== undefined) {
+          request.system = req.system
+        }
+        const body = await requestMessage(request, ctx, opts, await debug.getApiKey(), backendId)
+        const text = extractText(body, backendId)
+        const usage = toUsage(body.usage)
+        if (req.outputSchema !== undefined) {
+          return {
+            text,
+            structured: parseJsonContent(text, backendId),
+            ...(usage !== undefined && { usage }),
+          }
+        }
         return {
           text,
-          structured: parseJsonContent(text),
           ...(usage !== undefined && { usage }),
         }
-      }
-      return {
-        text,
-        ...(usage !== undefined && { usage }),
+      } catch (err) {
+        throw classifyAnthropicError(err, ctx, backendId)
       }
     },
     async run(req: AgentRequest, ctx: BackendContext): Promise<AgentResponse> {
-      const request: AnthropicMessageRequest = {
-        messages: [{ role: 'user', content: toAnthropicContent(req.prompt) }],
-        model: opts.model ?? 'claude-3-5-haiku-latest',
-        maxTokens: 1024,
-        outputSchema: req.outputSchema !== undefined,
-      }
-      const skillBlocks: string[] = []
-      const skillSummaries: Array<{ name: string; description: string; location?: string }> = []
-      if (req.skills !== undefined && req.skills.length > 0 && ctx.loadSkill !== undefined) {
-        for (const skillId of req.skills) {
-          const skill = await ctx.loadSkill(skillId)
-          if (skill !== null) {
-            skillBlocks.push(formatSkillBlock(skill))
-            skillSummaries.push({
-              name: skill.id,
-              description: skill.description ?? '',
-              location: skill.source,
-            })
+      const backendId = opts.id ?? 'anthropic'
+      try {
+        const request: AnthropicMessageRequest = {
+          messages: [{ role: 'user', content: toAnthropicContent(req.prompt) }],
+          model: opts.model ?? 'claude-3-5-haiku-latest',
+          maxTokens: 1024,
+          outputSchema: req.outputSchema !== undefined,
+        }
+        const skillBlocks: string[] = []
+        const skillSummaries: Array<{ name: string; description: string; location?: string }> = []
+        if (req.skills !== undefined && req.skills.length > 0 && ctx.loadSkill !== undefined) {
+          for (const skillId of req.skills) {
+            const skill = await ctx.loadSkill(skillId)
+            if (skill !== null) {
+              skillBlocks.push(formatSkillBlock(skill))
+              skillSummaries.push({
+                name: skill.id,
+                description: skill.description ?? '',
+                location: skill.source,
+              })
+            }
           }
         }
-      }
-      // Anthropic's run() is single-shot and doesn't dispatch tools through
-      // skelm's permission layer — pass an empty tool list so the builder
-      // skips the tool-use / available-tools sections.
-      const systemPrompt = buildSystemPromptFromRequest(req, {
-        cwd: process.cwd(),
-        platform: process.platform,
-        date: new Date().toISOString().slice(0, 10),
-        model: request.model,
-        tools: [],
-        ...(skillSummaries.length > 0 && { skills: skillSummaries }),
-      })
-      const parts: string[] = []
-      if (systemPrompt.length > 0) parts.push(systemPrompt)
-      // Append full skill bodies after the inventory so the model has the
-      // actual instructions, not just the summary.
-      for (const block of skillBlocks) parts.push(block)
-      if (parts.length > 0) {
-        request.system = parts.join('\n\n---\n\n')
-      }
-      const body = await requestMessage(request, ctx, opts, await debug.getApiKey())
-      const text = extractText(body)
-      const usage = toUsage(body.usage)
-      if (req.outputSchema !== undefined) {
+        // Anthropic's run() is single-shot and doesn't dispatch tools through
+        // skelm's permission layer — pass an empty tool list so the builder
+        // skips the tool-use / available-tools sections.
+        const systemPrompt = buildSystemPromptFromRequest(req, {
+          cwd: process.cwd(),
+          platform: process.platform,
+          date: new Date().toISOString().slice(0, 10),
+          model: request.model,
+          tools: [],
+          ...(skillSummaries.length > 0 && { skills: skillSummaries }),
+        })
+        const parts: string[] = []
+        if (systemPrompt.length > 0) parts.push(systemPrompt)
+        // Append full skill bodies after the inventory so the model has the
+        // actual instructions, not just the summary.
+        for (const block of skillBlocks) parts.push(block)
+        if (parts.length > 0) {
+          request.system = parts.join('\n\n---\n\n')
+        }
+        const body = await requestMessage(request, ctx, opts, await debug.getApiKey(), backendId)
+        const text = extractText(body, backendId)
+        const usage = toUsage(body.usage)
+        if (req.outputSchema !== undefined) {
+          return {
+            text,
+            structured: parseJsonContent(text, backendId),
+            stopReason: body.stop_reason ?? 'end_turn',
+            ...(usage !== undefined && { usage }),
+          }
+        }
         return {
           text,
-          structured: parseJsonContent(text),
           stopReason: body.stop_reason ?? 'end_turn',
           ...(usage !== undefined && { usage }),
         }
-      }
-      return {
-        text,
-        stopReason: body.stop_reason ?? 'end_turn',
-        ...(usage !== undefined && { usage }),
+      } catch (err) {
+        throw classifyAnthropicError(err, ctx, backendId)
       }
     },
   }
@@ -202,6 +217,7 @@ async function requestMessage(
   ctx: BackendContext,
   opts: AnthropicBackendOptions,
   apiKey: string,
+  backendId: string,
 ): Promise<AnthropicMessageResponse> {
   const response = await (opts.fetch ?? fetch)(new URL('/v1/messages', baseUrl(opts.baseUrl)), {
     method: 'POST',
@@ -227,10 +243,10 @@ async function requestMessage(
     signal: ctx.signal,
   })
   if (!response.ok) {
-    throw new Error(`Anthropic request failed (${response.status} ${response.statusText})`)
+    throw await classifyAnthropicHttpError(response, backendId)
   }
   const raw: unknown = await response.json()
-  return assertAnthropicResponse(raw)
+  return assertAnthropicResponse(raw, backendId)
 }
 
 /**
@@ -238,16 +254,35 @@ async function requestMessage(
  * proxy injecting an error envelope, a misrouted endpoint, or a
  * silent API change yielding a payload that crashes extractText().
  */
-function assertAnthropicResponse(body: unknown): AnthropicMessageResponse {
+function assertAnthropicResponse(body: unknown, backendId: string): AnthropicMessageResponse {
   if (typeof body !== 'object' || body === null) {
-    throw new Error('Anthropic response was not a JSON object')
+    throw new BackendUpstreamError(
+      'Anthropic response was not a JSON object',
+      backendId,
+      undefined,
+      {
+        cause: body,
+      },
+    )
   }
   const b = body as Record<string, unknown>
   if (b.content !== undefined && !Array.isArray(b.content)) {
-    throw new Error("Anthropic response 'content' was not an array")
+    throw new BackendUpstreamError(
+      "Anthropic response 'content' was not an array",
+      backendId,
+      undefined,
+      { cause: body },
+    )
   }
   if (b.usage !== undefined && (typeof b.usage !== 'object' || b.usage === null)) {
-    throw new Error("Anthropic response 'usage' was not an object")
+    throw new BackendUpstreamError(
+      "Anthropic response 'usage' was not an object",
+      backendId,
+      undefined,
+      {
+        cause: body,
+      },
+    )
   }
   return body as AnthropicMessageResponse
 }
@@ -282,7 +317,10 @@ function normalizeApiKey(value: string | undefined): string | undefined {
 }
 
 function baseUrl(url?: string): string {
-  const value = url ?? process.env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com'
+  const value =
+    normalizeApiKey(url) ??
+    normalizeApiKey(process.env.ANTHROPIC_BASE_URL) ??
+    'https://api.anthropic.com'
   return value.endsWith('/') ? value : `${value}/`
 }
 
@@ -315,22 +353,97 @@ function toAnthropicContent(
   return blocks
 }
 
-function extractText(body: AnthropicMessageResponse): string {
+function extractText(body: AnthropicMessageResponse, backendId: string): string {
   const text = body.content
     ?.filter((part) => part.type === 'text' && typeof part.text === 'string')
     .map((part) => part.text)
     .join('')
   if (!text) {
-    throw new Error('Anthropic response did not include text content')
+    throw new BackendUpstreamError(
+      'Anthropic response did not include text content',
+      backendId,
+      undefined,
+      { cause: body },
+    )
   }
   return text
 }
 
-function parseJsonContent(content: string): unknown {
+function parseJsonContent(content: string, backendId: string): unknown {
   try {
     return JSON.parse(content)
   } catch (err) {
-    throw new Error(`Anthropic backend returned invalid JSON: ${(err as Error).message}`)
+    throw new BackendUpstreamError(
+      `Anthropic backend returned invalid JSON: ${err instanceof Error ? err.message : String(err)}`,
+      backendId,
+      undefined,
+      { cause: err },
+    )
+  }
+}
+
+async function classifyAnthropicHttpError(response: Response, backendId: string): Promise<Error> {
+  const upstream = await readErrorBody(response)
+  const message = `Anthropic request failed (${response.status} ${response.statusText})${upstream.message !== undefined ? `: ${upstream.message}` : ''}`
+  if (response.status === 401 || response.status === 403) {
+    return new BackendAuthenticationError(message, backendId, { cause: upstream.body })
+  }
+  if (response.status === 429) {
+    return new BackendRateLimitError(message, backendId, { cause: upstream.body })
+  }
+  if (response.status === 408 || response.status === 504) {
+    return new BackendTimeoutError(message, backendId, { cause: upstream.body })
+  }
+  return new BackendUpstreamError(message, backendId, response.status, { cause: upstream.body })
+}
+
+function classifyAnthropicError(err: unknown, ctx: BackendContext, backendId: string): unknown {
+  if (isKnownBackendError(err)) {
+    return err
+  }
+  if (ctx.signal.aborted) {
+    const reason = ctx.signal.reason
+    return reason instanceof Error
+      ? reason
+      : new BackendTimeoutError('Anthropic request aborted', backendId)
+  }
+  return new BackendNetworkError(
+    `Anthropic network request failed: ${err instanceof Error ? err.message : String(err)}`,
+    backendId,
+    { cause: err },
+  )
+}
+
+function isKnownBackendError(err: unknown): boolean {
+  if (
+    err instanceof BackendConfigError ||
+    err instanceof BackendUpstreamError ||
+    err instanceof BackendAuthenticationError ||
+    err instanceof BackendRateLimitError ||
+    err instanceof BackendTimeoutError ||
+    err instanceof BackendNetworkError
+  ) {
+    return true
+  }
+  return err instanceof Error && /^Backend[A-Za-z]+Error$/.test(err.name)
+}
+
+async function readErrorBody(response: Response): Promise<{ body: unknown; message?: string }> {
+  try {
+    const body = await response.json()
+    const message =
+      typeof body === 'object' &&
+      body !== null &&
+      typeof (body as { error?: { message?: unknown } }).error?.message === 'string'
+        ? (body as { error: { message: string } }).error.message
+        : typeof body === 'object' &&
+            body !== null &&
+            typeof (body as { message?: unknown }).message === 'string'
+          ? (body as { message: string }).message
+          : undefined
+    return { body, ...(message !== undefined && { message }) }
+  } catch {
+    return { body: undefined }
   }
 }
 

@@ -2,6 +2,7 @@
  * Registry for managing workflow plugins
  */
 
+import { RegistryError, toErrorMessage } from '../errors.js'
 import type { WorkflowPluginBase } from './base.js'
 import type { WorkflowConfig, WorkflowHealthStatus } from './types.js'
 
@@ -17,7 +18,11 @@ export class WorkflowRegistry {
    */
   register(workflow: WorkflowPluginBase): void {
     if (this.workflows.has(workflow.id)) {
-      throw new Error(`Workflow with id '${workflow.id}' is already registered`)
+      throw new RegistryError(
+        `Workflow with id '${workflow.id}' is already registered`,
+        'workflow',
+        workflow.id,
+      )
     }
 
     this.workflows.set(workflow.id, workflow)
@@ -77,7 +82,7 @@ export class WorkflowRegistry {
         try {
           await workflow.initialize(config)
         } catch (error) {
-          console.error(`Failed to initialize workflow '${workflow.id}':`, error)
+          console.error(`Failed to initialize workflow '${workflow.id}': ${toErrorMessage(error)}`)
         }
       }
     })
@@ -93,7 +98,7 @@ export class WorkflowRegistry {
       try {
         await workflow.start()
       } catch (error) {
-        console.error(`Failed to start workflow '${workflow.id}':`, error)
+        console.error(`Failed to start workflow '${workflow.id}': ${toErrorMessage(error)}`)
       }
     })
 
@@ -111,7 +116,7 @@ export class WorkflowRegistry {
       try {
         await workflow.stop()
       } catch (error) {
-        console.error(`Failed to stop workflow '${workflow.id}':`, error)
+        console.error(`Failed to stop workflow '${workflow.id}': ${toErrorMessage(error)}`)
       }
     })
 
@@ -139,7 +144,7 @@ export class WorkflowRegistry {
         results[workflow.id] = {
           healthy: false,
           status: 'check-failed',
-          error: error instanceof Error ? error.message : String(error),
+          error: toErrorMessage(error),
           lastCheck: new Date(),
         }
       }

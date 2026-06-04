@@ -14,6 +14,16 @@ export interface GatewayClient {
   stateDir: string
 }
 
+export class GatewayHttpError extends Error {
+  override readonly name = 'GatewayHttpError'
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message)
+  }
+}
+
 export type ServiceManager = 'systemd' | 'launchd' | 'none'
 
 export function gatewayStateDir(): string {
@@ -295,7 +305,9 @@ export async function fetchHttp(
     }
     return await fetch(url, merged)
   } catch (err) {
-    io.stderr.write(`error: gateway HTTP request failed: ${(err as Error).message}\n`)
+    io.stderr.write(
+      `error: gateway HTTP request failed: ${err instanceof Error ? err.message : String(err)}\n`,
+    )
     return null
   }
 }
@@ -350,7 +362,7 @@ export async function* openSse(
     ...(signal !== undefined && { signal }),
   })
   if (!res.ok || res.body === null) {
-    throw new Error(`SSE GET ${url} failed: ${res.status} ${res.statusText}`)
+    throw new GatewayHttpError(`SSE GET ${url} failed: ${res.status} ${res.statusText}`, res.status)
   }
   const reader = res.body.getReader()
   const decoder = new TextDecoder()

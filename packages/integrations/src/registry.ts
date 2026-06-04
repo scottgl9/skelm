@@ -1,4 +1,5 @@
-import type { Integration, IntegrationConfig } from './types.js'
+import { IntegrationError, IntegrationStateError } from './errors.js'
+import type { Integration } from './types.js'
 
 /**
  * Registry for managing multiple integrations
@@ -13,7 +14,7 @@ export class IntegrationRegistry {
    */
   async register(integration: Integration): Promise<void> {
     if (this.integrations.has(integration.id)) {
-      throw new Error(`Integration ${integration.id} already registered`)
+      throw new IntegrationError(`Integration ${integration.id} already registered`, integration.id)
     }
 
     this.integrations.set(integration.id, integration)
@@ -26,7 +27,7 @@ export class IntegrationRegistry {
   async unregister(integrationId: string): Promise<void> {
     const integration = this.integrations.get(integrationId)
     if (!integration) {
-      throw new Error(`Integration ${integrationId} not found`)
+      throw new IntegrationError(`Integration ${integrationId} not found`, integrationId)
     }
 
     await integration.shutdown()
@@ -118,11 +119,11 @@ export class IntegrationRegistry {
   async handleWebhook(integrationId: string, event: unknown): Promise<unknown> {
     const integration = this.integrations.get(integrationId)
     if (!integration) {
-      throw new Error(`Integration ${integrationId} not found`)
+      throw new IntegrationError(`Integration ${integrationId} not found`, integrationId)
     }
 
     if (!integration.config.enabled) {
-      throw new Error(`Integration ${integrationId} is not enabled`)
+      throw new IntegrationStateError(`Integration ${integrationId} is not enabled`, integrationId)
     }
 
     // Try to convert event to RunInput if the integration supports it.

@@ -9,6 +9,29 @@
 
 import type { SkelmBackend } from './backend.js'
 import type { SkelmConfig } from './config.js'
+import { RegistryError, toErrorMessage } from './errors.js'
+
+/** Base class for plugin load and lifecycle failures. */
+export class PluginError extends Error {
+  override readonly name: string = 'PluginError'
+  constructor(
+    message: string,
+    readonly pluginId?: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options)
+  }
+}
+
+/** Thrown when a plugin package cannot be imported or does not export a valid plugin. */
+export class PluginLoadError extends PluginError {
+  override readonly name: string = 'PluginLoadError'
+}
+
+/** Thrown when a registered plugin fails a lifecycle transition. */
+export class PluginLifecycleError extends PluginError {
+  override readonly name: string = 'PluginLifecycleError'
+}
 
 /**
  * Plugin lifecycle stages
@@ -172,7 +195,7 @@ export class PluginRegistry {
    */
   async register(plugin: SkelmPlugin, config?: PluginConfig): Promise<void> {
     if (this.plugins.has(plugin.id)) {
-      throw new Error(`Plugin already registered: ${plugin.id}`)
+      throw new RegistryError(`Plugin already registered: ${plugin.id}`, 'plugin', plugin.id)
     }
 
     this.plugins.set(plugin.id, plugin)
@@ -198,7 +221,7 @@ export class PluginRegistry {
   async unregister(pluginId: string): Promise<void> {
     const plugin = this.plugins.get(pluginId)
     if (!plugin) {
-      throw new Error(`Plugin not found: ${pluginId}`)
+      throw new RegistryError(`Plugin not found: ${pluginId}`, 'plugin', pluginId)
     }
 
     await plugin.stop()
@@ -302,8 +325,7 @@ export class PluginRegistry {
       try {
         await plugin.stop()
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error)
-        errors.push(`Failed to stop ${plugin.id}: ${msg}`)
+        errors.push(`Failed to stop ${plugin.id}: ${toErrorMessage(error)}`)
       }
     }
     if (errors.length > 0) {
@@ -323,7 +345,7 @@ export class PluginRegistry {
         results[plugin.id] = {
           healthy: false,
           status: 'error',
-          errors: [error instanceof Error ? error.message : String(error)],
+          errors: [toErrorMessage(error)],
           lastCheck: new Date().toISOString(),
         }
       }
@@ -381,10 +403,16 @@ export class PluginLoader {
         if (this.isIntegration(plugin)) return await this.wrapIntegration(plugin)
       }
 
-      throw new Error(`Package ${packageName} does not export a valid SkelmPlugin or Integration`)
+      throw new PluginLoadError(
+        `Package ${packageName} does not export a valid SkelmPlugin or Integration`,
+        packageName,
+      )
     } catch (error) {
-      throw new Error(
-        `Failed to load plugin from ${packageName}: ${error instanceof Error ? error.message : error}`,
+      if (error instanceof PluginLoadError) throw error
+      throw new PluginLoadError(
+        `Failed to load plugin from ${packageName}: ${toErrorMessage(error)}`,
+        packageName,
+        { cause: error },
       )
     }
   }
@@ -401,7 +429,7 @@ export class PluginLoader {
         const plugin = await this.loadFromPackage(packageName)
         plugins.push(plugin)
       } catch (error) {
-        errors.push(`${packageName}: ${error instanceof Error ? error.message : error}`)
+        errors.push(`${packageName}: ${toErrorMessage(error)}`)
       }
     }
 
@@ -472,8 +500,9 @@ export class PluginLoader {
         createIntegrationPlugin: (i: unknown) => unknown
       }
     } catch {
-      throw new Error(
+      throw new PluginLoadError(
         '@skelm/integration-sdk is required to load Integration plugins — add it as a dependency',
+        undefined,
       )
     }
     return sdk.createIntegrationPlugin(integration) as SkelmPlugin

@@ -2,6 +2,10 @@ import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
 import type { SkelmConfigAgentEntry } from '@skelm/core'
 import getPort from 'get-port'
 
+export class CodingAgentManagerError extends Error {
+  override readonly name = 'CodingAgentManagerError'
+}
+
 export type CodingAgentStatus = 'stopped' | 'starting' | 'running' | 'crashed'
 
 export interface ResidentHandle {
@@ -101,7 +105,7 @@ export class CodingAgentManager {
 
   async startResident(entry: SkelmConfigAgentEntry): Promise<ResidentHandle> {
     if (entry.lifecycle !== 'resident') {
-      throw new Error(`agent ${entry.id} is not a resident agent`)
+      throw new CodingAgentManagerError(`agent ${entry.id} is not a resident agent`)
     }
     const existing = this.resident.get(entry.id)
     if (existing && existing.status === 'running') return existing
@@ -122,7 +126,9 @@ export class CodingAgentManager {
     }
 
     if (entry.command === undefined) {
-      throw new Error(`resident agent ${entry.id}: must supply either url or command`)
+      throw new CodingAgentManagerError(
+        `resident agent ${entry.id}: must supply either url or command`,
+      )
     }
     const port = await pickFreePort()
     const args = withInjectedPort(entry.args ?? [], port)
@@ -158,7 +164,10 @@ export class CodingAgentManager {
       const timer = setTimeout(() => {
         this.restartTimers.delete(entry.id)
         if (this.stopping) return
-        void this.startResident(entry)
+        void this.startResident(entry).catch((err: unknown) => {
+          handle.lastError = err instanceof Error ? err.message : String(err)
+          handle.status = 'crashed'
+        })
       }, delay)
       timer.unref?.()
       this.restartTimers.set(entry.id, timer)
@@ -199,14 +208,16 @@ export class CodingAgentManager {
     input: { prompt?: string; stdin?: string; runId?: string; stepId?: string },
   ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
     if (entry.lifecycle !== 'ephemeral') {
-      throw new Error(`agent ${entry.id} is not ephemeral`)
+      throw new CodingAgentManagerError(`agent ${entry.id} is not ephemeral`)
     }
     if (entry.command === undefined) {
-      throw new Error(`ephemeral agent ${entry.id}: must supply command`)
+      throw new CodingAgentManagerError(`ephemeral agent ${entry.id}: must supply command`)
     }
     const cap = this.opts.ephemeralConcurrency
     if (cap !== undefined && (this.ephemerals.get(entry.id)?.length ?? 0) >= cap) {
-      throw new Error(`agent ${entry.id} ephemeral concurrency cap (${cap}) reached`)
+      throw new CodingAgentManagerError(
+        `agent ${entry.id} ephemeral concurrency cap (${cap}) reached`,
+      )
     }
     // Resolve the per-step egress token first so it can be encoded into the
     // proxy URL credentials. SKELM_EGRESS_TOKEN is also emitted by
@@ -247,15 +258,16 @@ export class CodingAgentManager {
       stderr += b.toString()
     })
 
-    const exitCode = await new Promise<number>((resolve, reject) => {
-      child.once('error', reject)
-      child.once('close', (code) => resolve(code ?? -1))
-    })
-
-    const after = (this.ephemerals.get(entry.id) ?? []).filter((r) => r !== run)
-    this.ephemerals.set(entry.id, after)
-
-    return { exitCode, stdout, stderr }
+    try {
+      const exitCode = await new Promise<number>((resolve, reject) => {
+        child.once('error', reject)
+        child.once('close', (code) => resolve(code ?? -1))
+      })
+      return { exitCode, stdout, stderr }
+    } finally {
+      const after = (this.ephemerals.get(entry.id) ?? []).filter((r) => r !== run)
+      this.ephemerals.set(entry.id, after)
+    }
   }
 }
 

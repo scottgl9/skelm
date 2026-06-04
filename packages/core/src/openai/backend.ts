@@ -1,8 +1,13 @@
 import { inspect } from 'node:util'
 import {
+  BackendAuthenticationError,
   type BackendCapabilities,
   BackendConfigError,
   type BackendContext,
+  BackendNetworkError,
+  BackendRateLimitError,
+  BackendTimeoutError,
+  BackendUpstreamError,
   type InferenceRequest,
   type InferenceResponse,
   type SkelmBackend,
@@ -82,42 +87,47 @@ export function createOpenAIBackend(opts: OpenAIBackendOptions = {}): SkelmBacke
     },
     getApiKey: debug.getApiKey,
     async inference(req: InferenceRequest, ctx: BackendContext): Promise<InferenceResponse> {
-      const apiKey = await debug.getApiKey()
-      const response = await (opts.fetch ?? fetch)(
-        new URL('/chat/completions', baseUrl(opts.baseUrl)),
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
+      const backendId = opts.id ?? 'openai'
+      try {
+        const apiKey = await debug.getApiKey()
+        const response = await (opts.fetch ?? fetch)(
+          new URL('/chat/completions', baseUrl(opts.baseUrl)),
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: req.model ?? opts.model ?? 'gpt-4.1-mini',
+              messages: buildMessages(req),
+              ...(req.temperature !== undefined && { temperature: req.temperature }),
+              ...(req.maxTokens !== undefined && { max_tokens: req.maxTokens }),
+              ...(req.outputSchema !== undefined && { response_format: { type: 'json_object' } }),
+            }),
+            signal: ctx.signal,
           },
-          body: JSON.stringify({
-            model: req.model ?? opts.model ?? 'gpt-4.1-mini',
-            messages: buildMessages(req),
-            ...(req.temperature !== undefined && { temperature: req.temperature }),
-            ...(req.maxTokens !== undefined && { max_tokens: req.maxTokens }),
-            ...(req.outputSchema !== undefined && { response_format: { type: 'json_object' } }),
-          }),
-          signal: ctx.signal,
-        },
-      )
-      if (!response.ok) {
-        throw new Error(`OpenAI request failed (${response.status} ${response.statusText})`)
-      }
-      const rawBody: unknown = await response.json()
-      const body = assertOpenAIResponse(rawBody)
-      const content = extractMessageContent(body)
-      const usage = toUsage(body.usage)
-      if (req.outputSchema !== undefined) {
+        )
+        if (!response.ok) {
+          throw await classifyOpenAIHttpError(response, backendId)
+        }
+        const rawBody: unknown = await response.json()
+        const body = assertOpenAIResponse(rawBody, backendId)
+        const content = extractMessageContent(body, backendId)
+        const usage = toUsage(body.usage)
+        if (req.outputSchema !== undefined) {
+          return {
+            text: content,
+            structured: parseJsonContent(content, backendId),
+            ...(usage !== undefined && { usage }),
+          }
+        }
         return {
           text: content,
-          structured: parseJsonContent(content),
           ...(usage !== undefined && { usage }),
         }
-      }
-      return {
-        text: content,
-        ...(usage !== undefined && { usage }),
+      } catch (err) {
+        throw classifyOpenAIError(err, ctx, backendId)
       }
     },
   }
@@ -145,16 +155,32 @@ interface OpenAIChatCompletionResponse {
  * an unexpected payload. Reject loudly here rather than letting the
  * downstream extract silently return empty content.
  */
-function assertOpenAIResponse(body: unknown): OpenAIChatCompletionResponse {
+function assertOpenAIResponse(body: unknown, backendId: string): OpenAIChatCompletionResponse {
   if (typeof body !== 'object' || body === null) {
-    throw new Error('OpenAI response was not a JSON object')
+    throw new BackendUpstreamError('OpenAI response was not a JSON object', backendId, undefined, {
+      cause: body,
+    })
   }
   const b = body as Record<string, unknown>
   if (b.choices !== undefined && !Array.isArray(b.choices)) {
-    throw new Error("OpenAI response 'choices' was not an array")
+    throw new BackendUpstreamError(
+      "OpenAI response 'choices' was not an array",
+      backendId,
+      undefined,
+      {
+        cause: body,
+      },
+    )
   }
   if (b.usage !== undefined && (typeof b.usage !== 'object' || b.usage === null)) {
-    throw new Error("OpenAI response 'usage' was not an object")
+    throw new BackendUpstreamError(
+      "OpenAI response 'usage' was not an object",
+      backendId,
+      undefined,
+      {
+        cause: body,
+      },
+    )
   }
   return body as OpenAIChatCompletionResponse
 }
@@ -190,7 +216,10 @@ function normalizeApiKey(value: string | undefined): string | undefined {
 }
 
 function baseUrl(url?: string): string {
-  const value = url ?? process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1'
+  const value =
+    normalizeApiKey(url) ??
+    normalizeApiKey(process.env.OPENAI_BASE_URL) ??
+    'https://api.openai.com/v1'
   return value.endsWith('/') ? value : `${value}/`
 }
 
@@ -235,7 +264,7 @@ function toOpenAIContent(
   return parts
 }
 
-function extractMessageContent(body: OpenAIChatCompletionResponse): string {
+function extractMessageContent(body: OpenAIChatCompletionResponse, backendId: string): string {
   const content = body.choices?.[0]?.message?.content
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
@@ -244,14 +273,91 @@ function extractMessageContent(body: OpenAIChatCompletionResponse): string {
       .map((part) => part.text)
       .join('')
   }
-  throw new Error('OpenAI response did not include message content')
+  throw new BackendUpstreamError(
+    'OpenAI response did not include message content',
+    backendId,
+    undefined,
+    {
+      cause: body,
+    },
+  )
 }
 
-function parseJsonContent(content: string): unknown {
+function parseJsonContent(content: string, backendId: string): unknown {
   try {
     return JSON.parse(content)
   } catch (err) {
-    throw new Error(`OpenAI backend returned invalid JSON: ${(err as Error).message}`)
+    throw new BackendUpstreamError(
+      `OpenAI backend returned invalid JSON: ${err instanceof Error ? err.message : String(err)}`,
+      backendId,
+      undefined,
+      { cause: err },
+    )
+  }
+}
+
+async function classifyOpenAIHttpError(response: Response, backendId: string): Promise<Error> {
+  const upstream = await readErrorBody(response)
+  const message = `OpenAI request failed (${response.status} ${response.statusText})${upstream.message !== undefined ? `: ${upstream.message}` : ''}`
+  if (response.status === 401 || response.status === 403) {
+    return new BackendAuthenticationError(message, backendId, { cause: upstream.body })
+  }
+  if (response.status === 429) {
+    return new BackendRateLimitError(message, backendId, { cause: upstream.body })
+  }
+  if (response.status === 408 || response.status === 504) {
+    return new BackendTimeoutError(message, backendId, { cause: upstream.body })
+  }
+  return new BackendUpstreamError(message, backendId, response.status, { cause: upstream.body })
+}
+
+function classifyOpenAIError(err: unknown, ctx: BackendContext, backendId: string): unknown {
+  if (isKnownBackendError(err)) {
+    return err
+  }
+  if (ctx.signal.aborted) {
+    const reason = ctx.signal.reason
+    return reason instanceof Error
+      ? reason
+      : new BackendTimeoutError('OpenAI request aborted', backendId)
+  }
+  return new BackendNetworkError(
+    `OpenAI network request failed: ${err instanceof Error ? err.message : String(err)}`,
+    backendId,
+    { cause: err },
+  )
+}
+
+function isKnownBackendError(err: unknown): boolean {
+  if (
+    err instanceof BackendConfigError ||
+    err instanceof BackendUpstreamError ||
+    err instanceof BackendAuthenticationError ||
+    err instanceof BackendRateLimitError ||
+    err instanceof BackendTimeoutError ||
+    err instanceof BackendNetworkError
+  ) {
+    return true
+  }
+  return err instanceof Error && /^Backend[A-Za-z]+Error$/.test(err.name)
+}
+
+async function readErrorBody(response: Response): Promise<{ body: unknown; message?: string }> {
+  try {
+    const body = await response.json()
+    const message =
+      typeof body === 'object' &&
+      body !== null &&
+      typeof (body as { error?: { message?: unknown } }).error?.message === 'string'
+        ? (body as { error: { message: string } }).error.message
+        : typeof body === 'object' &&
+            body !== null &&
+            typeof (body as { message?: unknown }).message === 'string'
+          ? (body as { message: string }).message
+          : undefined
+    return { body, ...(message !== undefined && { message }) }
+  } catch {
+    return { body: undefined }
   }
 }
 

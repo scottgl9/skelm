@@ -5,8 +5,9 @@
  * Used for direct LLM() calls in workflows
  */
 
+import { RegistryError } from './errors.js'
+import { ProviderNotFoundError } from './providers/base.js'
 import type { Context, InferStep } from './types.js'
-import type { RunMetadata } from './types.js'
 
 /**
  * Model provider configuration
@@ -128,7 +129,7 @@ export abstract class ModelProviderBase implements ModelProvider {
     options?: Partial<ModelProviderConfig>,
   ): Promise<LlmCompletion> {
     if (!this.initialized) {
-      throw new Error(`Model provider not initialized: ${this.id}`)
+      throw new ProviderNotFoundError(`Model provider not initialized: ${this.id}`)
     }
     return this.doComplete(messages, options)
   }
@@ -144,7 +145,7 @@ export abstract class ModelProviderBase implements ModelProvider {
 
   getConfig(): ModelProviderConfig {
     if (!this.config) {
-      throw new Error(`Model provider not initialized: ${this.id}`)
+      throw new ProviderNotFoundError(`Model provider not initialized: ${this.id}`)
     }
     return this.config
   }
@@ -162,7 +163,11 @@ export class ModelRegistry {
    */
   register(provider: ModelProvider): void {
     if (this.providers.has(provider.id)) {
-      throw new Error(`Model provider already registered: ${provider.id}`)
+      throw new RegistryError(
+        `Model provider already registered: ${provider.id}`,
+        'model',
+        provider.id,
+      )
     }
     this.providers.set(provider.id, provider)
   }
@@ -248,12 +253,12 @@ export async function executeInferStep(
   const explicit = typeof step.backend === 'string' ? step.backend : step.backend?.[0]
   const providerId = explicit || (registry.getDefault()?.id as string | undefined)
   if (!providerId) {
-    throw new Error('No model provider specified or available')
+    throw new ProviderNotFoundError('No model provider specified or available')
   }
 
   const provider = registry.get(providerId)
   if (!provider) {
-    throw new Error(`Model provider not found: ${providerId}`)
+    throw new ProviderNotFoundError(`Model provider not found: ${providerId}`)
   }
 
   const messages: ChatMessage[] = []
