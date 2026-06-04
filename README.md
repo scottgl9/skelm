@@ -21,7 +21,7 @@
 
 Most agent frameworks make it easy to demo a chatbot and impossible to operate one. Tool calls leak credentials, prompts mutate at runtime, and the production story is "trust us." Visual automation tools hide everything in a node graph that can't be diffed, code-reviewed, or unit-tested. Long-running orchestration engines force you to learn a separate runtime, separate DSL, and separate operational model for every kind of work. **skelm collapses those into one.** Every privileged action — exec, network, filesystem, tool dispatch, MCP — flows through a gateway under permissions you declare in code. Every workflow is a typed module you can grep, refactor, and unit-test.
 
-**One authoring model spans the spectrum.** A two-second deterministic transform, a five-minute agent loop, a webhook-triggered service, a cron job, a multi-day workflow that pauses for human approval and resumes after a restart, and a **persistent chat agent** whose conversation outlives every restart — all the same module shape, all the same gateway, all the same permissions. No second runtime to stand up when "quick automation" grows into "durable workflow," and no node-graph editor when "durable workflow" needs version control, code review, or a real test suite.
+**One authoring model spans the spectrum.** A two-second deterministic transform, a five-minute agent loop, a webhook-triggered service, a cron job, a multi-day workflow that pauses for human approval and resumes after a restart, and a **persistent chat workflow** whose conversation outlives every restart — all the same module shape, all the same gateway, all the same permissions. No second runtime to stand up when "quick automation" grows into "durable workflow," and no node-graph editor when "durable workflow" needs version control, code review, or a real test suite.
 
 skelm runs on your own infrastructure with security primitives that don't disappear when the demo ends. That's what it's for.
 
@@ -90,7 +90,7 @@ export default pipeline({
 
 A real module. Type-checked. Permissions enforced by the gateway. Schedulable, webhook-triggerable, and pause-resumable out of the box. Adapted from [`examples/incident-response/`](./examples/incident-response/).
 
-### …or a persistent agent you talk *through*
+### …or a persistent workflow you talk *through*
 
 When the work isn't "fire once and finish" but "the same conversation, for as long as the user keeps talking," reach for `persistentWorkflow`. Each inbound message runs a fresh preamble and then exactly one session-keyed agent turn whose conversation lives in durable storage — restart the gateway and the next message picks up the same thread.
 
@@ -121,7 +121,7 @@ Same trust boundary, same permission model, same event log as a one-shot pipelin
 | Security & trust | Authoring & flexibility | Runtime & operations |
 |---|---|---|
 | 🔒 **Default-deny by design** — every step declares its tools, executables, MCP servers, network egress, and filesystem roots. Anything not listed is denied. The gateway is the only thing that enforces it. | 🧠 **Code-first, not config-first** — pipelines are real `.mts` modules. Refactor with your editor, type-check with `tsc`, version with git, test with vitest. No YAML DSL to learn. | ⏱ **Durable wait/resume** — workflows pause for hours, days, or webhooks and resume on a deterministic event log. Survives restarts. |
-| 🌐 **Gateway-hosted runtime** — a long-running gateway hosts pipelines over HTTP + SSE, drives the scheduler, manages MCP-server lifecycles, and owns the trust boundary. Nothing privileged runs outside it. | 🧩 **Backend-agnostic agents** — Opencode, ACP (Copilot, Claude Code), OpenAI, Anthropic, Codex, Pi, Vercel AI. Swap providers without rewriting a step. | 💬 **Persistent agents** — `persistentWorkflow` turns any trigger source (chat, queue, cron) into a long-lived, session-keyed conversation that survives restarts. Pairs with optional [agentmemory](https://github.com/rohitg00/agentmemory) for cross-session recall via `@skelm/agentmemory`. |
+| 🌐 **Gateway-hosted runtime** — a long-running gateway hosts pipelines over HTTP + SSE, drives the scheduler, manages MCP-server lifecycles, and owns the trust boundary. Nothing privileged runs outside it. | 🧩 **Backend-agnostic agents** — Opencode, ACP (Copilot, Claude Code), OpenAI, Anthropic, Codex, Pi, Vercel AI. Swap providers without rewriting a step. | 💬 **Persistent workflows** — `persistentWorkflow` turns any trigger source (chat, queue, cron) into a long-lived, session-keyed conversation that survives restarts. Pairs with optional [agentmemory](https://github.com/rohitg00/agentmemory) for cross-session recall via `@skelm/agentmemory`. |
 | 💾 **Self-hosted, local-first** — SQLite + filesystem out of the box; Postgres and external vaults for production. No managed cloud, no telemetry, no vendor lock-in. | 📚 **Skills-first capability model** — package procedural knowledge as `SKILL.md` bundles the agent loads on demand. MCP servers plug in as first-class registry citizens. | 🖼 **Multimodal** — `infer()` and `agent()` accept image parts; vision routes to vision-capable backends, denied at step start for the rest. Screenshots persist as `ctx.artifacts`. |
 
 ---
@@ -154,6 +154,23 @@ skelm gateway start --foreground
 ```
 
 📖 **Next:** [Quickstart guide](./docs/quickstart/README.md)
+
+### Build workflows with `skelm builder`
+
+Prefer to start from a spec instead of a blank `.mts` file? `skelm builder`
+scaffolds a conversational workflow-builder project and opens a terminal chat UI.
+Describe the workflow you want; the builder uses the bundled `skelm` skill,
+writes a `*.workflow.mts`, and validates it with `skelm validate`.
+
+```bash
+skelm builder
+cd builder && npm install
+skelm builder
+```
+
+The builder is itself a `persistentWorkflow`, runs through the same gateway
+permission model as any other skelm workflow, and uses Codex by default with a
+pi-sdk fallback. See [Building Workflows](./docs/guides/building-workflows.md#the-skelm-builder).
 
 ---
 

@@ -328,7 +328,7 @@ telegram.createTriggerSource({
 })
 ```
 
-The [Matrix](https://matrix.org) source has the same gate via `allowedRoomIds` / `allowedUsers`. It also drops the bot's *own* messages (Matrix `/sync` echoes them back) using `credentials.userId`, so a freewheeling agent never replies to itself. See the [Matrix persistent agent](/recipes/matrix-persistent-agent) recipe.
+The [Matrix](https://matrix.org) source has the same gate via `allowedRoomIds` / `allowedUsers`. It also drops the bot's *own* messages (Matrix `/sync` echoes them back) using `credentials.userId`, so a freewheeling agent never replies to itself. See the [Matrix persistent workflow](/recipes/matrix-persistent-agent) recipe.
 
 ```ts
 matrix.createTriggerSource({

@@ -13,16 +13,18 @@ skelm --help
 
 ## Exit codes
 
-| Code | Meaning              |
-| ---- | -------------------- |
-| 0    | success              |
-| 1    | CLI error (parse, invocation) |
-| 2    | schema validation failure |
-| 3    | run failed at runtime |
-| 4    | run cancelled        |
-| 5    | wait step timed out  |
-| 6    | permission denied    |
-| 7    | step timed out       |
+| Code | Meaning                             |
+| ---- | ----------------------------------- |
+| 0    | success                             |
+| 1    | CLI error (parse, invocation)       |
+| 2    | schema validation failure           |
+| 3    | run failed at runtime               |
+| 4    | run cancelled                       |
+| 5    | wait step timed out                 |
+| 6    | permission denied                   |
+| 7    | step timed out                      |
+| 8    | run paused awaiting external resume |
+| 9    | backend capability mismatch         |
 
 `stdout` receives the workflow's final output (JSON when present); `stderr`
 receives human progress lines unless `--events json` is set, in which case
@@ -32,8 +34,10 @@ events stream as JSON-Lines.
 
 ### `skelm run <pipeline.ts | directory>`
 
-Run a pipeline file directly. The runtime loads the file, type-checks the
-exported pipeline, and executes it with the runner.
+Run a pipeline file or workflow project. The CLI dispatches to the gateway over
+HTTP, auto-starting a local gateway when allowed and none is already running.
+The gateway loads the workflow, type-checks the exported pipeline, enforces
+permissions, streams events, and records the run.
 
 | Flag             | Description                                         |
 | ---------------- | --------------------------------------------------- |
@@ -218,7 +222,7 @@ skelm schedule fire <id> [--json]
 ### `skelm init [<dir>]`
 
 Scaffold a new skelm project under `<dir>` (defaults to `.`). Creates
-`package.json`, `tsconfig.json`, `skelm.config.ts`,
+`package.json`, `tsconfig.json`, `skelm.config.mts`,
 `workflows/hello.workflow.mts`, `.gitignore`, and `README.md`. `--force` allows
 scaffolding into a non-empty directory.
 

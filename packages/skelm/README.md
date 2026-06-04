@@ -15,8 +15,11 @@ This is the meta-package that ships the `skelm` CLI bin and re-exports the runti
 
 - **[@skelm/core](https://www.npmjs.com/package/@skelm/core)** — runtime, types, builders, permissions, event bus
 - **[@skelm/cli](https://www.npmjs.com/package/@skelm/cli)** — command-line interface and programmatic primitives
+- **[@skelm/scheduler](https://www.npmjs.com/package/@skelm/scheduler)** and **[@skelm/integration-sdk](https://www.npmjs.com/package/@skelm/integration-sdk)** — trigger helpers and integration authoring primitives
 
-For the long-running orchestrator (HTTP, registries, audit, agent lifecycle), install [`@skelm/gateway`](https://www.npmjs.com/package/@skelm/gateway) separately so this meta package stays small for users who only need the authoring + runner surface.
+The CLI package brings the gateway runtime it needs for local execution. Install
+[`@skelm/gateway`](https://www.npmjs.com/package/@skelm/gateway) directly only
+when you are embedding or extending the gateway package itself.
 
 ## Install
 
@@ -61,6 +64,7 @@ skelm run my.workflow.mts --input '{"name":"world"}'
 
 ```bash
 skelm init                            # Scaffold a project
+skelm builder                         # Author workflows from a terminal chat UI
 skelm run workflow.mts                # Run a workflow once
 skelm run workflow.mts --events json  # Stream JSON events to stderr
 skelm schedule add workflow.mts --cron '0 9 * * 1-5'  # Schedule on a cron
@@ -76,7 +80,7 @@ skelm gateway install --systemd       # Install as a systemd user service
 
 Everything from `@skelm/core`:
 
-- **Builders** — `pipeline()`, `code()`, `infer()`, `agent()`, `parallel()`, `forEach()`, `branch()`, `loop()`, `wait()`, `pipelineStep()`
+- **Builders** — `pipeline()`, `persistentWorkflow()`, `code()`, `infer()`, `agent()`, `parallel()`, `forEach()`, `branch()`, `loop()`, `wait()`, `pipelineStep()`
 - **Runtime** — `runPipeline()`, `Runner`, `RunOptions`
 - **Types** — `Pipeline`, `Step`, `Context`, `Run`, `StepResult`, `RunMetadata`, `RunStatus`, `StepStatus`, `RetryPolicy`, ...
 - **Schemas** — `SkelmSchema`, `SchemaValidationError` (Standard Schema-compatible; Zod is the documented default)

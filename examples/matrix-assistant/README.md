@@ -1,13 +1,13 @@
 # matrix-assistant
 
-A **persistent agent** you talk to over [Matrix](https://matrix.org) — one
+A **persistent workflow** you talk to over [Matrix](https://matrix.org) — one
 durable conversation per room that survives across messages and gateway
 restarts. It is the [`telegram-assistant`](../telegram-assistant) example over a
 different channel.
 
 This example demonstrates three things together:
 
-- **Persistent agent** (`persistentAgent()`) with a per-room `sessionKey`.
+- **Persistent workflow** (`persistentWorkflow()`) with a per-room `sessionKey`.
 - **Agentmemory** wired in for long-term recall across sessions.
 - The **operator-gated unrestricted bypass** — a freewheeling assistant with full
   shell/network/filesystem access.
