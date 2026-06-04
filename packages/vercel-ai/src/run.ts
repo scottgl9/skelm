@@ -1,5 +1,5 @@
 import { runWithMemoryTurns } from '@skelm/agentmemory'
-import { BackendCapabilityError, combineSignals } from '@skelm/core'
+import { BackendCapabilityError, combineSignals, toErrorMessage } from '@skelm/core'
 import type { AgentRequest, AgentResponse, BackendContext } from '@skelm/core'
 import { type ModelMessage, Output, generateText, stepCountIs, streamText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
@@ -86,7 +86,7 @@ export async function vercelAiRun(
     }
     if (err instanceof BackendCapabilityError) throw err
     if (err instanceof VercelAiBackendError) throw err
-    throw new VercelAiBackendError(`vercel-ai agent run failed: ${(err as Error).message}`, err)
+    throw new VercelAiBackendError(`vercel-ai agent run failed: ${toErrorMessage(err)}`, err)
   } finally {
     clearTimeout(timer)
   }
@@ -161,7 +161,10 @@ async function dispatchVercelAi(p: DispatchParams): Promise<AgentResponse> {
         context.onPartial(chunk)
       }
       if (streamError !== undefined) {
-        throw streamError instanceof Error ? streamError : new Error(String(streamError))
+        throw new VercelAiBackendError(
+          `vercel-ai stream failed: ${toErrorMessage(streamError)}`,
+          streamError,
+        )
       }
       const finalResult = await stream
 
@@ -205,7 +208,7 @@ async function dispatchVercelAi(p: DispatchParams): Promise<AgentResponse> {
       // AI SDK occasionally reports terminal errors via finishReason='error'
       // without rejecting; treat that as a thrown failure so the step is
       // marked failed rather than completed with empty text.
-      throw new Error(`vercel-ai run terminated with finishReason='error'`)
+      throw new VercelAiBackendError(`vercel-ai run terminated with finishReason='error'`)
     }
     const response: AgentResponse = {}
     if (typeof result.finishReason === 'string') response.stopReason = result.finishReason

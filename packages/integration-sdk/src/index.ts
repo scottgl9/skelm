@@ -34,7 +34,12 @@ export type {
 
 // Base class
 export { IntegrationBase } from './base.js'
-export { IntegrationRateLimitError, IntegrationSdkError } from './errors.js'
+export {
+  IntegrationCredentialsError,
+  IntegrationRateLimitError,
+  IntegrationSdkError,
+  IntegrationUnsupportedOperationError,
+} from './errors.js'
 
 // Factory + plugin adapter
 export {
