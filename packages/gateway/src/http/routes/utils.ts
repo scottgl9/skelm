@@ -49,7 +49,7 @@ export async function validateWorkflowFile(file: unknown): Promise<string> {
     const e = err as NodeJS.ErrnoException & { statusCode?: number }
     if (e.statusCode !== undefined) throw err
     if (e.code === 'ENOENT') {
-      throw createError({ statusCode: 404, message: 'file: not found' })
+      throw createError({ statusCode: 404, message: `file not found: ${normalized}` })
     }
     throw createError({ statusCode: 500, message: `file stat failed: ${e.message}` })
   }

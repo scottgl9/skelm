@@ -109,19 +109,26 @@ export async function runCommand(
 
   // SIGINT cancels the remote run if we know its id.
   let activeRunId: string | undefined
+  let cancelPromise: Promise<unknown> | undefined
   const sseAbort = new AbortController()
   const onSig = () => {
+    const runId = activeRunId
+    if (runId !== undefined && cancelPromise === undefined) {
+      cancelPromise = fetchHttp(
+        `${client.discovery.url}/runs/${runId}`,
+        { method: 'DELETE', headers: client.headers },
+        io as MainIO,
+        5_000,
+      ).catch(() => undefined)
+    }
     sseAbort.abort()
-    if (activeRunId === undefined) return
-    void fetchHttp(
-      `${client.discovery.url}/runs/${activeRunId}`,
-      { method: 'DELETE', headers: client.headers },
-      io as MainIO,
-      5_000,
-    )
   }
   process.once('SIGINT', onSig)
   process.once('SIGTERM', onSig)
+
+  const waitForCancelRequest = async (): Promise<void> => {
+    if (cancelPromise !== undefined) await cancelPromise
+  }
 
   try {
     // /pipelines/start-file fires the run and returns the runId
@@ -236,18 +243,38 @@ export async function runCommand(
       if (watchdog !== undefined) clearTimeout(watchdog)
     }
 
+    await waitForCancelRequest()
+
     // Even when the stream delivered a terminal event, fetch the final
-    // Run record so we have authoritative output / error / status.
-    const stateRes = await fetchHttp(
-      `${client.discovery.url}/runs/${started.runId}`,
-      { headers: client.headers },
-      io as MainIO,
-    )
-    if (stateRes === null) return { exitCode: EXIT.CLI_ERROR }
-    if (!stateRes.ok) {
-      return (await httpError(stateRes, io as MainIO)) as { exitCode: ExitCode }
+    // Run record so we have authoritative output / error / status. If the user
+    // interrupted the stream, the DELETE route may have returned before the
+    // runner persisted run.cancelled; poll briefly so Ctrl-C exits as CANCELLED
+    // instead of racing a still-running snapshot.
+    let run: Run<unknown, unknown>
+    const stateDeadline = Date.now() + (cancelPromise !== undefined ? 5_000 : 0)
+    for (;;) {
+      const stateRes = await fetchHttp(
+        `${client.discovery.url}/runs/${started.runId}`,
+        { headers: client.headers },
+        io as MainIO,
+      )
+      if (stateRes === null) return { exitCode: EXIT.CLI_ERROR }
+      if (!stateRes.ok) {
+        return (await httpError(stateRes, io as MainIO)) as { exitCode: ExitCode }
+      }
+      run = (await stateRes.json()) as Run<unknown, unknown>
+      if (
+        cancelPromise === undefined ||
+        run.status === 'completed' ||
+        run.status === 'failed' ||
+        run.status === 'cancelled' ||
+        run.status === 'waiting' ||
+        Date.now() >= stateDeadline
+      ) {
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
     }
-    const run = (await stateRes.json()) as Run<unknown, unknown>
 
     if (run.status === 'completed') {
       io.stdout.write(`${JSON.stringify(run.output)}\n`)
