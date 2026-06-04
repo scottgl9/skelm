@@ -47,7 +47,7 @@ export async function builderCommand(
   args: BuilderCommandArgs,
   io: MainIO,
 ): Promise<BuilderCommandResult> {
-  const relDir = args.dir ?? 'builder'
+  const relDir = args.dir ?? (isBuilderProject(process.cwd()) ? '.' : 'builder')
   const dir = resolve(process.cwd(), relDir)
   const alreadyScaffolded = BUILDER_MARKERS.every((m) => existsSync(join(dir, m)))
 
@@ -74,7 +74,7 @@ export async function builderCommand(
   // can launch. We don't auto-install (mirrors `skelm init`).
   if (!existsSync(join(dir, 'node_modules'))) {
     io.stdout.write('\nnext steps:\n')
-    io.stdout.write(`  cd ${relDir}\n`)
+    if (relDir !== '.') io.stdout.write(`  cd ${relDir}\n`)
     io.stdout.write('  npm install\n')
     io.stdout.write('  skelm builder        # drops you into the builder chat UI\n')
     return { exitCode: EXIT.OK }
@@ -108,6 +108,10 @@ async function writeFileEnsured(fullPath: string, contents: string): Promise<voi
 
 async function isNonEmpty(dir: string): Promise<boolean> {
   return (await readdir(dir)).length > 0
+}
+
+function isBuilderProject(dir: string): boolean {
+  return BUILDER_MARKERS.every((m) => existsSync(join(dir, m)))
 }
 
 function assetsDir(): string {

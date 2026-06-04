@@ -67,6 +67,18 @@ const okStream = (frames: ReadonlyArray<{ event: string; data: unknown }>): Fetc
   json: async () => ({}),
 })
 
+const hangingStream = (): FetchResponse => ({
+  ok: true,
+  status: 200,
+  statusText: 'OK',
+  body: new ReadableStream<Uint8Array>({
+    start(): void {
+      // Stay open until runTurn's polling fallback aborts the reader.
+    },
+  }),
+  json: async () => ({}),
+})
+
 describe('runTurn', () => {
   it('returns the run.completed reply text', async () => {
     fetchMock.mockImplementation(async (url: string) => {
@@ -84,6 +96,49 @@ describe('runTurn', () => {
     const reply = await runTurn('tui', 'sess', 'hi', client, stubIo(), (p) => partials.push(p))
     expect(reply).toBe('hello')
     expect(partials).toEqual(['hel', 'hello'])
+  })
+
+  it('returns persistent agent output.text from run.completed events', async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === SUBMIT_URL) return okJson({ runId: 'r1' })
+      if (url === STREAM_URL) {
+        return okStream([
+          { event: 'step.partial', data: { type: 'step.partial', delta: 'draft' } },
+          {
+            event: 'run.completed',
+            data: { type: 'run.completed', output: { text: 'final text' } },
+          },
+        ])
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const reply = await runTurn('tui', 'sess', 'hi', client, stubIo())
+    expect(reply).toBe('final text')
+  })
+
+  it('preserves an empty terminal reply instead of rendering a fallback line', async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === SUBMIT_URL) return okJson({ runId: 'r1' })
+      if (url === STREAM_URL) {
+        return okStream([
+          { event: 'run.completed', data: { type: 'run.completed', output: { text: '' } } },
+        ])
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const reply = await runTurn('tui', 'sess', 'hi', client, stubIo())
+    expect(reply).toBe('')
+  })
+
+  it('polls final run state when the stream misses the terminal event', async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === SUBMIT_URL) return okJson({ runId: 'r1' })
+      if (url === STREAM_URL) return hangingStream()
+      if (url === STATE_URL) return okJson({ status: 'completed', output: { text: 'polled text' } })
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const reply = await runTurn('tui', 'sess', 'hi', client, stubIo())
+    expect(reply).toBe('polled text')
   })
 
   it('surfaces a failure message from run.failed instead of returning empty', async () => {

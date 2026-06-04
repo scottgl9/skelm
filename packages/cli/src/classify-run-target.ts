@@ -15,7 +15,10 @@ export interface TuiFrontendLike {
   renderPartial?(text: string): void
   close?(): void | Promise<void>
 }
-export type TuiFrontendFactoryLike = (io: { submit: (text: string) => void }) => TuiFrontendLike
+export type TuiFrontendFactoryLike = (io: {
+  submit: (text: string) => void
+  close?: () => void
+}) => TuiFrontendLike
 
 export type RunTarget =
   | { mode: 'one-shot'; file: string }

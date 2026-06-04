@@ -70,18 +70,25 @@ export async function tuiCommand(
  * partials to `frontend.renderPartial` and committing the reply with
  * `frontend.render`. Resolves when the user exits (SIGINT) and the UI tears down.
  */
-async function hostFrontend(
+export async function hostFrontend(
   factory: TuiFrontendFactoryLike,
   sessionId: string,
   turn: TurnFn,
 ): Promise<void> {
-  const host = createFrontendHost(factory, sessionId, turn)
-  await new Promise<void>((resolve) => {
-    const onSig = (): void => resolve()
+  let host: ReturnType<typeof createFrontendHost> | undefined
+  let onSig: (() => void) | undefined
+  const closed = new Promise<void>((resolve) => {
+    host = createFrontendHost(factory, sessionId, turn, resolve)
+    onSig = (): void => resolve()
     process.once('SIGINT', onSig)
   })
-  await host.idle()
-  await host.ui.close?.()
+  try {
+    await closed
+    await host?.idle()
+    await host?.ui.close?.()
+  } finally {
+    if (onSig !== undefined) process.removeListener('SIGINT', onSig)
+  }
 }
 
 /**
@@ -94,6 +101,7 @@ export function createFrontendHost(
   factory: TuiFrontendFactoryLike,
   sessionId: string,
   turn: TurnFn,
+  onClose?: () => void,
 ): { ui: TuiFrontendLike; idle: () => Promise<void> } {
   let seq = 0
   let active = 0
@@ -128,15 +136,17 @@ export function createFrontendHost(
       if (active > 0) queue.push(trimmed)
       else void process(trimmed)
     },
+    ...(onClose !== undefined && { close: onClose }),
   })
 
-  return {
+  const host = {
     ui,
     idle: () =>
       active === 0 && queue.length === 0
         ? Promise.resolve()
         : new Promise<void>((resolve) => idleWaiters.push(resolve)),
   }
+  return host
 }
 
 async function chatLoop(turn: TurnFn, io: MainIO): Promise<void> {
@@ -188,37 +198,91 @@ export async function runTurn(
   let acc = ''
   let reply: string | null = null
   let failure: { kind: 'failed' | 'cancelled'; message?: string } | undefined
-  try {
-    for await (const ev of openSse(
-      `${client.discovery.url}/runs/${runId}/stream`,
-      client.headers,
-    )) {
-      if (ev.event === 'ping') continue
-      const data = ev.data as {
-        type?: string
-        delta?: string
-        output?: { reply?: unknown }
+  let polling = false
+  const streamCtl = new AbortController()
+  let resolveTerminal: (() => void) | undefined
+  const terminal = new Promise<void>((resolve) => {
+    resolveTerminal = resolve
+  })
+  const resolveIfTerminal = (): void => {
+    if (reply !== null || failure !== undefined) resolveTerminal?.()
+  }
+  const pollTerminalState = async (): Promise<void> => {
+    if (polling || reply !== null || failure !== undefined) return
+    polling = true
+    try {
+      const stateRes = await fetchHttp(
+        `${client.discovery.url}/runs/${runId}`,
+        { headers: client.headers },
+        io,
+      )
+      if (!stateRes?.ok) return
+      const run = (await stateRes.json()) as {
+        status?: string
+        output?: { reply?: unknown; text?: unknown }
         error?: { message?: unknown }
       }
-      const type = ev.event !== 'message' ? ev.event : (data?.type ?? 'message')
-      if (type === 'step.partial' && typeof data?.delta === 'string') {
-        acc += data.delta
-        onPartial?.(acc)
-      } else if (type === 'run.completed') {
-        const out = data?.output?.reply
-        reply = typeof out === 'string' ? out : acc
-        break
-      } else if (type === 'run.failed' || type === 'run.cancelled') {
-        const msg = typeof data?.error?.message === 'string' ? data.error.message : undefined
+      const out = outputText(run.output)
+      if (out !== undefined) {
+        reply = out
+        streamCtl.abort()
+        resolveIfTerminal()
+      } else if (run.status === 'failed' || run.status === 'cancelled') {
+        const msg = typeof run.error?.message === 'string' ? run.error.message : undefined
         failure = {
-          kind: type === 'run.failed' ? 'failed' : 'cancelled',
+          kind: run.status === 'failed' ? 'failed' : 'cancelled',
           ...(msg && { message: msg }),
         }
-        break
+        streamCtl.abort()
+        resolveIfTerminal()
+      }
+    } finally {
+      polling = false
+    }
+  }
+  const pollTimer = setInterval(() => {
+    void pollTerminalState()
+  }, 1_000)
+  pollTimer.unref?.()
+  try {
+    const consumeStream = async (): Promise<void> => {
+      for await (const ev of openSse(
+        `${client.discovery.url}/runs/${runId}/stream`,
+        client.headers,
+        streamCtl.signal,
+      )) {
+        if (ev.event === 'ping') continue
+        const data = ev.data as {
+          type?: string
+          delta?: string
+          output?: { reply?: unknown; text?: unknown }
+          error?: { message?: unknown }
+        }
+        const type = ev.event !== 'message' ? ev.event : (data?.type ?? 'message')
+        if (type === 'step.partial' && typeof data?.delta === 'string') {
+          acc += data.delta
+          onPartial?.(acc)
+        } else if (type === 'run.completed') {
+          reply = outputText(data?.output) ?? acc
+          resolveIfTerminal()
+          break
+        } else if (type === 'run.failed' || type === 'run.cancelled') {
+          const msg = typeof data?.error?.message === 'string' ? data.error.message : undefined
+          failure = {
+            kind: type === 'run.failed' ? 'failed' : 'cancelled',
+            ...(msg && { message: msg }),
+          }
+          resolveIfTerminal()
+          break
+        }
       }
     }
+    await Promise.race([consumeStream(), terminal])
   } catch {
     // Stream interrupted — fall back to the final run state below.
+  } finally {
+    clearInterval(pollTimer)
+    streamCtl.abort()
   }
 
   // Failure paths: refetch the run record to pick up an error message the
@@ -234,11 +298,12 @@ export async function runTurn(
     if (stateRes?.ok) {
       const run = (await stateRes.json()) as {
         status?: string
-        output?: { reply?: unknown }
+        output?: { reply?: unknown; text?: unknown }
         error?: { message?: unknown }
       }
-      if (typeof run.output?.reply === 'string' && run.output.reply !== '') {
-        reply = run.output.reply
+      const out = outputText(run.output)
+      if (out !== undefined) {
+        reply = out
       } else if (run.status === 'failed' || run.status === 'cancelled') {
         const msg = typeof run.error?.message === 'string' ? run.error.message : undefined
         failure = {
@@ -253,6 +318,12 @@ export async function runTurn(
     return `(${failure.kind}) ${failure.message ?? 'no error message'}`
   }
   return reply ?? (acc === '' ? '(no reply)' : acc)
+}
+
+function outputText(output: { reply?: unknown; text?: unknown } | undefined): string | undefined {
+  if (typeof output?.reply === 'string') return output.reply
+  if (typeof output?.text === 'string') return output.text
+  return undefined
 }
 
 async function deactivate(workflowId: string, client: GatewayClient, io: MainIO): Promise<void> {
