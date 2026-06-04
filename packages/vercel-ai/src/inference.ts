@@ -1,4 +1,4 @@
-import { BackendCapabilityError, combineSignals, isMultimodal } from '@skelm/core'
+import { BackendCapabilityError, combineSignals, isMultimodal, toErrorMessage } from '@skelm/core'
 import type {
   BackendContext,
   ContentPart,
@@ -109,7 +109,10 @@ export async function vercelAiInference(
         context.onPartial(chunk)
       }
       if (streamError !== undefined) {
-        throw streamError instanceof Error ? streamError : new Error(String(streamError))
+        throw new VercelAiBackendError(
+          `vercel-ai stream failed: ${toErrorMessage(streamError)}`,
+          streamError,
+        )
       }
       // Await the resolved Promises explicitly so upstream errors propagate
       // as a rejection rather than being swallowed into an empty result. The
@@ -120,7 +123,7 @@ export async function vercelAiInference(
       if (finishReason === 'error') {
         // Defensive: in case the SDK reports 'error' without rejecting, raise
         // so callers see a thrown error instead of an empty text result.
-        throw new Error(`vercel-ai stream terminated with finishReason='error'`)
+        throw new VercelAiBackendError(`vercel-ai stream terminated with finishReason='error'`)
       }
       const response: InferenceResponse = { text: fullText }
       const usage = mapUsage(finalUsage)
@@ -133,7 +136,7 @@ export async function vercelAiInference(
       // AI SDK occasionally reports terminal errors via finishReason='error'
       // without rejecting the promise; treat that as a thrown failure so the
       // step is marked failed rather than completed with empty text.
-      throw new Error(`vercel-ai generateText terminated with finishReason='error'`)
+      throw new VercelAiBackendError(`vercel-ai generateText terminated with finishReason='error'`)
     }
     const response: InferenceResponse = { text: textResult.text }
     const usage = mapUsage(textResult.usage)
@@ -146,7 +149,7 @@ export async function vercelAiInference(
     // Re-throw BackendCapabilityError without wrapping (e.g., vision allowlist rejections)
     if (err instanceof BackendCapabilityError) throw err
     if (err instanceof VercelAiBackendError) throw err
-    throw new VercelAiBackendError(`vercel-ai inference failed: ${(err as Error).message}`, err)
+    throw new VercelAiBackendError(`vercel-ai inference failed: ${toErrorMessage(err)}`, err)
   } finally {
     clearTimeout(timer)
   }

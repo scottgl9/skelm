@@ -1,5 +1,6 @@
 import type { TelegramConfig } from '@skelm/integration-sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { IntegrationApiError, IntegrationConfigError } from '../src/errors.js'
 import { TelegramIntegration, telegramUpdateToInput } from '../src/telegram.js'
 
 const validToken = '123456:AAEPSM2FNFp4ux-rWo9d97UNybRhJ4TffBU'
@@ -37,12 +38,14 @@ describe('TelegramIntegration', () => {
     cfg.credentials.botToken = ''
     const tg = new TelegramIntegration(cfg, { fetch: fetchMock as unknown as typeof fetch })
     await expect(tg.init()).rejects.toThrow(/botToken required/)
+    await expect(tg.init()).rejects.toBeInstanceOf(IntegrationConfigError)
   })
 
   it('rejects malformed bot token', async () => {
     const cfg = makeConfig({ credentials: { botToken: 'not-a-token' } })
     const tg = new TelegramIntegration(cfg, { fetch: fetchMock as unknown as typeof fetch })
     await expect(tg.init()).rejects.toThrow(/Invalid Telegram bot token format/)
+    await expect(tg.init()).rejects.toBeInstanceOf(IntegrationConfigError)
   })
 
   it('initializes with valid token', async () => {
@@ -91,9 +94,13 @@ describe('TelegramIntegration', () => {
     })
     await tg.init()
     await expect(tg.sendNotification('hi')).rejects.toThrow(/chatId/)
+    await expect(tg.sendNotification('hi')).rejects.toBeInstanceOf(IntegrationConfigError)
   })
 
   it('throws when API returns ok:false', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ ok: false, description: 'Unauthorized', error_code: 401 }, 401),
+    )
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ ok: false, description: 'Unauthorized', error_code: 401 }, 401),
     )
@@ -102,6 +109,9 @@ describe('TelegramIntegration', () => {
     })
     await tg.init()
     await expect(tg.sendMessage({ chatId: 1, text: 'x' })).rejects.toThrow(/Unauthorized/)
+    await expect(tg.sendMessage({ chatId: 1, text: 'x' })).rejects.toBeInstanceOf(
+      IntegrationApiError,
+    )
   })
 
   it('eventToRunInput maps a message update to a TelegramMessageTrigger', async () => {
