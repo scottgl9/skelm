@@ -47,12 +47,28 @@ describe('skelm logs', () => {
     expect(r.stdout).toMatch(/auth failed/)
   })
 
+  it('rejects non-numeric --lines', async () => {
+    writeSample()
+    const r = await invoke(['logs', '--lines', 'nope'])
+    expect(r.exitCode).toBe(EXIT.CLI_ERROR)
+    expect(r.stderr).toContain('--lines must be a non-negative integer')
+    expect(r.stdout).toBe('')
+  })
+
   it('filters by --level', async () => {
     writeSample()
     const r = await invoke(['logs', '--level', 'error'])
     expect(r.stdout).not.toMatch(/started/)
     expect(r.stdout).not.toMatch(/slow query/)
     expect(r.stdout).toMatch(/auth failed/)
+  })
+
+  it('rejects an unknown --level', async () => {
+    writeSample()
+    const r = await invoke(['logs', '--level', 'banana'])
+    expect(r.exitCode).toBe(EXIT.CLI_ERROR)
+    expect(r.stderr).toContain('--level must be one of: debug, info, warn, error')
+    expect(r.stdout).toBe('')
   })
 
   it('filters by --since', async () => {

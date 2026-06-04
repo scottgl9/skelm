@@ -117,6 +117,12 @@ describe('main — integration', () => {
     expect(stderr).not.toContain('CommanderError')
   })
 
+  it('returns CLI_ERROR when --events is not a known mode', async () => {
+    const { stderr, exitCode } = await invoke(['run', 'foo.workflow.mts', '--events', 'banana'])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+    expect(stderr).toContain('--events must be one of: human, json, none')
+  })
+
   it('prints subcommand help and exits OK', async () => {
     const { stdout, stderr, exitCode } = await invoke(['run', '--help'])
     expect(exitCode).toBe(EXIT.OK)

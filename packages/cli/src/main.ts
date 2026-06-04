@@ -51,11 +51,7 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
           io.stderr.write('error: skelm run requires a workflow file path\n')
           return { exitCode: EXIT.CLI_ERROR }
         }
-        const eventsFlag = parsed.flags.events
-        const events: 'human' | 'json' | 'none' | undefined =
-          eventsFlag === 'json' || eventsFlag === 'none' || eventsFlag === 'human'
-            ? eventsFlag
-            : undefined
+        const events = enumFlag(parsed.flags.events, 'events', ['human', 'json', 'none'] as const)
         const args = {
           workflowPath,
           ...(typeof parsed.flags.input === 'string' && { input: parsed.flags.input }),
@@ -92,11 +88,11 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
           io.stderr.write('error: skelm describe requires a workflow id or path\n')
           return { exitCode: EXIT.CLI_ERROR }
         }
-        const formatFlag = parsed.flags.format
-        const format =
-          formatFlag === 'human' || formatFlag === 'json' || formatFlag === 'mermaid'
-            ? formatFlag
-            : undefined
+        const format = enumFlag(parsed.flags.format, 'format', [
+          'human',
+          'json',
+          'mermaid',
+        ] as const)
         const result = await describeCommand(
           {
             workflow,
@@ -108,11 +104,7 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         return { exitCode: result.exitCode }
       }
       case 'history': {
-        const lastFlag = parsed.flags.last
-        const last =
-          typeof lastFlag === 'string' && /^\d+$/.test(lastFlag)
-            ? Number.parseInt(lastFlag, 10)
-            : undefined
+        const last = integerFlag(parsed.flags.last, 'last')
         const result = await historyCommand(
           {
             ...(typeof parsed.flags.workflow === 'string' && { workflow: parsed.flags.workflow }),
@@ -178,7 +170,7 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
             ...(parsed.flags.systemd === true && { systemd: true }),
             ...(parsed.flags.launchd === true && { launchd: true }),
             ...(typeof parsed.flags['http-port'] === 'string' && {
-              httpPort: Number(parsed.flags['http-port']),
+              httpPort: portFlag(parsed.flags['http-port'], 'http-port'),
             }),
             ...(typeof parsed.flags['http-host'] === 'string' && {
               httpHost: parsed.flags['http-host'],
@@ -282,11 +274,7 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
           io.stderr.write('error: sessions requires list or prune\n')
           return { exitCode: EXIT.CLI_ERROR }
         }
-        const olderRaw = parsed.flags['older-than-ms']
-        const olderThanMs =
-          typeof olderRaw === 'string' && /^\d+$/.test(olderRaw)
-            ? Number.parseInt(olderRaw, 10)
-            : undefined
+        const olderThanMs = integerFlag(parsed.flags['older-than-ms'], 'older-than-ms')
         const result = await sessionsCommand(
           {
             subcommand: sub,
@@ -306,7 +294,7 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         }
         const sinceFlag = parsed.flags.since
         const untilFlag = parsed.flags.until
-        const limitFlag = parsed.flags.limit
+        const limit = integerFlag(parsed.flags.limit, 'limit')
         const result = await auditCommand(
           {
             runId: typeof parsed.flags.run === 'string' ? parsed.flags.run : undefined,
@@ -314,10 +302,7 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
             action: typeof parsed.flags.action === 'string' ? parsed.flags.action : undefined,
             since: typeof sinceFlag === 'string' ? sinceFlag : undefined,
             until: typeof untilFlag === 'string' ? untilFlag : undefined,
-            limit:
-              typeof limitFlag === 'string' && /^\d+$/.test(limitFlag)
-                ? Number.parseInt(limitFlag, 10)
-                : undefined,
+            ...(limit !== undefined && { limit }),
             json: parsed.flags.json === true,
           },
           io,
@@ -383,24 +368,19 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
           io.stderr.write('error: skelm schedule add requires <workflow-id>\n')
           return { exitCode: EXIT.CLI_ERROR }
         }
-        const everyRaw = parsed.flags['every-ms']
         const schedId = typeof parsed.flags.id === 'string' ? parsed.flags.id : undefined
         const cron = typeof parsed.flags.cron === 'string' ? parsed.flags.cron : undefined
         const tz = typeof parsed.flags.tz === 'string' ? parsed.flags.tz : undefined
-        const everyMs =
-          typeof everyRaw === 'string' && /^\d+$/.test(everyRaw)
-            ? Number.parseInt(everyRaw, 10)
-            : undefined
+        const everyMs = integerFlag(parsed.flags['every-ms'], 'every-ms')
         const every = typeof parsed.flags.every === 'string' ? parsed.flags.every : undefined
         const webhook = typeof parsed.flags.webhook === 'string' ? parsed.flags.webhook : undefined
         const at = typeof parsed.flags.at === 'string' ? parsed.flags.at : undefined
         const input = typeof parsed.flags.input === 'string' ? parsed.flags.input : undefined
-        const overlap =
-          parsed.flags.overlap === 'skip' ||
-          parsed.flags.overlap === 'queue' ||
-          parsed.flags.overlap === 'cancel'
-            ? parsed.flags.overlap
-            : undefined
+        const overlap = enumFlag(parsed.flags.overlap, 'overlap', [
+          'skip',
+          'queue',
+          'cancel',
+        ] as const)
         return scheduleCommand(
           {
             subcommand: 'add',
@@ -429,19 +409,13 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         return { exitCode: result.exitCode }
       }
       case 'logs': {
-        const linesFlag = parsed.flags.lines
-        const lines =
-          typeof linesFlag === 'string' && /^\d+$/.test(linesFlag)
-            ? Number.parseInt(linesFlag, 10)
-            : undefined
-        const levelFlag = parsed.flags.level
-        const level =
-          levelFlag === 'debug' ||
-          levelFlag === 'info' ||
-          levelFlag === 'warn' ||
-          levelFlag === 'error'
-            ? levelFlag
-            : undefined
+        const lines = integerFlag(parsed.flags.lines, 'lines')
+        const level = enumFlag(parsed.flags.level, 'level', [
+          'debug',
+          'info',
+          'warn',
+          'error',
+        ] as const)
         const result = await logsCommand(
           {
             ...(lines !== undefined && { lines }),
@@ -481,4 +455,32 @@ function getVersion(): string {
   } catch {
     return '0.0.0'
   }
+}
+
+function integerFlag(value: string, name: string): number
+function integerFlag(value: string | boolean | undefined, name: string): number | undefined
+function integerFlag(value: string | boolean | undefined, name: string): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+    throw new CliError(`--${name} must be a non-negative integer`, 'argv')
+  }
+  return Number.parseInt(value, 10)
+}
+
+function portFlag(value: string, name: string): number {
+  const port = integerFlag(value, name)
+  if (port > 65_535) {
+    throw new CliError(`--${name} must be between 0 and 65535`, 'argv')
+  }
+  return port
+}
+
+function enumFlag<const T extends readonly string[]>(
+  value: string | boolean | undefined,
+  name: string,
+  allowed: T,
+): T[number] | undefined {
+  if (value === undefined) return undefined
+  if (typeof value === 'string' && allowed.includes(value)) return value
+  throw new CliError(`--${name} must be one of: ${allowed.join(', ')}`, 'argv')
 }
