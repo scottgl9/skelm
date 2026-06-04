@@ -31,6 +31,14 @@ describe('builder workflow', () => {
     expect(perms?.networkEgress).toBe('allow')
   })
 
+  it('teaches generated code steps to read ctx.input and runtime-check deterministic examples', async () => {
+    const wf = await loadWorkflowFromFile(BUILDER)
+    const system = (wf as PersistentWorkflow).agent.system
+    expect(system).toContain('For code() steps, run receives a context object')
+    expect(system).toContain('Read user input from ctx.input')
+    expect(system).toContain('run the workflow once with representative JSON input')
+  })
+
   it('passes skelm validate', async () => {
     const r = await invoke(['validate', BUILDER])
     expect(r.exitCode).toBe(EXIT.OK)

@@ -21,6 +21,8 @@ interface GatewayClient {
   headers: Record<string, string>
 }
 
+const FRONTEND_CLOSE_TIMEOUT_MS = 1_000
+
 /**
  * `skelm run <tui-dir>`: activate the project on the gateway, then host the
  * terminal chat in THIS process. Each line is POSTed to
@@ -85,9 +87,24 @@ export async function hostFrontend(
   try {
     await closed
     await host?.idle()
-    await host?.ui.close?.()
+    await closeFrontend(host?.ui)
   } finally {
     if (onSig !== undefined) process.removeListener('SIGINT', onSig)
+  }
+}
+
+async function closeFrontend(ui: TuiFrontendLike | undefined): Promise<void> {
+  if (ui?.close === undefined) return
+  let timeout: NodeJS.Timeout | undefined
+  try {
+    await Promise.race([
+      ui.close(),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, FRONTEND_CLOSE_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout)
   }
 }
 
