@@ -63,6 +63,14 @@ describe('parseArgv', () => {
     expect(parseArgv(['nope']).command).toBe('unknown')
   })
 
+  it('parses acp placeholder subcommands', () => {
+    expect(parseArgv(['acp', 'serve'])).toEqual({
+      command: 'acp',
+      positional: ['serve'],
+      flags: {},
+    })
+  })
+
   it('parses describe and workspace subcommands', () => {
     expect(parseArgv(['describe', 'graph-workflow', '--format', 'mermaid'])).toEqual({
       command: 'describe',
@@ -116,6 +124,14 @@ describe('main — integration', () => {
     expect(stdout).toContain('skelm run <workflow.ts> [flags]')
     expect(stdout).toContain('--input <json>')
     expect(stderr).toBe('')
+  })
+
+  it('keeps acp serve as an explicit reserved placeholder', async () => {
+    const { stdout, stderr, exitCode } = await invoke(['acp', 'serve'])
+    expect(exitCode).toBe(EXIT.CLI_ERROR)
+    expect(stdout).toBe('')
+    expect(stderr).toMatch(/acp serve/i)
+    expect(stderr).toMatch(/reserved|not implemented/i)
   })
 
   it('returns CLI_ERROR when the workflow file does not exist', async () => {
