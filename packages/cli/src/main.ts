@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { approvalsConfigCommand } from './approvals-config.js'
 import { approvalsCommand } from './approvals.js'
-import { parseArgv } from './argv.js'
+import { ArgvParseError, parseArgv } from './argv.js'
 import { auditCommand, secretsCommand } from './audit.js'
 import { builderCommand } from './builder.js'
 import { debugCommand } from './debug.js'
@@ -32,9 +32,9 @@ import type { MainIO, MainResult } from './internal/io.js'
  * call `main` directly without spawning a subprocess.
  */
 export async function main(argv: readonly string[], io: MainIO): Promise<MainResult> {
-  const parsed = parseArgv(argv)
-
   try {
+    const parsed = parseArgv(argv)
+
     switch (parsed.command) {
       case 'help':
         io.stdout.write(getHelpText(parsed.positional[0]))
@@ -461,6 +461,10 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
       }
     }
   } catch (error) {
+    if (error instanceof ArgvParseError) {
+      io.stderr.write(`error: ${error.message}\n`)
+      return { exitCode: EXIT.CLI_ERROR }
+    }
     if (error instanceof CliError) {
       io.stderr.write(`error: ${error.message}\n`)
       return { exitCode: EXIT.CLI_ERROR }

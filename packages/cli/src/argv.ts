@@ -75,6 +75,10 @@ export interface ParsedArgv {
   flags: Record<string, string | boolean>
 }
 
+export class ArgvParseError extends Error {
+  override readonly name = 'ArgvParseError'
+}
+
 export function parseArgv(argv: readonly string[]): ParsedArgv {
   if (argv.length === 0) {
     return { command: 'help', positional: [], flags: {} }
@@ -114,7 +118,12 @@ function parseSubcommand(command: Subcommand, rest: readonly string[]): ParsedAr
   for (const flag of VALUE_FLAGS) parser.option(`--${flag} <value>`)
   for (const flag of BOOLEAN_FLAGS) parser.option(`--${flag}`)
 
-  parser.parse([...rest], { from: 'user' })
+  try {
+    parser.parse([...rest], { from: 'user' })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new ArgvParseError(message.replace(/^error:\s*/i, ''))
+  }
 
   const parsedFlags = dashCaseOptions(parser.opts<Record<string, string | boolean>>())
   const unknown = parseUnknownArgs(parser.args)
