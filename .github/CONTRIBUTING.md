@@ -114,19 +114,9 @@ Open an issue before sending a large PR so we can align on direction.
 
 ## Security & permissions
 
-- **Default-deny everywhere.** New permission dimensions default to `undefined`, the runtime treats `undefined` as deny, and an adversarial fixture under `tests/security/` proves the deny path fires.
+- **Default-deny everywhere.** New permission dimensions default to `undefined`, the runtime treats `undefined` as deny, and an adversarial fixture under `packages/core/test/security/` proves the deny path fires.
 - **The gateway is the trust boundary.** Privileged actions (exec, network, fs-write, tool dispatch) route through the gateway's enforcement helpers. Backends do not write audit; the gateway does.
 - **Vulnerability reports** go to the email in [`SECURITY.md`](./SECURITY.md), not to public issues.
-
-## Self-review before opening a PR
-
-The repo includes an internal `branch-review` pipeline:
-
-```sh
-skelm run pipelines/internal/branch-review.pipeline.ts --input '{"branch":"<my-branch>"}'
-```
-
-It produces a structured review (security, design, robustness, maintenance, follow-ups). Run it before pushing for review and address actionable findings, or note why you're deferring them.
 
 ## License
 

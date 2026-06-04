@@ -45,7 +45,7 @@ export MATRIX_ALLOWED_ROOM_IDS=!yourroom:example.org # strongly recommended
 # Optional: a running @skelm/agentmemory server (default http://localhost:3111)
 export SKELM_AGENTMEMORY=0                            # set to disable agentmemory
 
-skelm gateway start                                  # foreground; Ctrl-C drains
+skelm gateway start --foreground                     # foreground; Ctrl-C drains
 ```
 
 Invite the bot to an **unencrypted** room and message it. It replies, remembers
@@ -56,9 +56,9 @@ back. Remove the grant and the same request is denied (`permission.denied`).
 
 ## How it works
 
-The gateway routes each inbound Matrix message (a `queue` trigger fire) to one
-enforced [persistent-agent turn](../../docs/concepts/persistent-agents.md): load
-the session for `sessionKey(msg) = msg.roomId`, run one agent turn through the
+The gateway routes each inbound Matrix message (a `queue` trigger fire) through
+the [persistent workflow](../../docs/concepts/persistent-workflows.md): load the
+session for `sessionKey(msg) = msg.roomId`, run one agent turn through the
 gateway's enforcement, persist the updated conversation, post the reply via the
 source's `onResult`. See the
 [recipe](../../docs/recipes/matrix-persistent-agent.md) for the full walkthrough.

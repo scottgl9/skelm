@@ -11,7 +11,7 @@ Demonstrates: `wait()`, `branch()`, auto-approve fast path, gateway resume via H
 3. **Human review** (`wait`) — for larger amounts, the run pauses until a manager resumes it with `{ decision: "approve" | "reject", comments?: string }`.
 4. **Branch on decision** — routes to an approve or reject outcome.
 
-## Auto-approve path (no gateway needed)
+## Auto-approve path
 
 ```bash
 skelm run approval-workflow.pipeline.mts \
@@ -19,11 +19,14 @@ skelm run approval-workflow.pipeline.mts \
 # → { "status": "approved", "autoApproved": true, "finalAmount": 45 }
 ```
 
+`skelm run` dispatches through the gateway; if one is not running, the CLI
+auto-starts it unless `SKELM_NO_AUTOSTART=1` is set.
+
 ## Human review path (requires gateway)
 
 ```bash
 # 1. Start the gateway
-skelm gateway start
+skelm gateway start --foreground
 
 # 2. Start the run asynchronously — copy the runId from the response
 curl -s http://127.0.0.1:14738/pipelines/approval-workflow.pipeline.mts/start \

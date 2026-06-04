@@ -34,7 +34,7 @@ OPENAI_BASE_URL=http://localhost:8000/v1 OPENAI_API_KEY=unused OPENAI_MODEL=qwen
 When the gateway is running, POST to `/webhooks/incident` to fire the pipeline:
 
 ```bash
-skelm gateway start
+skelm gateway start --foreground
 curl -X POST http://127.0.0.1:14738/webhooks/incident \
   -H 'Content-Type: application/json' \
   -d '{"incidentId":"INC-003","severity":"high","service":"payments","description":"Checkout failures spiking"}'

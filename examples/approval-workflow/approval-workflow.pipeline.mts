@@ -16,7 +16,7 @@ import { z } from 'zod'
  * Run:
  *   skelm gateway start
  *   # Start the run (returns a runId and enters waiting state):
- *   curl -s http://127.0.0.1:14738/pipelines/approval-workflow.pipeline.ts/start \
+ *   curl -s http://127.0.0.1:14738/pipelines/approval-workflow.pipeline.mts/start \
  *     -H 'Content-Type: application/json' \
  *     -d '{"input":{"employeeName":"Alice","amount":350,"category":"Travel","description":"Flight to customer site"}}'
  *
@@ -26,7 +26,7 @@ import { z } from 'zod'
  *     -d '{"output":{"decision":"approve","comments":"Pre-approved by policy"}}'
  *
  * Or run directly (auto-approve path, amount < 100):
- *   skelm run approval-workflow.pipeline.ts \
+ *   skelm run approval-workflow.pipeline.mts \
  *     --input '{"employeeName":"Bob","amount":45,"category":"Meals","description":"Team lunch"}'
  */
 

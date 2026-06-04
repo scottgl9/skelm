@@ -150,7 +150,7 @@ Schedule it, expose it over HTTP, or wire it to a webhook:
 
 ```bash
 skelm schedule add workflows/hello.workflow.mts --cron '0 * * * *'
-skelm gateway start
+skelm gateway start --foreground
 ```
 
 📖 **Next:** [Quickstart guide](./docs/quickstart/README.md)
