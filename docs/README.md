@@ -35,7 +35,6 @@ docs/
 │   └── api/             # generated TypeDoc per-package reference (gitignored)
 ├── backends/            # backend-specific docs (pi, opencode, vercel-ai, …)
 ├── contributing/        # CONTRIBUTING.md, SECURITY.md, PUBLISHING.md
-├── skill/               # Claude Code skill pack ('skelm' skill)
 ├── scripts/             # build helpers (escape-typedoc-html.mjs)
 ├── typedoc.json         # TypeDoc configuration
 ├── CHANGELOG.md         # release history

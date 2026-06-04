@@ -28,9 +28,12 @@ features:
   - icon: 🧠
     title: Code-first, not config-first
     details: Pipelines are real `.mts` modules. Refactor with your editor, type-check with `tsc`, version with git, test with vitest. No YAML DSL to learn.
+  - icon: 🛠️
+    title: Conversational workflow builder
+    details: `skelm builder` opens a terminal chat UI that authors `.workflow.mts` files from a spec, validates them with `skelm validate`, and runs under the same gateway permissions as any other workflow.
   - icon: 🧩
     title: Backend-agnostic agents
-    details: Opencode, ACP (Copilot, Claude Code), OpenAI, Anthropic, Pi — swap providers without rewriting a step. Bring your own via the backend SPI.
+    details: Opencode, Codex, ACP (Copilot, Claude Code), OpenAI, Anthropic, Pi, Vercel AI — swap providers without rewriting a step. Bring your own via the backend SPI.
   - icon: 📚
     title: Skills-first capability model
     details: Package procedural knowledge — playbooks, API recipes, internal know-how — as Skills the agent loads on demand. MCP servers plug in as first-class registry citizens alongside them when you need live tools.

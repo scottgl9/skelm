@@ -301,7 +301,7 @@ currently evaluated by the runtime.
 
 ## `continueOnError` — soft step failures
 
-Every top-level step builder (`code`, `inference`, `agent`, `parallel`, `forEach`,
+Every top-level step builder (`code`, `infer`, `agent`, `parallel`, `forEach`,
 `branch`, `loop`, `wait`, `pipelineStep`, `invoke`, `idempotent`) accepts an
 optional `continueOnError?: boolean`. Default `false`.
 

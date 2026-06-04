@@ -11,6 +11,7 @@ Authoritative specifications for the skelm public surface.
 - [Pipeline Authoring](./pipeline-authoring.md) — builders, step kinds, control flow, structured output.
 - [Agent Step](./agent-step.md) — full `agent()` signature: backends, workspace modes, MCP wiring, multi-turn control.
 - [Permissions](./permissions.md) — every `AgentPermissions` dimension and how the gateway enforces it.
+- [Building Workflows](../guides/building-workflows.md) — project-directory resolution and the conversational `skelm builder`.
 
 ## Operating
 
