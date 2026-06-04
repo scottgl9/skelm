@@ -81,12 +81,16 @@ describe('POST /pipelines/run-file', () => {
   })
 
   it('rejects a missing file with 404', async () => {
+    const missing = join(projectRoot, 'does-not-exist.pipeline.ts')
     const res = await fetch(`${base}/pipelines/run-file`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ file: join(projectRoot, 'does-not-exist.pipeline.ts') }),
+      body: JSON.stringify({ file: missing }),
     })
     expect(res.status).toBe(404)
+    await expect(res.json()).resolves.toMatchObject({
+      message: expect.stringContaining(missing),
+    })
   })
 
   it('rejects a path with traversal segments with 400', async () => {
