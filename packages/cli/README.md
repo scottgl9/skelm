@@ -83,6 +83,8 @@ skelm --help
 | `5`  | wait() timed out                                           |
 | `6`  | security policy violation (denied tool, exec, network, fs) |
 | `7`  | step timed out (`timeoutMs` exceeded)                      |
+| `8`  | run paused awaiting external resume                        |
+| `9`  | backend capability mismatch                                |
 
 stdout receives the workflow's final output as JSON. Everything else (progress, JSON events when `--events json`, error messages, prompts) goes to stderr — making `skelm run foo.ts > result.json 2> events.log` work without a parser.
 

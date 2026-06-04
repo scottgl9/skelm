@@ -48,7 +48,7 @@ console.log(run.output)
 // { summary: '[INCIDENT] DB primary unreachable', priority: 'high' }
 ```
 
-### LLM infer step (`inference`)
+### LLM infer step (`infer`)
 
 ```ts
 import { code, infer, pipeline, runPipeline } from '@skelm/core'

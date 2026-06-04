@@ -1,10 +1,10 @@
-# Matrix persistent agent
+# Matrix persistent workflow
 
 A chat bot you talk *through* over [Matrix](https://matrix.org): one durable
 conversation per room that survives across messages and gateway restarts,
 optionally freewheeling with the operator-gated unrestricted bypass. This is the
-[persistent agent](/concepts/persistent-workflows) pattern end to end — the same
-shape as the [Telegram persistent agent](/recipes/telegram-persistent-workflow),
+[persistent workflow](/concepts/persistent-workflows) pattern end to end — the same
+shape as the [Telegram persistent workflow](/recipes/telegram-persistent-workflow),
 over a different channel.
 
 Runnable source: [`examples/matrix-assistant/`](https://github.com/scottgl9/skelm/tree/main/examples/matrix-assistant).
@@ -14,7 +14,7 @@ Runnable source: [`examples/matrix-assistant/`](https://github.com/scottgl9/skel
 ```
 matrix-assistant/
 ├── skelm.config.ts          # matrix source + pi backend + agentmemory + grant
-└── assistant.workflow.mts   # the persistent agent
+└── assistant.workflow.mts   # the persistent workflow
 ```
 
 ## The agent

@@ -12,6 +12,11 @@ skelm run workflows/hello.workflow.mts --input '{"name":"world"}'
 
 That's a code-only workflow. To add an agent step, see [Add an agent step](./add-agent.md) once the basics are working.
 
+To have skelm draft a workflow from a plain-language spec, use
+[`skelm builder`](../guides/building-workflows.md#the-skelm-builder). It
+scaffolds a persistent workflow-builder chat UI, writes a `*.workflow.mts`, and
+validates it before reporting the path.
+
 ## Prerequisites
 
 - Node.js 22.18+
@@ -164,6 +169,7 @@ curl http://127.0.0.1:14738/runs/<runId>
 ## What's next
 
 - [Add an agent step](./add-agent.md) — install a backend and convert `hello` into an LLM-driven greeting.
+- [Building Workflows](../guides/building-workflows.md) — run workflow projects by directory and use `skelm builder`.
 - [Concepts → Permissions](../concepts/permissions.md) — the default-deny model, how to widen safely with profiles.
 - [Concepts → Coding agents](../concepts/coding-agents.md) — how skelm's agent runtime composes with backends.
 - [Concepts → Registries](../concepts/registries.md) — workflow, skill, agent, and MCP-server registries.
