@@ -14,7 +14,6 @@ const COMMANDS = [
   'secrets',
   'debug',
   'sessions',
-  'acp',
   'schedule',
   'validate',
   'logs',

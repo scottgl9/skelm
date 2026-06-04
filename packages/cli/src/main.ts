@@ -298,17 +298,6 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         )
         return { exitCode: result.exitCode }
       }
-      case 'acp': {
-        const sub = parsed.positional[0]
-        if (sub !== 'serve') {
-          io.stderr.write('error: skelm acp requires serve\n')
-          return { exitCode: EXIT.CLI_ERROR }
-        }
-        io.stderr.write(
-          'skelm acp serve is reserved for ACP server support and is not implemented yet\n',
-        )
-        return { exitCode: EXIT.CLI_ERROR }
-      }
       case 'audit': {
         const subcommand = parsed.positional[0]
         if (subcommand !== 'query') {
