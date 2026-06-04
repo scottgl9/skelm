@@ -93,13 +93,13 @@ gateway: running
 
 The `reachable` field is `yes` when the HTTP endpoint responds to a probe, `no (port may not be bound yet)` when the process is alive but not yet accepting connections, and `unknown` when the gateway is running but no URL is known (e.g. before the discovery file is written). In `--json` output the field is `null` instead of `"unknown"`.
 
-The gateway is required for:
+The gateway is required for every non-exempt CLI command, including `skelm run`.
+The CLI auto-starts a gateway when needed unless `SKELM_NO_AUTOSTART=1` is set.
+It is also where skelm hosts:
 - Agent steps (permission enforcement, backend lifecycle)
 - Trigger-based execution (cron, webhook, etc.)
 - Approval gating
 - History and audit storage via SQLite
-
-`skelm run` works without the gateway for simple pipelines (no agent steps, in-memory run store).
 
 ## HTTP surface
 

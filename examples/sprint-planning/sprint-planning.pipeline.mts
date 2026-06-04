@@ -16,7 +16,7 @@ import { z } from 'zod'
  *
  * Run manually:
  *   OPENAI_BASE_URL=http://localhost:8000/v1 OPENAI_API_KEY=unused OPENAI_MODEL=qwen35 \
- *     skelm run sprint-planning.pipeline.ts \
+ *     skelm run sprint-planning.pipeline.mts \
  *     --input '{"projectKey":"ENG","teamSize":5,"sprintDuration":14}'
  */
 

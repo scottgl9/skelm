@@ -35,10 +35,8 @@ skelm/
 │   ├── integration-sdk/  — authoring SDK for custom integrations
 │   ├── metrics/          — Prometheus-format metrics
 │   └── otel/             — OpenTelemetry tracing
-├── pipelines/internal/   — dogfooding (review, test-gen, release)
 ├── examples/
 ├── scripts/guards/       — architectural-invariant checks
-├── tests/
 └── docs/
 ```
 
@@ -106,20 +104,10 @@ When you write code that takes a privileged action (exec, network, fs-write, too
 
 1. Field is optional and defaults to `undefined`.
 2. Runtime treats `undefined` as deny.
-3. Add an adversarial fixture under `tests/security/` proving the deny path fires.
+3. Add an adversarial fixture under `packages/core/test/security/` proving the deny path fires.
 4. Document the dimension in the relevant `docs/` page.
 
 `scripts/guards/default-deny-permissions.ts` checks 1–3 mechanically as part of `pnpm guards`.
-
-## Self-review before opening a PR
-
-Run the internal branch-review pipeline before requesting human review:
-
-```
-skelm run pipelines/internal/branch-review.pipeline.ts --input '{"branch":"my-branch"}'
-```
-
-The security section must be non-empty (or carry an explicit justified-empty marker). Address every actionable finding or note in the PR description why you're deferring.
 
 ## Public API
 

@@ -37,11 +37,11 @@ npm install @skelm/cli
 
 ```
 skelm init [dir]                      Scaffold a new project
-skelm run <workflow.ts>               Run a workflow once
-skelm validate <workflow.ts>          Type-check a workflow without running it
-skelm describe <workflow.ts>          Print the workflow's step graph
+skelm run <workflow.mts>              Run a workflow once
+skelm validate <workflow.mts>         Type-check a workflow without running it
+skelm describe <workflow.mts>         Print the workflow's step graph
 skelm history                         List recent runs
-skelm schedule add <workflow.ts>      Register a trigger (cron / webhook / interval / poll)
+skelm schedule add <workflow.mts>     Register a trigger (cron / webhook / interval / poll)
 skelm schedule list                   List active schedules
 skelm schedule stop <id>              Stop a schedule
 skelm secrets get <name>              Read a secret from the configured driver

@@ -54,7 +54,7 @@ skelm's design assumptions, kept short:
 
 - The **gateway** is the single trust boundary. All privileged actions (exec, network, fs-write, tool dispatch, audit write, secret resolve) route through it.
 - The **runtime** does not enforce permissions; the gateway does. A backend that cannot enforce a declared permission **must** fail at step start rather than silently continue.
-- **Default-deny is structural.** Every permission dimension defaults to `undefined`, which the runtime treats as deny. This is enforced by `scripts/guards/default-deny-permissions.ts` and adversarial fixtures under `tests/security/`.
+- **Default-deny is structural.** Every permission dimension defaults to `undefined`, which the runtime treats as deny. This is enforced by `scripts/guards/default-deny-permissions.ts` and adversarial fixtures under `packages/core/test/security/`.
 - **Secrets are resolved at the gateway and passed by reference to backends** — never embedded in workflow source or events.
 - **The audit log is single-writer, hash-chained, and separate from run history.** It is the artifact a compliance review reads.
 

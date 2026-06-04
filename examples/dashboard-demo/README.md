@@ -8,7 +8,7 @@ HTML in a browser.
 
 ```bash
 # 1. Start a gateway
-skelm gateway start
+skelm gateway start --foreground
 
 # 2. Open the page
 open examples/dashboard-demo/index.html

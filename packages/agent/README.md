@@ -72,7 +72,15 @@ export default pipeline({
       backend: 'native-agent',
       prompt: (ctx) => `Greet ${(ctx.input as { name: string }).name} in one sentence.`,
       maxTurns: 2,
-      // intentionally no permission grants — agent runs purely in conversation
+      permissions: {
+        allowedTools: [],
+        allowedExecutables: [],
+        allowedMcpServers: [],
+        allowedSkills: [],
+        fsRead: [],
+        fsWrite: [],
+        networkEgress: 'deny',
+      },
     }),
   ],
   finalize: (ctx) => ({ result: JSON.stringify(ctx.steps.reply) }),

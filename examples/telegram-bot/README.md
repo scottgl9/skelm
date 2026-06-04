@@ -36,17 +36,14 @@ chat. There is no script to run — just `skelm gateway start`.
 
 ## Run
 
-From the repo root:
+From `examples/telegram-bot`:
 
 ```sh
 TELEGRAM_BOT_TOKEN=123456:AA... \
   skelm gateway start --foreground
 ```
 
-Make sure `examples/telegram-bot/skelm.config.ts` is the config the gateway
-resolves (run from the example dir, or symlink/copy it into your project
-root). The startup banner reports `triggers: 1` once the queue trigger is
-registered.
+The startup banner reports `triggers: 1` once the queue trigger is registered.
 
 Optional env vars:
 

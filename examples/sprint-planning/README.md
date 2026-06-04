@@ -33,7 +33,7 @@ OPENAI_BASE_URL=http://localhost:8000/v1 OPENAI_API_KEY=unused OPENAI_MODEL=qwen
 When the gateway is running the pipeline fires every Friday at 2 PM:
 
 ```bash
-skelm gateway start
+skelm gateway start --foreground
 # Pipeline is registered automatically from the triggers declaration.
 skelm schedule list
 ```
