@@ -45,6 +45,8 @@ import { createSkillSource } from '../registries/skill-source.js'
 import { FileSecretResolver } from '../secrets/file-driver.js'
 import { TriggerCoordinator } from '../triggers/coordinator.js'
 import { createTriggerDispatcher } from '../triggers/dispatcher.js'
+import { DynamicScheduleStore } from '../triggers/dynamic-schedule-store.js'
+import type { TriggerRegistration } from '../triggers/types.js'
 import type { WorkflowArchiveService } from '../workflows/workflow-archive-service.js'
 import type { WorkflowRegistrationService } from '../workflows/workflow-registration-service.js'
 import { type DiscoveryRecord, removeDiscovery, writeDiscovery } from './discovery.js'
@@ -113,6 +115,7 @@ export class Gateway {
   private readonly breakpointsInternal: import('../debug/breakpoint-registry.js').BreakpointRegistry
   private workflowRegistrationInternal: WorkflowRegistrationService | null = null
   private workflowArchiveInternal: WorkflowArchiveService | null = null
+  private dynamicScheduleStoreInternal: DynamicScheduleStore | null = null
   /** Backend registry, seeded from GatewayOptions; mutable so a runtime-
    *  activated project can absorb additional backends (see absorbBackends). */
   private backendsInternal: import('@skelm/core').BackendRegistry | undefined
@@ -547,6 +550,16 @@ export class Gateway {
     return requireStarted(this.managersInternal, 'gateway managers are not available')
   }
 
+  async persistDynamicSchedule(registration: TriggerRegistration): Promise<void> {
+    await (this.dynamicScheduleStoreInternal ?? new DynamicScheduleStore(this.stateDir)).upsert(
+      registration,
+    )
+  }
+
+  async deleteDynamicSchedule(id: string): Promise<void> {
+    await (this.dynamicScheduleStoreInternal ?? new DynamicScheduleStore(this.stateDir)).delete(id)
+  }
+
   /**
    * Register a token-to-policy mapping for an agent step.
    * The token is passed to the subprocess as SKELM_EGRESS_TOKEN.
@@ -894,6 +907,7 @@ export class Gateway {
       this.enforcementInternal = this.buildEnforcement()
       this.registriesInternal = await this.buildRegistries()
       this.managersInternal = await this.buildManagers()
+      this.dynamicScheduleStoreInternal = new DynamicScheduleStore(this.stateDir)
       this.workflowArchiveInternal = await this.buildWorkflowArchiveService()
       this.workflowRegistrationInternal = await this.buildWorkflowRegistrationService()
       // Wire the trigger dispatcher now that managers + registries exist.
@@ -910,6 +924,7 @@ export class Gateway {
           }),
         )
       }
+      await this.replayDynamicSchedules()
       if (this.options.enableMetrics) {
         const { MetricsCollector } = await import('@skelm/metrics')
         this.metricsInternal = new MetricsCollector()
@@ -967,6 +982,7 @@ export class Gateway {
       this.tokenPolicyStore = null
       this.workflowRegistrationInternal = null
       this.workflowArchiveInternal = null
+      this.dynamicScheduleStoreInternal = null
       throw err
     }
   }
@@ -1118,6 +1134,7 @@ export class Gateway {
       this.tokenPolicyStore = null
       this.workflowRegistrationInternal = null
       this.workflowArchiveInternal = null
+      this.dynamicScheduleStoreInternal = null
     }
   }
 
@@ -1240,6 +1257,22 @@ export class Gateway {
     await codingAgents.startAll(this.config.registries?.agents ?? [])
     await acpSessions.reconcile()
     return { mcp, codingAgents, acpSessions, triggers }
+  }
+
+  private async replayDynamicSchedules(): Promise<void> {
+    if (this.managersInternal === null) return
+    const store = this.dynamicScheduleStoreInternal ?? new DynamicScheduleStore(this.stateDir)
+    const records = await store.list()
+    for (const record of records) {
+      const reg = this.managersInternal.triggers.register(record.spec, record.overlap, {
+        ...(record.input !== undefined && { input: record.input }),
+      })
+      if (reg.lastError !== undefined) {
+        process.stderr.write(
+          `[skelm trigger] failed to restore dynamic schedule "${record.spec.id}": ${reg.lastError}\n`,
+        )
+      }
+    }
   }
 
   private buildEnforcement(): GatewayEnforcement {

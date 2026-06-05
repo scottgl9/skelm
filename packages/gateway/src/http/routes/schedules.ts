@@ -130,6 +130,15 @@ export function registerScheduleRoutes(router: Router, gateway: Gateway): void {
       if (reg.lastError !== undefined) {
         throw createError({ statusCode: 400, message: `failed to register: ${reg.lastError}` })
       }
+      try {
+        await gateway.persistDynamicSchedule(reg)
+      } catch (err) {
+        gateway.managers.triggers.unregister(id)
+        throw createError({
+          statusCode: 500,
+          message: `failed to persist schedule: ${err instanceof Error ? err.message : String(err)}`,
+        })
+      }
       return registrationToSchedule(reg)
     }),
   )
@@ -143,6 +152,7 @@ export function registerScheduleRoutes(router: Router, gateway: Gateway): void {
       if (existing === undefined) {
         throw createError({ statusCode: 404, message: `schedule not found: ${id}` })
       }
+      await gateway.deleteDynamicSchedule(id)
       gateway.managers.triggers.unregister(id)
       return { ok: true, id }
     }),
