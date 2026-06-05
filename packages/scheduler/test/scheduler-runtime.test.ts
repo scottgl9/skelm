@@ -158,6 +158,73 @@ describe('Scheduler — runtime', () => {
     warnSpy.mockRestore()
   })
 
+  it('preserves trigger-specific fields when registering legacy trigger shapes', async () => {
+    const putRun = vi.fn(async () => {})
+    const scheduler = new Scheduler({ runStore: { putRun } })
+    const transformPayload = (payload: unknown) => ({ wrapped: payload })
+
+    await scheduler.register({
+      id: 'legacy-cron',
+      kind: 'cron',
+      cron: '0 9 * * *',
+      timezone: 'America/Chicago',
+      workflowId: 'noop',
+    })
+    await scheduler.register({
+      id: 'legacy-interval',
+      kind: 'interval',
+      intervalMs: 60_000,
+      initialDelayMs: 5_000,
+      workflowId: 'noop',
+    })
+    await scheduler.register({
+      id: 'legacy-webhook',
+      kind: 'webhook',
+      path: '/hooks/legacy',
+      secret: 'test-secret',
+      transformPayload,
+      workflowId: 'noop',
+    })
+
+    expect(scheduler.getTrigger('legacy-cron')?.trigger).toMatchObject({
+      type: 'cron',
+      schedule: '0 9 * * *',
+      timezone: 'America/Chicago',
+    })
+    expect(scheduler.getTrigger('legacy-interval')?.trigger).toMatchObject({
+      type: 'interval',
+      intervalMs: 60_000,
+      initialDelayMs: 5_000,
+    })
+    expect(scheduler.getTrigger('legacy-webhook')?.trigger).toMatchObject({
+      type: 'webhook',
+      path: '/hooks/legacy',
+      secret: 'test-secret',
+      transformPayload,
+    })
+
+    await scheduler.stop()
+  })
+
+  it('honors legacy interval initialDelayMs before the first fire', async () => {
+    const deps = makeDeps()
+    const scheduler = new Scheduler({}, deps)
+    await scheduler.register({
+      id: 'delayed',
+      kind: 'interval',
+      intervalMs: 20,
+      initialDelayMs: 80,
+      workflowId: 'p',
+    })
+
+    await new Promise((r) => setTimeout(r, 45))
+    expect(deps.pipelineExecutor).not.toHaveBeenCalled()
+
+    await new Promise((r) => setTimeout(r, 70))
+    await scheduler.stop()
+    expect(deps.pipelineExecutor).toHaveBeenCalled()
+  })
+
   it('persists the Run returned by pipelineExecutor and marks status=error on failure', async () => {
     const putRun = vi.fn(async () => {})
     const pipelineLoader = vi.fn(async () => ({ id: 'p' }))
