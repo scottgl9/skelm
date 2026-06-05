@@ -118,6 +118,26 @@ describe('GET /v1/dashboard/*', () => {
     }
   })
 
+  it('accepts metric=runs as an alias and exposes buckets', async () => {
+    const { gw, base, store } = await bootGateway()
+    try {
+      const HOUR = 60 * 60 * 1000
+      const t0 = Math.floor(1_800_000_000_000 / HOUR) * HOUR
+      await store.putRun(makeRun({ runId: 'r1', startedAt: t0 + 60, completedAt: t0 + 100 }))
+
+      const res = await fetch(
+        `${base}/v1/dashboard/analytics?metric=runs&resolution=hour&dateFrom=${t0}&dateTo=${t0 + HOUR}`,
+      )
+      expect(res.status).toBe(200)
+      const json = await res.json()
+      expect(json.metric).toBe('runs-per-hour')
+      expect(json.buckets).toEqual(json.points)
+      expect(json.series).toEqual(json.points)
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('returns schedules and approvals', async () => {
     const { gw, base } = await bootGateway()
     try {

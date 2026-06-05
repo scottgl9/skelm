@@ -84,7 +84,8 @@ export function registerDashboardRoutes(router: Router, gateway: Gateway): void 
     '/v1/dashboard/analytics',
     eventHandler(async (event) => {
       const q = getQuery(event)
-      const metric = typeof q.metric === 'string' ? (q.metric as AnalyticsMetric) : undefined
+      const metric =
+        typeof q.metric === 'string' ? normalizeMetric(q.metric as AnalyticsMetric) : undefined
       const resolution =
         typeof q.resolution === 'string' ? (q.resolution as AnalyticsResolution) : 'hour'
       if (metric === undefined || !VALID_METRICS.has(metric)) {
@@ -105,13 +106,14 @@ export function registerDashboardRoutes(router: Router, gateway: Gateway): void 
       if (dateFrom >= dateTo) {
         throw createError({ statusCode: 400, message: 'dateFrom must be < dateTo' })
       }
-      return getService().analytics({
+      const analytics = await getService().analytics({
         metric,
         resolution,
         dateFrom,
         dateTo,
         ...(typeof q.workflowId === 'string' && { workflowId: q.workflowId }),
       })
+      return { ...analytics, buckets: analytics.points, series: analytics.points }
     }),
   )
 
@@ -139,6 +141,10 @@ function parseStartedAt(raw: string | undefined): number {
   if (raw === undefined) return Date.now()
   const parsed = Date.parse(raw)
   return Number.isNaN(parsed) ? Date.now() : parsed
+}
+
+function normalizeMetric(raw: AnalyticsMetric): AnalyticsMetric {
+  return raw === ('runs' as AnalyticsMetric) ? 'runs-per-hour' : raw
 }
 
 function parseIntOrUndef(raw: unknown): number | undefined {

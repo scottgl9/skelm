@@ -62,6 +62,24 @@ describe('/v1/config', () => {
     }
   })
 
+  it('PATCH accepts nested server.maxConcurrentRuns', async () => {
+    const { gw, base } = await boot()
+    try {
+      const res = await fetch(`${base}/v1/config`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ server: { maxConcurrentRuns: 8 } }),
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.updated).toBe(true)
+      expect(body.config.server.maxConcurrentRuns).toBe(8)
+      expect(gw.getConfig().server?.maxConcurrentRuns).toBe(8)
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('PATCH rejects non-whitelisted keys', async () => {
     const { gw, base } = await boot()
     try {
