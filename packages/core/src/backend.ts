@@ -706,7 +706,9 @@ export class BackendRegistry {
     if (opts.backendId !== undefined) {
       const found = this.backends.get(opts.backendId)
       if (!found) {
-        throw new BackendNotFoundError(`backend not registered: ${opts.backendId}`)
+        throw new BackendNotFoundError(
+          `backend not registered: ${opts.backendId}${backendInstallHint(opts.backendId)}`,
+        )
       }
       if (!found.capabilities.prompt || typeof found.inference !== 'function') {
         throw new BackendCapabilityError(
@@ -730,7 +732,9 @@ export class BackendRegistry {
     if (opts.backendId !== undefined) {
       const found = this.backends.get(opts.backendId)
       if (!found) {
-        throw new BackendNotFoundError(`backend not registered: ${opts.backendId}`)
+        throw new BackendNotFoundError(
+          `backend not registered: ${opts.backendId}${backendInstallHint(opts.backendId)}`,
+        )
       }
       if (typeof found.run !== 'function') {
         throw new BackendCapabilityError(
@@ -756,5 +760,14 @@ export class BackendRegistry {
       if (typeof b.dispose === 'function') await b.dispose()
     }
     this.backends.clear()
+  }
+}
+
+function backendInstallHint(backendId: BackendId): string {
+  switch (backendId) {
+    case 'vercel-ai':
+      return ' (install @skelm/vercel-ai, e.g. npm i @skelm/vercel-ai, and register a vercel-ai backend instance)'
+    default:
+      return ''
   }
 }
