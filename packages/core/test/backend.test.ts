@@ -424,6 +424,42 @@ describe('backend list fallback', () => {
     expect(calls).toEqual(['missing-infer', 'working-infer'])
   })
 
+  it('fails a single missing agent backend without trying registry fallback', async () => {
+    const reg = new BackendRegistry()
+    reg.register(agentBackend('working-agent', async () => ({ text: 'unreachable' })))
+
+    const wf = pipeline({
+      id: 'single-missing-agent',
+      steps: [agent({ id: 'work', backend: 'vercel-ai', prompt: 'hello' })],
+    })
+    const run = await runPipeline(wf, undefined, { backends: reg })
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('BackendNotFoundError')
+    expect(run.error?.message).toContain('backend not registered: vercel-ai')
+    expect(run.error?.message).toContain('npm i @skelm/vercel-ai')
+  })
+
+  it('fails a single missing infer backend without trying registry fallback', async () => {
+    const reg = new BackendRegistry()
+    reg.register(
+      fixtureBackend({
+        id: 'working-infer',
+        respond: () => ({ text: 'unreachable' }),
+      }),
+    )
+
+    const wf = pipeline({
+      id: 'single-missing-infer',
+      steps: [infer({ id: 'ask', backend: 'not-registered', prompt: 'hi' })],
+    })
+    const run = await runPipeline(wf, undefined, { backends: reg })
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('BackendNotFoundError')
+    expect(run.error?.message).toContain('backend not registered: not-registered')
+  })
+
   it('fails a single unavailable backend without trying registry fallback', async () => {
     const reg = new BackendRegistry()
     reg.register(

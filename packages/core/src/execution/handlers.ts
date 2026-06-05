@@ -469,6 +469,7 @@ async function runInferStep(
       : undefined
   const requestedInferBackend = step.backend ?? runtime?.defaultInferBackend
   const candidates = backendCandidates(requestedInferBackend)
+  const allowMissingCandidateFallback = Array.isArray(requestedInferBackend)
   const attempted: string[] = []
   let lastUnavailable: BackendUnavailableError | undefined
   let response: import('../backend.js').InferenceResponse | undefined
@@ -511,7 +512,7 @@ async function runInferStep(
       try {
         if (await tryBackend(candidate)) break
       } catch (err) {
-        if (err instanceof BackendNotFoundError) continue
+        if (err instanceof BackendNotFoundError && allowMissingCandidateFallback) continue
         throw err
       }
       const next = candidates[i + 1]
@@ -564,6 +565,7 @@ async function runAgentStep(
   // registry insertion order across concurrent projects.
   const requestedAgentBackend = step.backend ?? runtime?.defaultAgentBackend
   const candidates = backendCandidates(requestedAgentBackend)
+  const allowMissingCandidateFallback = Array.isArray(requestedAgentBackend)
   if (candidates !== undefined && candidates.length === 0) {
     throw noAvailableBackendError(step.id, 'agent', [], undefined)
   }
@@ -583,7 +585,7 @@ async function runAgentStep(
         firstResolvedCandidateIndex = i
         break
       } catch (err) {
-        if (err instanceof BackendNotFoundError) continue
+        if (err instanceof BackendNotFoundError && allowMissingCandidateFallback) continue
         throw err
       }
     }
@@ -1075,7 +1077,7 @@ async function runAgentStep(
               try {
                 backend = backends.resolveForAgent({ backendId: candidate })
               } catch (err) {
-                if (err instanceof BackendNotFoundError) continue
+                if (err instanceof BackendNotFoundError && allowMissingCandidateFallback) continue
                 throw err
               }
             }
