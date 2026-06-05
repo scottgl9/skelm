@@ -449,6 +449,32 @@ describe('Gateway HTTP /schedules', () => {
     }
   })
 
+  it('POST /schedules rejects file-watch triggers whose path is missing', async () => {
+    const { gw, base } = await bootGatewayWithRetry(async (port) => ({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    }))
+    try {
+      const res = await fetch(`${base}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 'missing-watch',
+          workflowId: 'wf',
+          trigger: { kind: 'file-watch', path: join(stateDir, 'missing') },
+        }),
+      })
+      expect(res.status).toBe(400)
+      const body = (await res.json()) as { message?: string }
+      expect(body.message).toMatch(/file-watch start failed/i)
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('POST /schedules accepts `every` duration strings and round-trips through GET', async () => {
     const { gw, base } = await bootGatewayWithRetry(async (port) => ({
       stateDir,
