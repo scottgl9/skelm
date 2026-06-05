@@ -166,6 +166,18 @@ describe('buildBackendRegistry', () => {
       process.env.PI_TEST_KEY = undefined
     }
   })
+
+  it('rejects legacy pi RPC command config instead of ignoring it', async () => {
+    await expect(
+      buildBackendRegistry({
+        backends: {
+          pi: {
+            command: '/custom/pi',
+          },
+        },
+      } satisfies SkelmConfig),
+    ).rejects.toThrow(/Pi RPC support has been removed/)
+  })
 })
 
 async function startJsonServer(
