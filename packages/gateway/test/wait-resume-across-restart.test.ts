@@ -1,34 +1,31 @@
 /**
  * Plan §4.3: durable wait/resume across gateway restart.
  *
- * Phase 1 of the durability promise (proven here): a run that paused at
+ * A run that paused at
  * wait() before a gateway crash MUST be visible after restart with its
- * `waiting` snapshot intact in the SQLite RunStore. Operators can then
- * query / resume it.
- *
- * Phase 2 of the promise — actually delivering /resume input to a wait()
- * step whose runner died and was replaced by a fresh gateway process —
- * is a separate concern (the runner's wait callback is held in memory,
- * not durably anchored). The follow-up task is to either replay the run
- * up to the wait point on resume, or persist enough state to dispatch
- * the resume into a fresh runner. This test asserts only the durability
- * half; the resume-after-rehydrate test is gated behind that work.
+ * `waiting` snapshot intact in the SQLite RunStore, and POST /resume on the
+ * restarted gateway must rehydrate the run and drive it to completion.
  */
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pipeline, wait } from '@skelm/core'
+import { code, pipeline, wait } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { z } from 'zod'
 import { Gateway } from '../src/index.js'
+import { bootGatewayWithRetry } from './utils/boot-gateway.js'
 
 let stateDir: string
+let projectRoot: string
 
 beforeEach(async () => {
   stateDir = await mkdtemp(join(tmpdir(), 'skelm-wait-restart-'))
+  projectRoot = await mkdtemp(join(tmpdir(), 'skelm-wait-restart-project-'))
 })
 
 afterEach(async () => {
   await rm(stateDir, { recursive: true, force: true })
+  await rm(projectRoot, { recursive: true, force: true })
 })
 
 describe('wait() durability across gateway restart (plan §4.3)', () => {
@@ -97,10 +94,87 @@ describe('wait() durability across gateway restart (plan §4.3)', () => {
     }
   })
 
-  // Follow-up: prove POST /runs/:runId/resume on a re-hydrated gateway
-  // actually drives the parked run to completion. Requires the gateway to
-  // re-instantiate the runner from the persisted Run record (or to replay
-  // the workflow up to the wait point on demand). Not yet implemented;
-  // the durability assertion above is the precondition for that work.
-  it.skip('TODO: POST /runs/:id/resume after restart drives the run to completion', () => {})
+  it('POST /runs/:id/resume after restart rehydrates and completes the run', async () => {
+    const workflowPath = join(projectRoot, 'rehydrate.workflow.mts')
+    await writeFile(workflowPath, '// loaded by the test gateway loader\n')
+    const wf = pipeline({
+      id: 'wait-rehydrate-test',
+      input: z.object({ seed: z.number() }),
+      output: z.object({ result: z.number() }),
+      steps: [
+        code({ id: 'prep', run: (ctx) => ({ doubled: ctx.input.seed * 2 }) }),
+        wait({
+          id: 'gate',
+          message: 'pause across restart',
+          output: z.object({ add: z.number() }),
+        }),
+        code({
+          id: 'finish',
+          run: (ctx) => ({ result: ctx.steps.prep.doubled + ctx.steps.gate.add }),
+        }),
+      ],
+      finalize: (ctx) => ctx.steps.finish,
+    })
+    const loadWorkflow = async (_id: string, absolutePath: string): Promise<unknown> => {
+      if (absolutePath !== workflowPath)
+        throw new Error(`unexpected workflow path: ${absolutePath}`)
+      return { default: wf }
+    }
+
+    const boot = async () =>
+      bootGatewayWithRetry((port) => ({
+        stateDir,
+        projectRoot,
+        enableHttp: true,
+        watchRegistries: false,
+        httpPort: port,
+        config: {},
+        loadWorkflow,
+      }))
+
+    const first = await boot()
+    const start = await fetch(`${first.base}/runs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pipelinePath: workflowPath, input: { seed: 7 } }),
+    })
+    expect(start.status).toBe(200)
+    const started = (await start.json()) as { runId: string }
+    const runId = started.runId
+
+    for (let i = 0; i < 50; i++) {
+      const stored = await first.gw.runStore.getRun(runId)
+      if (stored?.status === 'waiting') break
+      await new Promise((r) => setTimeout(r, 20))
+    }
+    const parkedBefore = await first.gw.runStore.getRun(runId)
+    expect(parkedBefore?.status).toBe('waiting')
+    expect(parkedBefore?.steps.map((step) => step.id)).toEqual(['prep'])
+
+    first.gw.unregisterRun(runId)
+    await first.gw.stop()
+
+    const second = await boot()
+    try {
+      const resume = await fetch(`${second.base}/runs/${runId}/resume`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ input: { add: 5 } }),
+      })
+      const resumeText = await resume.text()
+      if (resume.status !== 200) throw new Error(`resume failed: ${resume.status} ${resumeText}`)
+      expect(JSON.parse(resumeText)).toMatchObject({ resumed: true, rehydrated: true })
+
+      let final = await second.gw.runStore.getRun(runId)
+      for (let i = 0; i < 50 && final?.status !== 'completed'; i++) {
+        await new Promise((r) => setTimeout(r, 20))
+        final = await second.gw.runStore.getRun(runId)
+      }
+      expect(final?.status).toBe('completed')
+      expect(final?.output).toEqual({ result: 19 })
+      expect(final?.steps.map((step) => step.id)).toEqual(['prep', 'gate', 'finish'])
+    } finally {
+      await second.gw.stop()
+    }
+  })
 })

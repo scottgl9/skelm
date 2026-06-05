@@ -49,13 +49,6 @@ export function registerRunRoutes(router: Router, gateway: Gateway): void {
     eventHandler(async (event) => {
       const runId = event.context.params?.runId
       if (!runId) throw createError({ statusCode: 400, message: 'runId required' })
-      const runner = gateway.getRunner(runId)
-      if (runner === undefined) {
-        throw createError({
-          statusCode: 404,
-          message: 'no in-flight runner for runId (already completed, or unknown to this gateway)',
-        })
-      }
       const rawBody = await readBody(event).catch(() => undefined)
       const body =
         rawBody !== null && typeof rawBody === 'object'
@@ -67,6 +60,21 @@ export function registerRunRoutes(router: Router, gateway: Gateway): void {
       const hasOutput = Object.hasOwn(body, 'output')
       const hasInput = Object.hasOwn(body, 'input')
       const resumeValue = hasOutput ? body.output : hasInput ? body.input : {}
+      const runner = gateway.getRunner(runId)
+      if (runner === undefined) {
+        try {
+          await gateway.resumeWaitingRun(runId, resumeValue)
+          return { resumed: true, runId, rehydrated: true }
+        } catch (err) {
+          throw createError({
+            statusCode:
+              typeof (err as { statusCode?: unknown }).statusCode === 'number'
+                ? (err as { statusCode: number }).statusCode
+                : 404,
+            message: (err as Error).message,
+          })
+        }
+      }
       try {
         await runner.resume(runId, resumeValue)
         return { resumed: true, runId }
