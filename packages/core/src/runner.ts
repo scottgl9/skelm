@@ -130,6 +130,16 @@ export interface RunOptions {
   /** Optional hook used by wait() steps to suspend until external input arrives. */
   waitForInput?: (request: WaitRequest) => Promise<unknown>
   /**
+   * Resume a run that was durably parked at wait() after its original in-memory
+   * Runner was lost. The runner seeds completed/skipped steps from the stored
+   * Run and starts at the waiting step, so prior step side effects are not
+   * replayed.
+   */
+  resumeFromWaiting?: {
+    run: Run
+    resumeValue: unknown
+  }
+  /**
    * Optional approval gate consulted at the start of every agent step whose
    * resolved policy declares `permissions.approval`. The runtime suspends
    * the step until the gate resolves and fails the step with
@@ -445,6 +455,7 @@ export class Runner {
     options: Omit<RunOptions, 'events' | 'backends' | 'waitForInput'> = {},
   ): RunHandle<TInput, TOutput> {
     const runId = options.runId ?? crypto.randomUUID()
+    const resumeFromWaiting = options.resumeFromWaiting
     const promise = runPipeline(pipeline, input, {
       ...options,
       runId,
@@ -466,7 +477,16 @@ export class Runner {
       }),
       approvalGate: this.enforcement.approvalGate,
       secretResolver: this.enforcement.secretResolver,
-      waitForInput: (request) => this.awaitResume(request),
+      waitForInput: (request) => {
+        if (
+          resumeFromWaiting !== undefined &&
+          resumeFromWaiting.run.runId === request.runId &&
+          resumeFromWaiting.run.waiting?.stepId === request.stepId
+        ) {
+          return Promise.resolve(resumeFromWaiting.resumeValue)
+        }
+        return this.awaitResume(request)
+      },
     })
     return {
       runId,
@@ -563,8 +583,26 @@ export async function runPipeline<TInput, TOutput>(
   input: TInput,
   options: RunOptions = {},
 ): Promise<Run<TInput, TOutput>> {
-  const startedAt = Date.now()
   const runId = options.runId ?? generateRunId()
+  const resumeFromWaiting = options.resumeFromWaiting
+  if (resumeFromWaiting !== undefined && resumeFromWaiting.run.runId !== runId) {
+    throw new RunStateError(
+      runId,
+      `resume source runId ${resumeFromWaiting.run.runId} does not match`,
+    )
+  }
+  const waitingStepId = resumeFromWaiting?.run.waiting?.stepId
+  const waitingStepIndex =
+    waitingStepId === undefined ? -1 : pipeline.steps.findIndex((step) => step.id === waitingStepId)
+  if (resumeFromWaiting !== undefined) {
+    if (resumeFromWaiting.run.status !== 'waiting' || waitingStepId === undefined) {
+      throw new RunStateError(runId, `run ${runId} is not waiting`)
+    }
+    if (waitingStepIndex < 0) {
+      throw new RunStateError(runId, `waiting step ${waitingStepId} no longer exists`)
+    }
+  }
+  const startedAt = resumeFromWaiting?.run.startedAt ?? Date.now()
   const events = options.events ?? new EventBus()
   // Subscribe the caller's live listener (if any) to the run's bus. This is how
   // a queue driver's onEvent hook receives step.partial / lifecycle events as
@@ -794,20 +832,22 @@ export async function runPipeline<TInput, TOutput>(
     }
   }
 
-  events.publish({
-    type: 'run.created',
-    runId,
-    pipelineId: pipeline.id,
-    input,
-    at: startedAt,
-  })
-  events.publish({ type: 'run.started', runId, at: startedAt })
+  if (resumeFromWaiting === undefined) {
+    events.publish({
+      type: 'run.created',
+      runId,
+      pipelineId: pipeline.id,
+      input,
+      at: startedAt,
+    })
+    events.publish({ type: 'run.started', runId, at: startedAt })
+  }
 
   // Persist a `running` Run record up-front so a gateway crash leaves a
   // recoverable seed in the store. Without this, events stream out but no
   // Run row exists until finalizeStoredRun() at the end — a mid-run crash
   // would orphan the events and break listRuns({status: 'running'}).
-  if (store !== undefined) {
+  if (store !== undefined && resumeFromWaiting === undefined) {
     storeWrites.push(
       store.putRun(
         Object.freeze({
@@ -835,6 +875,14 @@ export async function runPipeline<TInput, TOutput>(
 
   const stepResults: StepResult[] = []
   const stepOutputs: Record<StepId, unknown> = {}
+  const persistStepResults = (): void => {
+    if (store === undefined) return
+    storeWrites.push(
+      store
+        .updateRun(runId, { steps: Object.freeze([...stepResults]) })
+        .catch((err) => logStoreFailure('step-results', runId, err)),
+    )
+  }
   let runStatus: Run['status'] = 'running'
   let runError: Run['error'] = undefined
   let finalOutput: TOutput | undefined
@@ -873,7 +921,26 @@ export async function runPipeline<TInput, TOutput>(
     }
   }
 
-  for (const step of pipeline.steps) {
+  const resumedStepResults = resumeFromWaiting?.run.steps ?? []
+  const resumedStepById = new Map(resumedStepResults.map((step) => [step.id, step]))
+
+  for (const [stepIndex, step] of pipeline.steps.entries()) {
+    if (resumeFromWaiting !== undefined && stepIndex < waitingStepIndex) {
+      const stored = resumedStepById.get(step.id)
+      if (stored === undefined) {
+        throw new RunStateError(runId, `stored run is missing prior step ${step.id}`)
+      }
+      if (stored.status !== 'completed' && stored.status !== 'skipped') {
+        throw new RunStateError(
+          runId,
+          `stored prior step ${step.id} has non-resumable status ${stored.status}`,
+        )
+      }
+      stepResults.push(stored)
+      if (stored.status === 'completed') stepOutputs[stored.id] = stored.output
+      continue
+    }
+
     if (controller.signal.aborted) {
       runStatus = 'cancelled'
       runError = serializeError(new RunCancelledError())
@@ -908,6 +975,7 @@ export async function runPipeline<TInput, TOutput>(
           completedAt,
           error: serialized,
         })
+        persistStepResults()
         events.publish({
           type: 'step.error',
           runId,
@@ -930,9 +998,14 @@ export async function runPipeline<TInput, TOutput>(
           startedAt: at,
           completedAt: at,
         })
+        persistStepResults()
         events.publish({ type: 'step.skipped', runId, stepId: step.id, kind: step.kind, at })
         continue
       }
+    }
+
+    if (step.kind === 'wait' && storeWrites.length > 0) {
+      await Promise.all(storeWrites)
     }
 
     const stepStart = Date.now()
@@ -1027,6 +1100,7 @@ export async function runPipeline<TInput, TOutput>(
         startedAt: stepStart,
         completedAt,
       })
+      persistStepResults()
       events.publish({
         type: 'step.complete',
         runId,
@@ -1049,6 +1123,7 @@ export async function runPipeline<TInput, TOutput>(
         completedAt,
         error: serialized,
       })
+      persistStepResults()
       events.publish({
         type: 'step.error',
         runId,

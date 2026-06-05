@@ -61,6 +61,7 @@ export async function runPipelineSync(
     const handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
       runId,
       signal: controller.signal,
+      workflowPath: entry.path,
       skillSource: createSkillSource({
         registry: gateway.registries.skills,
         workflowPath: entry.path,
