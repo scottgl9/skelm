@@ -66,6 +66,31 @@ describe('TriggerCoordinator', () => {
     await c.stop()
   })
 
+  it('stop waits for an accepted detached dispatch to settle', async () => {
+    let resolveBlock: (() => void) | null = null
+    const inFlight = new Promise<void>((r) => {
+      resolveBlock = r
+    })
+    let stopReturned = false
+    const c = new TriggerCoordinator({
+      onFire: async () => {
+        await inFlight
+      },
+    })
+    c.register({ kind: 'manual', id: 't', workflowId: 'wf' })
+
+    await c.fire('t')
+    const stop = c.stop().then(() => {
+      stopReturned = true
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(stopReturned).toBe(false)
+
+    resolveBlock?.()
+    await stop
+    expect(stopReturned).toBe(true)
+  })
+
   it("'queue' overlap policy runs the queued fire after the in-flight one finishes", async () => {
     let resolveBlock: (() => void) | null = null
     const block = new Promise<void>((r) => {

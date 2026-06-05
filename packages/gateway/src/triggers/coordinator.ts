@@ -82,6 +82,7 @@ export class TriggerCoordinator {
   private queueDrivers: Map<string, QueueDriver> = new Map()
   private queueDriverBindings: Map<string, string> = new Map() // triggerId → driverId
   private queues: Map<string, FireContext[]> = new Map()
+  private pendingDispatches: Set<Promise<void>> = new Set()
   private stopping = false
   /**
    * Per-trigger webhook deduplication store. Public so the HTTP dispatch
@@ -478,6 +479,13 @@ export class TriggerCoordinator {
     void this.fire(id, when, payload).catch((err) => this.opts.onFireError?.(id, err))
   }
 
+  private trackDispatch(promise: Promise<void>): void {
+    this.pendingDispatches.add(promise)
+    promise.finally(() => {
+      this.pendingDispatches.delete(promise)
+    })
+  }
+
   async fire(id: string, when?: Date, payload?: unknown): Promise<FireStatus> {
     if (this.stopping) return 'stopping'
     const reg = this.registrations.get(id)
@@ -503,12 +511,13 @@ export class TriggerCoordinator {
     if (reg.parallel === true) {
       reg.lastFiredAt = ctx.firedAt
       reg.fired += 1
-      void Promise.resolve()
+      const dispatch = Promise.resolve()
         .then(() => this.opts.onFire(ctx))
         .catch((err) => {
           reg.lastError = (err as Error).message
           this.opts.onFireError?.(reg.spec.id, err)
         })
+      this.trackDispatch(dispatch)
       await Promise.resolve()
       return 'dispatched'
     }
@@ -541,13 +550,14 @@ export class TriggerCoordinator {
       }
     }
     reg.inflight = true
-    void Promise.resolve()
+    const dispatch = Promise.resolve()
       .then(() => this.dispatch(reg, ctx))
       .catch((err) => {
         reg.lastError = (err as Error).message
         this.opts.onFireError?.(reg.spec.id, err)
         reg.inflight = false
       })
+    this.trackDispatch(dispatch)
     await Promise.resolve()
     return 'dispatched'
   }
@@ -595,6 +605,9 @@ export class TriggerCoordinator {
     for (const driver of this.queueDrivers.values()) {
       const r = driver.stop()
       if (r instanceof Promise) await r.catch(() => {})
+    }
+    while (this.pendingDispatches.size > 0) {
+      await Promise.allSettled(Array.from(this.pendingDispatches))
     }
     this.intervalTimers.clear()
     this.cronTimers.clear()
