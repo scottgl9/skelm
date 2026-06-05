@@ -190,6 +190,12 @@ function scheduleTriggerToSpec(
       const spec: TriggerSpec = { kind: 'webhook', id, workflowId, path }
       if (typeof trigger.method === 'string') spec.method = trigger.method
       if (typeof trigger.secret === 'string') spec.secret = trigger.secret
+      if (typeof trigger.replayWindowSeconds === 'number') {
+        spec.replayWindowSeconds = trigger.replayWindowSeconds
+      }
+      if (typeof trigger.maxBodyBytes === 'number') {
+        spec.maxBodyBytes = trigger.maxBodyBytes
+      }
       if (trigger.provider === 'slack' || trigger.provider === 'ms-graph') {
         spec.provider = trigger.provider
       }
@@ -313,6 +319,10 @@ function registrationToSchedule(reg: TriggerRegistration): {
       trigger = { kind: 'webhook', path: spec.path }
       if (spec.method !== undefined) trigger.method = spec.method
       if (spec.provider !== undefined) trigger.provider = spec.provider
+      if (spec.replayWindowSeconds !== undefined) {
+        trigger.replayWindowSeconds = spec.replayWindowSeconds
+      }
+      if (spec.maxBodyBytes !== undefined) trigger.maxBodyBytes = spec.maxBodyBytes
       // Don't expose the secret or the ms-graph clientState on read; they
       // are credentials, not metadata.
       break

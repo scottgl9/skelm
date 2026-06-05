@@ -611,6 +611,10 @@ export type PipelineTrigger =
       path: string
       method?: string
       secret?: string
+      /** Replay window for generic HMAC webhooks, in seconds. Defaults to 300. */
+      replayWindowSeconds?: number
+      /** Maximum raw request body size in bytes. Defaults to 1 MiB. */
+      maxBodyBytes?: number
       /**
        * Optional provider hint. When set, the gateway delegates protocol
        * specifics to the matching `@skelm/integrations` integration:
@@ -723,6 +727,10 @@ export type PipelineTrigger =
       path: string
       /** HMAC shared secret for `x-hub-signature-256` (verified by the helper). */
       secret?: string
+      /** Replay window for generic HMAC webhooks, in seconds. Defaults to 300. */
+      replayWindowSeconds?: number
+      /** Maximum raw request body size in bytes. Defaults to 1 MiB. */
+      maxBodyBytes?: number
       /** GitHub event kinds to forward. Default: every kind. */
       events?: readonly (
         | 'opened'
