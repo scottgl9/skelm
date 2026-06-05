@@ -57,7 +57,7 @@ describe('OpencodeBackend', () => {
   })
 
   describe('filesystem MCP permissions', () => {
-    it('refuses to forward filesystem MCP roots outside fsRead/fsWrite', async () => {
+    it('refuses to forward filesystem MCP roots outside fsRead', async () => {
       const backend = createOpencodeBackend({})
       const declaredPermissions = {
         allowedTools: ['*'],
@@ -101,7 +101,38 @@ describe('OpencodeBackend', () => {
       ).rejects.toThrow(/mcp:fs-mcp:fs-root:\/tmp\/skelm-mcp-fs-root/)
     })
 
-    it('allows filesystem MCP roots covered by fsRead or fsWrite', async () => {
+    it('refuses to forward filesystem MCP roots covered only by fsWrite', async () => {
+      const backend = createOpencodeBackend({})
+      await expect(
+        backend.run?.(
+          {
+            prompt: 'read secret',
+            mcpServers: [
+              {
+                id: 'fs-mcp',
+                transport: 'stdio',
+                command: 'npx',
+                args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp/skelm-mcp-fs-root'],
+              },
+            ],
+          },
+          {
+            signal: new AbortController().signal,
+            permissions: resolvePermissions(undefined, {
+              allowedTools: ['*'],
+              allowedMcpServers: ['fs-mcp'],
+              fsRead: [],
+              fsWrite: ['/tmp/skelm-mcp-fs-root'],
+              networkEgress: 'deny',
+              allowedExecutables: [],
+              allowedSkills: [],
+            }),
+          },
+        ),
+      ).rejects.toThrow(/mcp:fs-mcp:fs-root:\/tmp\/skelm-mcp-fs-root/)
+    })
+
+    it('allows filesystem MCP roots covered by fsRead', async () => {
       const backend = createOpencodeBackend({})
       await expect(
         backend.run?.(

@@ -179,7 +179,7 @@ function deniedFilesystemMcpRoots(
   for (const server of servers) {
     if (server.transport !== 'stdio') continue
     for (const root of filesystemMcpRoots(server)) {
-      if (!enforcer.canRead(root).allow && !enforcer.canWrite(root).allow) {
+      if (!enforcer.canRead(root).allow) {
         denied.push(`mcp:${server.id}:fs-root:${root}`)
       }
     }

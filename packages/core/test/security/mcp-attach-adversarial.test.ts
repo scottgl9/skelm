@@ -82,63 +82,8 @@ describe('permission enforcement — MCP attach adversarial', () => {
     })
   }
 
-  it('denies attach when allowedMcpServers is omitted (default-deny)', async () => {
-    const registry = new BackendRegistry()
-    registry.register(backend())
-    const events = new EventBus()
-    const seen: RunEvent[] = []
-    events.subscribe((e) => seen.push(e))
-
-    const run = await runPipeline(workflow({ allow: undefined }), undefined, {
-      backends: registry,
-      events,
-    })
-
-    expect(run.status).toBe('failed')
-    expect(run.error?.name).toBe('PermissionDeniedError')
-    expect(run.error?.message).toMatch(/attach MCP server "shell"/)
-    expect(seen).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'permission.denied',
-          stepId: 'work',
-          dimension: 'mcp',
-        }),
-      ]),
-    )
-  })
-
-  it('denies attach when server id is not in explicit allowlist', async () => {
-    const registry = new BackendRegistry()
-    registry.register(backend())
-    const events = new EventBus()
-    const seen: RunEvent[] = []
-    events.subscribe((e) => seen.push(e))
-
-    const run = await runPipeline(workflow({ allow: ['otherserver'] }), undefined, {
-      backends: registry,
-      events,
-    })
-
-    expect(run.status).toBe('failed')
-    expect(run.error?.name).toBe('PermissionDeniedError')
-    expect(seen).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'permission.denied',
-          dimension: 'mcp',
-        }),
-      ]),
-    )
-  })
-
-  it('denies filesystem MCP roots outside author-declared fsRead/fsWrite for native backends', async () => {
-    const registry = new BackendRegistry()
-    registry.register(nativeBackend())
-    const events = new EventBus()
-    const seen: RunEvent[] = []
-    events.subscribe((e) => seen.push(e))
-    const wf = pipeline({
+  function filesystemMcpWorkflow(opts: { fsRead: readonly string[]; fsWrite: readonly string[] }) {
+    return pipeline({
       id: 'native-mcp-fs-root-denied',
       steps: [
         agent({
@@ -156,35 +101,126 @@ describe('permission enforcement — MCP attach adversarial', () => {
           permissions: {
             allowedTools: ['*'],
             allowedMcpServers: ['fs-mcp'],
-            fsRead: ['/tmp/some-other-root'],
-            fsWrite: [],
+            fsRead: opts.fsRead,
+            fsWrite: opts.fsWrite,
           },
         }),
       ],
     })
+  }
 
-    const run = await runPipeline(wf, undefined, {
+  it('denies attach when allowedMcpServers is omitted (default-deny)', async () => {
+    const registry = new BackendRegistry()
+    registry.register(backend())
+    const events = new EventBus()
+    const seen: RunEvent[] = []
+    events.subscribe((e) => seen.push(e))
+
+    const run = await runPipeline(workflow({ allow: undefined }), undefined, {
       backends: registry,
       events,
-      defaultPermissions: {
-        allowedTools: ['*'],
-        allowedMcpServers: ['fs-mcp'],
-        fsRead: ['/'],
-        fsWrite: [],
-      },
     })
 
     expect(run.status).toBe('failed')
     expect(run.error?.name).toBe('PermissionDeniedError')
-    expect(run.error?.message).toMatch(/filesystem MCP server "fs-mcp"/)
-    expect(seen).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'permission.denied',
-          stepId: 'work',
-          dimension: 'fs.read',
-        }),
-      ]),
+    expect(run.error?.message).toMatch(/attach MCP server "shell"/)
+    expect(seen.filter((event) => event.type === 'permission.denied')).toEqual([
+      expect.objectContaining({
+        type: 'permission.denied',
+        stepId: 'work',
+        dimension: 'mcp',
+      }),
+    ])
+  })
+
+  it('denies attach when server id is not in explicit allowlist', async () => {
+    const registry = new BackendRegistry()
+    registry.register(backend())
+    const events = new EventBus()
+    const seen: RunEvent[] = []
+    events.subscribe((e) => seen.push(e))
+
+    const run = await runPipeline(workflow({ allow: ['otherserver'] }), undefined, {
+      backends: registry,
+      events,
+    })
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('PermissionDeniedError')
+    expect(seen.filter((event) => event.type === 'permission.denied')).toEqual([
+      expect.objectContaining({
+        type: 'permission.denied',
+        stepId: 'work',
+        dimension: 'mcp',
+      }),
+    ])
+  })
+
+  it('denies filesystem MCP roots outside author-declared fsRead for native backends', async () => {
+    const registry = new BackendRegistry()
+    registry.register(nativeBackend())
+    const events = new EventBus()
+    const seen: RunEvent[] = []
+    events.subscribe((e) => seen.push(e))
+
+    const run = await runPipeline(
+      filesystemMcpWorkflow({ fsRead: ['/tmp/some-other-root'], fsWrite: [] }),
+      undefined,
+      {
+        backends: registry,
+        events,
+        defaultPermissions: {
+          allowedTools: ['*'],
+          allowedMcpServers: ['fs-mcp'],
+          fsRead: ['/'],
+          fsWrite: [],
+        },
+      },
     )
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('PermissionDeniedError')
+    expect(run.error?.message).toMatch(/filesystem MCP server "fs-mcp"/)
+    expect(seen.filter((event) => event.type === 'permission.denied')).toEqual([
+      expect.objectContaining({
+        type: 'permission.denied',
+        stepId: 'work',
+        dimension: 'fs.read',
+      }),
+    ])
+  })
+
+  it('denies filesystem MCP roots with fsWrite but no fsRead for native backends', async () => {
+    const registry = new BackendRegistry()
+    registry.register(nativeBackend())
+    const events = new EventBus()
+    const seen: RunEvent[] = []
+    events.subscribe((e) => seen.push(e))
+
+    const run = await runPipeline(
+      filesystemMcpWorkflow({ fsRead: [], fsWrite: ['/tmp/skelm-mcp-fs-root'] }),
+      undefined,
+      {
+        backends: registry,
+        events,
+        defaultPermissions: {
+          allowedTools: ['*'],
+          allowedMcpServers: ['fs-mcp'],
+          fsRead: ['/'],
+          fsWrite: [],
+        },
+      },
+    )
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('PermissionDeniedError')
+    expect(run.error?.message).toMatch(/filesystem MCP server "fs-mcp"/)
+    expect(seen.filter((event) => event.type === 'permission.denied')).toEqual([
+      expect.objectContaining({
+        type: 'permission.denied',
+        stepId: 'work',
+        dimension: 'fs.read',
+      }),
+    ])
   })
 })
