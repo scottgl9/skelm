@@ -245,6 +245,11 @@ function createBackend(backendId: string, config: SkelmConfig, secretResolver?: 
       return createCodexBackend(opts)
     }
     case 'pi': {
+      if (entry.command !== undefined || entry.commandProvider !== undefined) {
+        throw new Error(
+          'Pi RPC support has been removed. Remove backends.pi.command / commandProvider and configure the SDK backend with provider, model, baseUrl, and apiKey instead.',
+        )
+      }
       const cwd = readString(entry.cwd)
       const provider = readString(entry.provider)
       const model = readString(entry.model)
