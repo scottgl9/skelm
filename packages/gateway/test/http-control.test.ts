@@ -1,5 +1,7 @@
+import { createHmac } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
+import { request } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BackendRegistry, MemoryRunStore, code, infer, parallel, pipeline, wait } from '@skelm/core'
@@ -33,6 +35,30 @@ async function expectSettlesWithin<T>(promise: Promise<T>, ms: number): Promise<
   } finally {
     if (timer !== undefined) clearTimeout(timer)
   }
+}
+
+function webhookSig(secret: string, timestamp: number | string, body: string): string {
+  return `sha256=${createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex')}`
+}
+
+async function postChunked(base: string, path: string, chunks: string[]): Promise<number> {
+  const url = new URL(path, base)
+  return await new Promise<number>((resolve, reject) => {
+    const req = request(
+      url,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'text/plain' },
+      },
+      (res) => {
+        res.resume()
+        res.on('end', () => resolve(res.statusCode ?? 0))
+      },
+    )
+    req.on('error', reject)
+    for (const chunk of chunks) req.write(chunk)
+    req.end()
+  })
 }
 
 describe('Gateway HTTP control surface', () => {
@@ -259,22 +285,50 @@ describe('Gateway HTTP webhook trigger dispatch', () => {
         secret: 'shh',
       })
 
-      // Wrong secret → 401.
+      const ts = Math.floor(Date.now() / 1000)
+      const body = '{"ok":true}'
+
+      // Missing signature → 401.
       const denied = await fetch(`${base}/hooks/github`, {
         method: 'POST',
-        headers: { 'x-webhook-secret': 'nope' },
+        body,
       })
       expect(denied.status).toBe(401)
       expect(fired).toEqual([])
 
-      // Correct secret → fires.
+      // Correct HMAC signature → fires.
       const ok = await fetch(`${base}/hooks/github`, {
         method: 'POST',
-        headers: { 'x-webhook-secret': 'shh' },
+        headers: {
+          'x-webhook-signature': webhookSig('shh', ts, body),
+          'x-webhook-timestamp': String(ts),
+        },
+        body,
       })
       expect(ok.status).toBe(200)
       expect(await ok.json()).toEqual({ ok: true, triggerId: 'gh-push' })
       expect(fired).toEqual(['gh-push'])
+
+      // Tampered body after signing → 401.
+      const tampered = await fetch(`${base}/hooks/github`, {
+        method: 'POST',
+        headers: {
+          'x-webhook-signature': webhookSig('shh', ts, body),
+          'x-webhook-timestamp': String(ts),
+        },
+        body: '{"ok":false}',
+      })
+      expect(tampered.status).toBe(401)
+
+      const oversized = await fetch(`${base}/hooks/github`, {
+        method: 'POST',
+        headers: {
+          'x-webhook-signature': webhookSig('shh', ts, body),
+          'x-webhook-timestamp': String(ts),
+        },
+        body: 'x'.repeat(1_048_577),
+      })
+      expect(oversized.status).toBe(413)
 
       // Unknown path → falls through (no webhook handler matches).
       const missing = await fetch(`${base}/hooks/unknown`, { method: 'POST' })
@@ -321,6 +375,36 @@ describe('Gateway HTTP webhook trigger dispatch', () => {
       expect(p.headers['x-github-event']).toBe('pull_request')
       expect(p.path).toBe('/hooks/echo')
       expect(p.method).toBe('POST')
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('rejects chunked webhook bodies that exceed maxBodyBytes', async () => {
+    const { gw, base } = await bootGatewayWithRetry(async (port) => ({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    }))
+    try {
+      const fired: string[] = []
+      gw.managers.triggers.setOnFire(async (ctx) => {
+        fired.push(ctx.triggerId)
+      })
+      gw.managers.triggers.register({
+        kind: 'webhook',
+        id: 'chunked-limit',
+        workflowId: 'wf',
+        path: '/hooks/chunked-limit',
+        method: 'POST',
+        maxBodyBytes: 4,
+      })
+
+      const status = await postChunked(base, '/hooks/chunked-limit', ['12', '345'])
+      expect(status).toBe(413)
+      expect(fired).toEqual([])
     } finally {
       await gw.stop()
     }
@@ -785,6 +869,28 @@ describe('Gateway HTTP /schedules', () => {
         }),
       })
       expect(graphOk.status).toBe(200)
+
+      const webhookLimits = await fetch(`${base}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 'webhook-limits',
+          workflowId: 'w',
+          trigger: {
+            kind: 'webhook',
+            path: '/hooks/limited',
+            secret: 'shared',
+            replayWindowSeconds: 30,
+            maxBodyBytes: 128,
+          },
+        }),
+      })
+      expect(webhookLimits.status).toBe(200)
+      const webhookLimitsBody = (await webhookLimits.json()) as {
+        trigger: { replayWindowSeconds?: number; maxBodyBytes?: number }
+      }
+      expect(webhookLimitsBody.trigger.replayWindowSeconds).toBe(30)
+      expect(webhookLimitsBody.trigger.maxBodyBytes).toBe(128)
     } finally {
       await gw.stop()
     }

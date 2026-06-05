@@ -13,6 +13,10 @@ export type TriggerSpec =
       path: string
       method?: string
       secret?: string
+      /** Replay window for generic HMAC webhooks, in seconds. Defaults to 300. */
+      replayWindowSeconds?: number
+      /** Maximum raw request body size in bytes. Defaults to 1 MiB. */
+      maxBodyBytes?: number
       /** Provider hint — see `PipelineTrigger` for protocol semantics. */
       provider?: 'slack' | 'ms-graph'
       /**

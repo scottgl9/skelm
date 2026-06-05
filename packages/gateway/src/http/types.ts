@@ -92,6 +92,8 @@ export type ScheduleTrigger =
       path: string
       method?: string
       secret?: string
+      replayWindowSeconds?: number
+      maxBodyBytes?: number
       dedupe?: { header: string; ttlMs?: number }
     }
   | { kind: 'poll'; everyMs: number; sourceFnId: string; dedupeKeyFnId?: string }

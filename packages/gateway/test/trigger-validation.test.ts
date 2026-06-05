@@ -91,6 +91,46 @@ describe('interval everyMs validation (tight-loop DoS)', () => {
       expect(pipelineTriggerToSpec('wf', { kind: 'cron' }, 0)).toBeUndefined()
       expect(pipelineTriggerToSpec('wf', { kind: 'cron', cron: '' }, 0)).toBeUndefined()
     })
+
+    it('forwards webhook replay and body-size limits', () => {
+      const spec = pipelineTriggerToSpec(
+        'wf',
+        {
+          kind: 'webhook',
+          path: '/hooks/wf',
+          secret: 'shared',
+          replayWindowSeconds: 45,
+          maxBodyBytes: 256,
+        },
+        0,
+      )
+      expect(spec).toMatchObject({
+        kind: 'webhook',
+        workflowId: 'wf',
+        path: '/hooks/wf',
+        replayWindowSeconds: 45,
+        maxBodyBytes: 256,
+      })
+    })
+
+    it('forwards GitHub PR webhook body-size limits', () => {
+      const spec = pipelineTriggerToSpec(
+        'wf',
+        {
+          kind: 'github-pr',
+          path: '/hooks/github-pr',
+          secret: 'shared',
+          maxBodyBytes: 512,
+        },
+        0,
+      )
+      expect(spec).toMatchObject({
+        kind: 'webhook',
+        workflowId: 'wf',
+        path: '/hooks/github-pr',
+        maxBodyBytes: 512,
+      })
+    })
   })
 
   describe('TriggerCoordinator', () => {

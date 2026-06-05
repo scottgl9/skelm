@@ -57,6 +57,12 @@ export function pipelineTriggerToSpec(
         path: trigger.path as string,
         ...(trigger.method !== undefined && { method: trigger.method as string }),
         ...(trigger.secret !== undefined && { secret: trigger.secret as string }),
+        ...(typeof trigger.replayWindowSeconds === 'number' && {
+          replayWindowSeconds: trigger.replayWindowSeconds,
+        }),
+        ...(typeof trigger.maxBodyBytes === 'number' && {
+          maxBodyBytes: trigger.maxBodyBytes,
+        }),
         ...((trigger.provider === 'slack' || trigger.provider === 'ms-graph') && {
           provider: trigger.provider,
         }),
@@ -164,6 +170,12 @@ export function pipelineTriggerToSpec(
         path: trigger.path as string,
         method: 'POST',
         ...(trigger.secret !== undefined && { secret: trigger.secret as string }),
+        ...(typeof trigger.replayWindowSeconds === 'number' && {
+          replayWindowSeconds: trigger.replayWindowSeconds,
+        }),
+        ...(typeof trigger.maxBodyBytes === 'number' && {
+          maxBodyBytes: trigger.maxBodyBytes,
+        }),
         dedupe: {
           header: 'X-GitHub-Delivery',
           ttlMs: (trigger.dedupeTtlMs as number | undefined) ?? 24 * 60 * 60 * 1000,
