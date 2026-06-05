@@ -334,7 +334,7 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
   // before the construction completes.
   // Build the backend registry BEFORE constructing the Gateway so it can be
   // passed into GatewayOptions. The registry covers BOTH `config.instances`
-  // (pre-built backends like vercel-ai / opencode SDK / pi-sdk) AND
+  // (pre-built backends like vercel-ai / opencode SDK / pi) AND
   // `config.backends.<id>` factory entries (Pi RPC, opencode subprocess, …).
   // Without it, runs that reference a config-backed backend id (e.g.
   // `agent({ backend: 'pi' })`) — regardless of whether they were fired

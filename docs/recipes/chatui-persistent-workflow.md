@@ -74,7 +74,7 @@ import { createTerminalFrontend } from './chatui-frontend.mts'
 
 export default defineConfig({
   registries: { workflows: { glob: '*.workflow.{mts,ts}' } },
-  instances: [createPiBackend({ id: 'pi', /* ... */ })],
+  instances: [createPiSdkBackend({ id: 'pi', /* ... */ })],
   agentmemory: { enabled: true },         // long-term recall across sessions
   triggerSources: [
     {

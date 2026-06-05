@@ -1,6 +1,6 @@
 import { defineConfig } from '@skelm/core'
 import { MatrixIntegration } from '@skelm/integrations'
-import { createPiBackend } from '@skelm/pi'
+import { createPiSdkBackend } from '@skelm/pi'
 
 const homeserverUrl = process.env.MATRIX_HOMESERVER_URL
 const accessToken = process.env.MATRIX_ACCESS_TOKEN
@@ -46,9 +46,8 @@ export default defineConfig({
     workflows: { glob: '*.workflow.{mts,ts}' },
   },
   instances: [
-    createPiBackend({
+    createPiSdkBackend({
       id: 'pi',
-      ...(process.env.PI_COMMAND !== undefined && { command: process.env.PI_COMMAND }),
       provider: process.env.PI_PROVIDER ?? 'llamacpp',
       model: process.env.PI_MODEL ?? 'qwen36',
       maxConcurrent: 1,

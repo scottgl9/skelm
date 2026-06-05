@@ -3,7 +3,7 @@ import { defineConfig } from 'skelm'
 
 export default defineConfig({
   // Backend selectors and definitions. The CLI wires these by id automatically:
-  //   openai, anthropic, opencode, copilot-acp, acp, pi (RPC variant)
+  //   openai, anthropic, opencode, copilot-acp, acp, pi
   // Use `instances:` (below) for the pi SDK backend or any custom backend.
   backends: {
     default: 'openai', // used by infer() and agent() unless overridden

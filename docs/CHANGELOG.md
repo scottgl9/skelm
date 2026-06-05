@@ -22,7 +22,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Fixed
 
-- **`skelm gateway start` from a directory with no `skelm.config.*` no longer applies the framework deny-all permission baseline as the operator ceiling.** The CLI loader previously returned `DEFAULT_CONFIG` verbatim on the no-config path, propagating its `networkEgress: 'deny'` / empty allow-lists into `new Gateway({ config })` — surviving the constructor's strip (which only triggers when `options.config` is undefined). The result was that a workflow explicitly granting `networkEgress: 'allow'` still tripped pi-sdk's `assertEgressEnforceable` because the intersection collapsed back to `'deny'`. The loader now strips `defaults.permissions` on its no-config branch too, mirroring the constructor's intent.
+- **`skelm gateway start` from a directory with no `skelm.config.*` no longer applies the framework deny-all permission baseline as the operator ceiling.** The CLI loader previously returned `DEFAULT_CONFIG` verbatim on the no-config path, propagating its `networkEgress: 'deny'` / empty allow-lists into `new Gateway({ config })` — surviving the constructor's strip (which only triggers when `options.config` is undefined). The result was that a workflow explicitly granting `networkEgress: 'allow'` still tripped Pi's `assertEgressEnforceable` because the intersection collapsed back to `'deny'`. The loader now strips `defaults.permissions` on its no-config branch too, mirroring the constructor's intent.
 
 - **Runs that fail during the `tui` chat host no longer render as a blank `builder ›` line.** `runTurn` swallowed `run.failed` / `run.cancelled` SSE events and returned an empty string, so a turn that died (e.g. on a backend permission error) looked like the agent had silently moved on. The host now captures the error message from the SSE event (or refetches the run record when the stream missed it) and renders `(failed) <message>`.
 
@@ -197,7 +197,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Absolute-path trigger dispatch.** Scheduler/trigger entries that reference an on-disk workflow path now start runs through the gateway and honor `SKELM_GATEWAY_URL` for the dispatch target.
 - **`skelm schedule add` accepts a workflow file path** in addition to a registered pipeline id.
 - **Egress proxy wiring on HTTP run paths.** When a gateway is configured with an egress proxy, ad-hoc HTTP-launched runs now flow through it (previously only locally-dispatched runs did).
-- **Skelm builder workflow** with selectable backend (codex, pi-sdk verified against local qwen36); permissions on the builder are self-contained so it can be cloned without pulling in repo-wide defaults.
+- **Skelm builder workflow** with selectable backend (codex, Pi verified against local qwen36); permissions on the builder are self-contained so it can be cloned without pulling in repo-wide defaults.
 - **Resolve directories to a config entrypoint in `skelm run`.** Passing a directory now picks up its `skelm.config.{mts,ts}` / default workflow entry instead of erroring.
 
 ### Fixed
@@ -471,7 +471,7 @@ If you prefer to keep `.ts`, add `"type": "module"` to your `package.json`.
 - **CLI `SecretResolver` wiring** — `skelm run` now instantiates `FileSecretResolver` (driver `'file'`, honouring `SKELM_STATE_DIR` / `~/.skelm/secrets.json`) or `EnvSecretResolver` based on `skelm.config.ts` and passes it to `runPipeline()`. Previously the CLI path always failed agent/llm/code steps that declared `secrets: [...]` with "no SecretResolver is configured".
 - **CLI gateway `loadWorkflow`** — `skelm gateway start` now passes its tsImport-based workflow loader to the `Gateway` constructor as well as the trigger dispatcher. Without this, `POST /pipelines/:id/run` returned 501 and invoke() targets could not be resolved over HTTP.
 - **`skelm approvals` CLI** (#55) — config command for managing approval policy and approver lists.
-- **Gateway embedded CONNECT proxy** (#76) — real `networkEgress` enforcement at the network layer; per-step proxy env plumbed through the runner; pi-sdk and pi-rpc backends use it for egress.
+- **Gateway embedded CONNECT proxy** (#76) — real `networkEgress` enforcement at the network layer; per-step proxy env plumbed through the runner.
 - **Telegram integration + example** (#71, #72) — `TelegramIntegration` and a gateway-hosted Telegram bot example.
 
 ### Changed
@@ -487,8 +487,8 @@ If you prefer to keep `.ts`, add `"type": "module"` to your `package.json`.
 - **`permission.denied` audit event for `BackendCapabilityError`** (#94) — capability-check denials are now auditable instead of silently failing.
 - **MCP permission denials + tool dispatch written to audit log** (#91) — closes a previous audit-blind spot for MCP tools.
 - **opencode**: forward MCP servers, answer permission asks, kill orphaned child processes on shutdown (#93).
-- **`pi-sdk` `stopReason: 'error' | 'aborted'`** promoted to a real failure (#79, F007) instead of being treated as success.
-- **`pi-sdk` fail-closed when `networkEgress !== 'allow'`** — drops `bash` (and other network-capable tools) from the allowlist; the only outbound path Pi has.
+- **Pi `stopReason: 'error' | 'aborted'`** promoted to a real failure (#79, F007) instead of being treated as success.
+- **Pi fail-closed when `networkEgress !== 'allow'`** — drops `bash` (and other network-capable tools) from the allowlist; the only outbound path Pi has.
 - **`vercel-ai` schema path** (#81, F006) — uses `generateObject` / `Output.object` for `outputSchema`, not best-effort JSON parsing.
 - **Gateway discovery URL** written correctly on start (#78, F004).
 - **`schedule --input` persisted** and used as the default fire payload (#77, F008).
@@ -529,15 +529,13 @@ If you prefer to keep `.ts`, add `"type": "module"` to your `package.json`.
 
 ### Fixed
 - **`permission.denied` on backend defense-in-depth `PermissionDeniedError`** — backends that throw `PermissionDeniedError` from their own `run()` guard now emit a `permission.denied` event before the error propagates, making them auditable.
-- **Pi RPC honest enforcement** — Pi RPC backend now declares `toolPermissions: 'unsupported'`; any step with permissions against it fails closed at capability-check time. Defense-in-depth guard in `run()` rejects any non-`undefined` `ResolvedPolicy`.
-- **Pi SDK `llm()` support** — `pi-sdk` backend now implements `infer()` with `noTools: 'all'`; supports `outputSchema` by parsing fenced JSON from the response.
+- **Pi SDK `llm()` support** — Pi now implements `infer()` with `noTools: 'all'`; supports `outputSchema` by parsing fenced JSON from the response.
 - **`skelm run` skill loading** — `skillSource` was never passed to `runPipeline`; agent steps with `skills: [...]` silently had no skill content. Fixed, with propagation through nested pipeline steps.
 - **Pi SDK `networkEgress: 'deny'`** — drops `bash` from the Pi tool allowlist when `networkEgress` is `deny`, blocking `curl`/`wget` as the only network path available to Pi agents.
 - **Integration error propagation** — `dispatchEvent()` auth failures and handler errors now surface to callers instead of being silenced.
 - **`eventToRunInput` type-safety** — changed from a `typeof` duck-check to the typed optional method on the `Integration` interface.
 
 ### Security
-- Pi RPC backend now fails closed (`toolPermissions: 'unsupported'`) — workflows with any permission declaration against Pi RPC get a capability error before any backend runs. Switch to `pi-sdk` for permission-scoped Pi workflows.
 - `permission.denied` event and audit entry are now emitted for `BackendCapabilityError` (capability-check denial) and for `PermissionDeniedError` thrown from inside `backend.run()`, closing two audit-blind spots.
 - Pi SDK enforces `networkEgress: 'deny'` by dropping `bash` from the tool allowlist (Pi's only outbound network path).
 
@@ -552,7 +550,7 @@ Publish-pipeline fixes on top of 0.3.5.
 ## [0.3.5] - 2026-05-05
 
 ### Added
-- **Pi SDK backend** — `pi-sdk` backend with native tool allowlist enforcement via Pi's `tools[]`/`noTools` API; system prompt injection and per-agent sandbox defaults.
+- **Pi SDK backend** — native tool allowlist enforcement via Pi's `tools[]`/`noTools` API; system prompt injection and per-agent sandbox defaults.
 - **opencode backend improvements** — non-blocking `promptAsync`+SSE streaming; `OPENCODE_CONFIG_CONTENT` injection at spawn time for model/logLevel config; `serverPermissions` field for server-level bash/edit/webfetch defaults.
 - **Core permission enforcement wired** — runtime call sites for `canLoadSkill`, `canRead`, `canWrite`, and expanded `canExec` are now active.
 - **skelm Agent Skill** — published at `skill/skelm` for use as a Claude Code skill.

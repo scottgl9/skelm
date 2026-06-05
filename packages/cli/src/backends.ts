@@ -11,7 +11,7 @@ import {
   createOpenAIBackend,
 } from '@skelm/core'
 import { type OpencodeBackendConfig, createOpencodeBackendFromConfig } from '@skelm/opencode'
-import { createPiBackendFromConfig } from '@skelm/pi'
+import { createPiSdkBackend } from '@skelm/pi'
 
 export function applyConfiguredBackends<TInput, TOutput>(
   pipeline: Pipeline<TInput, TOutput>,
@@ -245,20 +245,39 @@ function createBackend(backendId: string, config: SkelmConfig, secretResolver?: 
       return createCodexBackend(opts)
     }
     case 'pi': {
-      const cmd = readString(entry.command)
       const cwd = readString(entry.cwd)
       const provider = readString(entry.provider)
       const model = readString(entry.model)
+      const baseUrl = readString(entry.baseUrl)
+      const directApiKey = readString(entry.apiKey)
+      const resolvedApiKey = directApiKey ?? resolveSecret(entry.apiKey)
       const timeout = readNumber(entry.timeout)
       const maxConcurrent = readNumber(entry.maxConcurrent)
+      const contextWindow = readNumber(entry.contextWindow)
+      const maxTokens = readNumber(entry.maxTokens)
+      const systemPrompt = readString(entry.systemPrompt)
+      const vision = typeof entry.vision === 'boolean' ? entry.vision : undefined
+      const noExtensions = typeof entry.noExtensions === 'boolean' ? entry.noExtensions : undefined
+      const noSkills = typeof entry.noSkills === 'boolean' ? entry.noSkills : undefined
+      const noContextFiles =
+        typeof entry.noContextFiles === 'boolean' ? entry.noContextFiles : undefined
 
-      return createPiBackendFromConfig({
-        ...(cmd !== undefined && { command: cmd }),
+      return createPiSdkBackend({
+        id: backendId,
         ...(cwd !== undefined && { cwd }),
         ...(provider !== undefined && { provider }),
         ...(model !== undefined && { model }),
+        ...(baseUrl !== undefined && { baseUrl }),
+        ...(resolvedApiKey !== undefined && { apiKey: resolvedApiKey }),
         ...(timeout !== undefined && { timeout }),
         ...(maxConcurrent !== undefined && { maxConcurrent }),
+        ...(contextWindow !== undefined && { contextWindow }),
+        ...(maxTokens !== undefined && { maxTokens }),
+        ...(systemPrompt !== undefined && { systemPrompt }),
+        ...(vision !== undefined && { vision }),
+        ...(noExtensions !== undefined && { noExtensions }),
+        ...(noSkills !== undefined && { noSkills }),
+        ...(noContextFiles !== undefined && { noContextFiles }),
       })
     }
     default:

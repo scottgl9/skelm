@@ -57,16 +57,9 @@ agent({ id: 'implement', backend: 'pi', prompt: '...' })
 
 If `backend` is omitted on the step, the runtime resolves it from (in order): `config.backends.agent`, `config.backends.default`, `config.backend`, `config.defaults.backend`. If none of those is set the step fails at start.
 
-### Pi backends (`@skelm/pi`)
+### Pi backend (`@skelm/pi`)
 
-Two pi backends ship in `@skelm/pi`. Prefer the **SDK** backend — it gives you native enforcement of the skelm permission policy and supports both `agent()` and `infer()` steps.
-
-| | `createPiBackend` (RPC) | `createPiSdkBackend` (SDK) |
-|---|---|---|
-| Tool enforcement | Advisory | **Native** — pi hard-enforces the allowlist |
-| `infer()` support  | No                      | Yes                          |
-| System prompt    | Not controllable        | Pi's default; `req.system` appended; optional full replace |
-| Peer dep         | `pi` CLI on `$PATH`     | `@earendil-works/pi-coding-agent` npm package |
+The Pi backend uses the pi SDK, gives you native enforcement of the skelm permission policy, and supports both `agent()` and `infer()` steps.
 
 Wiring:
 
@@ -88,9 +81,9 @@ Permission → pi tool mapping:
 - `allowedExecutables` has `bash`/`sh` → `bash`
 - `fsRead` non-empty → `read`, `grep`, `find`, `ls`
 - `fsWrite` non-empty → `write`, `edit` (+ read tools)
-- `networkEgress: 'deny'` → drops `bash` (pi has no native fetch tool, so removing shell is the only way to deny network)
+- `networkEgress: 'deny'` or host allowlists → refused before dispatch because Pi SDK runs in-process
 
-⚠ **Permission semantics with the SDK backend differ from MCP-host backends.** Pi has one `bash` tool (not per-binary) — granting `bash` lets the agent run any executable. Filesystem paths are advisory: `fsRead`/`fsWrite` unlock the tool *category* but don't constrain paths. Use the SDK backend inside an already-bounded workspace (ephemeral cwd, OS sandbox, container); use MCP-host backends (opencode) when you need per-call binary/path enforcement.
+⚠ **Permission semantics with Pi differ from MCP-host backends.** Pi has one `bash` tool (not per-binary) — granting `bash` lets the agent run any executable. Filesystem paths are advisory: `fsRead`/`fsWrite` unlock the tool *category* but don't constrain paths. Use Pi inside an already-bounded workspace (ephemeral cwd, OS sandbox, container); use MCP-host backends (opencode) when you need per-call binary/path enforcement.
 
 ## MCP servers
 

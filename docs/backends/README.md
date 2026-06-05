@@ -24,13 +24,12 @@ Capabilities (`prompt`, `streaming`, `mcp`, `skills`, `modelSelection`, `toolPer
 | Anthropic               | `createAnthropicBackend`           | `@skelm/core`    |   ✅    |    —      | n/a              |
 | ACP (generic)           | `createAcpBackend`                 | `@skelm/core`    |   —     |    ✅     | advisory         |
 | Routing backend         | `createRoutingBackend`             | `@skelm/core`    |   ✅    |    ✅     | delegated        |
-| Pi (RPC)                | `createPiBackendFromConfig`        | `@skelm/pi`      |   —     |    ✅     | advisory         |
-| Pi (SDK)                | `createPiSdkBackend`               | `@skelm/pi`      |   ✅    |    ✅     | native           |
+| Pi                      | `createPiSdkBackend`               | `@skelm/pi`      |   ✅    |    ✅     | native           |
 | Opencode                | `createOpencodeBackendFromConfig`  | `@skelm/opencode`|   —     |    ✅     | native           |
 | Vercel AI SDK           | `createVercelAiBackend`            | `@skelm/vercel-ai`|  ✅    |    ✅     | native           |
 | skelm agent (in-process)| `createSkelmAgentBackend`          | `@skelm/agent`    |  ✅    |    ✅     | native           |
 
-The CLI (`packages/cli/src/backends.ts`) wires the OpenAI, Anthropic, generic ACP, Copilot ACP, opencode, and pi-RPC backends from `skelm.config.ts` automatically. To use the **pi SDK backend**, the **Vercel AI SDK backend**, the **skelm agent backend**, or any other backend not listed above, register it via `instances:` (see "Registering a custom backend" below).
+The CLI (`packages/cli/src/backends.ts`) wires the OpenAI, Anthropic, generic ACP, Copilot ACP, opencode, Pi, skelm agent, and Codex backends from `skelm.config.ts` automatically. To use the **Vercel AI SDK backend** or any other backend not listed above, register it via `instances:` (see "Registering a custom backend" below).
 
 ## Configuring built-in backends from `skelm.config.ts`
 
@@ -107,7 +106,7 @@ export default pipeline({
 
 ## Registering a custom (or unwired) backend
 
-For any backend the CLI doesn't know how to construct from a `backends:` entry — including the **pi SDK backend** — pre-build the instance and pass it via `instances:`. The runtime registers it directly under its `id`.
+For any backend the CLI doesn't know how to construct from a `backends:` entry, pre-build the instance and pass it via `instances:`. The runtime registers it directly under its `id`.
 
 ```ts
 import { defineConfig } from 'skelm'
@@ -139,7 +138,7 @@ openai: {
 
 For `agent()` you want a coding-agent backend that can drive multi-turn tool use under skelm's permission model. The recommended choices are:
 
-- **`@skelm/pi` SDK** (`createPiSdkBackend`) — native enforcement of the skelm permission policy; pi resolves the underlying model from its own settings (`~/.pi/auth.json`, `~/.pi/models.json`).
+- **`@skelm/pi`** (`createPiSdkBackend`) — native enforcement of the skelm permission policy; pi can use explicit provider options or its own settings.
 - **`@skelm/opencode`** (`createOpencodeBackendFromConfig`) — native enforcement; reaches the opencode agent service.
 - **`@skelm/codex`** (`createCodexBackend`) — OpenAI Codex via the official `@openai/codex-sdk`. Wrapped tool enforcement: Codex enforces its sandbox in-process; skelm validates the policy at the boundary, pins the workspace, and audits per-event. MCP servers are injected via Codex's `config.mcp_servers`, and skill bodies are concatenated into the system prompt.
 - **ACP backends** (`createAcpBackend`) — works with any agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com) (Copilot, Claude Code, opencode). Tool enforcement is **advisory** — the subprocess can ignore the allowlist; skelm logs the violation but cannot prevent it.

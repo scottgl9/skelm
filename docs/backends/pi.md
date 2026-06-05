@@ -1,17 +1,8 @@
 # `@skelm/pi` backend
 
-Drives the [pi coding-agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) under skelm's permission model.
+Drives the [pi coding-agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) through its SDK under skelm's permission model.
 
-Two flavours are available:
-
-| Factory                         | How                                              | Tool enforcement                              |
-|---------------------------------|--------------------------------------------------|-----------------------------------------------|
-| `createPiSdkBackend` *(recommended)* | Uses the pi SDK in-process                  | **native** — pi enforces the allowlist        |
-| `createPiBackendFromConfig`     | Spawns `pi --mode rpc` per call                  | **advisory** — skelm intercepts after the fact |
-
-Use the SDK backend for new work. The RPC backend exists for environments where the SDK peer dependency cannot be installed.
-
-The SDK backend also supports `infer()` steps — `prompt: true` in its capability declaration — which is unusual for an agent backend.
+The Pi backend supports both `agent()` and `infer()` steps. It passes a native tool allowlist to pi so pi enforces the enabled built-in tools for the session.
 
 ## Install
 
@@ -19,15 +10,28 @@ The SDK backend also supports `infer()` steps — `prompt: true` in its capabili
 npm install @skelm/pi @earendil-works/pi-coding-agent
 ```
 
-The pi SDK is a peer dependency. The RPC backend instead requires the `pi` CLI on `$PATH`:
-
-```bash
-npm install -g @earendil-works/pi-coding-agent
-```
-
 ## Wiring into `skelm.config.ts`
 
-The CLI's `backends:` shorthand wires the **RPC** backend automatically when it sees a `pi` key. To use the SDK backend, register an instance:
+The CLI wires the `pi` backend id to the SDK backend automatically:
+
+```ts
+import { defineConfig } from 'skelm'
+
+export default defineConfig({
+  backends: {
+    agent: 'pi',
+    pi: {
+      provider: 'openai',
+      model: 'qwen36',
+      baseUrl: 'http://localhost:8000/v1',
+      apiKey: 'unused',
+      maxConcurrent: 4,
+    },
+  },
+})
+```
+
+You can also register an explicit instance:
 
 ```ts
 import { defineConfig } from 'skelm'
@@ -38,6 +42,10 @@ export default defineConfig({
   instances: [
     createPiSdkBackend({
       id: 'pi',
+      provider: 'openai',
+      model: 'qwen36',
+      baseUrl: 'http://localhost:8000/v1',
+      apiKey: 'unused',
       cwd: './workspace',
       timeout: 300_000,
       maxConcurrent: 4,
@@ -45,23 +53,6 @@ export default defineConfig({
   ],
 })
 ```
-
-For the RPC backend in `skelm.config.ts`:
-
-```ts
-backends: {
-  agent: 'pi',
-  pi: {
-    command:  'pi',          // optional; default: 'pi' on $PATH
-    provider: 'anthropic',   // pi provider; omit for pi's default
-    model:    'claude-opus-4-7',
-    timeout:  300_000,
-    maxConcurrent: 4,
-  },
-}
-```
-
-The pi SDK backend does **not** accept `provider`/`model` overrides — pi resolves both from its own settings (`~/.pi/auth.json`, `~/.pi/models.json`). Configure pi externally before using the SDK backend.
 
 ## Step-level usage
 
@@ -86,7 +77,7 @@ export default pipeline({
         allowedSkills:      [],
         fsRead:             ['./src'],
         fsWrite:            ['./src'],
-        networkEgress:      'deny',
+        networkEgress:      'allow',
       },
       output: z.object({ summary: z.string() }),
       maxTurns: 8,
@@ -95,23 +86,22 @@ export default pipeline({
 })
 ```
 
-## Permission → pi tool mapping (SDK backend)
+## Permission to pi tool mapping
 
 | skelm permission                                   | pi tools enabled                  |
 |----------------------------------------------------|-----------------------------------|
 | `allowedExecutables` contains `'bash'` / `'sh'`    | `bash`                            |
 | `fsRead` non-empty                                 | `read`, `grep`, `find`, `ls`      |
 | `fsWrite` non-empty                                | `write`, `edit` (read tools too)  |
-| `networkEgress: 'deny'`                            | drops `bash` (no native fetch tool — disabling shell is the only way to deny network) |
+| `networkEgress: 'deny'`                            | refused before dispatch           |
 | policy `undefined`                                 | pi defaults (no override)         |
 | policy present, nothing granted                    | `noTools: 'all'` — all built-ins suppressed |
 
-## ⚠ Caveats
+## Caveats
 
-- **`bash` is all-or-nothing.** Pi exposes a single `bash` tool, not per-binary tools. If you grant `bash`, the agent can run *any* binary. Use an MCP-host backend (opencode, claude-code) when you need per-binary filtering.
-- **Filesystem paths are advisory.** `fsRead` / `fsWrite` unlock the *category* of filesystem tools; pi's `read`/`write`/`grep`/`find`/`ls` can access anywhere the pi process can. Run pi inside an isolated workspace (ephemeral cwd, OS sandbox, container) when this matters.
-
-These caveats are inherent to pi's enforcement surface — if your threat model requires per-binary or per-path enforcement, choose the opencode backend instead.
+- **`bash` is all-or-nothing.** Pi exposes a single `bash` tool, not per-binary tools. If you grant `bash`, the agent can run any binary. Use an MCP-host backend such as opencode when you need per-binary filtering.
+- **Filesystem paths are advisory.** `fsRead` / `fsWrite` unlock the category of filesystem tools; pi's `read`/`write`/`grep`/`find`/`ls` can access anywhere the pi process can. Run pi inside an isolated workspace, OS sandbox, or container when this matters.
+- **In-process egress cannot be proxied.** Pi SDK calls run in-process, so skelm refuses `networkEgress: 'deny'` or host allowlists for Pi steps. Set `networkEgress: 'allow'` when the Pi provider may call an upstream model.
 
 ## Capabilities
 
@@ -121,7 +111,7 @@ These caveats are inherent to pi's enforcement surface — if your threat model 
   toolPermissions: 'native' }
 ```
 
-The SDK backend supports skills via `formatSkillBlock` (skill metadata + body injected into the system prompt).
+The backend supports skills via `formatSkillBlock` (skill metadata + body injected into the system prompt).
 
 ## See also
 

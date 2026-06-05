@@ -19,7 +19,7 @@ Runnable workflow examples. Each subdirectory is a self-contained workflow you c
 | `matrix-assistant/`      | Persistent agent over Matrix with durable per-room conversation.            |
 | `chatui-assistant/`      | Persistent agent over a local chat UI — terminal **or** browser — from one integration: durable session + agentmemory. |
 | `agent-delegation/`      | Multi-agent: a router `agent()` delegates to a specialist via the `delegate` tool. |
-| `pi-sdk-smoke/`          | Minimal pi SDK backend smoke pipeline with tool execution.                 |
+| `pi-smoke/`              | Minimal pi backend smoke pipeline with tool execution.                     |
 | `dashboard-demo/`        | Static dashboard page for gateway dashboard endpoints.                     |
 
 ## Run

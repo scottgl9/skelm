@@ -3,7 +3,7 @@
  */
 
 export interface PiSdkBackendOptions {
-  /** Backend id (default: 'pi-sdk') */
+  /** Backend id (default: 'pi') */
   id?: string
   /** Human-readable label */
   label?: string
@@ -53,13 +53,13 @@ export interface PiSdkBackendOptions {
    * Defaults to `process.env.OPENAI_PROVIDER ?? 'openai'`. Pass an explicit
    * value to pin a different provider (e.g. `'anthropic'`).
    *
-   * Together with `model` / `baseUrl` / `apiKey`, this lets pi-sdk be pointed
+   * Together with `model` / `baseUrl` / `apiKey`, this lets Pi be pointed
    * at a local OpenAI-compatible server (sglang, vLLM, llama.cpp, ollama)
    * without hand-editing `~/.pi/agent/models.json`. Per finding-119 the env
-   * vars are honored automatically so pi-sdk reaches the same endpoint as
+   * vars are honored automatically so Pi reaches the same endpoint as
    * every other skelm backend in the same config.
    *
-   * `OPENAI_PROVIDER` is a pi-sdk-specific addition (the cross-backend
+   * `OPENAI_PROVIDER` is a Pi-specific addition (the cross-backend
    * convention is just `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `OPENAI_MODEL`).
    * It exists because pi's ModelRegistry is keyed by provider name; if you
    * want to register the override against a non-`openai` provider (e.g.
@@ -89,7 +89,7 @@ export interface PiSdkBackendOptions {
    * Optional `contextWindow` (in tokens) declared on the registered model
    * entry. Defaults to 131_072 — a permissive ceiling that works for most
    * modern local-LLM servers (sglang qwen3-coder, vLLM llama-3.1, …) and
-   * matches pi's built-in qwen/gpt defaults. Override when pinning pi-sdk
+   * matches pi's built-in qwen/gpt defaults. Override when pinning Pi
    * at a small-context model (e.g. llama.cpp serving a 4K-context variant)
    * so pi's own context-tracking math stays honest. The value is metadata —
    * pi does not use it for hard truncation today, but downstream tooling may.
@@ -101,32 +101,4 @@ export interface PiSdkBackendOptions {
    * override when targeting a model with a tighter (or looser) output cap.
    */
   maxTokens?: number
-}
-
-export interface PiBackendOptions {
-  /** Backend id (default: 'pi') */
-  id?: string
-  /** Human-readable label */
-  label?: string
-  /** Path to the pi binary (default: 'pi' on PATH) */
-  command?: string
-  /** Provider name (e.g. 'llamacpp', 'anthropic'). Omit to use pi's default. */
-  provider?: string
-  /** Model ID (e.g. 'qwen36'). Omit to use pi's default. */
-  model?: string
-  /** Working directory for the pi process */
-  cwd?: string
-  /** Request timeout in ms (default: 300_000 = 5 min) */
-  timeout?: number
-  /**
-   * Maximum simultaneous pi processes. Defaults to 4. Set to 0 for unlimited.
-   * Excess calls are queued until a slot opens.
-   */
-  maxConcurrent?: number
-  /**
-   * Optional egress proxy URL to inject into subprocess environment.
-   * When provided along with an egress token from the gateway, the pi process
-   * will route outbound connections through the proxy for network policy enforcement.
-   */
-  egressProxyUrl?: string
 }

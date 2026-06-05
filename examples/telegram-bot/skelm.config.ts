@@ -1,6 +1,6 @@
 import { defineConfig } from '@skelm/core'
 import { TelegramIntegration } from '@skelm/integrations'
-import { createPiBackend } from '@skelm/pi'
+import { createPiSdkBackend } from '@skelm/pi'
 
 const token = process.env.TELEGRAM_BOT_TOKEN
 if (token === undefined || token === '') {
@@ -25,9 +25,8 @@ export default defineConfig({
     workflows: { glob: '*.pipeline.{mts,ts}' },
   },
   instances: [
-    createPiBackend({
+    createPiSdkBackend({
       id: 'pi',
-      ...(process.env.PI_COMMAND !== undefined && { command: process.env.PI_COMMAND }),
       provider: process.env.PI_PROVIDER ?? 'llamacpp',
       model: process.env.PI_MODEL ?? 'qwen36',
       maxConcurrent: 1,
