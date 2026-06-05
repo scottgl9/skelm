@@ -125,9 +125,12 @@ Anything exported from a package's top-level `index.ts` is public. Anything insi
 
 - Conventional prefixes: `feat:`, `fix:`, `refactor:`, `chore:`, `docs:`, `test:`.
 - Commit messages must be descriptive without being wordy. Use a clear
-  subject, then a short body when useful to capture the important reasoning,
-  behavior changes, security implications, or verification in natural
-  language. Wrap commit message body lines under 80 characters.
+  subject plus a short body for every non-trivial commit. The body should say
+  what changed/fixed/added, why it was needed, and any important validation or
+  risk context. Keep it concise: a few focused sentences or bullets are enough.
+  Wrap commit message body lines under 80 characters.
+- Truly mechanical commits, such as formatting-only churn or typo-only docs
+  edits, may omit the body only when the subject fully explains the change.
 - One logical change per commit; one per PR. Stack PRs when a feature naturally splits.
 - PR description: what changed, why, how it was tested, security implications.
 - Don't reference internal note paths or rule identifiers in commit messages — they're read by anyone who later runs `git log`.
