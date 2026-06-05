@@ -1,4 +1,4 @@
-import { timingSafeStringEqual } from '@skelm/core'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import {
   getMsGraphValidationToken,
   verifyMsGraphClientState,
@@ -10,8 +10,6 @@ import {
   createError,
   createRouter,
   eventHandler,
-  readBody,
-  readRawBody,
   setResponseHeader,
 } from 'h3'
 import type { Gateway } from '../lifecycle/gateway.js'
@@ -35,6 +33,8 @@ import { registerSecretRoutes } from './routes/secrets.js'
 import { registerSessionRoutes } from './routes/sessions.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
 import { registerWorkspaceRoutes } from './routes/workspaces.js'
+
+const DEFAULT_WEBHOOK_MAX_BODY_BYTES = 1_048_576
 
 /**
  * Mount the gateway control surface on an h3 app via a method-aware router.
@@ -81,9 +81,20 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       if (triggerId === undefined) return
       const reg = gateway.managers.triggers.get(triggerId)
       if (reg === undefined || reg.spec.kind !== 'webhook') return
-      // Slack signs the raw body verbatim; capture it before any JSON parse.
-      const slackRawBody =
-        reg.spec.provider === 'slack' ? ((await readRawBody(event, 'utf8')) ?? '') : undefined
+      // MS Graph subscription validation: echo the token before any dispatch.
+      if (reg.spec.provider === 'ms-graph' && method.toUpperCase() === 'GET') {
+        const token = getMsGraphValidationToken(url)
+        if (token !== null) {
+          setResponseHeader(event, 'content-type', 'text/plain')
+          return token
+        }
+      }
+      // Webhooks need the raw body bytes before any JSON parse. Enforce the
+      // cap while reading so chunked requests cannot bypass maxBodyBytes.
+      const rawBody = await readWebhookRawBody(
+        event,
+        reg.spec.maxBodyBytes ?? DEFAULT_WEBHOOK_MAX_BODY_BYTES,
+      )
       if (reg.spec.secret !== undefined) {
         if (reg.spec.provider === 'slack') {
           const signature = event.headers.get('x-slack-signature')
@@ -94,26 +105,28 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
             timestamp === null ||
             !/^\d+$/.test(timestamp) ||
             Number(timestamp) < replayCutoff ||
-            !verifySlackSignature(slackRawBody ?? '', signature, timestamp, reg.spec.secret)
+            !verifySlackSignature(rawBody, signature, timestamp, reg.spec.secret)
           ) {
             throw createError({
               statusCode: 401,
               message: 'Slack signature verification failed',
             })
           }
-        } else {
-          const provided = event.headers.get('x-webhook-secret') ?? ''
-          if (!timingSafeStringEqual(provided, reg.spec.secret)) {
-            throw createError({ statusCode: 401, message: 'webhook secret mismatch' })
+        } else if (reg.spec.provider === undefined) {
+          const verdict = verifySignature(
+            event,
+            rawBody,
+            reg.spec.secret,
+            reg.spec.replayWindowSeconds,
+          )
+          if (verdict !== 'ok') {
+            throw createError({
+              statusCode: 401,
+              message: `webhook signature verification failed: ${verdict}`,
+            })
           }
-        }
-      }
-      // MS Graph subscription validation: echo the token before any dispatch.
-      if (reg.spec.provider === 'ms-graph' && method.toUpperCase() === 'GET') {
-        const token = getMsGraphValidationToken(url)
-        if (token !== null) {
-          setResponseHeader(event, 'content-type', 'text/plain')
-          return token
+        } else {
+          throw createError({ statusCode: 401, message: 'unsupported webhook secret provider' })
         }
       }
       if (reg.spec.dedupe !== undefined) {
@@ -146,11 +159,12 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       // payload: undefined like the legacy behaviour.
       let body: unknown
       try {
-        if (slackRawBody !== undefined) {
-          body = slackRawBody === '' ? undefined : (JSON.parse(slackRawBody) as unknown)
-        } else {
-          body = await readBody(event)
-        }
+        body =
+          reg.spec.provider === 'slack'
+            ? rawBody === ''
+              ? undefined
+              : (JSON.parse(rawBody) as unknown)
+            : parseJsonBody(rawBody)
       } catch {
         body = undefined
       }
@@ -189,4 +203,72 @@ export function mountControlRoutes(app: App, gateway: Gateway): void {
       return { ok: true, triggerId }
     }),
   )
+}
+
+async function readWebhookRawBody(event: H3Event, maxBytes: number): Promise<string> {
+  const rawLength = event.headers.get('content-length')
+  if (rawLength !== null && rawLength !== '') {
+    const length = Number.parseInt(rawLength, 10)
+    if (Number.isFinite(length) && length > maxBytes) {
+      throw createError({ statusCode: 413, message: 'webhook payload too large' })
+    }
+  }
+  const req = event.node.req
+  return await new Promise<string>((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let total = 0
+    let settled = false
+    const fail = (err: unknown) => {
+      if (settled) return
+      settled = true
+      reject(err)
+    }
+    req.on('data', (chunk: Buffer | string) => {
+      if (settled) return
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+      total += buf.byteLength
+      if (total > maxBytes) {
+        fail(createError({ statusCode: 413, message: 'webhook payload too large' }))
+        return
+      }
+      chunks.push(buf)
+    })
+    req.on('end', () => {
+      if (settled) return
+      settled = true
+      resolve(Buffer.concat(chunks).toString('utf8'))
+    })
+    req.on('error', fail)
+  })
+}
+
+function parseJsonBody(raw: string): unknown {
+  if (raw === '') return undefined
+  try {
+    return JSON.parse(raw) as unknown
+  } catch {
+    return { raw }
+  }
+}
+
+function verifySignature(
+  event: H3Event,
+  rawBody: string,
+  secret: string,
+  replayWindowSeconds = 300,
+): 'ok' | 'missing-signature' | 'missing-timestamp' | 'stale-timestamp' | 'bad-signature' {
+  const sigHeader = event.headers.get('x-webhook-signature')
+  if (sigHeader === null || sigHeader.length === 0) return 'missing-signature'
+  const tsHeader = event.headers.get('x-webhook-timestamp')
+  if (tsHeader === null || tsHeader.length === 0) return 'missing-timestamp'
+  const ts = Number.parseInt(tsHeader, 10)
+  if (!Number.isFinite(ts)) return 'missing-timestamp'
+  const skew = Math.abs(Math.floor(Date.now() / 1000) - ts)
+  if (skew > replayWindowSeconds) return 'stale-timestamp'
+  const expected = createHmac('sha256', secret).update(`${ts}.${rawBody}`).digest('hex')
+  const provided = sigHeader.startsWith('sha256=') ? sigHeader.slice(7) : sigHeader
+  const a = Buffer.from(expected, 'hex')
+  const b = Buffer.from(provided, 'hex')
+  if (a.length !== b.length) return 'bad-signature'
+  return timingSafeEqual(a, b) ? 'ok' : 'bad-signature'
 }
