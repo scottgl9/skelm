@@ -31,6 +31,26 @@ describe('resolvePermissions — default-deny', () => {
     expect([...policy.allowedExecutables].sort()).toEqual(['rg'])
   })
 
+  it('intersects executable bare-name ceilings with exact absolute-path step grants', () => {
+    const policy = resolvePermissions(
+      { allowedExecutables: ['git'] },
+      { allowedExecutables: ['/tmp/skelm/git'] },
+    )
+    expect([...policy.allowedExecutables]).toEqual(['/tmp/skelm/git'])
+    expect(new TrustEnforcer(policy).canExec('/tmp/skelm/git')).toEqual({ allow: true })
+    expect(new TrustEnforcer(policy).canExec('/tmp/other/git').allow).toBe(false)
+  })
+
+  it('intersects executable exact-path ceilings with bare-name step grants', () => {
+    const policy = resolvePermissions(
+      { allowedExecutables: ['/usr/bin/git'] },
+      { allowedExecutables: ['git'] },
+    )
+    expect([...policy.allowedExecutables]).toEqual(['/usr/bin/git'])
+    expect(new TrustEnforcer(policy).canExec('/usr/bin/git')).toEqual({ allow: true })
+    expect(new TrustEnforcer(policy).canExec('git').allow).toBe(false)
+  })
+
   it('omitted step field does not widen the default', () => {
     const policy = resolvePermissions(
       { allowedExecutables: ['rg'] },
