@@ -30,6 +30,24 @@ describe('MemoryRunStore', () => {
     ])
   })
 
+  it('keeps listRuns length compatibility while remaining async iterable', async () => {
+    const store = new MemoryRunStore()
+    await store.putRun(sampleRun('run-1'))
+
+    const listed = await store.listRuns({})
+
+    expect((listed as { length?: number }).length).toBe(1)
+    await expect(collect(listed)).resolves.toEqual([
+      {
+        runId: 'run-1',
+        pipelineId: 'p',
+        status: 'completed',
+        startedAt: 1,
+        completedAt: 2,
+      },
+    ])
+  })
+
   it('stores workflow state and journals', async () => {
     const store = new MemoryRunStore()
 

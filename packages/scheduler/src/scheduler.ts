@@ -28,6 +28,31 @@ export type SchedulerPipelineExecutor = (
   ctx: TriggerContext,
 ) => Promise<Run>
 
+type SchedulerDeps = {
+  runStore: SchedulerRunStore
+  pipelineLoader?: SchedulerPipelineLoader
+  pipelineExecutor?: SchedulerPipelineExecutor
+}
+
+type LegacySchedulerConfig = SchedulerConfig & SchedulerDeps
+
+type LegacyTrigger = {
+  id: string
+  kind: Trigger['type']
+  workflowId: string
+  cron?: string
+  schedule?: string
+  intervalMs?: number
+  path?: string
+  enabled?: boolean
+  description?: string
+  dedupe?: Trigger['dedupe']
+  overlap?: Trigger['overlap']
+  maxConcurrent?: number
+  inputTemplate?: unknown
+  metadata?: Record<string, unknown>
+}
+
 /**
  * Scheduler manages long-running triggers for pipelines.
  * Handles cron, interval, and webhook triggers with overlap policies.
@@ -47,14 +72,10 @@ export class Scheduler {
   private readonly pipelineExecutor: SchedulerPipelineExecutor | undefined
   private readonly noExecutorWarned = new Set<string>()
 
-  constructor(
-    config: SchedulerConfig,
-    deps: {
-      runStore: SchedulerRunStore
-      pipelineLoader: SchedulerPipelineLoader
-      pipelineExecutor?: SchedulerPipelineExecutor
-    },
-  ) {
+  constructor(config: SchedulerConfig, deps: SchedulerDeps)
+  constructor(config: LegacySchedulerConfig)
+  constructor(config: SchedulerConfig | LegacySchedulerConfig, deps?: SchedulerDeps) {
+    const resolvedDeps = deps ?? extractLegacyDeps(config)
     const cfg: SchedulerConfig = {
       webhookPort: config.webhookPort ?? 3001,
       webhookHost: config.webhookHost ?? '127.0.0.1',
@@ -65,15 +86,16 @@ export class Scheduler {
       cfg.dbPath = config.dbPath
     }
     this.config = cfg
-    this.runStore = deps.runStore
-    this.pipelineLoader = deps.pipelineLoader
-    this.pipelineExecutor = deps.pipelineExecutor
+    this.runStore = resolvedDeps.runStore
+    this.pipelineLoader = resolvedDeps.pipelineLoader ?? (async () => null)
+    this.pipelineExecutor = resolvedDeps.pipelineExecutor
   }
 
   /** Register a new trigger */
-  async register(trigger: Trigger): Promise<TriggerRegistration> {
+  async register(trigger: Trigger | LegacyTrigger): Promise<TriggerRegistration> {
+    const normalized = normalizeTrigger(trigger)
     const registration: TriggerRegistration = {
-      trigger,
+      trigger: normalized,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       runCount: 0,
@@ -81,14 +103,14 @@ export class Scheduler {
       status: 'active',
     }
 
-    this.triggers.set(trigger.id, registration)
+    this.triggers.set(normalized.id, registration)
 
-    switch (trigger.type) {
+    switch (normalized.type) {
       case 'cron':
-        this.startCronTrigger(trigger)
+        this.startCronTrigger(normalized)
         break
       case 'interval':
-        this.startIntervalTrigger(trigger)
+        this.startIntervalTrigger(normalized)
         break
       case 'webhook':
         // Webhook server starts separately via startWebhookServer()
@@ -287,7 +309,10 @@ export class Scheduler {
    * - wait: chain after the previous run (next() resolves before we start).
    * - run-concurrent: start immediately regardless.
    */
-  private fire(trigger: Trigger): void {
+  fire(triggerOrId: Trigger | string): void {
+    const trigger =
+      typeof triggerOrId === 'string' ? this.triggers.get(triggerOrId)?.trigger : triggerOrId
+    if (trigger === undefined) return
     const previous = this.lastRun.get(trigger.id)
     const isRunning = (this.runningCount.get(trigger.id) ?? 0) > 0
     const policy = trigger.overlap ?? 'wait'
@@ -316,11 +341,6 @@ export class Scheduler {
         overlapHandled: false,
       }
 
-      const pipeline = await this.pipelineLoader(trigger.pipelineId)
-      if (!pipeline) {
-        throw new Error(`Pipeline ${trigger.pipelineId} not found`)
-      }
-
       if (this.pipelineExecutor === undefined) {
         // No executor wired: register the fire but do NOT persist a
         // status='running' Run. Persisting one without anything to
@@ -338,6 +358,10 @@ export class Scheduler {
         registration.lastRunAt = Date.now()
         registration.status = 'active'
       } else {
+        const pipeline = await this.pipelineLoader(trigger.pipelineId)
+        if (!pipeline) {
+          throw new Error(`Pipeline ${trigger.pipelineId} not found`)
+        }
         const input = trigger.inputTemplate ?? {}
         const run: Run = await this.pipelineExecutor(pipeline, input, ctx)
         await this.runStore.putRun(run)
@@ -359,5 +383,52 @@ export class Scheduler {
         this.runningCount.set(trigger.id, n)
       }
     }
+  }
+}
+
+function extractLegacyDeps(config: SchedulerConfig | LegacySchedulerConfig): SchedulerDeps {
+  const maybe = config as Partial<LegacySchedulerConfig>
+  if (maybe.runStore === undefined) {
+    throw new TypeError('Scheduler requires deps.runStore')
+  }
+  return {
+    runStore: maybe.runStore,
+    ...(maybe.pipelineLoader !== undefined && { pipelineLoader: maybe.pipelineLoader }),
+    ...(maybe.pipelineExecutor !== undefined && { pipelineExecutor: maybe.pipelineExecutor }),
+  }
+}
+
+function normalizeTrigger(trigger: Trigger | LegacyTrigger): Trigger {
+  if ('type' in trigger) return trigger
+  const base = {
+    id: trigger.id,
+    pipelineId: trigger.workflowId,
+    enabled: trigger.enabled ?? true,
+    ...(trigger.description !== undefined && { description: trigger.description }),
+    ...(trigger.dedupe !== undefined && { dedupe: trigger.dedupe }),
+    ...(trigger.overlap !== undefined && { overlap: trigger.overlap }),
+    ...(trigger.maxConcurrent !== undefined && { maxConcurrent: trigger.maxConcurrent }),
+    ...(trigger.inputTemplate !== undefined && { inputTemplate: trigger.inputTemplate }),
+    ...(trigger.metadata !== undefined && { metadata: trigger.metadata }),
+  }
+  switch (trigger.kind) {
+    case 'cron':
+      return {
+        ...base,
+        type: 'cron',
+        schedule: trigger.schedule ?? trigger.cron ?? '',
+      }
+    case 'interval':
+      return {
+        ...base,
+        type: 'interval',
+        intervalMs: trigger.intervalMs ?? 0,
+      }
+    case 'webhook':
+      return {
+        ...base,
+        type: 'webhook',
+        path: trigger.path ?? `/${trigger.id}`,
+      }
   }
 }
