@@ -1,6 +1,6 @@
 {
   "name": "@skelm/agentmemory",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "First-class agentmemory integration for skelm — typed REST client and gateway-wired AgentmemoryHandle implementation",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
