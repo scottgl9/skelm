@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Gateway, InMemoryQueueDriver } from '../src/index.js'
 
 // Regression for the silent failure I hit while running `skelm builder`:
-// every turn died with PermissionDeniedError from the pi-sdk failover
+// every turn died with PermissionDeniedError from the Pi failover
 // ("backend cannot enforce networkEgress in-process. Set networkEgress:
 // \"allow\"") even though both `defaults.permissions.networkEgress` AND
 // `agent.permissions.networkEgress` were `'allow'`. These tests pin the
@@ -133,7 +133,7 @@ describe('persistent-workflow resolved networkEgress', () => {
     await gw.stop()
   })
 
-  it("preserves 'allow' through a routing-backend's failover (codex→pi-sdk shape)", async () => {
+  it("preserves 'allow' through a routing-backend's failover (codex -> pi shape)", async () => {
     // Mirrors the builder's createRoutingBackend(primary=codex, failover=[piSdk])
     // shape. The primary throws an error-without-name so isRetryable falls
     // over, and the failover's context must still see networkEgress='allow'.

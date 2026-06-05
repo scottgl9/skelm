@@ -10,7 +10,7 @@ import { loadSkelmConfig } from '../src/load-config.js'
 // empty allow-lists). That baseline rode into `new Gateway({ config })` and
 // became the operator's permission ceiling, so every step's resolved policy
 // was intersected with deny — a workflow that explicitly granted
-// `networkEgress: 'allow'` still tripped pi-sdk's assertEgressEnforceable.
+// `networkEgress: 'allow'` still tripped Pi's assertEgressEnforceable.
 // The gateway constructor's no-config fallback already strips the baseline;
 // the loader must match.
 

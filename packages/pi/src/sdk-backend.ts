@@ -1,9 +1,8 @@
 /**
  * Pi coding agent SDK backend for skelm.
  *
- * Unlike the RPC backend (which spawns `pi --mode rpc` and cannot intercept
- * individual tool calls), this backend uses the pi SDK directly, allowing
- * skelm to pass a hard tool allowlist that pi enforces natively.
+ * This backend uses the pi SDK directly, allowing skelm to pass a hard tool
+ * allowlist that pi enforces natively.
  *
  * System prompt strategy:
  *   By default pi's coding-agent system prompt is kept active. req.system
@@ -77,7 +76,7 @@ import { PiSdkClient, PiSdkUpstreamError } from './sdk-client.js'
 import type { PiSdkBackendOptions } from './types.js'
 
 const assertEgressEnforceable = (policy: ResolvedPolicy | undefined): void =>
-  assertEgressEnforceableCore(policy, 'pi-sdk')
+  assertEgressEnforceableCore(policy, 'pi')
 
 /** Base error for the pi SDK backend; subclasses narrow the failure mode. */
 export class PiSdkBackendError extends Error {
@@ -99,8 +98,7 @@ export class PiSdkBackendTimeoutError extends PiSdkBackendError {}
  * Create a pi coding agent backend using the pi SDK.
  *
  * This backend builds an explicit tool allowlist from the skelm permission
- * policy so pi itself enforces which tools the agent may use. This provides
- * native enforcement rather than the advisory enforcement of the RPC backend.
+ * policy so pi itself enforces which tools the agent may use.
  */
 /**
  * Resolve provider/model/baseUrl/apiKey from explicit options, falling back to
@@ -191,7 +189,7 @@ function assertProviderConfigured(
     // it. To intentionally rely on ~/.pi/agent/models.json, pass an
     // explicit `provider` + `model` to `createPiSdkBackend`.
     throw new PiSdkBackendAuthenticationError(
-      `pi-sdk ${action} refused: no provider/model/baseUrl/apiKey configured. Set OPENAI_BASE_URL / OPENAI_API_KEY / OPENAI_MODEL, or pass {baseUrl, apiKey, model} to createPiSdkBackend(). (AuthenticationError)`,
+      `pi ${action} refused: no provider/model/baseUrl/apiKey configured. Set OPENAI_BASE_URL / OPENAI_API_KEY / OPENAI_MODEL, or pass {baseUrl, apiKey, model} to createPiSdkBackend(). (AuthenticationError)`,
     )
   }
 }
@@ -220,7 +218,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
   const { acquire, release } = createConcurrencySemaphore(options.maxConcurrent ?? 4)
 
   return {
-    id: options.id ?? 'pi-sdk',
+    id: options.id ?? 'pi',
     label: options.label ?? 'Pi Coding Agent (SDK)',
     capabilities,
 
@@ -275,7 +273,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
         }
         return response
       } catch (err) {
-        throw classifyPiSdkError(err, 'inference', options.id ?? 'pi-sdk')
+        throw classifyPiSdkError(err, 'inference', options.id ?? 'pi')
       } finally {
         release()
       }
@@ -331,7 +329,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
           }),
         }
       } catch (err) {
-        throw classifyPiSdkError(err, 'agent execution', options.id ?? 'pi-sdk')
+        throw classifyPiSdkError(err, 'agent execution', options.id ?? 'pi')
       } finally {
         release()
       }

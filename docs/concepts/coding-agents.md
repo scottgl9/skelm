@@ -64,7 +64,7 @@ config → spawn (port assigned) → spawn event → running → (crash) → bac
 
 ## Backend wiring
 
-Both `@skelm/opencode` and `@skelm/pi` factories accept an optional lazy resolver — `apiUrlProvider` (opencode) and `commandProvider` (pi) — that the CLI / custom embeddings can populate from the gateway's coding-agent supervisor:
+The `@skelm/opencode` factory accepts an optional lazy `apiUrlProvider` resolver that the CLI / custom embeddings can populate from the gateway's coding-agent supervisor:
 
 ```ts
 createOpencodeBackendFromConfig({
@@ -74,8 +74,8 @@ createOpencodeBackendFromConfig({
 ```
 
 The provider is awaited at backend-construction time, so the supervised URL
-must be available when the registry is built. A static `apiUrl` / `command`
-remains supported when no provider is supplied.
+must be available when the registry is built. A static `apiUrl` remains
+supported when no provider is supplied.
 
 For ephemeral agents, custom backends can call `gateway.managers.codingAgents.spawnEphemeral(entry, { stdin })` directly inside the backend's `run()` instead of HTTPing — the choice is per-entry by `lifecycle`.
 

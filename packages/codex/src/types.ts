@@ -72,7 +72,7 @@ export interface CodexBackendOptions {
    * the turn having done nothing.
    *
    * Set `false` for **gateway-as-trust-boundary** deployments (the same posture
-   * the in-process pi-sdk backend already runs in): codex runs with no OS
+   * the in-process Pi backend already runs in): codex runs with no OS
    * sandbox (`danger-full-access`), and the declared fs/exec/network policy is
    * the skelm-side boundary contract — validated and audited by the gateway,
    * not OS-enforced by codex. The mapper still refuses to escalate when an

@@ -51,7 +51,6 @@ Optional env vars:
 | -------------- | ----------- | -------------------------------------- |
 | `PI_PROVIDER`  | `llamacpp`  | pi provider name                       |
 | `PI_MODEL`     | `qwen36`    | pi model id                            |
-| `PI_COMMAND`   | `pi`        | path to the `pi` binary                |
 
 Open Telegram, find your bot, send `/start` and then any message. The bot
 should reply within a few seconds.
@@ -60,7 +59,7 @@ should reply within a few seconds.
 
 - `telegram-bot.pipeline.mts` — pure pipeline (input → agent → reply text),
   with a queue trigger declaration bound to the `telegram` source.
-- `skelm.config.ts` — registers the pi backend instance and the Telegram
+- `skelm.config.ts` — registers the pi SDK backend instance and the Telegram
   trigger source, points the workflows glob at the pipeline file.
 
 ## Notes

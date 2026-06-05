@@ -10,22 +10,24 @@ import type {
   ProviderModel,
 } from '@skelm/core'
 import type { SkelmBackend } from '@skelm/core'
-import { createPiBackend } from './backend.js'
-import type { PiBackendOptions } from './types.js'
+import { createPiSdkBackend } from './sdk-backend.js'
+import type { PiSdkBackendOptions } from './types.js'
 
 export interface PiProviderConfig extends PluginConfig {
-  command?: string
   provider?: string
   model?: string
+  baseUrl?: string
+  apiKey?: string
   cwd?: string
   timeout?: number
   maxConcurrent?: number
 }
 
 export class PiProvider extends ProviderPluginBase {
-  private _cmd = 'pi'
   private _providerName: string | undefined
   private _model: string | undefined
+  private _baseUrl: string | undefined
+  private _apiKey: string | undefined
   private _cwd: string | undefined
   private _timeout: number | undefined
   private _maxConcurrent: number | undefined
@@ -46,12 +48,12 @@ export class PiProvider extends ProviderPluginBase {
       streaming: true,
       sessionLifecycle: true,
       mcp: false,
-      skills: false,
-      modelSelection: this._model !== undefined,
+      skills: true,
+      modelSelection: false,
       toolPermissions: 'native',
       providerSpecific: {
         structuredOutput: false,
-        vision: false,
+        vision: true,
         reasoning: true,
         toolCalling: true,
         functionCalling: false,
@@ -68,41 +70,29 @@ export class PiProvider extends ProviderPluginBase {
   }
 
   protected override async doInitialize(config: PiProviderConfig): Promise<void> {
-    this._cmd = config.command ?? 'pi'
     this._providerName = config.provider
     this._model = config.model
+    this._baseUrl = config.baseUrl
+    this._apiKey = config.apiKey
     this._cwd = config.cwd
     this._timeout = config.timeout
     this._maxConcurrent = config.maxConcurrent
   }
 
-  protected override async doStart(): Promise<void> {
-    try {
-      const { execSync } = await import('node:child_process')
-      execSync(`${this._cmd} --version`, { stdio: 'ignore' })
-    } catch {
-      throw new Error(
-        `Pi binary not found: '${this._cmd}'. Install: npm install -g @earendil-works/pi-coding-agent`,
-      )
-    }
-  }
+  protected override async doStart(): Promise<void> {}
 
   override async healthCheck(): Promise<PluginHealthStatus> {
     try {
-      const { execSync } = await import('node:child_process')
-      const version = execSync(`${this._cmd} --version`, {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }).trim()
+      await import('@earendil-works/pi-coding-agent')
       return {
         healthy: true,
-        status: `pi ${version} available`,
+        status: 'pi SDK available',
         lastCheck: new Date().toISOString(),
       }
     } catch (err) {
       return {
         healthy: false,
-        status: `pi not available: ${(err as Error).message}`,
+        status: `pi SDK not available: ${(err as Error).message}`,
         lastCheck: new Date().toISOString(),
         errors: [(err as Error).message],
       }
@@ -117,11 +107,12 @@ export class PiProvider extends ProviderPluginBase {
   }
 
   override async createBackend(options?: Record<string, unknown>): Promise<SkelmBackend> {
-    const opts = options as Partial<PiBackendOptions> | undefined
-    return createPiBackend({
-      command: this._cmd,
+    const opts = options as Partial<PiSdkBackendOptions> | undefined
+    return createPiSdkBackend({
       ...(this._providerName !== undefined && { provider: this._providerName }),
       ...(this._model !== undefined && { model: this._model }),
+      ...(this._baseUrl !== undefined && { baseUrl: this._baseUrl }),
+      ...(this._apiKey !== undefined && { apiKey: this._apiKey }),
       ...(this._cwd !== undefined && { cwd: this._cwd }),
       ...(this._timeout !== undefined && { timeout: this._timeout }),
       ...(this._maxConcurrent !== undefined && { maxConcurrent: this._maxConcurrent }),

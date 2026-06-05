@@ -43,9 +43,9 @@ The scaffold contains:
   load.
 
 The backend resolves from `skelm.config.mts`: Codex is the default
-(`codex login` or `CODEX_API_KEY`), with an in-process pi-sdk failover pointed
+(`codex login` or `CODEX_API_KEY`), with an in-process Pi failover pointed
 at `OPENAI_BASE_URL` / `OPENAI_MODEL`. Set
-`SKELM_BUILDER_BACKEND=codex|pi-sdk` to pin one backend and skip failover.
+`SKELM_BUILDER_BACKEND=codex|pi` to pin one backend and skip failover.
 
 The builder runs under explicit grants, not an unrestricted bypass: read the
 project, write generated workflow files, run `skelm` / `node` / `bash`, load the

@@ -1,6 +1,6 @@
 import { defineConfig } from '@skelm/core'
 import { createRemoteTriggerSource } from '@skelm/integrations'
-import { createPiBackend } from '@skelm/pi'
+import { createPiSdkBackend } from '@skelm/pi'
 import { createTerminalFrontend } from './chatui-frontend.mts'
 
 // The chatui integration is a client-hosted chat: the UI lives in the client,
@@ -24,9 +24,8 @@ export default defineConfig({
     workflows: { glob: '*.workflow.{mts,ts}' },
   },
   instances: [
-    createPiBackend({
+    createPiSdkBackend({
       id: 'pi',
-      ...(process.env.PI_COMMAND !== undefined && { command: process.env.PI_COMMAND }),
       provider: process.env.PI_PROVIDER ?? 'llamacpp',
       model: process.env.PI_MODEL ?? 'qwen36',
       maxConcurrent: 1,

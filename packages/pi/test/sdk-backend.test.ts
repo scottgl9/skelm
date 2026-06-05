@@ -171,7 +171,7 @@ describe('createPiSdkBackend', () => {
         prompt: vi.fn().mockRejectedValue(new Error('pi SDK not installed')),
       }
     })
-    const backend = createPiSdkBackend({ id: 'pi-sdk-local' })
+    const backend = createPiSdkBackend({ id: 'pi-local' })
     await expect(backend.run?.({ prompt: 'hello' }, makeCtx())).rejects.toBeInstanceOf(
       BackendUnavailableError,
     )
@@ -406,7 +406,7 @@ describe('createPiSdkBackend', () => {
     }
   })
 
-  // --- networkEgress fail-closed (pi-sdk is in-process; HTTP_PROXY is not honored) ---
+  // --- networkEgress fail-closed (Pi is in-process; HTTP_PROXY is not honored) ---
 
   it("run() refuses when policy.networkEgress is 'deny'", async () => {
     const backend = createPiSdkBackend()

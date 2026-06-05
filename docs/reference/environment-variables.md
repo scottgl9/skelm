@@ -22,7 +22,7 @@ For real secrets, prefer a `step.secrets` declaration backed by the configured
 | `OPENAI_MODEL` | backend default | Model id for the Pi SDK backend (e.g. `gpt-4o`). |
 | `CODEX_API_KEY` | — | Authentication key passed through to the Codex SDK subprocess. |
 | `OPENCODE_API_KEY` | — | API key for the Opencode backend. |
-| `SKELM_BUILDER_BACKEND` | — | Overrides the backend used by the workflow builder (`codex` or `pi-sdk`). |
+| `SKELM_BUILDER_BACKEND` | — | Overrides the backend used by the workflow builder (`codex` or `pi`). |
 
 The Pi SDK backend also reads `OPENAI_BASE_URL` and `OPENAI_API_KEY` (see above).
 

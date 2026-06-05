@@ -7,11 +7,11 @@ import { createTerminalFrontend } from './chatui-frontend.mts'
 // Backend selection with native runtime fallback. Codex is the default; if a
 // codex turn errors (no `codex login` / CODEX_API_KEY, the CLI is missing, or an
 // upstream failure), skelm's createRoutingBackend falls over to the in-process
-// pi-sdk backend pointed at a local OpenAI-compatible endpoint. This is true
+// Pi backend pointed at a local OpenAI-compatible endpoint. This is true
 // per-request failover, not a static load-time probe. Set SKELM_BUILDER_BACKEND
-// to 'codex' or 'pi-sdk' to pin one backend and skip the fallback.
+// to 'codex' or 'pi' to pin one backend and skip the fallback.
 // `osSandbox: false` runs codex with no OS sandbox (the gateway is the trust
-// boundary, same posture as the in-process pi-sdk failover below). Set
+// boundary, same posture as the in-process Pi failover below). Set
 // SKELM_CODEX_OS_SANDBOX=0 in environments where codex's user-namespace /
 // bubblewrap sandbox can't initialize (many CI runners + containers) — there,
 // the default sandbox silently blocks every file write and shell command, so
@@ -21,22 +21,22 @@ const codex = createCodexBackend({
   id: 'codex',
   osSandbox: process.env.SKELM_CODEX_OS_SANDBOX !== '0',
 })
-const piSdk = createPiSdkBackend({
-  id: 'pi-sdk',
+const pi = createPiSdkBackend({
+  id: 'pi',
   baseUrl: process.env.OPENAI_BASE_URL ?? 'http://localhost:8000/v1',
   apiKey: process.env.OPENAI_API_KEY ?? 'unused',
   model: process.env.OPENAI_MODEL ?? 'qwen36',
 })
 const pin = process.env.SKELM_BUILDER_BACKEND
 const agentBackend =
-  pin === 'pi-sdk'
-    ? piSdk
+  pin === 'pi'
+    ? pi
     : pin === 'codex'
       ? codex
       : createRoutingBackend({
           id: 'builder-agent',
           primary: codex,
-          failover: [piSdk],
+          failover: [pi],
           onFailover: (info) =>
             console.error(`[builder] ${info.from} unavailable — falling over to ${info.to}`),
         })

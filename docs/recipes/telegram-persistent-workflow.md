@@ -54,7 +54,7 @@ fire and feeds the turn via `ctx.steps`.
 // skelm.config.ts (abridged)
 export default defineConfig({
   registries: { workflows: { glob: '*.workflow.{mts,ts}' } },
-  instances: [createPiBackend({ id: 'pi', /* ... */ })],
+  instances: [createPiSdkBackend({ id: 'pi', /* ... */ })],
   agentmemory: { enabled: true },         // long-term recall across sessions
   triggerSources: [{
     id: 'telegram',

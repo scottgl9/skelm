@@ -26,7 +26,7 @@ describe('builder workflow', () => {
     expect(perms?.allowedSkills).toContain('skelm')
     expect(perms?.fsWrite?.length).toBeGreaterThan(0)
     expect(perms?.allowedExecutables).toContain('bash')
-    // The codex→pi-sdk routing's in-process pi-sdk failover cannot enforce a
+    // The codex -> pi routing's in-process Pi failover cannot enforce a
     // narrower egress policy, so the agent grants 'allow' (the honest contract).
     expect(perms?.networkEgress).toBe('allow')
   })

@@ -263,7 +263,7 @@ Never claim a task done until `pnpm check` is green.
 
 - **Widening at step level** — setting `networkEgress: 'allow'` in a step when the project default is `deny` has no effect. Intersection always wins.
 - **Missing Zod schema** — `input` / `output` are validated at run boundaries; omitting them skips validation silently.
-- **`agent()` with an unregistered backend** — the step fails at runtime if `backend` references an id with no matching entry under `backends:` and no matching instance in `instances:`. The pi SDK backend in particular must be added to `instances:` (the CLI's `pi` shorthand wires the RPC variant only).
+- **`agent()` with an unregistered backend** — the step fails at runtime if `backend` references an id with no matching entry under `backends:` and no matching instance in `instances:`. The CLI's `pi` shorthand wires the Pi SDK backend.
 - **Editing `dist/`** — generated files; never edit. Run `pnpm build` to regenerate.
 - **Step id collisions inside `parallel()`** — sibling ids must be unique; the runtime tracks uniqueness globally per run.
 
