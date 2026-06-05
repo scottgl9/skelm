@@ -33,6 +33,15 @@ afterEach(async () => {
   await rm(stateDir, { recursive: true, force: true })
 })
 
+async function waitFor(check: () => boolean): Promise<void> {
+  const deadline = Date.now() + 1000
+  while (Date.now() < deadline) {
+    if (check()) return
+    await new Promise((r) => setTimeout(r, 10))
+  }
+  throw new Error('condition was not met before timeout')
+}
+
 describe('createTriggerDispatcher', () => {
   it('resolves workflowId via the registry, imports via the loader, and runs it', async () => {
     const gw = new Gateway({
@@ -73,6 +82,7 @@ describe('createTriggerDispatcher', () => {
     })
     await coordinator.fire('m')
 
+    await waitFor(() => ran.length === 1)
     expect(ran).toEqual(['step'])
     await coordinator.stop()
     await gw.stop()
@@ -244,6 +254,7 @@ describe('createTriggerDispatcher', () => {
     coordinator.register({ kind: 'manual', id: 'abs', workflowId: absPath })
     await coordinator.fire('abs')
 
+    await waitFor(() => ran.length === 1)
     expect(ran).toEqual(['step'])
     expect(coordinator.get('abs')?.lastError).toBeUndefined()
     await coordinator.stop()
@@ -284,6 +295,7 @@ describe('createTriggerDispatcher', () => {
       workflowId: 'workflows/hello.workflow.mts',
     })
     await coordinator.fire('m')
+    await waitFor(() => coordinator.get('m')?.lastError !== undefined)
     expect(coordinator.get('m')?.lastError).toMatch(/did not export a default pipeline/)
     await coordinator.stop()
     await gw.stop()
@@ -325,6 +337,7 @@ describe('Gateway — auto-wires the dispatcher when loadWorkflow is supplied', 
     })
     await gw.managers.triggers.fire('wired')
 
+    await waitFor(() => ran.length === 1)
     expect(ran).toEqual(['ran'])
     await gw.stop()
   })
