@@ -132,7 +132,27 @@ describe('/v1/batch/*', () => {
       expect(body.items[0]).toEqual({
         runId: 'never-existed',
         cancelled: false,
-        error: 'not in flight',
+        status: 'notFound',
+        notFound: true,
+      })
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('/v1/batch/cancel accepts ids as an alias for runIds', async () => {
+    const { gw, base } = await bootGateway()
+    try {
+      const res = await fetch(`${base}/v1/batch/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ids: ['never-existed'] }),
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.items[0]).toMatchObject({
+        runId: 'never-existed',
+        status: 'notFound',
       })
     } finally {
       await gw.stop()

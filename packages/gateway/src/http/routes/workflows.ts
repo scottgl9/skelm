@@ -1,3 +1,5 @@
+import { mkdir, readdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { describePipeline } from '@skelm/core'
 import {
   type H3Event,
@@ -22,6 +24,7 @@ interface RegisterBody {
   source?: { type?: unknown; path?: unknown } | unknown
   description?: unknown
   version?: unknown
+  steps?: unknown
 }
 
 interface ValidateBody {
@@ -96,16 +99,18 @@ export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
       }
       const body = (await readBody(event).catch(() => ({}))) as RegisterBody
       const id = takeId(service, body.id)
-      const path = extractSourcePath(body.source)
       const description = takeOptionalString(body.description, 'description')
       const version = takeOptionalString(body.version, 'version')
       const loader = requireLoader(gateway)
-      const real = await resolveOrThrow(service, path)
+      const real =
+        body.source === undefined
+          ? await materializeInlineJsonWorkflow(gateway, id, body, 'register')
+          : await resolveOrThrow(service, extractSourcePath(body.source))
       await loadPipelineFromPath(loader, id, real)
       const record = await service.upsert({
         id,
         sourcePath: real,
-        sourceKind: 'path',
+        sourceKind: body.source === undefined ? 'archive' : 'path',
         ...(description !== undefined && { description }),
         ...(version !== undefined && { version }),
       })
@@ -185,7 +190,10 @@ async function registerFromArchive(
 ): Promise<{ registered?: true; updated?: true; workflow: unknown }> {
   const parts = (await readMultipartFormData(event)) ?? []
   const fields = collectMultipartFields(parts)
-  const id = takeId(service, fixedId ?? fields.string('id'))
+  const id = takeId(
+    service,
+    fixedId ?? fields.string('id') ?? `uploaded-${Date.now().toString(36)}`,
+  )
   const archiveBytes = fields.file('archive')
   if (archiveBytes === undefined) {
     throw createError({ statusCode: 400, message: 'archive field with .zip file is required' })
@@ -225,6 +233,75 @@ async function registerFromArchive(
   return mode === 'register'
     ? { registered: true, workflow: record }
     : { updated: true, workflow: record }
+}
+
+async function materializeInlineJsonWorkflow(
+  gateway: Gateway,
+  id: string,
+  body: RegisterBody,
+  mode: 'register' | 'replace',
+): Promise<string> {
+  if (!Array.isArray(body.steps)) {
+    throw createError({ statusCode: 400, message: 'source is required' })
+  }
+  const archive = gateway.getWorkflowArchiveService()
+  const dir = archive.destinationFor(id)
+  if (mode === 'register' && (await isNonEmptyDir(dir))) {
+    throw createError({
+      statusCode: 409,
+      message: `workflow id "${id}" already has an extracted archive; use PUT to replace`,
+    })
+  }
+  await mkdir(dir, { recursive: true })
+  const path = join(dir, 'workflow.mts')
+  await writeFile(path, inlineWorkflowModule(id, body), 'utf8')
+  return path
+}
+
+async function isNonEmptyDir(dir: string): Promise<boolean> {
+  try {
+    return (await readdir(dir)).length > 0
+  } catch {
+    return false
+  }
+}
+
+function inlineWorkflowModule(id: string, body: RegisterBody): string {
+  const steps = (body.steps as unknown[]).map((step, index) => inlineStepModule(step, index))
+  const description =
+    typeof body.description === 'string'
+      ? `,\n  description: ${JSON.stringify(body.description)}`
+      : ''
+  const version =
+    typeof body.version === 'string' ? `,\n  version: ${JSON.stringify(body.version)}` : ''
+  return [
+    "import { code, pipeline } from 'skelm'",
+    '',
+    'export default pipeline({',
+    `  id: ${JSON.stringify(id)}${description}${version},`,
+    '  steps: [',
+    steps.map((s) => `    ${s}`).join(',\n'),
+    '  ],',
+    '})',
+    '',
+  ].join('\n')
+}
+
+function inlineStepModule(step: unknown, index: number): string {
+  if (typeof step !== 'object' || step === null) {
+    throw createError({ statusCode: 400, message: `steps[${index}] must be an object` })
+  }
+  const s = step as { kind?: unknown; id?: unknown; run?: unknown }
+  if (s.kind !== 'code') {
+    throw createError({ statusCode: 400, message: `steps[${index}].kind must be "code"` })
+  }
+  if (typeof s.id !== 'string' || s.id.length === 0) {
+    throw createError({ statusCode: 400, message: `steps[${index}].id is required` })
+  }
+  if (typeof s.run !== 'string' || s.run.length === 0) {
+    throw createError({ statusCode: 400, message: `steps[${index}].run is required` })
+  }
+  return `code({ id: ${JSON.stringify(s.id)}, run: ${s.run} })`
 }
 
 interface MultipartFields {

@@ -25,8 +25,8 @@ function redactMatchingKeys(record: Record<string, unknown>, skip: ReadonlySet<s
  * Mount GET/PATCH /v1/config.
  *
  * GET returns a sanitized projection — no bearer tokens, no resolved
- * secret material. PATCH accepts a flat object whose keys must be in
- * ALLOWED_PATCH_PATHS; any other key returns 400. Applied changes go
+ * secret material. PATCH accepts either flat keys (`server.maxConcurrentRuns`)
+ * or a nested `server` object; any other key returns 400. Applied changes go
  * through Gateway.reload() so existing infrastructure picks them up.
  */
 export function registerConfigRoutes(router: Router, gateway: Gateway): void {
@@ -46,7 +46,8 @@ export function registerConfigRoutes(router: Router, gateway: Gateway): void {
       if (entries.length === 0) {
         throw createError({ statusCode: 400, message: 'no fields to update' })
       }
-      for (const [key] of entries) {
+      const patchEntries = flattenPatch(body)
+      for (const [key] of patchEntries) {
         if (!ALLOWED_PATCH_PATHS.has(key)) {
           throw createError({
             statusCode: 400,
@@ -60,7 +61,7 @@ export function registerConfigRoutes(router: Router, gateway: Gateway): void {
       // instances under `instances[]` / `backends.<id>` are live objects
       // with non-cloneable functions.
       const next = { ...current, server: { ...(current.server ?? {}) } } as typeof current
-      for (const [key, value] of entries) {
+      for (const [key, value] of patchEntries) {
         if (key === 'server.maxConcurrentRuns') {
           if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) {
             throw createError({
@@ -75,6 +76,20 @@ export function registerConfigRoutes(router: Router, gateway: Gateway): void {
       return { updated: true, config: sanitize(gateway.getConfig()) }
     }),
   )
+}
+
+function flattenPatch(body: Record<string, unknown>): Array<[string, unknown]> {
+  const out: Array<[string, unknown]> = []
+  for (const [key, value] of Object.entries(body)) {
+    if (key === 'server' && value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      for (const [nestedKey, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+        out.push([`server.${nestedKey}`, nestedValue])
+      }
+    } else {
+      out.push([key, value])
+    }
+  }
+  return out
 }
 
 /**

@@ -123,6 +123,23 @@ describe('/v1/workflows/* zip upload', () => {
     }
   })
 
+  it('POST register accepts a zip upload without a separate id field', async () => {
+    const { gw, base } = await bootGateway()
+    try {
+      const archive = buildArchive({ 'wf.workflow.ts': 'export default {}' })
+      const res = await postArchive(base, '/v1/workflows/register', 'POST', {
+        archive: { filename: 'wf.zip', data: archive },
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.registered).toBe(true)
+      expect(typeof body.workflow.id).toBe('string')
+      expect(body.workflow.id.length).toBeGreaterThan(0)
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('POST register against an existing extraction dir returns 409', async () => {
     const { gw, base } = await bootGateway()
     try {
@@ -137,6 +154,36 @@ describe('/v1/workflows/* zip upload', () => {
         archive: { filename: 'wf.zip', data: archive },
       })
       expect(second.status).toBe(409)
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('POST inline register against an existing archive extraction dir returns 409', async () => {
+    const { gw, base } = await bootGateway()
+    try {
+      const archive = buildArchive({
+        'wf.workflow.ts': 'export default {}',
+        'README.md': 'original archive file',
+      })
+      const first = await postArchive(base, '/v1/workflows/register', 'POST', {
+        id: 'inline-conflict',
+        archive: { filename: 'wf.zip', data: archive },
+      })
+      expect(first.status).toBe(200)
+
+      const second = await fetch(`${base}/v1/workflows/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 'inline-conflict',
+          steps: [{ kind: 'code', id: 'hello', run: 'async () => ({ ok: true })' }],
+        }),
+      })
+      expect(second.status).toBe(409)
+      const dir = join(stateDir, 'uploaded-workflows', 'inline-conflict')
+      const names = await fs.readdir(dir)
+      expect(names.sort()).toEqual(['README.md', 'wf.workflow.ts'])
     } finally {
       await gw.stop()
     }
