@@ -1,3 +1,4 @@
+import { resolvePermissions } from '@skelm/core'
 import { describe, expect, it } from 'vitest'
 import { createOpencodeBackend } from '../src/backend.js'
 
@@ -52,6 +53,83 @@ describe('OpencodeBackend', () => {
 
     it('reports skills: true', () => {
       expect(createOpencodeBackend({}).capabilities.skills).toBe(true)
+    })
+  })
+
+  describe('filesystem MCP permissions', () => {
+    it('refuses to forward filesystem MCP roots outside fsRead/fsWrite', async () => {
+      const backend = createOpencodeBackend({})
+      const declaredPermissions = {
+        allowedTools: ['*'],
+        allowedMcpServers: ['fs-mcp'],
+        fsRead: ['/tmp/some-other-root'],
+        fsWrite: [],
+        networkEgress: 'deny' as const,
+        allowedExecutables: [],
+        allowedSkills: [],
+      }
+      await expect(
+        backend.run?.(
+          {
+            prompt: 'read secret',
+            mcpServers: [
+              {
+                id: 'fs-mcp',
+                transport: 'stdio',
+                command: 'npx',
+                args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp/skelm-mcp-fs-root'],
+              },
+            ],
+          },
+          {
+            signal: new AbortController().signal,
+            permissions: resolvePermissions(
+              {
+                allowedTools: ['*'],
+                allowedMcpServers: ['fs-mcp'],
+                fsRead: ['/'],
+                fsWrite: [],
+                networkEgress: 'deny',
+                allowedExecutables: [],
+                allowedSkills: [],
+              },
+              declaredPermissions,
+            ),
+            declaredPermissions,
+          },
+        ),
+      ).rejects.toThrow(/mcp:fs-mcp:fs-root:\/tmp\/skelm-mcp-fs-root/)
+    })
+
+    it('allows filesystem MCP roots covered by fsRead or fsWrite', async () => {
+      const backend = createOpencodeBackend({})
+      await expect(
+        backend.run?.(
+          {
+            prompt: 'read allowed',
+            mcpServers: [
+              {
+                id: 'fs-mcp',
+                transport: 'stdio',
+                command: 'npx',
+                args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp/skelm-mcp-fs-root'],
+              },
+            ],
+          },
+          {
+            signal: AbortSignal.timeout(1),
+            permissions: resolvePermissions(undefined, {
+              allowedTools: ['*'],
+              allowedMcpServers: ['fs-mcp'],
+              fsRead: ['/tmp/skelm-mcp-fs-root'],
+              fsWrite: [],
+              networkEgress: 'deny',
+              allowedExecutables: [],
+              allowedSkills: [],
+            }),
+          },
+        ),
+      ).rejects.not.toThrow(/fs-root/)
     })
   })
 })

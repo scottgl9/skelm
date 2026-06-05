@@ -4,6 +4,7 @@ import {
   BackendRateLimitError,
   BackendTimeoutError,
   PermissionDeniedError,
+  TrustEnforcer,
   loadSkillBodies,
   resolvePermissions,
 } from '@skelm/core'
@@ -84,6 +85,17 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
           `opencode: permission denied: ${permissionResult.denied.join(', ')}`,
         )
       }
+      const filesystemRootDenials = deniedFilesystemMcpRoots(
+        context.declaredPermissions === undefined
+          ? policy
+          : resolvePermissions(undefined, context.declaredPermissions),
+        request.mcpServers ?? [],
+      )
+      if (filesystemRootDenials.length > 0) {
+        throw new PermissionDeniedError(
+          `opencode: permission denied: ${filesystemRootDenials.join(', ')}`,
+        )
+      }
 
       const memoryProject = request.cwd ?? process.cwd()
       // Load skills and inject into system prompt before forwarding
@@ -156,6 +168,35 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
   }
 
   return backend
+}
+
+function deniedFilesystemMcpRoots(
+  policy: ReturnType<typeof resolvePermissions>,
+  servers: readonly McpServerConfig[],
+): string[] {
+  const enforcer = new TrustEnforcer(policy)
+  const denied: string[] = []
+  for (const server of servers) {
+    if (server.transport !== 'stdio') continue
+    for (const root of filesystemMcpRoots(server)) {
+      if (!enforcer.canRead(root).allow && !enforcer.canWrite(root).allow) {
+        denied.push(`mcp:${server.id}:fs-root:${root}`)
+      }
+    }
+  }
+  return denied
+}
+
+function filesystemMcpRoots(server: Extract<McpServerConfig, { transport: 'stdio' }>): string[] {
+  const argv = [server.command, ...(server.args ?? [])]
+  const packageIndex = argv.findIndex(
+    (arg) =>
+      arg === '@modelcontextprotocol/server-filesystem' ||
+      arg === 'mcp-server-filesystem' ||
+      arg.endsWith('/server-filesystem'),
+  )
+  if (packageIndex < 0) return []
+  return argv.slice(packageIndex + 1).filter((arg) => arg.length > 0 && !arg.startsWith('-'))
 }
 
 async function injectSkills(req: AgentRequest, ctx: BackendContext): Promise<AgentRequest> {

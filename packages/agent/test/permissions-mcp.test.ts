@@ -106,6 +106,7 @@ describe('SkelmAgentBackend — MCP tool permission enforcement', () => {
       { toolCalls: [{ name: 'echo.shout', arguments: { who: 'world' } }] },
       { content: 'blocked' },
     ])
+    const publish = vi.fn()
 
     const response = await backend.run?.(
       { prompt: 'shout', maxTurns: 3 },
@@ -113,6 +114,9 @@ describe('SkelmAgentBackend — MCP tool permission enforcement', () => {
         signal: new AbortController().signal,
         permissions: policy({ allowedTools: ['echo.greet'] }),
         mcpHost,
+        events: { publish },
+        runId: 'run-mcp-denied',
+        stepId: 'step-mcp-denied',
       },
     )
 
@@ -126,6 +130,14 @@ describe('SkelmAgentBackend — MCP tool permission enforcement', () => {
     }
     const toolMsg = body2.messages.find((m) => m.role === 'tool')
     expect(toolMsg?.content).toMatch(/Permission denied: not-in-allowlist/)
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'permission.denied',
+        runId: 'run-mcp-denied',
+        stepId: 'step-mcp-denied',
+        dimension: 'tool',
+      }),
+    )
   })
 
   it('honors deniedTools as a hard override even when allowedTools includes the id', async () => {

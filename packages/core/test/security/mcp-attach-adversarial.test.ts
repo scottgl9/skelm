@@ -38,6 +38,24 @@ describe('permission enforcement — MCP attach adversarial', () => {
     }
   }
 
+  function nativeBackend(): SkelmBackend {
+    return {
+      id: 'native-mcp',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: true,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'native',
+      },
+      async run() {
+        return { text: 'ok' }
+      },
+    }
+  }
+
   function workflow(opts: { allow: readonly string[] | undefined }) {
     return pipeline({
       id: `mcp-attach-${opts.allow?.join('-') ?? 'omitted'}`,
@@ -109,6 +127,62 @@ describe('permission enforcement — MCP attach adversarial', () => {
         expect.objectContaining({
           type: 'permission.denied',
           dimension: 'mcp',
+        }),
+      ]),
+    )
+  })
+
+  it('denies filesystem MCP roots outside author-declared fsRead/fsWrite for native backends', async () => {
+    const registry = new BackendRegistry()
+    registry.register(nativeBackend())
+    const events = new EventBus()
+    const seen: RunEvent[] = []
+    events.subscribe((e) => seen.push(e))
+    const wf = pipeline({
+      id: 'native-mcp-fs-root-denied',
+      steps: [
+        agent({
+          id: 'work',
+          backend: 'native-mcp',
+          prompt: 'hi',
+          mcp: [
+            {
+              id: 'fs-mcp',
+              transport: 'stdio',
+              command: 'npx',
+              args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp/skelm-mcp-fs-root'],
+            },
+          ],
+          permissions: {
+            allowedTools: ['*'],
+            allowedMcpServers: ['fs-mcp'],
+            fsRead: ['/tmp/some-other-root'],
+            fsWrite: [],
+          },
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined, {
+      backends: registry,
+      events,
+      defaultPermissions: {
+        allowedTools: ['*'],
+        allowedMcpServers: ['fs-mcp'],
+        fsRead: ['/'],
+        fsWrite: [],
+      },
+    })
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('PermissionDeniedError')
+    expect(run.error?.message).toMatch(/filesystem MCP server "fs-mcp"/)
+    expect(seen).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'permission.denied',
+          stepId: 'work',
+          dimension: 'fs.read',
         }),
       ]),
     )
