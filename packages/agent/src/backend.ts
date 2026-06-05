@@ -456,6 +456,7 @@ async function runAgentLoop(
           try {
             const toolDecision = enforcer.canCallTool(tc.function.name)
             if (!toolDecision.allow) {
+              publishMcpToolDenied(ctx, tc.function.name, toolDecision.reason)
               result = { content: `Permission denied: ${toolDecision.reason}`, isError: true }
             } else {
               const mcpResult = await mcpHost.invokeTool(tc.function.name, parsedArgs, ctx.signal)
@@ -500,6 +501,27 @@ async function runAgentLoop(
     }
     if (ownMcpHost !== undefined) await ownMcpHost.dispose()
   }
+}
+
+function publishMcpToolDenied(ctx: BackendContext, tool: string, reason: string): void {
+  if (ctx.events === undefined || ctx.runId === undefined || ctx.stepId === undefined) return
+  const at = Date.now()
+  ctx.events.publish({
+    type: 'tool.denied',
+    runId: ctx.runId,
+    stepId: ctx.stepId,
+    tool,
+    reason: reason as never,
+    at,
+  })
+  ctx.events.publish({
+    type: 'permission.denied',
+    runId: ctx.runId,
+    stepId: ctx.stepId,
+    dimension: 'tool',
+    detail: `tool "${tool}" was denied by tool policy (${reason})`,
+    at,
+  })
 }
 
 function extractTextFromParts(parts: readonly ContentPart[]): string {
