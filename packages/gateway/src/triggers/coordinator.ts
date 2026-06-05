@@ -82,6 +82,7 @@ export class TriggerCoordinator {
   private queueDrivers: Map<string, QueueDriver> = new Map()
   private queueDriverBindings: Map<string, string> = new Map() // triggerId → driverId
   private queues: Map<string, FireContext[]> = new Map()
+  private activeDispatches: Map<string, number> = new Map()
   private pendingDispatches: Set<Promise<void>> = new Set()
   private stopping = false
   /**
@@ -182,6 +183,14 @@ export class TriggerCoordinator {
 
   get(id: string): TriggerRegistration | undefined {
     return this.registrations.get(id)
+  }
+
+  queueDepth(id: string): number {
+    return this.queues.get(id)?.length ?? 0
+  }
+
+  runningCount(id: string): number {
+    return this.activeDispatches.get(id) ?? 0
   }
 
   /**
@@ -464,6 +473,7 @@ export class TriggerCoordinator {
       this.queueDriverBindings.delete(id)
     }
     this.pollLastKey.delete(id)
+    this.activeDispatches.delete(id)
     this.registrations.delete(id)
     this.queues.delete(id)
   }
@@ -484,6 +494,19 @@ export class TriggerCoordinator {
     promise.finally(() => {
       this.pendingDispatches.delete(promise)
     })
+  }
+
+  private incrementRunning(id: string): void {
+    this.activeDispatches.set(id, (this.activeDispatches.get(id) ?? 0) + 1)
+  }
+
+  private decrementRunning(id: string): void {
+    const next = (this.activeDispatches.get(id) ?? 1) - 1
+    if (next <= 0) {
+      this.activeDispatches.delete(id)
+    } else {
+      this.activeDispatches.set(id, next)
+    }
   }
 
   async fire(id: string, when?: Date, payload?: unknown): Promise<FireStatus> {
@@ -511,12 +534,14 @@ export class TriggerCoordinator {
     if (reg.parallel === true) {
       reg.lastFiredAt = ctx.firedAt
       reg.fired += 1
+      this.incrementRunning(id)
       const dispatch = Promise.resolve()
         .then(() => this.opts.onFire(ctx))
         .catch((err) => {
           reg.lastError = (err as Error).message
           this.opts.onFireError?.(reg.spec.id, err)
         })
+        .finally(() => this.decrementRunning(id))
       this.trackDispatch(dispatch)
       await Promise.resolve()
       return 'dispatched'
@@ -550,6 +575,7 @@ export class TriggerCoordinator {
       }
     }
     reg.inflight = true
+    this.incrementRunning(id)
     const dispatch = Promise.resolve()
       .then(() => this.dispatch(reg, ctx))
       .catch((err) => {
@@ -557,6 +583,7 @@ export class TriggerCoordinator {
         this.opts.onFireError?.(reg.spec.id, err)
         reg.inflight = false
       })
+      .finally(() => this.decrementRunning(id))
     this.trackDispatch(dispatch)
     await Promise.resolve()
     return 'dispatched'
