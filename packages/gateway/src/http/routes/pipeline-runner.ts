@@ -2,7 +2,7 @@ import { Runner } from '@skelm/core'
 import { createError } from 'h3'
 import type { Gateway } from '../../lifecycle/gateway.js'
 import { createSkillSource } from '../../registries/skill-source.js'
-import { extractPipeline } from './utils.js'
+import { extractPipeline, makeGatewayPipelineRegistry } from './utils.js'
 
 /**
  * Run a registered pipeline to completion through the full gateway enforcement
@@ -48,7 +48,9 @@ export async function runPipelineSync(
     secretResolver: enforcement.secretResolver,
     auditWriter: enforcement.auditWriter,
     store: gateway.runStore,
+    events: gateway.events,
     workspaceManager: gateway.workspaceManager,
+    ...(gateway.backends !== undefined && { backends: gateway.backends }),
   })
   gateway.attachMetricsBus(runner.events)
   gateway.attachOtelBus(runner.events)
@@ -63,6 +65,7 @@ export async function runPipelineSync(
         registry: gateway.registries.skills,
         workflowPath: entry.path,
       }),
+      pipelineRegistry: makeGatewayPipelineRegistry(gateway),
       ...gateway.defaultPermissionRunOptions(pipeline.id),
       ...gateway.defaultBackendRunOptions(pipeline.id),
       ...gateway.egressRunOptions(),

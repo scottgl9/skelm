@@ -2,8 +2,7 @@ import { promises as fs } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { code, parallel, pipeline, wait } from '@skelm/core'
-import { MemoryRunStore } from '@skelm/core'
+import { BackendRegistry, MemoryRunStore, code, infer, parallel, pipeline, wait } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { Gateway, InMemoryQueueDriver, type SuspendApprovalGate } from '../src/index.js'
@@ -1099,6 +1098,71 @@ describe('Gateway HTTP OpenAI-compat surface', () => {
       expect(body.choices).toHaveLength(1)
       expect(body.choices[0]?.message.role).toBe('assistant')
       expect(body.choices[0]?.message.content).toBe('you said: hello')
+      expect(body.choices[0]?.finish_reason).toBe('stop')
+    } finally {
+      await gw.stop()
+      await rm(projectRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('POST /v1/chat/completions threads gateway backends into infer pipelines', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'skelm-oai-'))
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    await fs.writeFile(join(projectRoot, 'workflows/r.workflow.ts'), 'export default {}')
+
+    const wf = pipeline({
+      id: 'llm',
+      steps: [
+        infer({
+          id: 'answer',
+          backend: 'test-infer',
+          prompt: 'say hi',
+        }),
+      ],
+    })
+    const backends = new BackendRegistry()
+    backends.register({
+      id: 'test-infer',
+      capabilities: {
+        prompt: true,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'unsupported',
+      },
+      async inference() {
+        return { text: 'hello from backend' }
+      },
+    })
+
+    const { gw, base } = await bootGatewayWithRetry(async (port) => ({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      loadWorkflow: async () => wf,
+      backends,
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
+    }))
+    try {
+      const res = await fetch(`${base}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'workflows/r.workflow.ts',
+          messages: [{ role: 'user', content: 'hello' }],
+        }),
+      })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        choices: Array<{ message: { content: string }; finish_reason: string }>
+        error?: { message?: string }
+      }
+      expect(body.error).toBeUndefined()
+      expect(body.choices[0]?.message.content).toBe('hello from backend')
       expect(body.choices[0]?.finish_reason).toBe('stop')
     } finally {
       await gw.stop()
