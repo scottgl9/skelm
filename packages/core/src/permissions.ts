@@ -252,7 +252,7 @@ export function resolvePermissions(
   return Object.freeze({
     allowedTools: intersectToolMatchers(inputs.map((p) => p.allowedTools)),
     deniedTools: unionToolMatchers(inputs.map((p) => p.deniedTools)),
-    allowedExecutables: intersectStrings(inputs.map((p) => p.allowedExecutables)),
+    allowedExecutables: intersectExecutables(inputs.map((p) => p.allowedExecutables)),
     allowedMcpServers: intersectStrings(inputs.map((p) => p.allowedMcpServers)),
     allowedSkills: intersectStrings(inputs.map((p) => p.allowedSkills)),
     allowedAgents: intersectToolMatchers(inputs.map((p) => p.delegation)),
@@ -472,10 +472,9 @@ export class TrustEnforcer {
     if (this.policy.allowedExecutables.has(binary)) {
       return { allow: true }
     }
-    const hasPathSeparator = binary.includes('/') || binary.includes('\\')
     return {
       allow: false,
-      reason: hasPathSeparator ? 'path-not-in-allowlist' : 'not-in-allowlist',
+      reason: hasPathSeparator(binary) ? 'path-not-in-allowlist' : 'not-in-allowlist',
       dimension: 'executable',
     }
   }
@@ -586,6 +585,43 @@ function intersectStrings(
     acc = next
   }
   return acc
+}
+
+function intersectExecutables(
+  arrays: ReadonlyArray<readonly string[] | undefined>,
+): ReadonlySet<string> {
+  const present = arrays.filter((a): a is readonly string[] => a !== undefined)
+  if (present.length === 0) return new Set()
+  let acc: Set<string> = new Set(present[0])
+  for (let i = 1; i < present.length; i++) {
+    const next = new Set<string>()
+    for (const left of acc) {
+      for (const right of present[i] ?? []) {
+        const intersected = intersectExecutableEntry(left, right)
+        if (intersected !== undefined) next.add(intersected)
+      }
+    }
+    acc = next
+  }
+  return acc
+}
+
+function intersectExecutableEntry(left: string, right: string): string | undefined {
+  if (left === right) return left
+  const leftHasPath = hasPathSeparator(left)
+  const rightHasPath = hasPathSeparator(right)
+  if (leftHasPath && !rightHasPath && executableBasename(left) === right) return left
+  if (!leftHasPath && rightHasPath && left === executableBasename(right)) return right
+  return undefined
+}
+
+function hasPathSeparator(value: string): boolean {
+  return value.includes('/') || value.includes('\\')
+}
+
+function executableBasename(value: string): string {
+  const slash = Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\'))
+  return slash === -1 ? value : value.slice(slash + 1)
 }
 
 function intersectToolMatchers(
