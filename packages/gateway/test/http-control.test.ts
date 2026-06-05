@@ -644,6 +644,64 @@ describe('Gateway HTTP /schedules', () => {
     }
   })
 
+  it('restores dynamic schedules from state across gateway restart', async () => {
+    const boot = (port: number) => ({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    })
+    const { gw: gw1, base: base1 } = await bootGatewayWithRetry(boot)
+    try {
+      const created = (await fetch(`${base1}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-durable',
+          workflowId: 'wf',
+          trigger: { kind: 'cron', expression: '0 0 1 1 *' },
+          overlap: 'queue',
+          input: { name: 'durable' },
+        }),
+      }).then((r) => r.json())) as { id: string }
+      expect(created.id).toBe('s-durable')
+    } finally {
+      await gw1.stop()
+    }
+
+    const { gw: gw2, base: base2 } = await bootGatewayWithRetry(boot)
+    try {
+      const list = (await fetch(`${base2}/schedules`).then((r) => r.json())) as Array<{
+        id: string
+        trigger: Record<string, unknown>
+        overlap: string
+        input?: unknown
+      }>
+      expect(list.find((schedule) => schedule.id === 's-durable')).toMatchObject({
+        id: 's-durable',
+        trigger: { kind: 'cron', expression: '0 0 1 1 *' },
+        overlap: 'queue',
+        input: { name: 'durable' },
+      })
+
+      const deleted = await fetch(`${base2}/schedules/s-durable`, { method: 'DELETE' })
+      expect(deleted.status).toBe(200)
+    } finally {
+      await gw2.stop()
+    }
+
+    const { gw: gw3, base: base3 } = await bootGatewayWithRetry(boot)
+    try {
+      const list = (await fetch(`${base3}/schedules`).then((r) => r.json())) as Array<{
+        id: string
+      }>
+      expect(list.map((schedule) => schedule.id)).not.toContain('s-durable')
+    } finally {
+      await gw3.stop()
+    }
+  })
+
   it('schedule fire dispatches the persisted input as the pipeline payload', async () => {
     const seenPayloads: unknown[] = []
     const { gw, base } = await bootGatewayWithRetry(async (port) => ({
