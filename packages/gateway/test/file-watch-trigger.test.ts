@@ -172,4 +172,18 @@ describe('file-watch trigger', () => {
     expect(seen).toHaveLength(stoppedCount)
     await coordinator.stop()
   })
+
+  it('records lastError when the watched path does not exist', async () => {
+    const coordinator = new TriggerCoordinator({ onFire: async () => {} })
+    const reg = coordinator.register({
+      kind: 'file-watch',
+      id: 'watch-missing',
+      workflowId: 'wf',
+      path: join(tempDir, 'missing'),
+    })
+
+    expect(reg.lastError).toMatch(/file-watch start failed/)
+    expect(reg.lastError).toMatch(/ENOENT|no such file/i)
+    await coordinator.stop()
+  })
 })

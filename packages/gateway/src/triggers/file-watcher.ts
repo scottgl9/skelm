@@ -31,7 +31,7 @@ export class FileWatchTrigger {
 
   constructor(private readonly spec: FileWatchTriggerSpec) {
     this.watchedPath = resolve(spec.path)
-    this.watchedIsFile = isFileSafe(this.watchedPath)
+    this.watchedIsFile = statSync(this.watchedPath).isFile()
     this.allowedEvents = new Set(spec.events ?? DEFAULT_EVENTS)
     this.debounceMs = spec.debounceMs ?? DEFAULT_DEBOUNCE_MS
   }
@@ -109,12 +109,4 @@ function mergeEvents(
   if (incoming === 'delete' || existing === 'delete') return 'delete'
   if (incoming === 'create' || existing === 'create') return 'create'
   return incoming
-}
-
-function isFileSafe(path: string): boolean {
-  try {
-    return statSync(path).isFile()
-  } catch {
-    return false
-  }
 }
