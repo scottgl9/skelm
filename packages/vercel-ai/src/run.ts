@@ -167,11 +167,15 @@ async function dispatchVercelAi(p: DispatchParams): Promise<AgentResponse> {
         )
       }
       const finalResult = await stream
+      const finishReason = await stream.finishReason
+      const finalUsage = await stream.usage
+      if (finishReason === 'error') {
+        throw new VercelAiBackendError(`vercel-ai stream terminated with finishReason='error'`)
+      }
 
       const response: AgentResponse = {}
-      if (typeof finalResult.finishReason === 'string')
-        response.stopReason = finalResult.finishReason
-      const usage = mapUsage(finalResult.usage)
+      if (typeof finishReason === 'string') response.stopReason = finishReason
+      const usage = mapUsage(finalUsage)
       if (usage !== undefined) response.usage = usage
 
       if (request.outputSchema !== undefined) {

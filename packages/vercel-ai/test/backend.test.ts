@@ -1,8 +1,24 @@
 import type { BackendContext } from '@skelm/core'
+import type * as ai from 'ai'
 import { MockLanguageModelV3, convertArrayToReadableStream } from 'ai/test'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { VercelAiBackendError, createVercelAiBackend } from '../src/index.js'
+
+const streamTextOverride = vi.hoisted(() => ({
+  current: undefined as undefined | ((...args: unknown[]) => unknown),
+}))
+
+vi.mock('ai', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('ai')>()
+  return {
+    ...actual,
+    streamText: (...args: Parameters<typeof actual.streamText>) =>
+      streamTextOverride.current === undefined
+        ? actual.streamText(...args)
+        : (streamTextOverride.current(...args) as ReturnType<typeof actual.streamText>),
+  }
+})
 
 function makeCtx(overrides: Partial<BackendContext> = {}): BackendContext {
   return { signal: new AbortController().signal, ...overrides }
@@ -237,6 +253,26 @@ describe('createVercelAiBackend — run()', () => {
     // in the generateText tests above; here we just verify the streaming
     // contract: every text-delta chunk reaches onPartial and the final text
     // matches the concatenation.
+  })
+
+  it('throws a vercel-ai backend error when stream finishes with error', async () => {
+    const stream = {
+      textStream: (async function* () {
+        yield 'partial'
+      })(),
+      finishReason: Promise.resolve('error'),
+      usage: Promise.resolve({ inputTokens: 1, outputTokens: 1, totalTokens: 2 }),
+    } as unknown as ReturnType<typeof ai.streamText>
+    streamTextOverride.current = () => stream
+    const backend = createVercelAiBackend({ model: mockModel('unused') })
+
+    try {
+      const result = backend.run?.({ prompt: 'stream me' }, { ...makeCtx(), onPartial: () => {} })
+      await expect(result).rejects.toBeInstanceOf(VercelAiBackendError)
+      await expect(result).rejects.toThrow(/stream terminated/)
+    } finally {
+      streamTextOverride.current = undefined
+    }
   })
 
   it('passes options.systemPrompt + req.system + agentDef.instructions in order', async () => {
