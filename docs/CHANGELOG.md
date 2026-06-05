@@ -6,6 +6,57 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-06-05
+
+### Breaking Changes
+
+- **Pi is SDK-only.** The Pi subprocess/RPC backend and its public exports were removed; the declarative `pi` backend id now resolves to the SDK backend. Legacy Pi `command` / RPC config fields fail closed instead of being silently accepted. Update old Pi RPC configurations to the SDK-backed `pi` backend shape.
+
+### Added
+
+- **Backend fallback and failover visibility.** `agent()` and `infer()` steps can try ordered backend id lists, advancing only when a backend reports `BackendUnavailableError`; fallback attempts now emit `backend.failover` events and audit entries.
+
+- **Schedule queue observability.** Schedule list/detail responses now expose queued fire count, dropped fire count, and active executions so operators can inspect trigger pressure through the gateway API.
+
+- **Broader typed error classification.** Backend, registry, plugin, workflow, integration, and manager failures now preserve useful typed error names across run serialization and gateway HTTP responses.
+
+### Fixed
+
+- **Gateway compatibility restored for older v1 route payloads.** Workflow registration and run handlers normalize historical request shapes into the current archive-backed paths while preserving uploaded-workflow conflict checks.
+
+- **Scheduler and trigger compatibility tightened.** Direct scheduler API calls and legacy trigger options remain accepted; missing file-watch paths are rejected cleanly, and startup file-watch scans no longer dispatch synthetic create events.
+
+- **CLI flag parsing is stricter and clearer.** Missing flag values, invalid flag values, and `history --events` boolean parsing now fail or parse predictably with actionable messages.
+
+- **Builder and chat UI turns shut down and render reliably.** The builder launches the current project, renders persistent turns consistently, and cleans up the hosted chat UI on cancellation.
+
+- **Wait resume and trigger shutdown edge cases repaired.** `null` resume values are preserved, detached trigger dispatches are awaited during gateway stop, and trigger dispatch handlers return after start instead of falling through.
+
+- **Provider and stream failures surface accurately.** Vercel AI streams that finish in an error state now reject, OpenAI-compatible run paths receive configured backends, and additional integration errors are classified instead of being flattened.
+
+- **Absolute executable allowlists are preserved.** Permission resolution no longer loses absolute executable entries when constructing the effective policy.
+
+### Security
+
+- **Webhook schedules now require HMAC verification.** Generic webhook schedules must verify configured signatures before dispatch, with declared replay windows and max body sizes carried into runtime trigger specs.
+
+- **Webhook request body limits are enforced while reading the stream.** Chunked or headerless requests can no longer bypass max-body checks by omitting `Content-Length`.
+
+- **Native backend MCP filesystem roots are enforced.** MCP attach paths for native backends now honor declared `fsRead` / `fsWrite` roots, with adversarial coverage in the core security suite.
+
+- **Duplicate permission denial audit entries suppressed.** A single denial no longer creates duplicate audit records.
+
+### Docs
+
+- Refreshed the root README, package metadata, examples, Pi backend docs, Vercel AI docs, and AGENTS guidance to match the current chat UI, Pi SDK, trigger, and commit-message behavior.
+- Fixed docs frontmatter quoting so the docs home page builds under VitePress.
+
+### Chore
+
+- **Utility parsing moved to maintained libraries.** CLI argument parsing, cron parsing, YAML frontmatter parsing, glob discovery, file watching, SSE parsing, free-port selection, and retry backoff now use shared libraries while preserving existing behavior.
+
+- **Commit message validation installed.** The local commit-msg hook now enforces conventional prefixes, descriptive subjects, and wrapped body lines.
+
 ## [0.4.6] - 2026-06-02
 
 ### Breaking Changes
