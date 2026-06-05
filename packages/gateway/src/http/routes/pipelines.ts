@@ -158,6 +158,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
         const handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
           runId,
           signal: controller.signal,
+          workflowPath: entry.path,
           skillSource: createSkillSource({
             registry: gateway.registries.skills,
             workflowPath: entry.path,
@@ -244,6 +245,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
         const handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
           runId,
           signal: controller.signal,
+          workflowPath: filePath,
           skillSource: createSkillSource({
             registry: gateway.registries.skills,
             workflowPath: filePath,
@@ -309,6 +311,7 @@ export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
         handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
           runId,
           signal: controller.signal,
+          workflowPath: filePath,
           skillSource: createSkillSource({
             registry: gateway.registries.skills,
             workflowPath: filePath,

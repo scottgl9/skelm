@@ -480,6 +480,94 @@ export class Gateway {
     return { runId, pipelineId: pipeline.id }
   }
 
+  /**
+   * Resume a run that survived a gateway restart while parked at wait().
+   * The original in-memory Runner is gone after restart, but the RunStore keeps
+   * the workflow path, input, completed prior steps, and waiting snapshot. Build
+   * a fresh Runner that starts at the waiting step and supplies the resume value.
+   */
+  async resumeWaitingRun(runId: string, resumeValue: unknown): Promise<void> {
+    const stored = await this.runStore.getRun(runId)
+    if (stored === null) {
+      throw startPipelineError(404, 'run not found')
+    }
+    if (stored.status !== 'waiting' || stored.waiting === undefined) {
+      throw startPipelineError(400, `run ${runId} is not waiting`)
+    }
+    if (stored.workflowPath === undefined) {
+      throw startPipelineError(400, `run ${runId} has no workflowPath; cannot rehydrate`)
+    }
+    const loader = this.getWorkflowLoader()
+    if (loader === undefined) {
+      throw startPipelineError(501, 'gateway has no workflow loader')
+    }
+    const pipeline = await loadPipelineFromPath(loader, stored.pipelineId, stored.workflowPath)
+    const enforcement = this.enforcement
+    const runner = new Runner({
+      approvalGate: enforcement.approvalGate,
+      secretResolver: enforcement.secretResolver,
+      auditWriter: enforcement.auditWriter,
+      store: this.runStore,
+      events: this.events,
+      workspaceManager: this.workspaceManager,
+      ...(this.backendsInternal !== undefined && { backends: this.backendsInternal }),
+    })
+    this.attachMetricsBus(runner.events)
+    this.attachOtelBus(runner.events)
+    const controller = new AbortController()
+    this.registerRun(runId, controller, runner)
+
+    const resumeAccepted = new Promise<void>((resolve, reject) => {
+      const unsubscribe = this.events.forRun(runId, (event) => {
+        if (event.type === 'run.resumed') {
+          unsubscribe()
+          resolve()
+        } else if (event.type === 'run.failed') {
+          unsubscribe()
+          reject(new Error(event.error.message))
+        } else if (event.type === 'run.cancelled') {
+          unsubscribe()
+          reject(new Error(`run ${runId} was cancelled`))
+        }
+      })
+    })
+
+    let handle: ReturnType<Runner['start']>
+    try {
+      handle = runner.start(pipeline as Parameters<Runner['start']>[0], stored.input as never, {
+        runId,
+        signal: controller.signal,
+        skillSource: createSkillSource({
+          registry: this.registries.skills,
+          workflowPath: stored.workflowPath,
+        }),
+        pipelineRegistry: makeGatewayPipelineRegistry(this),
+        ...this.defaultPermissionRunOptions(pipeline.id),
+        ...this.defaultBackendRunOptions(pipeline.id),
+        ...this.egressRunOptions(),
+        ...this.agentmemoryRunOptions(),
+        resumeFromWaiting: { run: stored, resumeValue },
+        workflowPath: stored.workflowPath,
+        ...(stored.triggerId !== undefined && { triggerId: stored.triggerId }),
+      })
+    } catch (err) {
+      this.unregisterRun(runId)
+      throw err
+    }
+
+    void handle
+      .wait()
+      .catch((err) => {
+        console.error(
+          `gateway: rehydrated run ${runId} wait rejected:`,
+          (err as Error)?.message ?? err,
+        )
+      })
+      .finally(() => this.unregisterRun(runId))
+
+    await resumeAccepted
+  }
+
   #startRunnerAsync(
     pipeline: import('@skelm/core').Pipeline,
     input: unknown,
@@ -508,6 +596,7 @@ export class Gateway {
       handle = runner.start(pipeline as Parameters<Runner['start']>[0], (input ?? {}) as never, {
         runId,
         signal: controller.signal,
+        workflowPath,
         skillSource: createSkillSource({
           registry: this.registries.skills,
           workflowPath,
