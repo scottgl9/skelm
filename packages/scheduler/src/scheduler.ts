@@ -42,8 +42,12 @@ type LegacyTrigger = {
   workflowId: string
   cron?: string
   schedule?: string
+  timezone?: string
   intervalMs?: number
+  initialDelayMs?: number
   path?: string
+  secret?: string
+  transformPayload?: (payload: unknown) => unknown
   enabled?: boolean
   description?: string
   dedupe?: Trigger['dedupe']
@@ -285,11 +289,27 @@ export class Scheduler {
   }
 
   private startIntervalTrigger(trigger: IntervalTrigger): void {
-    const job = setInterval(() => {
+    const fireIfActive = () => {
       if (trigger.enabled && this.triggers.get(trigger.id)?.status === 'active') {
         this.fire(trigger)
       }
-    }, trigger.intervalMs)
+    }
+    const startInterval = () => {
+      const interval = setInterval(fireIfActive, trigger.intervalMs)
+      interval.unref?.()
+      this.intervalJobs.set(trigger.id, interval)
+    }
+    if (trigger.initialDelayMs !== undefined) {
+      const initial = setTimeout(() => {
+        fireIfActive()
+        startInterval()
+      }, trigger.initialDelayMs)
+      initial.unref?.()
+      this.intervalJobs.set(trigger.id, initial)
+      return
+    }
+
+    const job = setInterval(fireIfActive, trigger.intervalMs)
     job.unref?.()
 
     this.intervalJobs.set(trigger.id, job)
@@ -417,18 +437,24 @@ function normalizeTrigger(trigger: Trigger | LegacyTrigger): Trigger {
         ...base,
         type: 'cron',
         schedule: trigger.schedule ?? trigger.cron ?? '',
+        ...(trigger.timezone !== undefined && { timezone: trigger.timezone }),
       }
     case 'interval':
       return {
         ...base,
         type: 'interval',
         intervalMs: trigger.intervalMs ?? 0,
+        ...(trigger.initialDelayMs !== undefined && { initialDelayMs: trigger.initialDelayMs }),
       }
     case 'webhook':
       return {
         ...base,
         type: 'webhook',
         path: trigger.path ?? `/${trigger.id}`,
+        ...(trigger.secret !== undefined && { secret: trigger.secret }),
+        ...(trigger.transformPayload !== undefined && {
+          transformPayload: trigger.transformPayload,
+        }),
       }
   }
 }
