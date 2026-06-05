@@ -22,15 +22,15 @@ The agent backend resolves in `skelm.config.mts` with a runtime fallback:
 
 1. **Codex** (default) — authenticates via the host `codex` CLI (`codex login`)
    or `CODEX_API_KEY`.
-2. **pi-sdk** (failover) — an in-process backend pointed at a local
+2. **Pi** (failover) — an in-process backend pointed at a local
    OpenAI-compatible endpoint, used automatically if a codex turn errors.
 
 | Var | Default | Purpose |
 | --- | --- | --- |
-| `SKELM_BUILDER_BACKEND` | _(unset)_ | Pin a single backend: `codex` or `pi-sdk` (skips fallback) |
+| `SKELM_BUILDER_BACKEND` | _(unset)_ | Pin a single backend: `codex` or `pi` (skips fallback) |
 | `CODEX_API_KEY` | _(unset)_ | Codex API key (or run `codex login`) |
-| `OPENAI_BASE_URL` | `http://localhost:8000/v1` | pi-sdk endpoint |
-| `OPENAI_MODEL` | `qwen36` | pi-sdk model id |
+| `OPENAI_BASE_URL` | `http://localhost:8000/v1` | Pi endpoint |
+| `OPENAI_MODEL` | `qwen36` | Pi model id |
 
 ## Permissions
 

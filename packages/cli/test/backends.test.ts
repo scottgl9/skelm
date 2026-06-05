@@ -140,6 +140,32 @@ describe('buildBackendRegistry', () => {
       process.env.SKELM_AGENT_TEST_KEY = undefined
     }
   })
+
+  it('registers the pi backend id with the SDK backend from config', async () => {
+    process.env.PI_TEST_KEY = 'pi-env-key'
+    try {
+      const registry = await buildBackendRegistry({
+        backends: {
+          pi: {
+            provider: 'openai',
+            model: 'qwen36',
+            baseUrl: 'http://test.invalid/v1',
+            apiKey: { secret: 'PI_TEST_KEY' },
+            maxConcurrent: 1,
+          },
+        },
+      } satisfies SkelmConfig)
+
+      const backend = registry?.resolveForAgent({ backendId: 'pi' })
+      expect(backend?.id).toBe('pi')
+      expect(backend?.capabilities.toolPermissions).toBe('native')
+      expect(backend?.capabilities.prompt).toBe(true)
+      expect(typeof backend?.inference).toBe('function')
+      expect(typeof backend?.run).toBe('function')
+    } finally {
+      process.env.PI_TEST_KEY = undefined
+    }
+  })
 })
 
 async function startJsonServer(

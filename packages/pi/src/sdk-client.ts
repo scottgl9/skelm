@@ -55,7 +55,7 @@ export interface PiSdkClientOptions {
    * Provider configuration applied to pi's `ModelRegistry` at session start.
    * When set, the named provider is (re-)registered with the supplied
    * `baseUrl`/`apiKey`/`model`, overriding whatever `~/.pi/agent/models.json`
-   * declares for the lifetime of this session. Allows pi-sdk to be pointed
+   * declares for the lifetime of this session. Allows Pi to be pointed
    * at a local OpenAI-compatible endpoint via `OPENAI_BASE_URL` /
    * `OPENAI_API_KEY` / `OPENAI_MODEL` without touching the user's pi
    * config (finding-119).

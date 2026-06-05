@@ -90,7 +90,7 @@ The CLI knows these ids and wires them automatically:
 | `opencode`      | `createOpencodeBackendFromConfig`      | opencode SDK                           |
 | `copilot-acp`   | `createAcpBackend`                     | GitHub Copilot ACP subprocess          |
 | `acp`           | `createAcpBackend`                     | Generic ACP; `command` required        |
-| `pi`            | `createPiBackendFromConfig` (RPC)      | RPC variant only — for SDK use `instances:` |
+| `pi`            | `createPiSdkBackend`                   | Pi SDK backend                         |
 
 For the **pi SDK** backend, register an instance:
 

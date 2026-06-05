@@ -146,8 +146,8 @@ Init flags:
 Scaffold a conversational workflow-builder project (default dir: builder) and
 drop into its terminal chat UI. Re-running is idempotent: it reuses an existing
 project. Install dependencies once (npm install) before the chat UI launches.
-The agent backend defaults to codex and falls over to the in-process pi-sdk
-backend (override with SKELM_BUILDER_BACKEND=codex|pi-sdk).
+The agent backend defaults to codex and falls over to the in-process Pi
+backend (override with SKELM_BUILDER_BACKEND=codex|pi).
 
 Builder flags:
   --force                 Allow scaffolding into a non-empty directory

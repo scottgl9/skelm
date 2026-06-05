@@ -7,7 +7,7 @@ import { persistentWorkflow } from 'skelm'
  * Each turn you describe a workflow in natural language; the agent consults the
  * bundled `skelm` skill, writes a `*.workflow.mts` into this folder, validates
  * it with `skelm validate`, and reports the path. The backend resolves from
- * skelm.config.mts — codex by default, with pi-sdk as the runtime failover.
+ * skelm.config.mts — codex by default, with Pi as the runtime failover.
  */
 
 interface ChatMessage {
@@ -43,7 +43,7 @@ export default persistentWorkflow<ChatMessage>({
   description: 'Conversational builder that authors skelm workflows from natural-language specs.',
   triggers: [{ kind: 'queue', sourceId: 'tui' }],
   agent: {
-    // No `backend`: inherits skelm.config.mts `backends.agent` (codex → pi-sdk).
+    // No `backend`: inherits skelm.config.mts `backends.agent` (codex -> pi).
     system: SYSTEM,
     // Least-privilege, explicitly declared (no unrestricted bypass): read the
     // project, write generated files, run validation commands, load the skelm skill.
@@ -51,17 +51,17 @@ export default persistentWorkflow<ChatMessage>({
     // here is the builder's whole job.
     //
     // networkEgress stays 'allow' (not an allowHosts list) ON PURPOSE: the
-    // in-process pi-sdk failover can't route through the gateway egress proxy,
+    // in-process Pi failover can't route through the gateway egress proxy,
     // so it can't enforce a narrower policy. The start-of-step check runs
     // against codex (the routing primary, which CAN enforce), so a narrower
     // policy would pass there yet go silently unenforced once the turn fell
-    // over to pi-sdk. 'allow' is the honest contract for this codex→pi-sdk
+    // over to Pi. 'allow' is the honest contract for this codex -> pi
     // chain; pin SKELM_BUILDER_BACKEND=codex and tighten this if you never want
-    // the pi-sdk failover.
+    // the Pi failover.
     permissions: {
       fsRead: ['./'],
       fsWrite: ['./'],
-      // Include bash so the pi-sdk fallback exposes its shell tool; the
+      // Include bash so the Pi fallback exposes its shell tool; the
       // builder prompt requires running `skelm validate <path>` after writing.
       allowedExecutables: ['skelm', 'node', 'bash'],
       allowedSkills: ['skelm'],

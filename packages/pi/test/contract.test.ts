@@ -1,22 +1,37 @@
 /**
- * Backend-contract suite for `@skelm/pi` (RPC backend).
- *
- * Runs the capability-self-consistency block from `@skelm/core/testing`.
- * `inference` / `agent` / `permission-gate` are skipped: pi RPC mode spawns
- * a `pi --mode rpc` subprocess; agent-loop coverage lives in
- * `test/backend.test.ts` and integration tests. The capability block
- * still catches mis-declared capabilities (e.g. `toolPermissions` flag
- * drifting from what the backend actually enforces).
- *
- * The SDK-mode backend (`createPiSdkBackend`) has its own surface and
- * could grow a sibling `contract.sdk.test.ts` if the SDK path ever
- * diverges in capability shape.
+ * Backend-contract suite for `@skelm/pi`.
  */
 
 import { runBackendContract } from '@skelm/core/testing/contract'
-import { createPiBackend } from '../src/backend.js'
+import { vi } from 'vitest'
 
-runBackendContract(() => createPiBackend({}), {
-  name: 'pi',
-  skip: ['inference', 'agent', 'permission-gate'],
+vi.mock('../src/sdk-client.js', async () => {
+  const actual =
+    await vi.importActual<typeof import('../src/sdk-client.js')>('../src/sdk-client.js')
+  const MockPiSdkClient = vi.fn().mockImplementation(function () {
+    return {
+      prompt: vi.fn().mockResolvedValue({
+        text: 'ok',
+        stopReason: 'stop',
+        usage: { inputTokens: 1, outputTokens: 1 },
+      }),
+    }
+  })
+  return { ...actual, PiSdkClient: MockPiSdkClient }
 })
+
+import { createPiSdkBackend } from '../src/sdk-backend.js'
+
+runBackendContract(
+  () =>
+    createPiSdkBackend({
+      id: 'pi',
+      provider: 'openai',
+      model: 'test-model',
+      baseUrl: 'http://test.invalid/v1',
+      apiKey: 'test-key',
+    }),
+  {
+    name: 'pi',
+  },
+)

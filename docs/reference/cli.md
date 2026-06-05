@@ -252,9 +252,9 @@ frontend over the `tui` chatui transport, the `skelm` skill, and a
 
 The agent backend resolves with a runtime fallback (skelm's
 `createRoutingBackend`): **codex** by default (auth via `codex login` or
-`CODEX_API_KEY`), falling over to the in-process **pi-sdk** backend
+`CODEX_API_KEY`), falling over to the in-process **Pi** backend
 (`OPENAI_BASE_URL` / `OPENAI_MODEL`) if a codex turn errors. Set
-`SKELM_BUILDER_BACKEND=codex|pi-sdk` to pin one backend and skip the fallback.
+`SKELM_BUILDER_BACKEND=codex|pi` to pin one backend and skip the fallback.
 
 ### `skelm validate <pipeline.ts>`
 

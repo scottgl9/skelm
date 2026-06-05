@@ -596,7 +596,7 @@ export class BackendNetworkError extends Error {
 /**
  * Thrown when an upstream provider rejects the request as unauthenticated /
  * unauthorized (401/403 family). Previously redeclared per backend
- * (opencode, pi, pi-sdk); consolidated here so callers can `catch` once.
+ * (opencode, pi); consolidated here so callers can `catch` once.
  */
 export class BackendAuthenticationError extends Error {
   override readonly name = 'BackendAuthenticationError'
@@ -710,7 +710,7 @@ export class BackendRegistry {
       }
       if (!found.capabilities.prompt || typeof found.inference !== 'function') {
         throw new BackendCapabilityError(
-          `backend ${opts.backendId} does not support infer() steps. Use a backend with single-shot inference (e.g. anthropic, openai, pi-sdk), or rewrite as agent({ maxTurns: 1 }).`,
+          `backend ${opts.backendId} does not support infer() steps. Use a backend with single-shot inference (e.g. anthropic, openai, pi), or rewrite as agent({ maxTurns: 1 }).`,
           opts.backendId,
           'prompt',
         )
