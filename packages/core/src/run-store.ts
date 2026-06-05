@@ -142,6 +142,17 @@ export const DEFAULT_MAX_RUNS_IN_MEMORY = 10_000
 export const DEFAULT_MAX_EVENTS_PER_RUN_IN_MEMORY = 50_000
 export const DEFAULT_MAX_AUDIT_ENTRIES_IN_MEMORY = 100_000
 
+function listRunsCompat(items: readonly RunSummary[]): AsyncIterable<RunSummary> {
+  return {
+    get length() {
+      return items.length
+    },
+    async *[Symbol.asyncIterator]() {
+      yield* items
+    },
+  } as AsyncIterable<RunSummary>
+}
+
 export class MemoryRunStore implements RunStore {
   private readonly runs = new Map<RunId, Run>()
   private readonly events = new Map<RunId, RunEvent[]>()
@@ -214,7 +225,7 @@ export class MemoryRunStore implements RunStore {
     return this.runs.get(runId) ?? null
   }
 
-  async *listRuns(filter: RunFilter = {}): AsyncIterable<RunSummary> {
+  listRuns(filter: RunFilter = {}): AsyncIterable<RunSummary> {
     // Single-pass filter avoids four intermediate-array allocations on
     // the hot list path. The sort is unavoidable without an index.
     const matches: Run[] = []
@@ -228,16 +239,38 @@ export class MemoryRunStore implements RunStore {
     }
     matches.sort((a, b) => b.startedAt - a.startedAt)
     const limited = filter.limit === undefined ? matches : matches.slice(0, filter.limit)
-    for (const run of limited) {
-      yield {
-        runId: run.runId,
-        pipelineId: run.pipelineId,
-        ...(run.workflowPath !== undefined && { workflowPath: run.workflowPath }),
-        ...(run.triggerId !== undefined && { triggerId: run.triggerId }),
-        status: run.status,
-        startedAt: run.startedAt,
-        ...(run.completedAt !== undefined && { completedAt: run.completedAt }),
-      }
+    const summaries = limited.map((run) => ({
+      runId: run.runId,
+      pipelineId: run.pipelineId,
+      ...(run.workflowPath !== undefined && { workflowPath: run.workflowPath }),
+      ...(run.triggerId !== undefined && { triggerId: run.triggerId }),
+      status: run.status,
+      startedAt: run.startedAt,
+      ...(run.completedAt !== undefined && { completedAt: run.completedAt }),
+    }))
+    return listRunsCompat(summaries)
+  }
+
+  async *listEvents(
+    runId: RunId,
+    opts: { since?: number; limit?: number } = {},
+  ): AsyncIterable<RunEvent> {
+    const all = this.events.get(runId) ?? []
+    const since = opts.since ?? 0
+    const limit = opts.limit
+    let emitted = 0
+    for (const event of all) {
+      if (event.at < since) continue
+      if (limit !== undefined && emitted >= limit) break
+      emitted++
+      yield event
+    }
+  }
+
+  async putAudit(entry: AuditEntry): Promise<void> {
+    this.audit.push(entry)
+    if (this.audit.length > this.maxAuditEntries) {
+      this.audit.splice(0, this.audit.length - this.maxAuditEntries)
     }
   }
 
@@ -252,26 +285,6 @@ export class MemoryRunStore implements RunStore {
     }
     this.events.set(event.runId, current)
   }
-
-  async *listEvents(
-    runId: RunId,
-    opts: { since?: number; limit?: number } = {},
-  ): AsyncIterable<RunEvent> {
-    const events = (this.events.get(runId) ?? [])
-      .filter((event) => opts.since === undefined || event.at >= opts.since)
-      .slice(0, opts.limit)
-    for (const event of events) {
-      yield event
-    }
-  }
-
-  async putAudit(entry: AuditEntry): Promise<void> {
-    this.audit.push(entry)
-    if (this.audit.length > this.maxAuditEntries) {
-      this.audit.splice(0, this.audit.length - this.maxAuditEntries)
-    }
-  }
-
   async getState<T>(namespace: string, key: string): Promise<T | undefined> {
     this.pruneExpiredState(namespace, key)
     return this.state.get(namespace)?.get(key)?.value as T | undefined

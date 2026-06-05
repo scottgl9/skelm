@@ -135,6 +135,29 @@ describe('Scheduler — runtime', () => {
     warnSpy.mockRestore()
   })
 
+  it('supports legacy deps-only construction, legacy cron registration, and direct fire(id)', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const putRun = vi.fn(async () => {})
+    const scheduler = new Scheduler({ runStore: { putRun } })
+    await scheduler.register({
+      id: 'legacy',
+      kind: 'cron',
+      cron: '0 0 1 1 *',
+      workflowId: 'noop',
+    })
+    scheduler.fire('legacy')
+    scheduler.fire('legacy')
+    await scheduler.stop()
+
+    expect(putRun).not.toHaveBeenCalled()
+    const noExecWarnings = warnSpy.mock.calls.filter((c) =>
+      String(c[0]).includes('no pipelineExecutor'),
+    )
+    expect(noExecWarnings).toHaveLength(1)
+    expect(scheduler.getTrigger('legacy')?.runCount).toBe(2)
+    warnSpy.mockRestore()
+  })
+
   it('persists the Run returned by pipelineExecutor and marks status=error on failure', async () => {
     const putRun = vi.fn(async () => {})
     const pipelineLoader = vi.fn(async () => ({ id: 'p' }))
