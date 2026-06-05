@@ -81,6 +81,12 @@ import { createSecretsAccessor, resolveValueOrFn, resolveValueOrFnAsync } from '
 import type { ExecutionRuntime } from './runtime.js'
 
 const defaultStateStore = new MemoryRunStore()
+const auditedPermissionDenials = new WeakSet<PermissionDeniedError>()
+
+function markPermissionDeniedAudited(error: PermissionDeniedError): PermissionDeniedError {
+  auditedPermissionDenials.add(error)
+  return error
+}
 
 function backendCandidates(
   requested: string | readonly string[] | undefined,
@@ -677,7 +683,7 @@ async function runAgentStep(
             detail,
             at: Date.now(),
           })
-          throw new PermissionDeniedError(detail)
+          throw markPermissionDeniedAudited(new PermissionDeniedError(detail))
         }
       }
     }
@@ -1137,7 +1143,11 @@ async function runAgentStep(
     // PermissionDeniedError from the backend's own guard (e.g. Pi RPC defense-in-depth)
     // is not caught by the assertBackendSupportsPermissions block above, so it would
     // silently reach step.error without an auditable permission.denied event.
-    if (error instanceof PermissionDeniedError && !(error instanceof BackendCapabilityError)) {
+    if (
+      error instanceof PermissionDeniedError &&
+      !(error instanceof BackendCapabilityError) &&
+      !auditedPermissionDenials.has(error)
+    ) {
       events?.publish({
         type: 'permission.denied',
         runId: ctx.run.runId,
@@ -1163,7 +1173,7 @@ function enforceFilesystemMcpRoots(
   for (const server of servers) {
     if (server.transport !== 'stdio') continue
     for (const root of filesystemMcpRoots(server)) {
-      if (enforcer.canRead(root).allow || enforcer.canWrite(root).allow) continue
+      if (enforcer.canRead(root).allow) continue
       const detail = `${label} is not allowed to attach filesystem MCP server "${server.id}" with root "${root}" (not-in-allowlist)`
       events?.publish({
         type: 'permission.denied',
@@ -1173,7 +1183,7 @@ function enforceFilesystemMcpRoots(
         detail,
         at: Date.now(),
       })
-      throw new PermissionDeniedError(detail)
+      throw markPermissionDeniedAudited(new PermissionDeniedError(detail))
     }
   }
 }
