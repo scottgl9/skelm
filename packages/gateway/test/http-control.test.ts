@@ -20,6 +20,22 @@ afterEach(async () => {
   await rm(stateDir, { recursive: true, force: true })
 })
 
+async function expectSettlesWithin<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`promise did not settle within ${ms}ms`))
+        }, ms)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
 describe('Gateway HTTP control surface', () => {
   it('exposes /health, /gateway/pause|resume, /approvals, /sessions, /triggers', async () => {
     const { gw, base } = await bootGatewayWithRetry(async (port) => ({
@@ -552,6 +568,55 @@ describe('Gateway HTTP /schedules', () => {
       // onFire receives the persisted input as the payload.
       expect(seenPayloads).toEqual([{ foo: 'bar' }])
     } finally {
+      await gw.stop()
+    }
+  })
+
+  it('POST /triggers/:id/fire returns after accepting a long-running dispatch', async () => {
+    let release: () => void = () => {}
+    const inFlight = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let fires = 0
+    const { gw, base } = await bootGatewayWithRetry(async (port) => ({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    }))
+    gw.managers.triggers.setOnFire(async () => {
+      fires++
+      await inFlight
+    })
+    try {
+      await fetch(`${base}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-long',
+          workflowId: 'wf',
+          trigger: { kind: 'manual' },
+          overlap: 'skip',
+        }),
+      }).then((r) => r.json())
+
+      const first = await expectSettlesWithin(
+        fetch(`${base}/triggers/s-long/fire`, { method: 'POST' }),
+        100,
+      )
+      expect(first.status).toBe(200)
+      expect(await first.json()).toEqual({ ok: true, status: 'dispatched' })
+      expect(fires).toBe(1)
+      expect(gw.managers.triggers.get('s-long')?.inflight).toBe(true)
+
+      const second = await fetch(`${base}/triggers/s-long/fire`, { method: 'POST' })
+      expect(second.status).toBe(409)
+      release()
+      await new Promise((r) => setImmediate(r))
+      expect(gw.managers.triggers.get('s-long')?.inflight).toBe(false)
+    } finally {
+      release()
       await gw.stop()
     }
   })
