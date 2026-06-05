@@ -1,6 +1,6 @@
 {
   "name": "@skelm/core",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "skelm runtime, types, and builders",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
