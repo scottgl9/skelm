@@ -14,6 +14,7 @@ interface BatchRunsBody {
 
 interface BatchCancelBody {
   runIds?: unknown
+  ids?: unknown
 }
 
 /**
@@ -49,7 +50,8 @@ export function registerBatchRoutes(router: Router, gateway: Gateway): void {
     '/v1/batch/cancel',
     eventHandler(async (event) => {
       const body = (await readBody(event).catch(() => ({}))) as BatchCancelBody
-      const runIds = Array.isArray(body.runIds) ? (body.runIds as unknown[]) : null
+      const rawRunIds = body.runIds ?? body.ids
+      const runIds = Array.isArray(rawRunIds) ? (rawRunIds as unknown[]) : null
       if (runIds === null) {
         throw createError({ statusCode: 400, message: 'runIds must be an array' })
       }
@@ -60,7 +62,7 @@ export function registerBatchRoutes(router: Router, gateway: Gateway): void {
         const cancelled = gateway.cancel(raw, 'cancelled via /v1/batch/cancel')
         return cancelled
           ? { runId: raw, cancelled: true }
-          : { runId: raw, cancelled: false, error: 'not in flight' }
+          : { runId: raw, cancelled: false, status: 'notFound', notFound: true }
       })
       return { items }
     }),

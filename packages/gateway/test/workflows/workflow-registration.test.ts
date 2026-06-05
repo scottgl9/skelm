@@ -97,6 +97,31 @@ describe('/v1/workflows/*', () => {
     }
   })
 
+  it('POST /v1/workflows/register accepts inline JSON workflow definitions', async () => {
+    const { gw, base } = await bootGateway()
+    try {
+      const res = await fetch(`${base}/v1/workflows/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 'inline-flow',
+          description: 'inline fixture',
+          steps: [{ kind: 'code', id: 'hello', run: 'async () => ({ ok: true })' }],
+        }),
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.registered).toBe(true)
+      expect(body.workflow.id).toBe('inline-flow')
+      expect(body.workflow.sourceKind).toBe('archive')
+
+      const list = await fetch(`${base}/v1/workflows`).then((r) => r.json())
+      expect(list.some((e: { id: string }) => e.id === 'inline-flow')).toBe(true)
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('rejects paths outside projectRoot (default-deny)', async () => {
     const outside = await mkdtemp(join(tmpdir(), 'skelm-outside-'))
     const wfPath = join(outside, 'x.ts')
