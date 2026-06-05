@@ -30,6 +30,7 @@ import { EventBus } from '../events.js'
 import { createExec } from '../exec.js'
 import { extractJsonFromText, tryParseJson } from '../json-utils.js'
 import { createMcpHost } from '../mcp/host.js'
+import type { McpServerConfig } from '../mcp/types.js'
 import type {
   AgentPermissions,
   NetworkPolicy,
@@ -957,6 +958,21 @@ async function runAgentStep(
           throw new BackendCapabilityError(detail, candidateBackend.id, 'mcp')
         }
         if (
+          authorPolicy !== undefined &&
+          mcpServers !== undefined &&
+          mcpServers.length > 0 &&
+          candidateBackend.capabilities.toolPermissions === 'native'
+        ) {
+          enforceFilesystemMcpRoots(
+            authorPolicy,
+            mcpServers,
+            events,
+            ctx.run.runId,
+            step.id,
+            `step "${step.id}"`,
+          )
+        }
+        if (
           step.skills !== undefined &&
           step.skills.length > 0 &&
           !candidateBackend.capabilities.skills
@@ -1133,6 +1149,45 @@ async function runAgentStep(
     }
     throw error
   }
+}
+
+function enforceFilesystemMcpRoots(
+  policy: ResolvedPolicy,
+  servers: readonly McpServerConfig[],
+  events: EventBus | undefined,
+  runId: string,
+  stepId: StepId,
+  label: string,
+): void {
+  const enforcer = new TrustEnforcer(policy)
+  for (const server of servers) {
+    if (server.transport !== 'stdio') continue
+    for (const root of filesystemMcpRoots(server)) {
+      if (enforcer.canRead(root).allow || enforcer.canWrite(root).allow) continue
+      const detail = `${label} is not allowed to attach filesystem MCP server "${server.id}" with root "${root}" (not-in-allowlist)`
+      events?.publish({
+        type: 'permission.denied',
+        runId,
+        stepId,
+        dimension: 'fs.read',
+        detail,
+        at: Date.now(),
+      })
+      throw new PermissionDeniedError(detail)
+    }
+  }
+}
+
+function filesystemMcpRoots(server: Extract<McpServerConfig, { transport: 'stdio' }>): string[] {
+  const argv = [server.command, ...(server.args ?? [])]
+  const packageIndex = argv.findIndex(
+    (arg) =>
+      arg === '@modelcontextprotocol/server-filesystem' ||
+      arg === 'mcp-server-filesystem' ||
+      arg.endsWith('/server-filesystem'),
+  )
+  if (packageIndex < 0) return []
+  return argv.slice(packageIndex + 1).filter((arg) => arg.length > 0 && !arg.startsWith('-'))
 }
 
 async function runParallel(
