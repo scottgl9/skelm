@@ -503,12 +503,13 @@ export class TriggerCoordinator {
     if (reg.parallel === true) {
       reg.lastFiredAt = ctx.firedAt
       reg.fired += 1
-      try {
-        await this.opts.onFire(ctx)
-      } catch (err) {
-        reg.lastError = (err as Error).message
-        this.opts.onFireError?.(reg.spec.id, err)
-      }
+      void Promise.resolve()
+        .then(() => this.opts.onFire(ctx))
+        .catch((err) => {
+          reg.lastError = (err as Error).message
+          this.opts.onFireError?.(reg.spec.id, err)
+        })
+      await Promise.resolve()
       return 'dispatched'
     }
     // Check-and-set inflight atomically. JS is single-threaded so concurrent
@@ -540,7 +541,14 @@ export class TriggerCoordinator {
       }
     }
     reg.inflight = true
-    await this.dispatch(reg, ctx)
+    void Promise.resolve()
+      .then(() => this.dispatch(reg, ctx))
+      .catch((err) => {
+        reg.lastError = (err as Error).message
+        this.opts.onFireError?.(reg.spec.id, err)
+        reg.inflight = false
+      })
+    await Promise.resolve()
     return 'dispatched'
   }
 
