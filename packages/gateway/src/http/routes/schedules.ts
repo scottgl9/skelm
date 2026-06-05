@@ -47,8 +47,33 @@ export function registerScheduleRoutes(router: Router, gateway: Gateway): void {
   router.get(
     '/schedules',
     eventHandler(async () =>
-      gateway.managers.triggers.list().map((reg) => registrationToSchedule(reg)),
+      gateway.managers.triggers
+        .list()
+        .map((reg) =>
+          registrationToSchedule(
+            reg,
+            gateway.managers.triggers.queueDepth(reg.spec.id),
+            gateway.managers.triggers.runningCount(reg.spec.id),
+          ),
+        ),
     ),
+  )
+
+  router.get(
+    '/schedules/:id',
+    eventHandler(async (event) => {
+      const id = event.context.params?.id
+      if (!id) throw createError({ statusCode: 400, message: 'schedule id required' })
+      const reg = gateway.managers.triggers.get(id)
+      if (reg === undefined) {
+        throw createError({ statusCode: 404, message: `schedule not found: ${id}` })
+      }
+      return registrationToSchedule(
+        reg,
+        gateway.managers.triggers.queueDepth(id),
+        gateway.managers.triggers.runningCount(id),
+      )
+    }),
   )
 
   router.post(
@@ -277,7 +302,11 @@ function scheduleTriggerToSpec(
   }
 }
 
-function registrationToSchedule(reg: TriggerRegistration): {
+function registrationToSchedule(
+  reg: TriggerRegistration,
+  queued = 0,
+  runningCount = 0,
+): {
   id: string
   workflowId: string
   trigger: Record<string, unknown>
@@ -285,6 +314,9 @@ function registrationToSchedule(reg: TriggerRegistration): {
   enabled: boolean
   fired: number
   inflight: boolean
+  queued: number
+  dropped: number
+  runningCount: number
   input?: unknown
   lastFiredAt?: string
   lastError?: string
@@ -352,6 +384,9 @@ function registrationToSchedule(reg: TriggerRegistration): {
     enabled: true,
     fired: reg.fired,
     inflight: reg.inflight,
+    queued,
+    dropped: reg.dropped,
+    runningCount,
   }
   if (reg.input !== undefined) out.input = reg.input
   if (reg.lastFiredAt !== undefined) out.lastFiredAt = reg.lastFiredAt

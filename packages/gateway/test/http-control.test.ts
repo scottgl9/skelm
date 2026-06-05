@@ -1719,3 +1719,80 @@ it('DELETE /schedules/:id unregisters a schedule; 404 for unknown', async () => 
     await gw.stop()
   }
 })
+
+it('GET /schedules/:id exposes queue observability counters', async () => {
+  let release: (() => void) | undefined
+  const block = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const { gw, base } = await bootGatewayWithRetry(async (port) => ({
+    stateDir,
+    watchRegistries: false,
+    enableHttp: true,
+    httpPort: port,
+    config: {},
+  }))
+  try {
+    gw.managers.triggers.setOnFire(async () => {
+      await block
+    })
+    gw.managers.triggers.register({ kind: 'manual', id: 'qdepth', workflowId: 'wf' }, 'queue', {
+      maxQueueDepth: 1,
+    })
+
+    await fetch(`${base}/triggers/qdepth/fire`, { method: 'POST' })
+    await fetch(`${base}/triggers/qdepth/fire`, { method: 'POST' })
+    await fetch(`${base}/triggers/qdepth/fire`, { method: 'POST' })
+
+    const res = await fetch(`${base}/schedules/qdepth`)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({
+      id: 'qdepth',
+      queued: 1,
+      dropped: 1,
+      runningCount: 1,
+    })
+  } finally {
+    release?.()
+    await gw.stop()
+  }
+})
+
+it('GET /schedules/:id exposes parallel runningCount accurately', async () => {
+  let release: (() => void) | undefined
+  const block = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const { gw, base } = await bootGatewayWithRetry(async (port) => ({
+    stateDir,
+    watchRegistries: false,
+    enableHttp: true,
+    httpPort: port,
+    config: {},
+  }))
+  try {
+    gw.managers.triggers.setOnFire(async () => {
+      await block
+    })
+    gw.managers.triggers.register({ kind: 'manual', id: 'parallel-depth', workflowId: 'wf' })
+    gw.managers.triggers.markParallel('parallel-depth')
+
+    await fetch(`${base}/triggers/parallel-depth/fire`, { method: 'POST' })
+    await fetch(`${base}/triggers/parallel-depth/fire`, { method: 'POST' })
+
+    const res = await fetch(`${base}/schedules/parallel-depth`)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({
+      id: 'parallel-depth',
+      inflight: false,
+      queued: 0,
+      dropped: 0,
+      runningCount: 2,
+    })
+  } finally {
+    release?.()
+    await gw.stop()
+  }
+})
