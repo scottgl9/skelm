@@ -246,12 +246,12 @@ export async function runCommand(
     await waitForCancelRequest()
 
     // Even when the stream delivered a terminal event, fetch the final
-    // Run record so we have authoritative output / error / status. If the user
-    // interrupted the stream, the DELETE route may have returned before the
-    // runner persisted run.cancelled; poll briefly so Ctrl-C exits as CANCELLED
-    // instead of racing a still-running snapshot.
+    // Run record so we have authoritative output / error / status. Terminal
+    // SSE can arrive before final persistence has flushed audit/store writes,
+    // so poll briefly for a complete terminal snapshot.
     let run: Run<unknown, unknown>
-    const stateDeadline = Date.now() + (cancelPromise !== undefined ? 5_000 : 0)
+    const shouldPollFinalState = cancelPromise !== undefined || terminalSeen
+    const stateDeadline = shouldPollFinalState ? Date.now() + 5_000 : 0
     for (;;) {
       const stateRes = await fetchHttp(
         `${client.discovery.url}/runs/${started.runId}`,
@@ -263,14 +263,12 @@ export async function runCommand(
         return (await httpError(stateRes, io as MainIO)) as { exitCode: ExitCode }
       }
       run = (await stateRes.json()) as Run<unknown, unknown>
-      if (
-        cancelPromise === undefined ||
+      const completeTerminalSnapshot =
         run.status === 'completed' ||
-        run.status === 'failed' ||
         run.status === 'cancelled' ||
         run.status === 'waiting' ||
-        Date.now() >= stateDeadline
-      ) {
+        (run.status === 'failed' && run.error !== undefined)
+      if (!shouldPollFinalState || completeTerminalSnapshot || Date.now() >= stateDeadline) {
         break
       }
       await new Promise((resolve) => setTimeout(resolve, 100))
