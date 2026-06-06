@@ -363,9 +363,18 @@ export class TriggerCoordinator {
       case 'file-watch': {
         try {
           const watcher = new FileWatchTrigger(spec)
-          watcher.start((payload) => {
-            this.fireDetached(spec.id, undefined, payload)
-          })
+          watcher.start(
+            (payload) => {
+              this.fireDetached(spec.id, undefined, payload)
+            },
+            (err) => {
+              const current = this.registrations.get(spec.id)
+              if (current !== undefined) {
+                current.lastError = `file-watch error: ${err.message}`
+              }
+              this.opts.onFireError?.(spec.id, err)
+            },
+          )
           this.fileWatchers.set(spec.id, watcher)
         } catch (err) {
           reg.lastError = `file-watch start failed: ${(err as Error).message}`

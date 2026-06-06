@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { TriggerCoordinator } from '../src/index.js'
+import { FileWatchTrigger } from '../src/triggers/file-watcher.js'
 
 let tempDir: string
 
@@ -185,5 +186,28 @@ describe('file-watch trigger', () => {
     expect(reg.lastError).toMatch(/file-watch start failed/)
     expect(reg.lastError).toMatch(/ENOENT|no such file/i)
     await coordinator.stop()
+  })
+
+  it('routes async watcher errors through onError instead of escaping', async () => {
+    const errors: Error[] = []
+    const watcher = new FileWatchTrigger({ path: tempDir })
+    watcher.start(
+      () => {},
+      (err) => {
+        errors.push(err)
+      },
+    )
+
+    const rawWatcher = (
+      watcher as unknown as { watcher?: { emit?: (event: string, err: Error) => void } }
+    ).watcher
+    rawWatcher?.emit?.(
+      'error',
+      new Error('ENOSPC: System limit for number of file watchers reached'),
+    )
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.message).toMatch(/ENOSPC/)
+    watcher.stop()
   })
 })
