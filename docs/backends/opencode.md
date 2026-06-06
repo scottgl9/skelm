@@ -1,6 +1,6 @@
 # `@skelm/opencode` backend
 
-Drives an [opencode](https://opencode.ai) coding agent over its SDK, with skelm's permission policy enforced **before** any request is forwarded.
+Drives an [opencode](https://opencode.ai) coding agent over its SDK, with skelm's permission policy enforced **before** any request is forwarded. The backend supervises a local `opencode serve` process and connects with the official `@opencode-ai/sdk` client.
 
 ## Install
 
@@ -37,6 +37,8 @@ export default defineConfig({
 ```
 
 The full type is `OpencodeBackendOptions` — see [`packages/opencode/src/types.ts`](https://github.com/scottgl9/skelm/blob/main/packages/opencode/src/types.ts) for every accepted field, including `model`, `temperature`, `maxSteps`, and `serverPermissions` (which injects opencode-level allow/ask/deny defaults via `OPENCODE_CONFIG_CONTENT` at server start).
+
+The opencode SDK also exposes `createOpencode()` / `createOpencodeServer()` to start a server directly. Skelm intentionally keeps its own supervised startup path so gateway egress proxying, dynamic port selection, loopback validation, typed backend errors, and child-process cleanup remain under skelm's trust boundary.
 
 ### Per-step permissions
 
