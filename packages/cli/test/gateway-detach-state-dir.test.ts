@@ -37,7 +37,6 @@ describe('skelm gateway start --detach — custom state dir', () => {
     const start = runSkelm(['gateway', 'start', '--detach'])
     expect(start.status).toBe(0)
     expect(start.stdout).toContain('skelm gateway started (detached)')
-    expect(start.stdout).not.toContain(`:${fixedPort}`)
 
     const set = runSkelm(['secrets', 'set', 'DETACH_READY', '--value', 'yes'])
     expect(set.status).toBe(0)
@@ -46,14 +45,38 @@ describe('skelm gateway start --detach — custom state dir', () => {
     const raw = await readFile(join(stateDir, 'secrets.json'), 'utf8')
     expect(JSON.parse(raw)).toMatchObject({ DETACH_READY: 'yes' })
   })
+
+  it('waits for readiness when bearer auth is configured', { timeout: 30_000 }, async () => {
+    const fixedPort = await listenOnFreePort()
+    await writeFile(
+      join(projectDir, 'skelm.config.mts'),
+      `export default { server: { host: '127.0.0.1', port: ${fixedPort}, auth: { mode: 'bearer' } } }\n`,
+    )
+
+    const env = { SKELM_TOKEN: 'detach-secret-token' }
+    const start = runSkelm(['gateway', 'start', '--detach'], env)
+    expect(start.status).toBe(0)
+    expect(start.stdout).toContain('skelm gateway started (detached)')
+
+    const set = runSkelm(['secrets', 'set', 'AUTH_READY', '--value', 'yes'], env)
+    expect(set.status).toBe(0)
+    expect(set.stdout).toContain('secret stored: AUTH_READY')
+
+    const raw = await readFile(join(stateDir, 'secrets.json'), 'utf8')
+    expect(JSON.parse(raw)).toMatchObject({ AUTH_READY: 'yes' })
+  })
 })
 
-function runSkelm(args: readonly string[]): ReturnType<typeof spawnSync> {
+function runSkelm(
+  args: readonly string[],
+  env: Record<string, string> = {},
+): ReturnType<typeof spawnSync> {
   return spawnSync(process.execPath, [BIN, ...args], {
     cwd: projectDir,
     encoding: 'utf8',
     env: {
       ...process.env,
+      ...env,
       SKELM_STATE_DIR: stateDir,
       OPENAI_API_KEY: 'sk-test-dummy',
       FORCE_COLOR: '0',

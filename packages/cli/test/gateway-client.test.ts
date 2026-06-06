@@ -13,6 +13,7 @@ import {
   isServiceInstalled,
   loadDiscovery,
   openSse,
+  readinessHeaders,
   requireGateway,
   waitForReady,
 } from '../src/internal/gateway-client.js'
@@ -24,6 +25,7 @@ let priorNoAutostart: string | undefined
 let priorCi: string | undefined
 let priorGatewayUrl: string | undefined
 let priorGatewayToken: string | undefined
+let priorSkelmToken: string | undefined
 
 beforeEach(async () => {
   stateDir = await mkdtemp(join(tmpdir(), 'skelm-cli-gwc-'))
@@ -32,6 +34,7 @@ beforeEach(async () => {
   priorCi = process.env.CI
   priorGatewayUrl = process.env.SKELM_GATEWAY_URL
   priorGatewayToken = process.env.SKELM_GATEWAY_TOKEN
+  priorSkelmToken = process.env.SKELM_TOKEN
   process.env.SKELM_STATE_DIR = stateDir
   process.env.SKELM_NO_AUTOSTART = '1'
   process.env.CI = 'false'
@@ -39,6 +42,7 @@ beforeEach(async () => {
   // discoveryFromEnvUrl treats an empty/whitespace URL as "unset".
   process.env.SKELM_GATEWAY_URL = ''
   process.env.SKELM_GATEWAY_TOKEN = ''
+  process.env.SKELM_TOKEN = ''
 })
 
 afterEach(async () => {
@@ -47,6 +51,7 @@ afterEach(async () => {
   process.env.CI = priorCi
   process.env.SKELM_GATEWAY_URL = priorGatewayUrl ?? ''
   process.env.SKELM_GATEWAY_TOKEN = priorGatewayToken ?? ''
+  process.env.SKELM_TOKEN = priorSkelmToken ?? ''
   await rm(stateDir, { recursive: true, force: true })
 })
 
@@ -159,6 +164,23 @@ describe('gateway-client', () => {
     process.env.SKELM_GATEWAY_URL = 'http://localhost:14777'
     process.env.SKELM_GATEWAY_TOKEN = 'secret-tok'
     expect(discoveryFromEnvUrl()?.token).toBe('secret-tok')
+  })
+
+  it('readinessHeaders sends discovered or configured bearer tokens', () => {
+    expect(readinessHeaders({ token: 'disc-tok' })).toEqual({
+      authorization: 'Bearer disc-tok',
+    })
+
+    process.env.SKELM_GATEWAY_TOKEN = 'gateway-env-tok'
+    expect(readinessHeaders({})).toEqual({
+      authorization: 'Bearer gateway-env-tok',
+    })
+
+    process.env.SKELM_GATEWAY_TOKEN = ''
+    process.env.SKELM_TOKEN = 'server-env-tok'
+    expect(readinessHeaders({})).toEqual({
+      authorization: 'Bearer server-env-tok',
+    })
   })
 
   it('requireGateway targets SKELM_GATEWAY_URL directly, bypassing discovery and auto-start', async () => {
