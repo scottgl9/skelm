@@ -53,7 +53,10 @@ async function discoveryIsReady(discovery: DiscoveryRecord): Promise<boolean> {
   const controller = new AbortController()
   const tid = setTimeout(() => controller.abort(), 1_000)
   try {
-    const res = await fetch(`${discovery.url}/readyz`, { signal: controller.signal })
+    const res = await fetch(`${discovery.url}/readyz`, {
+      headers: readinessHeaders(discovery),
+      signal: controller.signal,
+    })
     return res.ok
   } catch {
     return false
@@ -120,7 +123,10 @@ export async function waitForReady(
         const controller = new AbortController()
         const tid = setTimeout(() => controller.abort(), 2_000)
         try {
-          const res = await fetch(`${disc.url}/readyz`, { signal: controller.signal })
+          const res = await fetch(`${disc.url}/readyz`, {
+            headers: readinessHeaders(disc),
+            signal: controller.signal,
+          })
           if (res.ok) return disc
         } finally {
           clearTimeout(tid)
@@ -274,6 +280,15 @@ export function discoveryFromEnvUrl(): DiscoveryRecord | null {
     ...(token !== undefined && token !== '' && { token }),
     startedAt: new Date().toISOString(),
   }
+}
+
+export function readinessHeaders(
+  discovery: Pick<DiscoveryRecord, 'token'>,
+): Record<string, string> {
+  const trimmed = [discovery.token, process.env.SKELM_GATEWAY_TOKEN, process.env.SKELM_TOKEN]
+    .map((token) => token?.trim())
+    .find((token): token is string => token !== undefined && token !== '')
+  return trimmed === undefined || trimmed === '' ? {} : { authorization: `Bearer ${trimmed}` }
 }
 
 export async function requireGateway(io: MainIO): Promise<GatewayClient | null> {
