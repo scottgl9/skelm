@@ -173,13 +173,21 @@ export class OpencodeClientWrapper {
       let resolved = false
       let stdoutBuf = ''
       const MAX_BUF_BYTES = 64 * 1024
-      // opencode prints its listen URL on stdout. Parse stdout only and
-      // anchor strictly to a loopback URL so noisy stderr (or LLM output
-      // proxied through stderr) cannot redirect the gateway to an
-      // attacker-controlled URL. The buffer is capped so a flood of
-      // non-matching output can't be retained indefinitely.
-      const LISTEN_RE =
-        /(?:^|\n)opencode(?: \w+)? listening on (https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):\d+)(?=\s|$)/
+      // opencode prints its listen URL on stdout. Parse stdout only so noisy
+      // stderr cannot redirect the gateway to an attacker-controlled URL. When
+      // stdout announces a URL, validate the host explicitly instead of
+      // ignoring non-loopback URLs and later surfacing a vague readiness error.
+      const LISTEN_RE = /(?:^|\n)opencode(?: \w+)? listening on (https?:\/\/[^\s]+)(?=\s|$)/
+      const isLoopbackUrl = (raw: string): boolean => {
+        try {
+          const url = new URL(raw)
+          return (
+            url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '[::1]'
+          )
+        } catch {
+          return false
+        }
+      }
 
       const tryParseStdout = (chunk: Buffer) => {
         if (resolved) return
@@ -189,8 +197,20 @@ export class OpencodeClientWrapper {
         }
         const m = stdoutBuf.match(LISTEN_RE)
         if (m?.[1]) {
+          const announcedUrl = m[1].trim()
+          if (!isLoopbackUrl(announcedUrl)) {
+            resolved = true
+            reject(
+              new BackendUnavailableError(
+                `opencode serve announced non-loopback URL "${announcedUrl}"; refusing to connect`,
+                this.options.id ?? 'opencode',
+              ),
+            )
+            proc.kill('SIGTERM')
+            return
+          }
           resolved = true
-          this.client = createOpencodeClient({ baseUrl: m[1].trim() })
+          this.client = createOpencodeClient({ baseUrl: announcedUrl })
           resolve()
         }
       }

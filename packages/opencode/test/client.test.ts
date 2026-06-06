@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 let spawnEnv: Record<string, string> = {}
 let spawnErrorCode: string | undefined
+let listenLine = 'opencode server listening on http://127.0.0.1:9999\n'
 
 vi.mock('node:child_process', () => {
   const proc = new EventEmitter() as EventEmitter & {
@@ -39,10 +40,7 @@ vi.mock('node:child_process', () => {
       }
       // Emit the listening URL synchronously on next tick
       queueMicrotask(() => {
-        proc.stdout.emit(
-          'data',
-          Buffer.from('opencode server listening on http://127.0.0.1:9999\n'),
-        )
+        proc.stdout.emit('data', Buffer.from(listenLine))
       })
       return proc
     }),
@@ -147,6 +145,7 @@ describe('OpencodeClientWrapper — OPENCODE_CONFIG_CONTENT (#1 + #2)', () => {
   beforeEach(() => {
     spawnEnv = {}
     spawnErrorCode = undefined
+    listenLine = 'opencode server listening on http://127.0.0.1:9999\n'
     mockSubscribeStream = makeSseStream([idleEvent('sess-123')])
   })
 
@@ -162,6 +161,18 @@ describe('OpencodeClientWrapper — OPENCODE_CONFIG_CONTENT (#1 + #2)', () => {
     ).rejects.toMatchObject({
       name: 'BackendUnavailableError',
       backendId: 'opencode-local',
+    })
+  })
+
+  it('refuses non-loopback listen URLs announced on stdout', async () => {
+    listenLine = 'opencode server listening on http://10.0.0.5:9999\n'
+
+    await expect(
+      new OpencodeClientWrapper({ id: 'opencode-local' }).prompt({ prompt: 'hi' }, makeSignal()),
+    ).rejects.toMatchObject({
+      name: 'BackendUnavailableError',
+      backendId: 'opencode-local',
+      message: expect.stringContaining('non-loopback URL'),
     })
   })
 
