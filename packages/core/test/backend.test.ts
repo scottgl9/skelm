@@ -99,6 +99,35 @@ describe('infer() step', () => {
     expect(run.output).toEqual({ text: 'echo:hello', usage: undefined })
   })
 
+  it('preserves infer finishReason and reasoning metadata in step output', async () => {
+    const reg = new BackendRegistry()
+    reg.register(
+      fixtureBackend({
+        id: 'fake',
+        respond: () => ({
+          text: 'partial',
+          finishReason: 'length',
+          reasoning: 'truncated reasoning',
+          usage: { inputTokens: 3, outputTokens: 2 },
+        }),
+      }),
+    )
+
+    const wf = pipeline({
+      id: 'inference-metadata',
+      steps: [infer({ id: 'say', backend: 'fake', prompt: 'hello' })],
+    })
+    const run = await runPipeline(wf, undefined, { backends: reg })
+
+    expect(run.status).toBe('completed')
+    expect(run.output).toEqual({
+      text: 'partial',
+      usage: { inputTokens: 3, outputTokens: 2 },
+      finishReason: 'length',
+      reasoning: 'truncated reasoning',
+    })
+  })
+
   it('runs an infer step with a structured output schema', async () => {
     const reg = new BackendRegistry()
     reg.register(
