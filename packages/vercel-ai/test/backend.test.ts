@@ -116,6 +116,29 @@ describe('createVercelAiBackend — inference()', () => {
     expect(result?.usage).toEqual({ inputTokens: 10, outputTokens: 5 })
   })
 
+  it('forwards per-call maxTokens and returns finishReason', async () => {
+    let capturedMaxOutputTokens: unknown
+    const model = new MockLanguageModelV3({
+      doGenerate: async (opts: { maxOutputTokens?: unknown }) => {
+        capturedMaxOutputTokens = opts.maxOutputTokens
+        return {
+          content: [{ type: 'text', text: 'truncated' }],
+          finishReason: { unified: 'length', raw: 'length' },
+          usage: { inputTokens: { total: 4 }, outputTokens: { total: 8 }, totalTokens: 12 },
+          warnings: [],
+        }
+      },
+    })
+    const backend = createVercelAiBackend({ model, maxOutputTokens: 128 })
+    const result = await backend.inference?.(
+      { messages: [{ role: 'user', content: 'hi' }], maxTokens: 8 },
+      makeCtx(),
+    )
+    expect(capturedMaxOutputTokens).toBe(8)
+    expect(result?.finishReason).toBe('length')
+    expect(result?.text).toBe('truncated')
+  })
+
   it('does not classify provider failures as backend unavailable', async () => {
     const model = new MockLanguageModelV3({
       doGenerate: async () => {

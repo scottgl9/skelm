@@ -541,7 +541,12 @@ async function runInferStep(
       pipelineId: ctx.run.pipelineId,
     })
   }
-  return { text: response.text ?? '', usage: response.usage }
+  return {
+    text: response.text ?? '',
+    usage: response.usage,
+    ...(response.finishReason !== undefined && { finishReason: response.finishReason }),
+    ...(response.reasoning !== undefined && { reasoning: response.reasoning }),
+  }
 }
 
 async function runAgentStep(
