@@ -13,6 +13,7 @@ import {
   readDiscovery,
   readLockfile,
 } from '@skelm/gateway'
+import getPort from 'get-port'
 import { buildBackendRegistry } from './backends.js'
 import { EXIT } from './exit-codes.js'
 import type { MainIO, MainResult } from './internal/io.js'
@@ -37,6 +38,10 @@ export interface GatewayArgs {
 
 function defaultStateDir(): string {
   return process.env.SKELM_STATE_DIR ?? join(homedir(), '.skelm')
+}
+
+function homeStateDir(): string {
+  return join(homedir(), '.skelm')
 }
 
 const SYSTEMD_DIR = `${process.env.HOME ?? homedir()}/.config/systemd/user`
@@ -616,7 +621,11 @@ async function detachGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
   // The detached child must run the gateway inline; bare `gateway start` now
   // prints guidance and exits, so pass --foreground explicitly.
   const argv = [process.argv[1] ?? 'skelm', 'gateway', 'start', '--foreground']
-  if (args.httpPort !== undefined) argv.push('--http-port', String(args.httpPort))
+  const stateDir = defaultStateDir()
+  const httpPort =
+    args.httpPort ??
+    (stateDir !== homeStateDir() ? await getPort({ host: '127.0.0.1', reserve: true }) : undefined)
+  if (httpPort !== undefined) argv.push('--http-port', String(httpPort))
   if (args.httpHost !== undefined) argv.push('--http-host', args.httpHost)
   // Ensure SKELM_STATE_DIR is passed to the child process
   const childEnv = { ...process.env }
@@ -629,11 +638,15 @@ async function detachGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
     env: childEnv,
   })
   child.unref()
-  // Give the child a moment to acquire the lockfile and write discovery, so
-  // a follow-up `skelm gateway status` (the typical next step) doesn't race
-  // ahead of it. Bounded poll, not a fixed sleep.
-  const probe = new Gateway({ stateDir: defaultStateDir() })
-  const deadline = Date.now() + 8_000
+  // Give the child a moment to become request-ready, so the success message
+  // means follow-up CLI commands can actually use this state dir's gateway.
+  const probe = new Gateway({ stateDir })
+  const readyTimeoutMs = (() => {
+    const raw = process.env.SKELM_GATEWAY_READY_TIMEOUT_MS
+    const n = raw === undefined ? Number.NaN : Number.parseInt(raw, 10)
+    return Number.isFinite(n) && n > 0 ? n : 8_000
+  })()
+  const deadline = Date.now() + readyTimeoutMs
   while (Date.now() < deadline) {
     const lock = await readLockfile(probe.lockfilePath)
     // Don't assert lock.pid === child.pid: on some platforms the spawned
@@ -641,15 +654,30 @@ async function detachGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
     // pid differs from the spawn() return value. Accept any live lock.
     if (lock !== null && isProcessAlive(lock.pid)) {
       const disc = await readDiscovery(probe.discoveryPath)
-      io.stdout.write(
-        `skelm gateway started (detached)\n  pid: ${lock.pid}\n  url: ${disc?.url ?? '(pending)'}\n`,
-      )
-      return { exitCode: EXIT.OK }
+      if (disc !== null) {
+        try {
+          const controller = new AbortController()
+          const tid = setTimeout(() => controller.abort(), 1_000)
+          try {
+            const res = await fetch(`${disc.url}/readyz`, { signal: controller.signal })
+            if (res.ok) {
+              io.stdout.write(
+                `skelm gateway started (detached)\n  pid: ${lock.pid}\n  url: ${disc.url}\n`,
+              )
+              return { exitCode: EXIT.OK }
+            }
+          } finally {
+            clearTimeout(tid)
+          }
+        } catch {
+          // lock/discovery exist, but HTTP is not accepting requests yet
+        }
+      }
     }
     await new Promise((r) => setTimeout(r, 100))
   }
   io.stderr.write(
-    'gateway start --detach: gateway did not acquire lockfile within 8s. Inspect logs via journalctl or rerun in foreground.\n',
+    `gateway start --detach: gateway did not become ready within ${readyTimeoutMs}ms. Inspect logs via journalctl or rerun in foreground.\n`,
   )
   return { exitCode: EXIT.CLI_ERROR }
 }
