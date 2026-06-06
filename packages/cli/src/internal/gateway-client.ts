@@ -49,6 +49,19 @@ export async function loadDiscovery(stateDir?: string): Promise<DiscoveryRecord 
   return readDiscovery(join(dir, 'gateway.json'))
 }
 
+async function discoveryIsReady(discovery: DiscoveryRecord): Promise<boolean> {
+  const controller = new AbortController()
+  const tid = setTimeout(() => controller.abort(), 1_000)
+  try {
+    const res = await fetch(`${discovery.url}/readyz`, { signal: controller.signal })
+    return res.ok
+  } catch {
+    return false
+  } finally {
+    clearTimeout(tid)
+  }
+}
+
 /** Default per-request timeout: long enough for cold-start runs, short
  *  enough that a wedged gateway doesn't hang the CLI forever. */
 const DEFAULT_CLI_FETCH_TIMEOUT_MS = 30_000
@@ -276,6 +289,9 @@ export async function requireGateway(io: MainIO): Promise<GatewayClient | null> 
     return { discovery: fromUrl, headers, stateDir }
   }
   let discovery = await loadDiscovery(stateDir)
+  if (discovery !== null && !(await discoveryIsReady(discovery))) {
+    discovery = null
+  }
   if (discovery === null) {
     discovery = await autoStartGateway(io)
     if (discovery === null) {
