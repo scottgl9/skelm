@@ -137,7 +137,8 @@ describe('buildBackendRegistry', () => {
       expect(response?.text).toBe('ok')
     } finally {
       await server.close()
-      process.env.SKELM_AGENT_TEST_KEY = undefined
+      // biome-ignore lint/performance/noDelete: deterministic env cleanup in test teardown
+      delete process.env.SKELM_AGENT_TEST_KEY
     }
   })
 
@@ -173,7 +174,48 @@ describe('buildBackendRegistry', () => {
       expect(response?.text).toBe('ok')
     } finally {
       await server.close()
-      process.env.SKELM_AGENT_HEADER_TITLE = undefined
+      // biome-ignore lint/performance/noDelete: deterministic env cleanup in test teardown
+      delete process.env.SKELM_AGENT_HEADER_TITLE
+    }
+  })
+
+  it('threads secretResolver into @skelm-agent custom headers', async () => {
+    const resolve = vi.fn(async (name: string) =>
+      name === 'SKELM_AGENT_HEADER_TITLE' ? 'resolver-skelm-agent-title' : undefined,
+    )
+    const resolver: SecretResolver = { resolve }
+    const server = await startJsonServer(async (_body, headers) => {
+      expect(headers['x-openrouter-title']).toBe('resolver-skelm-agent-title')
+      return { choices: [{ message: { content: 'ok' } }] }
+    })
+
+    try {
+      const registry = await buildBackendRegistry(
+        {
+          backends: {
+            'skelm-agent': {
+              baseUrl: server.baseUrl,
+              apiKey: 'agent-key',
+              headers: {
+                'X-OpenRouter-Title': { secret: 'SKELM_AGENT_HEADER_TITLE' },
+              },
+            },
+          },
+        } satisfies SkelmConfig,
+        undefined,
+        resolver,
+      )
+
+      const backend = registry?.resolveForLlm({ backendId: 'skelm-agent' })
+      const response = await backend?.inference?.(
+        { messages: [{ role: 'user', content: 'hello' }] },
+        { signal: new AbortController().signal },
+      )
+
+      expect(response?.text).toBe('ok')
+      expect(resolve).toHaveBeenCalledWith('SKELM_AGENT_HEADER_TITLE')
+    } finally {
+      await server.close()
     }
   })
 

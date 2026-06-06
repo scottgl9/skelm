@@ -240,6 +240,7 @@ async function runAgentLoop(
     apiKey: string | undefined
     headers: Readonly<Record<string, string>> | undefined
     defaultModel: string
+    backendId: string
     timeoutMs: number
     cwd: string
     agentDefRoot: string
@@ -412,6 +413,7 @@ async function runAgentLoop(
         responseFormat: undefined,
         signal: ctx.signal,
         timeoutMs: opts.timeoutMs,
+        backendId: opts.backendId,
       })
 
       const choice = response.choices?.[0]
@@ -421,8 +423,7 @@ async function runAgentLoop(
 
       const toolCalls = choice.message.tool_calls
       if (!toolCalls || toolCalls.length === 0) {
-        const content = choice.message.content
-        const text = typeof content === 'string' ? content : content !== null ? String(content) : ''
+        const text = openAIResponseContentText(choice.message.content)
         const reasoning = choice.message.reasoning_content
         if (text === '' && choice.finish_reason === 'length') {
           const suffix =
@@ -633,6 +634,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
         tools: undefined,
         signal: ctx.signal,
         timeoutMs: opts.timeoutMs ?? 300_000,
+        backendId: resolvedId,
       })
 
       const rawChoice = response.choices?.[0]
@@ -719,6 +721,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
         apiKey,
         headers,
         defaultModel: model,
+        backendId: resolvedId,
         timeoutMs: opts.timeoutMs ?? 300_000,
         cwd,
         agentDefRoot,
