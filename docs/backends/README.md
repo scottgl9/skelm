@@ -52,6 +52,15 @@ export default defineConfig({
       apiKey:  { secret: 'OPENAI_API_KEY' },
       model:   'gpt-4o-mini',
     },
+    'skelm-agent': {
+      baseUrl: 'https://openrouter.ai/api/v1',
+      apiKey: { secret: 'OPENROUTER_API_KEY' },
+      model: 'openai/gpt-5.2',
+      headers: {
+        'HTTP-Referer': 'https://skelm.dev',
+        'X-OpenRouter-Title': 'skelm',
+      },
+    },
     anthropic: {
       apiKey: { secret: 'ANTHROPIC_API_KEY' },
       model:  'claude-sonnet-4-6',
@@ -138,6 +147,7 @@ openai: {
 
 For `agent()` you want a coding-agent backend that can drive multi-turn tool use under skelm's permission model. The recommended choices are:
 
+- **`@skelm/agent`** (`createSkelmAgentBackend`) — in-process OpenAI-compatible agent loop with native skelm tool enforcement. Works with OpenAI, OpenRouter, Ollama, vLLM, SGLang, llama.cpp, and similar Chat Completions endpoints when the selected model supports OpenAI-style tool calls.
 - **`@skelm/pi`** (`createPiSdkBackend`) — native enforcement of the skelm permission policy; pi can use explicit provider options or its own settings.
 - **`@skelm/opencode`** (`createOpencodeBackendFromConfig`) — native enforcement; reaches the opencode agent service.
 - **`@skelm/codex`** (`createCodexBackend`) — OpenAI Codex via the official `@openai/codex-sdk`. Wrapped tool enforcement: Codex enforces its sandbox in-process; skelm validates the policy at the boundary, pins the workspace, and audits per-event. MCP servers are injected via Codex's `config.mcp_servers`, and skill bodies are concatenated into the system prompt.

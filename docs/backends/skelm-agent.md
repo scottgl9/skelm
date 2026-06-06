@@ -15,10 +15,11 @@ pnpm add @skelm/agent
 ```
 
 You also need an OpenAI-compatible chat-completions endpoint. Anything that
-speaks `POST /v1/chat/completions` works: OpenAI, Anthropic via a proxy,
+speaks the Chat Completions shape works: OpenAI, OpenRouter, Anthropic via a proxy,
 [llama.cpp server](https://github.com/ggerganov/llama.cpp),
 [vLLM](https://github.com/vllm-project/vllm),
-[Ollama](https://ollama.ai) with `/v1` enabled, etc.
+[SGLang](https://github.com/sgl-project/sglang),
+[Ollama](https://ollama.ai) with `/v1`, etc.
 
 ## Quickstart
 
@@ -62,10 +63,61 @@ a string-keyed `backends:` entry — pass a configured instance through
 |--------------|----------|------------------|--------------------------------------------------------------------------|
 | `id`         | `string` | `'agent'`        | Backend id used in `agent({ backend })` and `instances:`.                |
 | `label`      | `string` | —                | Diagnostic label.                                                        |
-| `baseUrl`    | `string` | **required**     | OpenAI-compatible host root, e.g. `http://localhost:8000`. The backend appends `/v1/chat/completions`. |
+| `baseUrl`    | `string` | **required**     | OpenAI-compatible host root or `/v1` base. Nested bases such as `https://openrouter.ai/api/v1` are supported. |
 | `apiKey`     | `string` | —                | Sent as `Authorization: Bearer <key>` when present.                      |
+| `headers`    | `Record<string,string>` | —     | Extra LLM request headers, e.g. OpenRouter `HTTP-Referer` and `X-OpenRouter-Title`. |
 | `model`      | `string` | —                | Default model when the step doesn't specify one.                         |
 | `timeoutMs`  | `number` | `300_000`        | LLM HTTP timeout in ms.                                                  |
+
+The backend issues a non-streaming Chat Completions request. `baseUrl` may be
+`http://localhost:11434`, `http://localhost:8000/v1`,
+`https://openrouter.ai/api/v1`, or an exact URL ending in
+`/chat/completions`.
+
+## Provider examples
+
+OpenRouter:
+
+```ts
+export default defineConfig({
+  backends: {
+    agent: 'skelm-agent',
+    'skelm-agent': {
+      baseUrl: 'https://openrouter.ai/api/v1',
+      apiKey: { secret: 'OPENROUTER_API_KEY' },
+      model: 'openai/gpt-5.2',
+      headers: {
+        'HTTP-Referer': 'https://skelm.dev',
+        'X-OpenRouter-Title': 'skelm',
+      },
+    },
+  },
+})
+```
+
+Ollama:
+
+```ts
+createSkelmAgentBackend({
+  id: 'agent',
+  baseUrl: 'http://localhost:11434',
+  model: 'qwen2.5-coder',
+})
+```
+
+vLLM / SGLang:
+
+```ts
+createSkelmAgentBackend({
+  id: 'agent',
+  baseUrl: 'http://localhost:8000/v1',
+  apiKey: 'unused',
+  model: 'qwen35',
+})
+```
+
+For `agent()` tool use, the selected model/provider must support OpenAI-style
+tool calls (`tools`, assistant `tool_calls`, and `role: "tool"` messages).
 
 ## Capabilities
 
@@ -184,9 +236,9 @@ default-deny config, lift the relevant dimension in `defaults.permissions`
 - **`networkEgress` does not gate the LLM's HTTP call.** It controls
   `http_fetch` and per-tool network access. The backend itself reaches
   `baseUrl` directly.
-- **Endpoint shape is OpenAI-compatible chat completions only.** The
-  backend issues `POST {baseUrl}/v1/chat/completions`. Other API shapes are
-  out of scope; use the Vercel AI SDK backend for Anthropic / Google / etc.
+- **Endpoint shape is OpenAI-compatible chat completions only.** Other API
+  shapes are out of scope; use the Vercel AI SDK backend for Anthropic /
+  Google / etc.
 
 ## See also
 

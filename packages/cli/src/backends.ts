@@ -195,6 +195,7 @@ function createBackend(backendId: string, config: SkelmConfig, secretResolver?: 
       const model = readString(entry.model)
       const timeoutMs = readNumber(entry.timeoutMs)
       const maxTokens = readNumber(entry.maxTokens)
+      const headers = readStringMap(entry.headers)
       const vision = typeof entry.vision === 'boolean' ? entry.vision : undefined
       const opts: SkelmAgentOptions = { id: backendId }
       if (resolvedApiKey !== undefined) opts.apiKey = resolvedApiKey
@@ -202,6 +203,7 @@ function createBackend(backendId: string, config: SkelmConfig, secretResolver?: 
       if (model !== undefined) opts.model = model
       if (timeoutMs !== undefined) opts.timeoutMs = timeoutMs
       if (maxTokens !== undefined) opts.maxTokens = maxTokens
+      if (headers !== undefined) opts.headers = headers
       if (vision !== undefined) opts.vision = vision
       return createSkelmAgentBackend(opts)
     }
@@ -338,4 +340,14 @@ function readStringArray(value: unknown): readonly string[] | undefined {
 
 function readNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined
+}
+
+function readStringMap(value: unknown): Readonly<Record<string, string>> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const out: Record<string, string> = {}
+  for (const [key, raw] of Object.entries(value)) {
+    const resolved = readString(raw) ?? resolveSecret(raw)
+    if (resolved !== undefined) out[key] = resolved
+  }
+  return Object.keys(out).length > 0 ? out : undefined
 }

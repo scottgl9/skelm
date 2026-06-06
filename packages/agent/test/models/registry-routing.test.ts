@@ -24,6 +24,7 @@ describe('createSkelmAgentBackend — registry routing', () => {
     registry.registerProvider('cloud', {
       baseUrl: 'https://cloud.example/v1',
       apiKey: 'cloud-key',
+      headers: { 'X-Route': 'cloud' },
       models: [
         {
           id: 'big',
@@ -70,6 +71,7 @@ describe('createSkelmAgentBackend — registry routing', () => {
     expect(callUrl).toBe('https://cloud.example/v1/chat/completions')
     const init = fetchSpy.mock.calls[0]?.[1] as RequestInit
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer cloud-key')
+    expect((init.headers as Record<string, string>)['X-Route']).toBe('cloud')
     const body = JSON.parse(init.body as string)
     expect(body.model).toBe('big')
     expect(body.max_tokens).toBe(4096)

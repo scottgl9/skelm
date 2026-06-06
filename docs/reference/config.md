@@ -84,6 +84,7 @@ The CLI knows these ids and wires them automatically:
 |-----------------|----------------------------------------|----------------------------------------|
 | `openai`        | `createOpenAIBackend`                  | OpenAI-compatible HTTP endpoint        |
 | `anthropic`     | `createAnthropicBackend`               | Direct Anthropic API                   |
+| `skelm-agent`   | `createSkelmAgentBackend`              | OpenAI-compatible agent loop           |
 | `opencode`      | `createOpencodeBackendFromConfig`      | opencode SDK                           |
 | `copilot-acp`   | `createAcpBackend`                     | GitHub Copilot ACP subprocess          |
 | `acp`           | `createAcpBackend`                     | Generic ACP; `command` required        |
@@ -110,6 +111,21 @@ export default defineConfig({
 ```
 
 API keys can be inlined (`apiKey: 'sk-...'`) or resolved from env (`apiKey: { secret: 'OPENAI_API_KEY' }`). The runtime resolves the secret at gateway start.
+
+For `skelm-agent`, `headers` may also contain string values or env-backed
+secret references. This is useful for OpenRouter attribution headers:
+
+```ts
+'skelm-agent': {
+  baseUrl: 'https://openrouter.ai/api/v1',
+  apiKey: { secret: 'OPENROUTER_API_KEY' },
+  model: 'openai/gpt-5.2',
+  headers: {
+    'HTTP-Referer': 'https://skelm.dev',
+    'X-OpenRouter-Title': 'skelm',
+  },
+}
+```
 
 ## Agent registry entries
 
