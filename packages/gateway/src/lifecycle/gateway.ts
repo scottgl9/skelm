@@ -493,7 +493,10 @@ export class Gateway {
   async resumeWaitingRun(runId: string, resumeValue: unknown): Promise<void> {
     const stored = await this.runStore.getRun(runId)
     if (stored === null) {
-      throw startPipelineError(404, 'run not found')
+      throw startPipelineError(
+        404,
+        'no in-flight runner for run (already completed, or unknown to this gateway)',
+      )
     }
     if (stored.status !== 'waiting' || stored.waiting === undefined) {
       throw startPipelineError(400, `run ${runId} is not waiting`)

@@ -1259,6 +1259,7 @@ describe('Gateway HTTP POST /pipelines/:id/run', () => {
         body: '{}',
       })
       expect(res.status).toBe(404)
+      expect(await res.text()).toMatch(/no in-flight runner|unknown to this gateway/i)
     } finally {
       await gw.stop()
     }
