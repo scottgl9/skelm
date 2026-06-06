@@ -306,6 +306,69 @@ describe('createVercelAiBackend — run()', () => {
     expect(baseIdx).toBeLessThan(instrIdx)
     expect(instrIdx).toBeLessThan(sysIdx)
   })
+
+  it('honors systemPromptMode replace with agentDef excluded', async () => {
+    let capturedSystem: string | undefined
+    const model = new MockLanguageModelV3({
+      doGenerate: async (opts: { prompt: Array<{ role: string; content: unknown }> }) => {
+        const sys = opts.prompt.find((m) => m.role === 'system')
+        capturedSystem = typeof sys?.content === 'string' ? sys.content : undefined
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          finishReason: { unified: 'stop', raw: 'stop' },
+          usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 }, totalTokens: 2 },
+          warnings: [],
+        }
+      },
+    })
+
+    const backend = createVercelAiBackend({ model })
+    await backend.run?.(
+      {
+        prompt: 'go',
+        system: 'STEPSYS.',
+        agentDef: { name: 'x', instructions: 'INSTR.', soul: 'SOUL.' },
+        systemPromptMode: 'replace',
+        systemPromptIncludeAgentDef: false,
+      },
+      makeCtx(),
+    )
+    expect(capturedSystem).toContain('STEPSYS.')
+    expect(capturedSystem).not.toContain('INSTR.')
+    expect(capturedSystem).not.toContain('SOUL.')
+    expect(capturedSystem).not.toContain('# Identity')
+  })
+
+  it('keeps agentDef in replace mode by default', async () => {
+    let capturedSystem: string | undefined
+    const model = new MockLanguageModelV3({
+      doGenerate: async (opts: { prompt: Array<{ role: string; content: unknown }> }) => {
+        const sys = opts.prompt.find((m) => m.role === 'system')
+        capturedSystem = typeof sys?.content === 'string' ? sys.content : undefined
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          finishReason: { unified: 'stop', raw: 'stop' },
+          usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 }, totalTokens: 2 },
+          warnings: [],
+        }
+      },
+    })
+
+    const backend = createVercelAiBackend({ model })
+    await backend.run?.(
+      {
+        prompt: 'go',
+        system: 'STEPSYS.',
+        agentDef: { name: 'x', instructions: 'INSTR.', soul: 'SOUL.' },
+        systemPromptMode: 'replace',
+      },
+      makeCtx(),
+    )
+    expect(capturedSystem).toContain('STEPSYS.')
+    expect(capturedSystem).toContain('INSTR.')
+    expect(capturedSystem).toContain('SOUL.')
+    expect(capturedSystem).not.toContain('# Identity')
+  })
 })
 
 describe('createVercelAiBackend — visionModels allowlist (F123)', () => {
