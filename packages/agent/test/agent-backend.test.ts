@@ -19,7 +19,8 @@ interface ToolCallStub {
 }
 
 interface TurnStub {
-  content?: string
+  content?: string | null
+  reasoningContent?: string
   toolCalls?: readonly ToolCallStub[]
   finishReason?: string
 }
@@ -30,6 +31,7 @@ function buildChatResponse(turn: TurnStub): unknown {
     message: {
       role: 'assistant',
       content: turn.content ?? '',
+      ...(turn.reasoningContent !== undefined && { reasoning_content: turn.reasoningContent }),
       ...(turn.toolCalls && {
         tool_calls: turn.toolCalls.map((tc, i) => ({
           id: tc.id ?? `call_${i}`,
@@ -384,6 +386,35 @@ describe('SkelmAgentBackend — run / tool loop (mocked)', () => {
       max_tokens?: number
     }
     expect(body.max_tokens).toBe(512)
+  })
+
+  it('throws LLMTruncatedError when the agent loop gets length finish with no content', async () => {
+    const { LLMTruncatedError } = await import('@skelm/core')
+    stubFetch([
+      {
+        content: null,
+        reasoningContent: 'thinking only; no final answer yet',
+        finishReason: 'length',
+      },
+    ])
+
+    await expect(
+      backend.run?.(
+        { prompt: 'Reply briefly.', maxTurns: 3 },
+        { signal: new AbortController().signal, permissions: makePolicy() },
+      ),
+    ).rejects.toBeInstanceOf(LLMTruncatedError)
+
+    try {
+      await backend.run?.(
+        { prompt: 'Reply briefly.', maxTurns: 3 },
+        { signal: new AbortController().signal, permissions: makePolicy() },
+      )
+      throw new Error('expected throw')
+    } catch (err) {
+      expect((err as InstanceType<typeof LLMTruncatedError>).finishReason).toBe('length')
+      expect((err as InstanceType<typeof LLMTruncatedError>).reasoning).toContain('thinking only')
+    }
   })
 
   it('dispatches a fs_read tool call and feeds the result back into the loop', async () => {

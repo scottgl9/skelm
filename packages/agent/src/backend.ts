@@ -408,6 +408,17 @@ async function runAgentLoop(
         const content = choice.message.content
         const text = typeof content === 'string' ? content : content !== null ? String(content) : ''
         const reasoning = choice.message.reasoning_content
+        if (text === '' && choice.finish_reason === 'length') {
+          const suffix =
+            typeof reasoning === 'string' && reasoning.length > 0
+              ? ' (model produced reasoning but no final answer — consider raising maxTokens or routing to a non-reasoning model)'
+              : ''
+          throw new LLMTruncatedError(
+            `LLM stopped because it hit \`max_tokens\` before emitting any assistant content${suffix}`,
+            choice.finish_reason,
+            typeof reasoning === 'string' ? reasoning : undefined,
+          )
+        }
         // Record the agent's final answer, mirroring the per-turn
         // `task_completed` observation the other backends emit via
         // recordMemoryTurn. Without this, a no-tool reasoning run persists
