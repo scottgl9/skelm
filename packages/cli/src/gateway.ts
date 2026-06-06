@@ -4,6 +4,7 @@ import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { pickExport } from '@skelm/core'
+import type { SkelmConfig } from '@skelm/core'
 // @subprocess-ok: re-spawning the CLI itself for `gateway start --detach`.
 import {
   Gateway,
@@ -16,6 +17,7 @@ import {
 import getPort from 'get-port'
 import { buildBackendRegistry } from './backends.js'
 import { EXIT } from './exit-codes.js'
+import { readinessHeaders } from './internal/gateway-client.js'
 import type { MainIO, MainResult } from './internal/io.js'
 import { writeJsonOutput } from './internal/output.js'
 import { loadSkelmConfig } from './load-config.js'
@@ -352,6 +354,7 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     if (gateway === undefined) return
     await syncDeclaredTriggers(gateway, io)
   }
+  const gatewayToken = gatewayTokenForConfig(config)
   gateway = new Gateway({
     // The CLI owns process signals in foreground mode (see the SIGTERM/SIGINT/
     // SIGHUP handlers below). If the gateway installed its own handlers too,
@@ -367,6 +370,7 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     config,
     loadWorkflow,
     onReload: syncDeclared,
+    ...(gatewayToken !== undefined && { token: gatewayToken }),
     ...(backendRegistry !== undefined && { backends: backendRegistry }),
   })
   installCrashHandlers(gateway, io)
@@ -659,7 +663,10 @@ async function detachGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
           const controller = new AbortController()
           const tid = setTimeout(() => controller.abort(), 1_000)
           try {
-            const res = await fetch(`${disc.url}/readyz`, { signal: controller.signal })
+            const res = await fetch(`${disc.url}/readyz`, {
+              headers: readinessHeaders(disc),
+              signal: controller.signal,
+            })
             if (res.ok) {
               io.stdout.write(
                 `skelm gateway started (detached)\n  pid: ${lock.pid}\n  url: ${disc.url}\n`,
@@ -680,6 +687,12 @@ async function detachGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
     `gateway start --detach: gateway did not become ready within ${readyTimeoutMs}ms. Inspect logs via journalctl or rerun in foreground.\n`,
   )
   return { exitCode: EXIT.CLI_ERROR }
+}
+
+function gatewayTokenForConfig(config: SkelmConfig): string | undefined {
+  if (config.server?.auth?.mode !== 'bearer') return undefined
+  const token = process.env.SKELM_TOKEN?.trim()
+  return token === undefined || token === '' ? undefined : token
 }
 
 /**
