@@ -120,6 +120,21 @@ describe('gateway-client', () => {
     expect(io.err()).toContain('SKELM_NO_AUTOSTART')
   })
 
+  it('requireGateway ignores stale discovery records before deciding whether to auto-start', async () => {
+    await writeFile(
+      join(stateDir, 'gateway.json'),
+      JSON.stringify({
+        pid: 12345,
+        url: 'http://127.0.0.1:1',
+        startedAt: new Date().toISOString(),
+      }),
+    )
+    const io = mkIo()
+    const client = await requireGateway(io.io)
+    expect(client).toBeNull()
+    expect(io.err()).toContain('SKELM_NO_AUTOSTART')
+  })
+
   it('requireGateway refuses to auto-start in CI without explicit opt-in', async () => {
     process.env.CI = 'true'
     process.env.SKELM_NO_AUTOSTART = undefined
