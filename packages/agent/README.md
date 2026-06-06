@@ -23,7 +23,7 @@ No dependency on Pi, Opencode, or ACP. The agent loop, the tool surface, and the
 npm install @skelm/agent
 ```
 
-You also need an OpenAI-compatible chat-completions endpoint. Anything that speaks `POST /v1/chat/completions` works: OpenAI, Anthropic via a proxy, [llama.cpp server](https://github.com/ggerganov/llama.cpp), [vllm](https://github.com/vllm-project/vllm), [Ollama](https://ollama.ai) with `/v1` enabled, etc.
+You also need an OpenAI-compatible chat-completions endpoint. Anything that speaks the Chat Completions shape works: OpenAI, OpenRouter, Anthropic via a proxy, [llama.cpp server](https://github.com/ggerganov/llama.cpp), [vLLM](https://github.com/vllm-project/vllm), [SGLang](https://github.com/sgl-project/sglang), [Ollama](https://ollama.ai) with `/v1`, etc.
 
 ## Quick start
 
@@ -99,12 +99,50 @@ createSkelmAgentBackend({
   label?: string         // diagnostic label
   baseUrl: string        // OpenAI-compatible endpoint, e.g. 'http://localhost:8000'
   apiKey?: string        // sent as `Authorization: Bearer <key>` if provided
+  headers?: Record<string, string> // extra LLM request headers, e.g. OpenRouter attribution
   model?: string         // default model when the step doesn't specify one
   timeoutMs?: number     // LLM HTTP timeout (default 300_000)
 })
 ```
 
-The backend issues `POST {baseUrl}/v1/chat/completions`. If your provider exposes a different path (e.g. `/v1` already in `baseUrl`), pass the host root — the `/v1/chat/completions` suffix is appended.
+The backend issues a non-streaming Chat Completions request. Host roots such as `http://localhost:11434`, `/v1` bases such as `http://localhost:8000/v1`, nested bases such as `https://openrouter.ai/api/v1`, and exact URLs ending in `/chat/completions` are all accepted.
+
+## Provider examples
+
+```ts
+// OpenRouter
+createSkelmAgentBackend({
+  id: 'agent',
+  baseUrl: 'https://openrouter.ai/api/v1',
+  apiKey: process.env.OPENROUTER_API_KEY,
+  model: 'openai/gpt-5.2',
+  headers: {
+    'HTTP-Referer': 'https://skelm.dev',
+    'X-OpenRouter-Title': 'skelm',
+  },
+})
+```
+
+```ts
+// Ollama
+createSkelmAgentBackend({
+  id: 'agent',
+  baseUrl: 'http://localhost:11434',
+  model: 'qwen2.5-coder',
+})
+```
+
+```ts
+// vLLM / SGLang
+createSkelmAgentBackend({
+  id: 'agent',
+  baseUrl: 'http://localhost:8000/v1',
+  apiKey: 'unused',
+  model: 'qwen35',
+})
+```
+
+For `agent()` tool use, the selected model/provider must support OpenAI-style tool calls (`tools`, assistant `tool_calls`, and `role: "tool"` messages). Plain `infer()` usage only requires normal Chat Completions text responses.
 
 ## System prompt
 

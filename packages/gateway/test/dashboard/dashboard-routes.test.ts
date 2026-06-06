@@ -37,17 +37,58 @@ async function bootGateway(): Promise<{
   port: number
   store: MemoryRunStore
 }> {
-  const port = await pickFreePort()
-  const store = new MemoryRunStore()
-  const gw = new Gateway({
-    stateDir,
-    watchRegistries: false,
-    enableHttp: true,
-    httpPort: port,
-    runStore: store,
-  })
-  await gw.start()
-  return { gw, base: `http://127.0.0.1:${port}`, port, store }
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const port = await pickFreePort()
+    const store = new MemoryRunStore()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      runStore: store,
+    })
+    try {
+      await gw.start()
+      return { gw, base: `http://127.0.0.1:${port}`, port, store }
+    } catch (err) {
+      await gw.stop().catch(() => {})
+      if (!isAddressInUse(err) || attempt === 4) throw err
+    }
+  }
+  throw new Error('unreachable')
+}
+
+async function bootAuthenticatedGateway(): Promise<{ gw: Gateway; base: string }> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const port = await pickFreePort()
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      token: 'sekret',
+      config: {
+        server: { host: '127.0.0.1', port, auth: { mode: 'bearer' } },
+      },
+    })
+    try {
+      await gw.start()
+      return { gw, base: `http://127.0.0.1:${port}` }
+    } catch (err) {
+      await gw.stop().catch(() => {})
+      if (!isAddressInUse(err) || attempt === 4) throw err
+    }
+  }
+  throw new Error('unreachable')
+}
+
+function isAddressInUse(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: unknown }).code === 'EADDRINUSE'
+  )
 }
 
 describe('GET /v1/dashboard/*', () => {
@@ -163,20 +204,8 @@ describe('GET /v1/dashboard/*', () => {
   })
 
   it('requires bearer token when auth is configured', async () => {
-    const port = await pickFreePort()
-    const gw = new Gateway({
-      stateDir,
-      watchRegistries: false,
-      enableHttp: true,
-      httpPort: port,
-      token: 'sekret',
-      config: {
-        server: { host: '127.0.0.1', port, auth: { mode: 'bearer' } },
-      },
-    })
-    await gw.start()
+    const { gw, base } = await bootAuthenticatedGateway()
     try {
-      const base = `http://127.0.0.1:${port}`
       const unauth = await fetch(`${base}/v1/dashboard/overview`)
       expect(unauth.status).toBe(401)
 

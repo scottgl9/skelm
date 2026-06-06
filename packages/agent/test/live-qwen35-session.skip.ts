@@ -11,7 +11,7 @@
  *   3. compact() collapses an older prefix into a system summary
  */
 
-import { chatCompletion } from '../src/http-client.js'
+import { chatCompletion } from '@skelm/core/openai'
 import {
   AgentSession,
   type InferDispatch,

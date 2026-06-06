@@ -141,6 +141,42 @@ describe('buildBackendRegistry', () => {
     }
   })
 
+  it('forwards @skelm/agent custom headers from config', async () => {
+    process.env.SKELM_AGENT_HEADER_TITLE = 'skelm-test'
+    const server = await startJsonServer(async (_body, headers) => {
+      expect(headers.authorization).toBe('Bearer agent-key')
+      expect(headers['http-referer']).toBe('https://skelm.dev')
+      expect(headers['x-openrouter-title']).toBe('skelm-test')
+      return { choices: [{ message: { content: 'ok' } }] }
+    })
+
+    try {
+      const registry = await buildBackendRegistry({
+        backends: {
+          'skelm-agent': {
+            baseUrl: server.baseUrl,
+            apiKey: 'agent-key',
+            headers: {
+              'HTTP-Referer': 'https://skelm.dev',
+              'X-OpenRouter-Title': { secret: 'SKELM_AGENT_HEADER_TITLE' },
+            },
+          },
+        },
+      } satisfies SkelmConfig)
+
+      const backend = registry?.resolveForLlm({ backendId: 'skelm-agent' })
+      const response = await backend?.inference?.(
+        { messages: [{ role: 'user', content: 'hello' }] },
+        { signal: new AbortController().signal },
+      )
+
+      expect(response?.text).toBe('ok')
+    } finally {
+      await server.close()
+      process.env.SKELM_AGENT_HEADER_TITLE = undefined
+    }
+  })
+
   it('registers the pi backend id with the SDK backend from config', async () => {
     process.env.PI_TEST_KEY = 'pi-env-key'
     try {

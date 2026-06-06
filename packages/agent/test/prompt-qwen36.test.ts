@@ -58,6 +58,35 @@ function makeCtx(extra: Partial<BackendContext> = {}): BackendContext {
 }
 
 skipUnlessSet('system prompt against local qwen36', () => {
+  it('handles multimodal image content', async () => {
+    const backend = createSkelmAgentBackend({ baseUrl: baseUrl ?? '', model, timeoutMs: 120_000 })
+    const res = await backend.inference?.(
+      {
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'If you can inspect the attached image, reply with LIVE-MULTIMODAL-OK and mention that an image was attached.',
+              },
+              {
+                type: 'image',
+                mimeType: 'image/png',
+                data: 'iVBORw0KGgoAAAANSUhEUgAAAEAAAABAAQMAAACQp+OdAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURf8AAP///0EdNBEAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gYGFBMp6VLqagAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wNi0wNlQyMDoxOTo0MCswMDowMOifYNgAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDYtMDZUMjA6MTk6NDArMDA6MDCZwthkAAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTA2LTA2VDIwOjE5OjQwKzAwOjAwztf5uwAAAA9JREFUKM9jYBgFo4B8AAACQAABjMWrdwAAAABJRU5ErkJggg==',
+              },
+            ],
+          },
+        ],
+      },
+      { signal: AbortSignal.timeout(120_000) },
+    )
+
+    const text = res?.text ?? ''
+    expect(text).toContain('LIVE-MULTIMODAL-OK')
+    expect(text.toLowerCase()).toContain('attached')
+  }, 180_000)
+
   it('drives fs_read tool use', async () => {
     const marker = 'PURPLE-OCTOPUS-9824'
     const filePath = join(workDir, 'fixture.txt')

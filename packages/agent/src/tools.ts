@@ -16,7 +16,7 @@ import type { PermissionDimension } from '@skelm/core/permissions'
 import type { TrustEnforcer } from '@skelm/core/permissions'
 import type { Skill } from '@skelm/core/skills'
 
-import type { OpenAITool } from './http-client.js'
+import type { OpenAITool } from '@skelm/core/openai'
 
 export interface ToolResult {
   content: string
