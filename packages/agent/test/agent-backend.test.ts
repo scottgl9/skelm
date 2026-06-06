@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { BackendUpstreamError } from '@skelm/core'
 import { BackendRegistry } from '@skelm/core/backend'
 import { resolvePermissions } from '@skelm/core/permissions'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -223,6 +224,42 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
     expect(result?.finishReason).toBe('stop')
   })
 
+  it('uses custom backend id in inference errors', async () => {
+    const infBackend = createSkelmAgentBackend({
+      baseUrl: 'http://example.invalid',
+      id: 'agent-infer-id',
+      model: 'mock-model',
+    })
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(
+          JSON.stringify({ error: { message: 'simulated provider failure', type: 'bad_request' } }),
+          {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+    )
+
+    await expect(
+      infBackend.inference?.(
+        { messages: [{ role: 'user', content: 'x' }] },
+        { signal: new AbortController().signal },
+      ),
+    ).rejects.toBeInstanceOf(BackendUpstreamError)
+
+    try {
+      await infBackend.inference?.(
+        { messages: [{ role: 'user', content: 'x' }] },
+        { signal: new AbortController().signal },
+      )
+      throw new Error('expected throw')
+    } catch (err) {
+      expect((err as BackendUpstreamError).backendId).toBe('agent-infer-id')
+    }
+  })
+
   it('throws when the upstream returns no message at all', async () => {
     // Genuine "no choice / no message" failure mode — distinct from a
     // clean finish with empty content.
@@ -393,6 +430,61 @@ describe('SkelmAgentBackend — run / tool loop (mocked)', () => {
 
     expect(response?.text).toBe('NATIVE_OK')
     expect(response?.stopReason).toBe('stop')
+  })
+
+  it('returns assistant text when no-tool content is array-form content', async () => {
+    stubFetch([
+      {
+        content: [
+          { type: 'text', text: 'Hello ' },
+          { type: 'text', text: 'array content' },
+        ],
+      },
+    ])
+
+    const response = await backend.run?.(
+      { prompt: 'Reply with array content.', maxTurns: 3 },
+      { signal: new AbortController().signal, permissions: makePolicy() },
+    )
+
+    expect(response?.text).toBe('Hello array content')
+    expect(response?.stopReason).toBe('stop')
+  })
+
+  it('uses custom backend id in run errors', async () => {
+    const runBackend = createSkelmAgentBackend({
+      baseUrl: 'http://example.invalid',
+      id: 'agent-run-id',
+      model: 'mock-model',
+    })
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(
+          JSON.stringify({ error: { message: 'simulated provider failure', type: 'bad_request' } }),
+          {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+    )
+
+    await expect(
+      runBackend.run?.(
+        { prompt: 'cause error', maxTurns: 3 },
+        { signal: new AbortController().signal, permissions: makePolicy() },
+      ),
+    ).rejects.toBeInstanceOf(BackendUpstreamError)
+
+    try {
+      await runBackend.run?.(
+        { prompt: 'cause error', maxTurns: 3 },
+        { signal: new AbortController().signal, permissions: makePolicy() },
+      )
+      throw new Error('expected throw')
+    } catch (err) {
+      expect((err as BackendUpstreamError).backendId).toBe('agent-run-id')
+    }
   })
 
   it('agent loop honors options.maxTokens on every turn', async () => {

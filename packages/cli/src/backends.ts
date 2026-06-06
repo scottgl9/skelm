@@ -50,7 +50,7 @@ export async function buildBackendRegistry(
   if (backendIds.size === 0) return registry
 
   for (const backendId of backendIds) {
-    const backend = await Promise.resolve(createBackend(backendId, config, secretResolver))
+    const backend = await createBackend(backendId, config, secretResolver)
     registry.register(backend)
   }
   return registry
@@ -135,7 +135,11 @@ function patchStep(
   }
 }
 
-function createBackend(backendId: string, config: SkelmConfig, secretResolver?: SecretResolver) {
+async function createBackend(
+  backendId: string,
+  config: SkelmConfig,
+  secretResolver?: SecretResolver,
+): Promise<import('@skelm/core').SkelmBackend> {
   const entry = readBackendEntry(config, backendId)
   switch (backendId) {
     case 'openai': {
@@ -195,7 +199,7 @@ function createBackend(backendId: string, config: SkelmConfig, secretResolver?: 
       const model = readString(entry.model)
       const timeoutMs = readNumber(entry.timeoutMs)
       const maxTokens = readNumber(entry.maxTokens)
-      const headers = readStringMap(entry.headers)
+      const headers = await readStringMap(entry.headers, secretResolver)
       const vision = typeof entry.vision === 'boolean' ? entry.vision : undefined
       const opts: SkelmAgentOptions = { id: backendId }
       if (resolvedApiKey !== undefined) opts.apiKey = resolvedApiKey
@@ -342,11 +346,25 @@ function readNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined
 }
 
-function readStringMap(value: unknown): Readonly<Record<string, string>> | undefined {
+async function readStringMap(
+  value: unknown,
+  secretResolver?: SecretResolver,
+): Promise<Readonly<Record<string, string>> | undefined> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
   const out: Record<string, string> = {}
   for (const [key, raw] of Object.entries(value)) {
-    const resolved = readString(raw) ?? resolveSecret(raw)
+    const direct = readString(raw)
+    const envResolved = direct ?? resolveSecret(raw)
+    const secretName =
+      typeof raw === 'object' && raw !== null && 'secret' in raw
+        ? (raw as { secret?: unknown }).secret
+        : undefined
+    const resolved =
+      envResolved !== undefined
+        ? envResolved
+        : typeof secretName === 'string' && secretName.length > 0 && secretResolver !== undefined
+          ? await secretResolver.resolve(secretName)
+          : undefined
     if (resolved !== undefined) out[key] = resolved
   }
   return Object.keys(out).length > 0 ? out : undefined
