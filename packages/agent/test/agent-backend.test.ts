@@ -185,6 +185,30 @@ describe('SkelmAgentBackend — infer (mocked)', () => {
     expect(headers.Authorization).toBe('Bearer sk-test')
   })
 
+  it('forwards custom LLM request headers', async () => {
+    const headered = createSkelmAgentBackend({
+      baseUrl: 'https://openrouter.ai/api/v1',
+      apiKey: 'sk-test',
+      model: 'openai/gpt-5.2',
+      headers: {
+        'HTTP-Referer': 'https://skelm.dev',
+        'X-OpenRouter-Title': 'skelm',
+      },
+    })
+    const fetchSpy = stubFetch([{ content: 'ok' }])
+
+    await headered.inference?.(
+      { messages: [{ role: 'user', content: 'ping' }] },
+      { signal: new AbortController().signal },
+    )
+
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe('https://openrouter.ai/api/v1/chat/completions')
+    const headers = (fetchSpy.mock.calls[0]?.[1] as { headers: Record<string, string> }).headers
+    expect(headers.Authorization).toBe('Bearer sk-test')
+    expect(headers['HTTP-Referer']).toBe('https://skelm.dev')
+    expect(headers['X-OpenRouter-Title']).toBe('skelm')
+  })
+
   it('returns empty text + finishReason="stop" when upstream has nothing to say (#182)', async () => {
     // Aligned with the agent-loop path: a clean finish with empty content
     // is a successful inference of empty text, not an error.

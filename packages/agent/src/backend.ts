@@ -33,13 +33,18 @@ import type {
   SkelmBackend,
   Usage,
 } from '@skelm/core/backend'
+import {
+  type OpenAIContentPart,
+  type OpenAIMessage,
+  chatCompletion,
+  toOpenAIUsage,
+} from '@skelm/core/openai'
 import type { ResolvedPolicy } from '@skelm/core/permissions'
 import { TrustEnforcer } from '@skelm/core/permissions'
 
-import { type OpenAIContentPart, type OpenAIMessage, chatCompletion } from './http-client.js'
 import type { ModelRegistry } from './models/registry.js'
 import type { ResolvedModel } from './models/types.js'
-import { buildSystemPromptFromRequest, toUsage } from './prompt.js'
+import { buildSystemPromptFromRequest } from './prompt.js'
 import { BUILTIN_TOOLS, type ToolExecutionContext, type ToolResult, toOpenAITool } from './tools.js'
 
 export interface SkelmAgentOptions {
@@ -55,6 +60,8 @@ export interface SkelmAgentOptions {
   baseUrl?: string
   /** API key (required for most providers). */
   apiKey?: string
+  /** Extra HTTP headers sent to the LLM endpoint (e.g. OpenRouter attribution). */
+  headers?: Readonly<Record<string, string>>
   /** Default model id used when the step doesn't specify one. */
   model?: string
   /** Timeout in milliseconds for LLM HTTP requests (default 300 000 = 5 min). */
@@ -103,7 +110,13 @@ function resolveCallModel(
   requestedModelId: string | undefined,
 ):
   | { kind: 'registry'; resolved: ResolvedModel }
-  | { kind: 'single'; baseUrl: string; apiKey: string | undefined; modelId: string } {
+  | {
+      kind: 'single'
+      baseUrl: string
+      apiKey: string | undefined
+      headers: Readonly<Record<string, string>> | undefined
+      modelId: string
+    } {
   if (opts.registry !== undefined) {
     const reg = opts.registry
     const fallback = opts.defaultModel
@@ -139,6 +152,7 @@ function resolveCallModel(
     kind: 'single',
     baseUrl: opts.baseUrl,
     apiKey: opts.apiKey,
+    headers: opts.headers,
     modelId: requestedModelId ?? opts.model ?? 'qwen36',
   }
 }
@@ -224,6 +238,7 @@ async function runAgentLoop(
   opts: {
     baseUrl: string
     apiKey: string | undefined
+    headers: Readonly<Record<string, string>> | undefined
     defaultModel: string
     timeoutMs: number
     cwd: string
@@ -388,6 +403,7 @@ async function runAgentLoop(
 
       const response = await chatCompletion(opts.baseUrl, {
         apiKey: opts.apiKey,
+        headers: opts.headers,
         model,
         messages,
         temperature: undefined,
@@ -436,7 +452,7 @@ async function runAgentLoop(
           text,
           stopReason: choice.finish_reason ?? 'stop',
           ...(typeof reasoning === 'string' && reasoning.length > 0 && { reasoning }),
-          usage: toUsage(response.usage),
+          usage: toOpenAIUsage(response.usage),
         }
       }
 
@@ -543,6 +559,19 @@ function extractTextFromParts(parts: readonly ContentPart[]): string {
     .slice(0, 1024)
 }
 
+function openAIResponseContentText(
+  content: string | Array<{ type?: string; text?: string }> | null | undefined,
+): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .filter((part) => part.type === 'text' && typeof part.text === 'string')
+      .map((part) => part.text)
+      .join('')
+  }
+  return ''
+}
+
 function formatMemoryRecall(
   hits: ReadonlyArray<{ id: string; title: string; content: string }>,
 ): string {
@@ -572,6 +601,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
       const route = resolveCallModel(opts, req.model)
       const baseUrl = route.kind === 'registry' ? route.resolved.baseUrl : route.baseUrl
       const apiKey = route.kind === 'registry' ? route.resolved.apiKey : route.apiKey
+      const headers = route.kind === 'registry' ? route.resolved.headers : route.headers
       const model = route.kind === 'registry' ? route.resolved.entry.id : route.modelId
       const perCallMax =
         (req.maxTokens as number | undefined) ??
@@ -591,6 +621,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
 
       const response = await chatCompletion(baseUrl, {
         apiKey,
+        headers,
         model,
         messages,
         temperature: req.temperature as number | undefined,
@@ -608,8 +639,8 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
       const choice = rawChoice?.message
       const finishReason = rawChoice?.finish_reason
       const reasoning = choice?.reasoning_content ?? undefined
-      const content = choice?.content ?? ''
-      const usage = toUsage(response.usage)
+      const content = openAIResponseContentText(choice?.content)
+      const usage = toOpenAIUsage(response.usage)
 
       // Distinguish three cases when `content` is empty:
       //   1. `finish_reason === 'length'` → the `max_tokens` cap fit
@@ -678,6 +709,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
       const route = resolveCallModel(opts, undefined)
       const baseUrl = route.kind === 'registry' ? route.resolved.baseUrl : route.baseUrl
       const apiKey = route.kind === 'registry' ? route.resolved.apiKey : route.apiKey
+      const headers = route.kind === 'registry' ? route.resolved.headers : route.headers
       const model = route.kind === 'registry' ? route.resolved.entry.id : route.modelId
       const perCallMax =
         (route.kind === 'registry' ? route.resolved.entry.maxTokens : undefined) ?? opts.maxTokens
@@ -685,6 +717,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
       const result = await runAgentLoop(req, ctx, {
         baseUrl,
         apiKey,
+        headers,
         defaultModel: model,
         timeoutMs: opts.timeoutMs ?? 300_000,
         cwd,

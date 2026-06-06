@@ -8,8 +8,7 @@
  */
 
 import type { Usage } from '@skelm/core/backend'
-
-import type { OpenAIChatResponse } from './http-client.js'
+import type { OpenAIChatResponse } from '@skelm/core/openai'
 
 export {
   DEFAULT_SECTIONS_MAX_CHARS,

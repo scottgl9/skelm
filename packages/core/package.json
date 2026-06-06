@@ -65,6 +65,10 @@
     "./testing/contract": {
       "types": "./dist/testing/contract.d.ts",
       "default": "./dist/testing/contract.js"
+    },
+    "./openai": {
+      "types": "./dist/openai/index.d.ts",
+      "default": "./dist/openai/index.js"
     }
   },
   "files": ["dist", "README.md", "LICENSE"],
