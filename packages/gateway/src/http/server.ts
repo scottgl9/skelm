@@ -212,7 +212,10 @@ export function createServer(
       }
 
       // Start the run
-      const handle = runner.start(pipeline, input as never, { runId })
+      const handle = runner.start(pipeline, input as never, {
+        runId,
+        ...(pipeline.baseDir !== undefined && { workflowPath: pipeline.baseDir }),
+      })
 
       // Wait for completion (with timeout)
       const state = await waitForCompletion(runStore, handle.runId, 300000) // 5 min timeout
@@ -258,7 +261,10 @@ export function createServer(
       const body = await readBody(event).catch(() => ({}))
       const input = (body as Record<string, unknown>)?.input ?? {}
 
-      const handle = runner.start(pipeline, input as never, { runId })
+      const handle = runner.start(pipeline, input as never, {
+        runId,
+        ...(pipeline.baseDir !== undefined && { workflowPath: pipeline.baseDir }),
+      })
 
       // Store idempotency key
       if (idempotencyKey) {

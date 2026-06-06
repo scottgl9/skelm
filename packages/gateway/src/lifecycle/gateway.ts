@@ -25,6 +25,7 @@ import {
   type SkelmConfig,
   SqliteRunStore,
   WorkspaceManager,
+  validate,
 } from '@skelm/core'
 import { SuspendApprovalGate } from '../approvals/suspend-gate.js'
 import { ChainAuditWriter } from '../audit/chain.js'
@@ -502,6 +503,24 @@ export class Gateway {
       throw startPipelineError(501, 'gateway has no workflow loader')
     }
     const pipeline = await loadPipelineFromPath(loader, stored.pipelineId, stored.workflowPath)
+    // Validate the resume value against the waiting step's output schema BEFORE
+    // starting the runner. This preserves the synchronous rejection contract for
+    // invalid resume payloads after restart, rather than accepting then failing
+    // asynchronously inside the pipeline.
+    const waitingStepId = stored.waiting.stepId
+    const waitingStep = pipeline.steps.find(
+      (s): s is import('@skelm/core').WaitStep => s.kind === 'wait' && s.id === waitingStepId,
+    )
+    if (waitingStep === undefined) {
+      throw startPipelineError(400, `waiting step ${waitingStepId} not found in pipeline`)
+    }
+    if (waitingStep.outputSchema !== undefined) {
+      try {
+        await validate(waitingStep.outputSchema, resumeValue, 'output')
+      } catch (err) {
+        throw startPipelineError(400, (err as Error).message)
+      }
+    }
     const enforcement = this.enforcement
     const runner = new Runner({
       approvalGate: enforcement.approvalGate,

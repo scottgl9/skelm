@@ -171,6 +171,7 @@ value:textPart
 value:timeoutSignal
 value:timingSafeStringEqual
 value:toErrorMessage
+value:validate
 value:wait
 type:AcpBackendOptions
 type:AcpPromptResult
