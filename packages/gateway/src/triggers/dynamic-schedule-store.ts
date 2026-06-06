@@ -10,6 +10,7 @@ export interface PersistedDynamicSchedule {
 
 export class DynamicScheduleStore {
   readonly path: string
+  private pendingWrite: Promise<void> = Promise.resolve()
 
   constructor(stateDir: string) {
     this.path = join(stateDir, 'dynamic-schedules.json')
@@ -29,29 +30,39 @@ export class DynamicScheduleStore {
   }
 
   async upsert(registration: TriggerRegistration): Promise<void> {
-    const records = await this.list()
-    const record: PersistedDynamicSchedule = {
-      spec: registration.spec,
-      overlap: registration.overlap,
-      ...(registration.input !== undefined && { input: registration.input }),
-    }
-    const next = records.filter((item) => item.spec.id !== registration.spec.id)
-    next.push(record)
-    await this.write(next)
+    await this.queueWrite(async () => {
+      const records = await this.list()
+      const record: PersistedDynamicSchedule = {
+        spec: registration.spec,
+        overlap: registration.overlap,
+        ...(registration.input !== undefined && { input: registration.input }),
+      }
+      const next = records.filter((item) => item.spec.id !== registration.spec.id)
+      next.push(record)
+      await this.write(next)
+    })
   }
 
   async delete(id: string): Promise<void> {
-    const records = await this.list()
-    const next = records.filter((item) => item.spec.id !== id)
-    if (next.length === 0) {
-      try {
-        await unlink(this.path)
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+    await this.queueWrite(async () => {
+      const records = await this.list()
+      const next = records.filter((item) => item.spec.id !== id)
+      if (next.length === 0) {
+        try {
+          await unlink(this.path)
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+        }
+        return
       }
-      return
-    }
-    await this.write(next)
+      await this.write(next)
+    })
+  }
+
+  private queueWrite(fn: () => Promise<void>): Promise<void> {
+    const prev = this.pendingWrite
+    this.pendingWrite = prev.then(fn, fn)
+    return this.pendingWrite
   }
 
   private async write(records: PersistedDynamicSchedule[]): Promise<void> {
