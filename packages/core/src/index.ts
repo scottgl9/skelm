@@ -339,6 +339,7 @@ export {
   Runner,
   SchemaValidationError,
 } from './runner.js'
+export { validate } from './schema.js'
 export type { SkelmSchema } from './schema.js'
 export { formatSkillBlock, parseSkill, SkillParseError } from './skills.js'
 export type { Skill } from './skills.js'
