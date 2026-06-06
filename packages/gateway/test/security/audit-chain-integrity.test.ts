@@ -34,6 +34,30 @@ async function readLines(path: string): Promise<string[]> {
 }
 
 describe('ChainAuditWriter: adversarial integrity', () => {
+  it('creates audit logs with mode 0600 regardless of process umask', async () => {
+    const path = join(dir, 'mode-new.jsonl')
+    const oldUmask = process.umask(0o002)
+    try {
+      await writeChain(path, 1)
+    } finally {
+      process.umask(oldUmask)
+    }
+
+    const stat = await fs.stat(path)
+    expect(stat.mode & 0o777).toBe(0o600)
+  })
+
+  it('tightens an existing permissive audit log to mode 0600', async () => {
+    const path = join(dir, 'mode-existing.jsonl')
+    await fs.writeFile(path, '')
+    await fs.chmod(path, 0o664)
+
+    await writeChain(path, 1)
+
+    const stat = await fs.stat(path)
+    expect(stat.mode & 0o777).toBe(0o600)
+  })
+
   it('detects payload tampering on a single entry', async () => {
     const path = join(dir, 'a.jsonl')
     await writeChain(path, 5)
