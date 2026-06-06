@@ -36,7 +36,7 @@ export class FileWatchTrigger {
     this.debounceMs = spec.debounceMs ?? DEFAULT_DEBOUNCE_MS
   }
 
-  start(onFire: (payload: FileWatchPayload) => void): void {
+  start(onFire: (payload: FileWatchPayload) => void, onError?: (err: Error) => void): void {
     this.stop()
     let acceptingEvents = false
     this.watcher = watch(this.watchedPath, {
@@ -58,6 +58,9 @@ export class FileWatchTrigger {
     this.watcher.on('change', (path) => queueWatchedEvent('update', path))
     this.watcher.on('unlink', (path) => queueWatchedEvent('delete', path))
     this.watcher.on('unlinkDir', (path) => queueWatchedEvent('delete', path))
+    this.watcher.on('error', (err) => {
+      onError?.(err instanceof Error ? err : new Error(String(err)))
+    })
   }
 
   stop(): void {
