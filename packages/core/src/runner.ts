@@ -354,99 +354,6 @@ export class Runner {
       secretResolver: options.secretResolver ?? new EnvSecretResolver(),
       approvalGate: options.approvalGate ?? new AutoApproveGate(),
     }
-    // The bus emits denial/secret/tool events for observability; the audit
-    // writer is the durable record, so translate the relevant events here.
-    this.events.subscribe((event) => {
-      const writer = this.enforcement.auditWriter
-      if (event.type === 'permission.denied') {
-        void writeAudit(writer, {
-          runId: event.runId,
-          actor: 'runtime',
-          action: 'permission.denied',
-          details: {
-            stepId: event.stepId,
-            dimension: event.dimension,
-            detail: event.detail,
-            at: event.at,
-          },
-        })
-      }
-      if (event.type === 'secret.not_found') {
-        void writeAudit(writer, {
-          runId: event.runId,
-          actor: 'runtime',
-          action: 'secret.not_found',
-          details: { stepId: event.stepId, name: event.name, at: event.at },
-        })
-      }
-      if (event.type === 'backend.failover') {
-        void writeAudit(writer, {
-          runId: event.runId,
-          actor: 'runtime',
-          action: 'backend.failover',
-          details: {
-            stepId: event.stepId,
-            kind: event.kind,
-            from: event.from,
-            to: event.to,
-            error: event.error,
-            at: event.at,
-          },
-        })
-      }
-      // A full permission bypass is a security event: record it durably so the
-      // audit log shows when default-deny was intentionally short-circuited.
-      // We emit ONE summary row plus one row PER dimension, all flagged
-      // `actor: 'step-author'` to distinguish step-author-requested
-      // escalation from runtime-emitted denials (`actor: 'runtime'`). Per-
-      // dimension rows let `skelm audit query --action 'permission.bypass.*'`
-      // enumerate exactly what the bypass enabled, which the prior single
-      // summary row could not surface (plan §1.4).
-      if (event.type === 'permission.bypassed') {
-        void writeAudit(writer, {
-          runId: event.runId,
-          actor: 'step-author',
-          action: 'permission.bypassed',
-          details: {
-            stepId: event.stepId,
-            detail: event.detail,
-            at: event.at,
-            dimensions: [...ALL_PERMISSION_DIMENSIONS],
-          },
-        })
-        for (const dimension of ALL_PERMISSION_DIMENSIONS) {
-          void writeAudit(writer, {
-            runId: event.runId,
-            actor: 'step-author',
-            action: `permission.bypass.${dimension}`,
-            details: { stepId: event.stepId, dimension, at: event.at },
-          })
-        }
-      }
-      // Record successful tool calls so the audit log captures legitimate
-      // privileged operations, not just denials.
-      if (event.type === 'tool.call') {
-        void writeAudit(writer, {
-          runId: event.runId,
-          actor: 'runtime',
-          action: 'tool.call',
-          details: { stepId: event.stepId, tool: event.tool, at: event.at },
-        })
-      }
-      if (event.type === 'tool.result') {
-        void writeAudit(writer, {
-          runId: event.runId,
-          actor: 'runtime',
-          action: 'tool.result',
-          details: {
-            stepId: event.stepId,
-            tool: event.tool,
-            durationMs: event.durationMs,
-            at: event.at,
-          },
-        })
-      }
-    })
   }
 
   start<TInput, TOutput>(
@@ -477,6 +384,7 @@ export class Runner {
       }),
       approvalGate: this.enforcement.approvalGate,
       secretResolver: this.enforcement.secretResolver,
+      auditWriter: this.enforcement.auditWriter,
       waitForInput: (request) => {
         if (
           resumeFromWaiting !== undefined &&
@@ -607,7 +515,8 @@ export async function runPipeline<TInput, TOutput>(
   // Subscribe the caller's live listener (if any) to the run's bus. This is how
   // a queue driver's onEvent hook receives step.partial / lifecycle events as
   // the turn streams — see RunOptions.onEvent.
-  if (options.onEvent !== undefined) events.subscribe(options.onEvent)
+  const unsubscribeOnEvent =
+    options.onEvent === undefined ? undefined : events.subscribe(options.onEvent)
   const store = options.store
   const stateStore = options.stateStore ?? options.store ?? defaultStateStore
   const threadHost = createThreadHost(stateStore)
@@ -690,132 +599,130 @@ export async function runPipeline<TInput, TOutput>(
   // fetch. The runner publishes run.waiting / run.resumed; the in-process
   // ExecutionStore (if any) tracks the snapshot on the Run row. The Run
   // object captured at finalize-time will reflect a final cleared state.
-  if (store !== undefined) {
-    events.subscribe((event) => {
-      if (event.type === 'run.waiting') {
-        // Persist BOTH the waiting snapshot AND the 'waiting' status. Without
-        // the status flip, a wait-paused run looks like 'running' to the
-        // gateway's recoverInterruptedRuns() at restart and gets finalized as
-        // failed (RunCrashedError) — silently killing parked runs on every
-        // gateway bounce. The status is restored to 'running' on resume so
-        // the rest of the run executes as before.
-        storeWrites.push(
-          store
-            .updateRun(event.runId, {
-              status: 'waiting',
-              waiting: {
-                stepId: event.stepId,
-                ...(event.message !== undefined && { message: event.message }),
-                ...(event.timeoutMs !== undefined && { timeoutMs: event.timeoutMs }),
-                since: event.at,
-              },
-            })
-            .catch((err) => logStoreFailure('waiting-status', event.runId, err)),
-        )
-      } else if (event.type === 'run.resumed') {
-        storeWrites.push(
-          store
-            .updateRun(event.runId, { status: 'running', waiting: undefined })
-            .catch((err) => logStoreFailure('resume-status', event.runId, err)),
-        )
-      }
-    })
-  }
+  const unsubscribeRunState =
+    store === undefined
+      ? undefined
+      : events.subscribe((event) => {
+          if (event.type === 'run.waiting') {
+            // Persist BOTH the waiting snapshot AND the 'waiting' status. Without
+            // the status flip, a wait-paused run looks like 'running' to the
+            // gateway's recoverInterruptedRuns() at restart and gets finalized as
+            // failed (RunCrashedError) — silently killing parked runs on every
+            // gateway bounce. The status is restored to 'running' on resume so
+            // the rest of the run executes as before.
+            storeWrites.push(
+              store
+                .updateRun(event.runId, {
+                  status: 'waiting',
+                  waiting: {
+                    stepId: event.stepId,
+                    ...(event.message !== undefined && { message: event.message }),
+                    ...(event.timeoutMs !== undefined && { timeoutMs: event.timeoutMs }),
+                    since: event.at,
+                  },
+                })
+                .catch((err) => logStoreFailure('waiting-status', event.runId, err)),
+            )
+          } else if (event.type === 'run.resumed') {
+            storeWrites.push(
+              store
+                .updateRun(event.runId, { status: 'running', waiting: undefined })
+                .catch((err) => logStoreFailure('resume-status', event.runId, err)),
+            )
+          }
+        })
 
   // Bridge permission denials and MCP tool dispatch into the audit log.
-  // Mirrors the same subscriptions installed by the Runner constructor, so
-  // callers driving runPipeline directly (e.g. the one-shot `skelm run`
-  // CLI) get the same audit coverage as gateway-fired runs. Writes are
-  // tracked alongside storeWrites so the run waits for fsync before
+  // This is the single audit subscription for one run. It is unsubscribed at
+  // finalization so shared gateway buses do not accumulate duplicate writers.
+  // Writes are tracked alongside storeWrites so the run waits for fsync before
   // returning — otherwise a fast-failing CLI exit could drop the entry.
   const auditWriter = options.auditWriter
   const auditWrites: Promise<void>[] = []
-  if (auditWriter !== undefined) {
-    events.subscribe((event) => {
-      const queue = (entry: { action: string; details: Record<string, unknown> }) => {
-        auditWrites.push(
-          writeAudit(auditWriter, {
-            ...(event.runId !== undefined && { runId: event.runId }),
-            actor: 'runtime',
-            action: entry.action,
-            details: entry.details,
-          }),
-        )
-      }
-      if (event.type === 'permission.denied') {
-        queue({
-          action: 'permission.denied',
-          details: {
-            stepId: event.stepId,
-            dimension: event.dimension,
-            detail: event.detail,
-            at: event.at,
-          },
+  const unsubscribeAudit =
+    auditWriter === undefined
+      ? undefined
+      : events.subscribe((event) => {
+          const queue = (entry: { action: string; details: Record<string, unknown> }) => {
+            auditWrites.push(
+              writeAudit(auditWriter, {
+                ...(event.runId !== undefined && { runId: event.runId }),
+                actor: 'runtime',
+                action: entry.action,
+                details: entry.details,
+              }),
+            )
+          }
+          if (event.type === 'permission.denied') {
+            queue({
+              action: 'permission.denied',
+              details: {
+                stepId: event.stepId,
+                dimension: event.dimension,
+                detail: event.detail,
+                at: event.at,
+              },
+            })
+          } else if (event.type === 'permission.bypassed') {
+            // Per-dimension fan-out so `skelm audit query` can enumerate
+            // exactly what an operator-granted bypass enabled.
+            auditWrites.push(
+              writeAudit(auditWriter, {
+                ...(event.runId !== undefined && { runId: event.runId }),
+                actor: 'step-author',
+                action: 'permission.bypassed',
+                details: {
+                  stepId: event.stepId,
+                  detail: event.detail,
+                  at: event.at,
+                  dimensions: [...ALL_PERMISSION_DIMENSIONS],
+                },
+              }),
+            )
+            for (const dimension of ALL_PERMISSION_DIMENSIONS) {
+              auditWrites.push(
+                writeAudit(auditWriter, {
+                  ...(event.runId !== undefined && { runId: event.runId }),
+                  actor: 'step-author',
+                  action: `permission.bypass.${dimension}`,
+                  details: { stepId: event.stepId, dimension, at: event.at },
+                }),
+              )
+            }
+          } else if (event.type === 'secret.not_found') {
+            queue({
+              action: 'secret.not_found',
+              details: { stepId: event.stepId, name: event.name, at: event.at },
+            })
+          } else if (event.type === 'backend.failover') {
+            queue({
+              action: 'backend.failover',
+              details: {
+                stepId: event.stepId,
+                kind: event.kind,
+                from: event.from,
+                to: event.to,
+                error: event.error,
+                at: event.at,
+              },
+            })
+          } else if (event.type === 'tool.call') {
+            queue({
+              action: 'tool.call',
+              details: { stepId: event.stepId, tool: event.tool, at: event.at },
+            })
+          } else if (event.type === 'tool.result') {
+            queue({
+              action: 'tool.result',
+              details: {
+                stepId: event.stepId,
+                tool: event.tool,
+                durationMs: event.durationMs,
+                at: event.at,
+              },
+            })
+          }
         })
-      } else if (event.type === 'permission.bypassed') {
-        // Per-dimension fan-out so `skelm audit query` can enumerate
-        // exactly what an operator-granted bypass enabled. Kept in lock-
-        // step with the Runner-ctor handler — both paths must produce
-        // the same shape. Step-author is the responsible actor: the
-        // workflow requested the bypass, the operator merely confirmed.
-        auditWrites.push(
-          writeAudit(auditWriter, {
-            ...(event.runId !== undefined && { runId: event.runId }),
-            actor: 'step-author',
-            action: 'permission.bypassed',
-            details: {
-              stepId: event.stepId,
-              detail: event.detail,
-              at: event.at,
-              dimensions: [...ALL_PERMISSION_DIMENSIONS],
-            },
-          }),
-        )
-        for (const dimension of ALL_PERMISSION_DIMENSIONS) {
-          auditWrites.push(
-            writeAudit(auditWriter, {
-              ...(event.runId !== undefined && { runId: event.runId }),
-              actor: 'step-author',
-              action: `permission.bypass.${dimension}`,
-              details: { stepId: event.stepId, dimension, at: event.at },
-            }),
-          )
-        }
-      } else if (event.type === 'secret.not_found') {
-        queue({
-          action: 'secret.not_found',
-          details: { stepId: event.stepId, name: event.name, at: event.at },
-        })
-      } else if (event.type === 'backend.failover') {
-        queue({
-          action: 'backend.failover',
-          details: {
-            stepId: event.stepId,
-            kind: event.kind,
-            from: event.from,
-            to: event.to,
-            error: event.error,
-            at: event.at,
-          },
-        })
-      } else if (event.type === 'tool.call') {
-        queue({
-          action: 'tool.call',
-          details: { stepId: event.stepId, tool: event.tool, at: event.at },
-        })
-      } else if (event.type === 'tool.result') {
-        queue({
-          action: 'tool.result',
-          details: {
-            stepId: event.stepId,
-            tool: event.tool,
-            durationMs: event.durationMs,
-            at: event.at,
-          },
-        })
-      }
-    })
-  }
   const controller = new AbortController()
   // Capture the abort handler so finalizeStoredRun can detach it before
   // returning. Without removeEventListener, a long-lived caller signal
@@ -1221,6 +1128,9 @@ export async function runPipeline<TInput, TOutput>(
     unsubscribeStore,
     auditWrites,
     unsubscribeAbort,
+    unsubscribeRunState,
+    unsubscribeAudit,
+    unsubscribeOnEvent,
   )
 }
 
@@ -1233,6 +1143,9 @@ async function finalizeStoredRun<TRun extends Run>(
   unsubscribeStore: (() => void) | undefined,
   auditWrites: Promise<void>[] = [],
   unsubscribeAbort?: () => void,
+  unsubscribeRunState?: () => void,
+  unsubscribeAudit?: () => void,
+  unsubscribeOnEvent?: () => void,
 ): Promise<TRun> {
   try {
     await Promise.all(storeWrites)
@@ -1241,6 +1154,9 @@ async function finalizeStoredRun<TRun extends Run>(
     return run
   } finally {
     unsubscribeStore?.()
+    unsubscribeRunState?.()
+    unsubscribeAudit?.()
+    unsubscribeOnEvent?.()
     unsubscribeAbort?.()
   }
 }
