@@ -14,7 +14,9 @@ Drives Opencode through its official SDK, mapping skelm's `AgentPermissions` mod
 npm install @skelm/opencode
 ```
 
-You also need an Opencode runtime — the package speaks to a running Opencode server / SDK process; it does not vendor the agent.
+You also need an Opencode runtime on `PATH` by default. The backend starts a
+local `opencode serve` process and talks to it through the official
+`@opencode-ai/sdk` client; it does not vendor the agent runtime.
 
 ## Quick Start
 
@@ -69,7 +71,11 @@ export default pipeline({
 })
 ```
 
-`createOpencodeBackendFromConfig` lets `@skelm/gateway` supervise the Opencode server lifecycle. For a short-lived instance, use `createOpencodeBackend` and pass your own server URL.
+`createOpencodeBackendFromConfig` lets `@skelm/gateway` supervise the Opencode
+server lifecycle. The opencode SDK can also start a server via
+`createOpencode()` / `createOpencodeServer()`, but skelm keeps its own
+supervised startup path so gateway egress proxying, dynamic port selection,
+loopback validation, and child-process cleanup stay under the trust boundary.
 
 ## What's exported
 

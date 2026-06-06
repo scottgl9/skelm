@@ -366,8 +366,8 @@ importers:
   packages/opencode:
     dependencies:
       '@opencode-ai/sdk':
-        specifier: ^1.14.33
-        version: 1.14.33
+        specifier: ^1.16.2
+        version: 1.16.2
     devDependencies:
       '@skelm/agentmemory':
         specifier: workspace:*
@@ -1776,8 +1776,8 @@ packages:
     dev: false
     optional: true
 
-  /@opencode-ai/sdk@1.14.33:
-    resolution: {integrity: sha512-LtP9oLMSxVw47AE562IagIOwxLfHLVjk/CTExkYCYtdjPXTQeU5mjyZDbahilAGeFUen9fFE/R9e933zvjF9sQ==}
+  /@opencode-ai/sdk@1.16.2:
+    resolution: {integrity: sha512-Z/xZ7q79dYeE0afqIk/yFEcRNGEQFcE+H8ssYivUiy+xGZ1mGwT72jpaQZKBwPn3JH4sRCu4KA2lcktBQfcOjg==}
     dependencies:
       cross-spawn: 7.0.6
     dev: false
@@ -2335,7 +2335,6 @@ packages:
     resolution: {integrity: sha512-orrrD74MBUyK8jOAD/r0+lfa1I2MO6I+vAkmAWzMYbCcgrN4lCrmK52gRFQq/JRxfYPfonkr4b0jcY7Olqdqbw==}
     dependencies:
       undici-types: 6.21.0
-    dev: true
 
   /@types/node@22.19.17:
     resolution: {integrity: sha512-wGdMcf+vPYM6jikpS/qhg6WiqSV/OhG+jeeHT/KlVqxYfD40iYJf9/AE1uQxVWFvU7MipKRkRv8NSHiCGgPr8Q==}
@@ -2407,7 +2406,7 @@ packages:
       '@vitest/spy': 4.1.8
       estree-walker: 3.0.3
       magic-string: 0.30.21
-      vite: 8.0.16(@types/node@22.19.17)
+      vite: 8.0.16(@types/node@20.19.39)
 
   /@vitest/pretty-format@4.1.8:
     resolution: {integrity: sha512-9GasEBxpZ1VYIpqHf/0+YGg121uSNwCKOJqIrTwWP/TB7DmFCiaBpNl3aPZzoLWfWkuqhbH8vJIVobZkvdo2cA==}
@@ -4438,7 +4437,6 @@ packages:
       tinyglobby: 0.2.17
     optionalDependencies:
       fsevents: 2.3.3
-    dev: true
 
   /vite@8.0.16(@types/node@22.19.17):
     resolution: {integrity: sha512-h9bXPmJichP5fLmVQo3PyaGSDE2n3aPuomeAlVRm0JLmt4rY6zmPKd59HYI4LNW8oTK7tlTsuC7l/m7awx9Jcw==}
