@@ -52,7 +52,9 @@ export async function vercelAiInference(
     messages,
     ...(request.system !== undefined ? { system: request.system } : {}),
     ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
-    ...(options.maxOutputTokens !== undefined ? { maxOutputTokens: options.maxOutputTokens } : {}),
+    ...(request.maxTokens !== undefined || options.maxOutputTokens !== undefined
+      ? { maxOutputTokens: request.maxTokens ?? options.maxOutputTokens }
+      : {}),
     ...(options.providerOptions !== undefined
       ? // biome-ignore lint/suspicious/noExplicitAny: ProviderOptions is JSONObject; we accept a looser shape for ergonomics
         { providerOptions: options.providerOptions as any }
@@ -126,6 +128,7 @@ export async function vercelAiInference(
         throw new VercelAiBackendError(`vercel-ai stream terminated with finishReason='error'`)
       }
       const response: InferenceResponse = { text: fullText }
+      if (typeof finishReason === 'string') response.finishReason = finishReason
       const usage = mapUsage(finalUsage)
       if (usage !== undefined) response.usage = usage
       return response
@@ -139,6 +142,7 @@ export async function vercelAiInference(
       throw new VercelAiBackendError(`vercel-ai generateText terminated with finishReason='error'`)
     }
     const response: InferenceResponse = { text: textResult.text }
+    if (typeof textResult.finishReason === 'string') response.finishReason = textResult.finishReason
     const usage = mapUsage(textResult.usage)
     if (usage !== undefined) response.usage = usage
     return response
