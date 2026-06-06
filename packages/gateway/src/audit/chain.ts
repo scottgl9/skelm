@@ -107,6 +107,9 @@ export class ChainAuditWriter implements AuditWriter {
 
   private async doInitialize(): Promise<void> {
     await fs.mkdir(dirname(this.path), { recursive: true })
+    const fh = await fs.open(this.path, 'a', 0o600)
+    await fh.close()
+    await fs.chmod(this.path, 0o600)
     const existing = await this.readAll()
     if (existing.length > 0) {
       const last = existing[existing.length - 1] as ChainEntry
