@@ -1264,6 +1264,14 @@ export class Gateway {
     const store = this.dynamicScheduleStoreInternal ?? new DynamicScheduleStore(this.stateDir)
     const records = await store.list()
     for (const record of records) {
+      // Skip one-shot triggers during replay: immediate fires instantly and
+      // past-due at triggers also fire on registration. These are not
+      // durable schedules and should not re-fire on every restart.
+      if (record.spec.kind === 'immediate') continue
+      if (record.spec.kind === 'at') {
+        const ts = Date.parse(record.spec.when)
+        if (!Number.isNaN(ts) && ts <= Date.now()) continue
+      }
       const reg = this.managersInternal.triggers.register(record.spec, record.overlap, {
         ...(record.input !== undefined && { input: record.input }),
       })

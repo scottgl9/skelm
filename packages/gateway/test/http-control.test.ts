@@ -702,6 +702,55 @@ describe('Gateway HTTP /schedules', () => {
     }
   })
 
+  it('does not replay one-shot dynamic schedules (immediate or past-due at) across restart', async () => {
+    const boot = (port: number) => ({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    })
+    const { gw: gw1, base: base1 } = await bootGatewayWithRetry(boot)
+    try {
+      // Create an immediate schedule (one-shot).
+      await fetch(`${base1}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-immediate',
+          workflowId: 'wf',
+          trigger: { kind: 'immediate' },
+          overlap: 'skip',
+        }),
+      }).then((r) => r.json())
+      // Create a past-due at schedule (one-shot).
+      await fetch(`${base1}/schedules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 's-past-at',
+          workflowId: 'wf',
+          trigger: { kind: 'at', when: new Date(Date.now() - 60000).toISOString() },
+          overlap: 'skip',
+        }),
+      }).then((r) => r.json())
+    } finally {
+      await gw1.stop()
+    }
+
+    const { gw: gw2, base: base2 } = await bootGatewayWithRetry(boot)
+    try {
+      const list = (await fetch(`${base2}/schedules`).then((r) => r.json())) as Array<{
+        id: string
+      }>
+      // One-shot schedules should NOT be present after restart.
+      expect(list.map((schedule) => schedule.id)).not.toContain('s-immediate')
+      expect(list.map((schedule) => schedule.id)).not.toContain('s-past-at')
+    } finally {
+      await gw2.stop()
+    }
+  })
+
   it('schedule fire dispatches the persisted input as the pipeline payload', async () => {
     const seenPayloads: unknown[] = []
     const { gw, base } = await bootGatewayWithRetry(async (port) => ({
