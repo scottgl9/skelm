@@ -4,7 +4,6 @@ import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { pickExport } from '@skelm/core'
-import type { SkelmConfig } from '@skelm/core'
 // @subprocess-ok: re-spawning the CLI itself for `gateway start --detach`.
 import {
   Gateway,
@@ -354,7 +353,6 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     if (gateway === undefined) return
     await syncDeclaredTriggers(gateway, io)
   }
-  const gatewayToken = gatewayTokenForConfig(config)
   gateway = new Gateway({
     // The CLI owns process signals in foreground mode (see the SIGTERM/SIGINT/
     // SIGHUP handlers below). If the gateway installed its own handlers too,
@@ -370,7 +368,6 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     config,
     loadWorkflow,
     onReload: syncDeclared,
-    ...(gatewayToken !== undefined && { token: gatewayToken }),
     ...(backendRegistry !== undefined && { backends: backendRegistry }),
   })
   installCrashHandlers(gateway, io)
@@ -687,12 +684,6 @@ async function detachGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
     `gateway start --detach: gateway did not become ready within ${readyTimeoutMs}ms. Inspect logs via journalctl or rerun in foreground.\n`,
   )
   return { exitCode: EXIT.CLI_ERROR }
-}
-
-function gatewayTokenForConfig(config: SkelmConfig): string | undefined {
-  if (config.server?.auth?.mode !== 'bearer') return undefined
-  const token = process.env.SKELM_TOKEN?.trim()
-  return token === undefined || token === '' ? undefined : token
 }
 
 /**

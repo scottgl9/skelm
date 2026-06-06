@@ -53,6 +53,8 @@ export interface SkelmConfigServer {
   port?: number
   host?: string
   auth?: { mode: 'none' | 'bearer' }
+  /** Bearer token for auth mode 'bearer'. If omitted, reads SKELM_TOKEN. */
+  token?: string
   maxConcurrentRuns?: number
   proxy?: {
     /** Egress proxy port. Default: server.port + 1. */

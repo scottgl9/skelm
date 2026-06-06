@@ -982,7 +982,7 @@ export class Gateway {
       this.discovery = {
         pid: process.pid,
         url: this.options.url ?? defaultDiscoveryUrl(this.options, this.config),
-        token: this.options.token,
+        token: this.effectiveHttpToken(),
         startedAt: this.lockfile.startedAt,
       }
       await writeDiscovery(this.discoveryPath, this.discovery)
@@ -1251,12 +1251,13 @@ export class Gateway {
     const port = this.options.httpPort ?? this.config.server?.port ?? 14738
     const host = this.options.httpHost ?? this.config.server?.host ?? '127.0.0.1'
     const auth = this.config.server?.auth?.mode === 'bearer' ? 'bearer' : 'none'
+    const token = this.effectiveHttpToken()
     this.httpServer = createServer(
       {
         port,
         host,
         auth,
-        ...(this.options.token !== undefined && { token: this.options.token }),
+        ...(token !== undefined && { token }),
       },
       {
         pipelines: [],
@@ -1270,6 +1271,13 @@ export class Gateway {
       this.discovery = { ...this.discovery, url: `http://${host}:${port}` }
       await writeDiscovery(this.discoveryPath, this.discovery)
     }
+  }
+
+  private effectiveHttpToken(): string | undefined {
+    if (this.config.server?.auth?.mode !== 'bearer') return undefined
+    const token = this.options.token ?? this.config.server.token ?? process.env.SKELM_TOKEN
+    const trimmed = token?.trim()
+    return trimmed === undefined || trimmed === '' ? undefined : trimmed
   }
 
   private async startEgressProxy(): Promise<void> {

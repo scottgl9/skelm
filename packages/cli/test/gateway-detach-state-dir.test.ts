@@ -46,19 +46,18 @@ describe('skelm gateway start --detach — custom state dir', () => {
     expect(JSON.parse(raw)).toMatchObject({ DETACH_READY: 'yes' })
   })
 
-  it('waits for readiness when bearer auth is configured', { timeout: 30_000 }, async () => {
+  it('waits for readiness when bearer auth uses a config token', { timeout: 30_000 }, async () => {
     const fixedPort = await listenOnFreePort()
     await writeFile(
       join(projectDir, 'skelm.config.mts'),
-      `export default { server: { host: '127.0.0.1', port: ${fixedPort}, auth: { mode: 'bearer' } } }\n`,
+      `export default { server: { host: '127.0.0.1', port: ${fixedPort}, auth: { mode: 'bearer' }, token: 'cfg-secret' } }\n`,
     )
 
-    const env = { SKELM_TOKEN: 'detach-secret-token' }
-    const start = runSkelm(['gateway', 'start', '--detach'], env)
+    const start = runSkelm(['gateway', 'start', '--detach'])
     expect(start.status).toBe(0)
     expect(start.stdout).toContain('skelm gateway started (detached)')
 
-    const set = runSkelm(['secrets', 'set', 'AUTH_READY', '--value', 'yes'], env)
+    const set = runSkelm(['secrets', 'set', 'AUTH_READY', '--value', 'yes'])
     expect(set.status).toBe(0)
     expect(set.stdout).toContain('secret stored: AUTH_READY')
 
