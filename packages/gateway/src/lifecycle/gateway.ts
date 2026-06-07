@@ -19,6 +19,7 @@ import {
   type NetworkPolicy,
   NoopAuditWriter,
   PermissionResolver,
+  PostgresRunStore,
   type RunStore,
   Runner,
   type SecretResolver,
@@ -1338,6 +1339,17 @@ export class Gateway {
     if (cfg === undefined || cfg.driver === 'sqlite') {
       const dbPath = expandHome(cfg?.path ?? join(this.stateDir, 'runs.sqlite'))
       return new SqliteRunStore({ path: dbPath })
+    }
+    if (cfg.driver === 'postgres') {
+      if (cfg.url === undefined) {
+        throw new Error('storage.runs.url is required when runs.driver is postgres')
+      }
+      return new PostgresRunStore({
+        url: cfg.url,
+        ...(cfg.schema !== undefined && { schema: cfg.schema }),
+        ...(cfg.poolSize !== undefined && { poolSize: cfg.poolSize }),
+        ...(cfg.artifactQuotaBytes !== undefined && { artifactQuotaBytes: cfg.artifactQuotaBytes }),
+      })
     }
     return new MemoryRunStore()
   }
