@@ -879,7 +879,7 @@ export class PostgresRunStore implements RunStore {
   }
 
   private async lockStateKey(client: PoolClient, namespace: string, key: string): Promise<void> {
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${namespace}\u0000${key}`])
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [namespace, key])
   }
 }
 
