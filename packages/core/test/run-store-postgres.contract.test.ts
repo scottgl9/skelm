@@ -160,9 +160,9 @@ describeMaybe('PostgresRunStore contract', () => {
     const { store, cleanup } = await withSchemaStore()
     try {
       const key = `ttl-${randomUUID()}`
-      await store.setState('pipeline:ttl', key, 'value', { ttlMs: 5 })
+      await store.setState('pipeline:ttl', key, 'value', { ttlMs: 100 })
       expect(await store.getState('pipeline:ttl', key)).toBe('value')
-      await setTimeout(12)
+      await setTimeout(120)
       expect(await store.getState('pipeline:ttl', key)).toBeUndefined()
       expect(await collect(store.listState('pipeline:ttl'))).toEqual([])
     } finally {
