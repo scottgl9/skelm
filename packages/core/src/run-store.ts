@@ -484,27 +484,7 @@ export class SqliteRunStore implements RunStore {
 
   async updateRun(runId: RunId, patch: RunPatch): Promise<void> {
     const transaction = this.db.transaction(() => {
-      const row = this.db
-        .prepare(
-          `SELECT run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
-           FROM runs WHERE run_id = ?`,
-        )
-        .get(runId) as
-        | {
-            run_id: string
-            pipeline_id: string
-            workflow_path: string | null
-            trigger_id: string | null
-            status: RunStatus
-            input_json: string
-            steps_json: string
-            output_json: string | null
-            error_json: string | null
-            started_at: number
-            completed_at: number | null
-            waiting_json: string | null
-          }
-        | undefined
+      const row = this.getRunRow(runId)
       if (row === undefined) return
 
       const existing = this.inflateRunRow(row)
@@ -546,7 +526,28 @@ export class SqliteRunStore implements RunStore {
   }
 
   async getRun(runId: RunId): Promise<Run | null> {
-    const row = this.db
+    const row = this.getRunRow(runId)
+    if (row === undefined) return null
+    return this.inflateRunRow(row)
+  }
+
+  private getRunRow(runId: RunId):
+    | {
+        run_id: string
+        pipeline_id: string
+        workflow_path: string | null
+        trigger_id: string | null
+        status: RunStatus
+        input_json: string
+        steps_json: string
+        output_json: string | null
+        error_json: string | null
+        started_at: number
+        completed_at: number | null
+        waiting_json: string | null
+      }
+    | undefined {
+    return this.db
       .prepare(
         `SELECT run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
          FROM runs WHERE run_id = ?`,
@@ -567,8 +568,6 @@ export class SqliteRunStore implements RunStore {
           waiting_json: string | null
         }
       | undefined
-    if (row === undefined) return null
-    return this.inflateRunRow(row)
   }
 
   private inflateRunRow(row: {
