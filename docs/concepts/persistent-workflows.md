@@ -52,7 +52,7 @@ There is **no resident in-process loop**. Triggers drive fires, exactly like a r
 ## Why this shape
 
 - **One model.** A persistent workflow *is* a workflow — preamble steps plus a terminal turn — not a separate concept bolted on beside `pipeline()`. The whole fire is one Run with one event log.
-- **Durable.** Conversation state is in the `StateStore` (SQLite in production), keyed by `${workflowId}::${sessionKey}`. Restart the gateway and the next message continues the same thread.
+- **Durable.** Conversation state is in the `StateStore` (configured `storage.runs` backend, e.g. `sqlite` or `postgres`), keyed by `${workflowId}::${sessionKey}`. Restart the gateway and the next message continues the same thread.
 - **Enforced.** A persistent workflow is still subject to the [permission model](/concepts/permissions). Default-deny applies per step. The terminal turn's `agent.permissions` (and its opt-in to the operator-gated [unrestricted bypass](/concepts/permissions#the-unrestricted-bypass-freewheeling-agents)) apply **only** to that turn — preamble steps carry their own permissions and stay default-deny even when the workflow id is granted the bypass.
 - **Trigger-driven.** Any trigger can drive a fire. A `queue` trigger (Telegram, Slack, an internal queue) turns inbound messages into turns; a `cron`/`interval` trigger can drive proactive turns.
 

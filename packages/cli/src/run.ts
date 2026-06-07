@@ -300,12 +300,6 @@ export async function runCommand(
     // (e.g. --events=none or piped stdin without a TTY for input).
     // Surface the curl recipe so scripts can still drive resume.
     //
-    // NOTE: only SqliteRunStore + MemoryRunStore persist `waiting`.
-    // PostgresRunStore.updateRun is still a NotImplementedError stub,
-    // so against a postgres-backed gateway this branch will not fire
-    // and a non-interactive paused run falls through to the catch-all
-    // failure path below. Tracked alongside the postgres store
-    // implementation work.
     if (run.waiting !== undefined) {
       io.stderr.write(
         [

@@ -99,7 +99,7 @@ It is also where skelm hosts:
 - Agent steps (permission enforcement, backend lifecycle)
 - Trigger-based execution (cron, webhook, etc.)
 - Approval gating
-- History and audit storage via SQLite
+- History and audit storage via the configured `storage.runs` backend (`sqlite`/`memory`/`postgres`).
 
 ## HTTP surface
 
