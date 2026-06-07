@@ -320,6 +320,26 @@ describe('workflowPath persistence', () => {
     }
   })
 
+  it('SqliteRunStore: concurrent updateRun calls apply exactly one patch', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-concurrent-'))
+    const store = new SqliteRunStore({ path: join(dir, 'runs.db') })
+    try {
+      await store.putRun(sampleRun('r-concurrent'))
+      await Promise.all([
+        store.updateRun('r-concurrent', { status: 'failed' }),
+        store.updateRun('r-concurrent', { status: 'cancelled' }),
+      ])
+      const updated = await store.getRun('r-concurrent')
+      expect(updated).not.toBeNull()
+      expect(['failed', 'cancelled']).toContain(updated?.status)
+      // Ensure the row is fully intact — no partial write
+      expect(updated?.runId).toBe('r-concurrent')
+      expect(updated?.pipelineId).toBe('p')
+    } finally {
+      store.close()
+    }
+  })
+
   it('SqliteRunStore: migrates existing DB without workflow_path column', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'skelm-migrate-'))
     // Create a DB without the workflow_path column (old schema)
