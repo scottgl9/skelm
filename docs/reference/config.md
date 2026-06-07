@@ -53,7 +53,16 @@ export default defineConfig({
     file?:   string,                         // path to JSON secrets file when driver === 'file'
   },
   storage?: {
-    runs?:       { driver?: 'sqlite' | 'memory', path?: string },
+    runs?: {
+      driver?: 'sqlite' | 'memory' | 'postgres',
+      // sqlite only:
+      path?: string,
+      // postgres only (PostgreSQL 15+):
+      url?: string,
+      schema?: string,
+      poolSize?: number,
+      artifactQuotaBytes?: number,
+    },
     state?:      { driver?: 'sqlite' | 'memory', path?: string },
     workspaces?: { base?: string, ephemeralBase?: string },
   },
@@ -217,6 +226,7 @@ export default defineConfig({
   secrets: { driver: 'env' },
 
   storage: {
+    // SQLite is the default local production choice.
     runs:  { driver: 'sqlite', path: '.skelm/runs.sqlite' },
     state: { driver: 'sqlite', path: '.skelm/state.sqlite' },
   },
@@ -225,6 +235,23 @@ export default defineConfig({
     port: 14738,
     host: '127.0.0.1',
     auth: { mode: 'none' },
+  },
+})
+```
+
+Postgres-backed runs storage:
+
+```ts
+export default defineConfig({
+  storage: {
+    runs: {
+      driver: 'postgres',
+      url: 'postgres://user:pass@localhost:5432/skelm',
+      schema: 'skelm',
+      // optional:
+      poolSize: 20,
+      artifactQuotaBytes: 268_435_456,
+    },
   },
 })
 ```

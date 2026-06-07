@@ -43,9 +43,28 @@ export interface SkelmConfigSecrets {
   file?: string
 }
 
+export interface SkelmConfigRunsStorage {
+  driver?: 'sqlite' | 'memory' | 'postgres'
+  /** Local sqlite file path; ignored for non-sqlite drivers. */
+  path?: string
+  /** Postgres connection URL; required when driver is 'postgres'. */
+  url?: string
+  /** Postgres schema for table namespace; defaults to `public`. */
+  schema?: string
+  /** Optional Postgres pool size override. */
+  poolSize?: number
+  /** Optional per-run artifact quota override. */
+  artifactQuotaBytes?: number
+}
+
+export interface SkelmConfigStateStorage {
+  driver?: 'sqlite' | 'memory'
+  path?: string
+}
+
 export interface SkelmConfigStorage {
-  runs?: { driver?: 'sqlite' | 'memory'; path?: string }
-  state?: { driver?: 'sqlite' | 'memory'; path?: string }
+  runs?: SkelmConfigRunsStorage
+  state?: SkelmConfigStateStorage
   workspaces?: { base?: string; ephemeralBase?: string }
 }
 
