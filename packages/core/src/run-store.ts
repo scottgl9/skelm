@@ -217,7 +217,7 @@ export class MemoryRunStore implements RunStore {
 
   async updateRun(runId: RunId, patch: RunPatch): Promise<void> {
     const existing = this.runs.get(runId)
-    if (!existing) return
+    if (existing === undefined) return
     this.runs.set(runId, applyRunPatch(existing, patch))
   }
 
@@ -483,9 +483,66 @@ export class SqliteRunStore implements RunStore {
   }
 
   async updateRun(runId: RunId, patch: RunPatch): Promise<void> {
-    const existing = await this.getRun(runId)
-    if (!existing) return
-    await this.putRun(applyRunPatch(existing, patch))
+    const transaction = this.db.transaction(() => {
+      const row = this.db
+        .prepare(
+          `SELECT run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
+           FROM runs WHERE run_id = ?`,
+        )
+        .get(runId) as
+        | {
+            run_id: string
+            pipeline_id: string
+            workflow_path: string | null
+            trigger_id: string | null
+            status: RunStatus
+            input_json: string
+            steps_json: string
+            output_json: string | null
+            error_json: string | null
+            started_at: number
+            completed_at: number | null
+            waiting_json: string | null
+          }
+        | undefined
+      if (row === undefined) return
+
+      const existing = this.inflateRunRow(row)
+      const next = applyRunPatch(existing, patch)
+      this.db
+        .prepare(
+          `INSERT INTO runs (
+            run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(run_id) DO UPDATE SET
+            pipeline_id = excluded.pipeline_id,
+            workflow_path = excluded.workflow_path,
+            trigger_id = excluded.trigger_id,
+            status = excluded.status,
+            input_json = excluded.input_json,
+            steps_json = excluded.steps_json,
+            output_json = excluded.output_json,
+            error_json = excluded.error_json,
+            started_at = excluded.started_at,
+            completed_at = excluded.completed_at,
+            waiting_json = excluded.waiting_json`,
+        )
+        .run(
+          next.runId,
+          next.pipelineId,
+          next.workflowPath ?? null,
+          next.triggerId ?? null,
+          next.status,
+          encodeValue(next.input),
+          encodeValue(next.steps),
+          encodeValue(next.output),
+          encodeValue(next.error),
+          next.startedAt,
+          next.completedAt ?? null,
+          next.waiting !== undefined ? encodeValue(next.waiting) : null,
+        )
+    })
+    transaction()
   }
 
   async getRun(runId: RunId): Promise<Run | null> {
@@ -510,7 +567,24 @@ export class SqliteRunStore implements RunStore {
           waiting_json: string | null
         }
       | undefined
-    if (!row) return null
+    if (row === undefined) return null
+    return this.inflateRunRow(row)
+  }
+
+  private inflateRunRow(row: {
+    run_id: string
+    pipeline_id: string
+    workflow_path: string | null
+    trigger_id: string | null
+    status: RunStatus
+    input_json: string
+    steps_json: string
+    output_json: string | null
+    error_json: string | null
+    started_at: number
+    completed_at: number | null
+    waiting_json: string | null
+  }): Run {
     return {
       runId: row.run_id,
       pipelineId: row.pipeline_id,
