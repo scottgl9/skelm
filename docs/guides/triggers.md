@@ -29,6 +29,12 @@ Applied when a fire arrives while a previous fire on the same trigger is still i
 | `queue` | New fire enqueues and runs in arrival order. |
 | `cancel` | Currently behaves as `skip`; wired to true cancellation when the runner gains the right hook. |
 
+## Runtime metadata
+
+The gateway keeps operator-facing metadata for each registered trigger. `GET /schedules`, `GET /schedules/:id`, and the dashboard schedule view expose queue depth, running count, dropped fires, last fired time, next fire time when predictable, the last overlap decision, the last fire outcome, and `lastErrorAt` when a trigger fails registration or dispatch.
+
+`nextFireAt` is populated for cron, interval, poll, and future `at` triggers. Manual, webhook, queue, file-watch, and event-source triggers do not have a predictable next fire time. Webhook secrets and MS Graph `clientState` are never returned by schedule metadata endpoints.
+
 ## Payload flow
 
 The fire context carries an optional payload that flows through to the workflow:

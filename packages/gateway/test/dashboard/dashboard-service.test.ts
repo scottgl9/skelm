@@ -268,8 +268,15 @@ describe('DashboardService.schedules / .approvals', () => {
         workflowId: 'wf-a',
         fired: 3,
         inflight: false,
+        queued: 0,
+        dropped: 0,
+        runningCount: 0,
         lastFiredAt: '2026-05-13T12:00:00Z',
+        nextFireAt: null,
+        lastOutcome: null,
+        lastOverlapDecision: null,
         lastError: null,
+        lastErrorAt: null,
       },
     ])
   })

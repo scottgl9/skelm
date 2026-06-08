@@ -108,8 +108,15 @@ export interface DashboardScheduleStatus {
   workflowId: string
   fired: number
   inflight: boolean
+  queued: number
+  dropped: number
+  runningCount: number
   lastFiredAt: string | null
+  nextFireAt: string | null
+  lastOutcome: string | null
+  lastOverlapDecision: string | null
   lastError: string | null
+  lastErrorAt: string | null
 }
 
 export interface DashboardApprovalsListItem {

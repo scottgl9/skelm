@@ -56,7 +56,29 @@ describe('Scheduler', () => {
     const reg = scheduler.getTrigger('bad-cron')
     expect(reg?.status).toBe('error')
     expect(reg?.lastError).toMatch(/Invalid cron expression/)
+    expect(reg?.lastErrorAt).toEqual(expect.any(Number))
+    expect(reg?.lastOutcome).toBe('failed')
     errorSpy.mockRestore()
+    await scheduler.stop()
+  })
+
+  it('marks an interval trigger errored when the interval is invalid', async () => {
+    const scheduler = new Scheduler(
+      {},
+      {
+        runStore: mockRunStore,
+        pipelineLoader: mockPipelineLoader,
+      },
+    )
+
+    const trigger = createIntervalTrigger('bad-interval', 'pipeline-1', 0)
+    await scheduler.register(trigger)
+    const reg = scheduler.getTrigger('bad-interval')
+
+    expect(reg?.status).toBe('error')
+    expect(reg?.lastError).toMatch(/Invalid interval/)
+    expect(reg?.lastErrorAt).toEqual(expect.any(Number))
+    expect(reg?.lastOutcome).toBe('failed')
     await scheduler.stop()
   })
 
@@ -74,6 +96,7 @@ describe('Scheduler', () => {
 
     expect(registration.trigger.id).toBe('test-interval')
     expect(registration.trigger.intervalMs).toBe(60000)
+    expect(registration.nextRunAt).toEqual(expect.any(Number))
     await scheduler.stop()
   })
 

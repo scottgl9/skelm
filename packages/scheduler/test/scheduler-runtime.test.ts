@@ -84,6 +84,7 @@ describe('Scheduler — runtime', () => {
     })
     await new Promise((r) => setTimeout(r, 50))
     expect(called).toBe(1)
+    expect(scheduler.getTrigger('ff')?.lastOutcome).toBe('skipped')
     await scheduler.stop()
   })
 
@@ -240,6 +241,8 @@ describe('Scheduler — runtime', () => {
     const reg = scheduler.getTrigger('exec')
     expect(reg?.status).toBe('error')
     expect(reg?.lastError).toBe('simulated')
+    expect(reg?.lastErrorAt).toEqual(expect.any(Number))
+    expect(reg?.lastOutcome).toBe('failed')
   })
 
   it('pause stops firings and resume re-enables them', async () => {

@@ -77,6 +77,13 @@ export type TriggerSpec =
     }
 
 export type OverlapPolicy = 'skip' | 'queue' | 'cancel'
+export type TriggerFireOutcome =
+  | 'dispatched'
+  | 'queued'
+  | 'skipped'
+  | 'cancelled'
+  | 'succeeded'
+  | 'failed'
 
 export interface TriggerRegistration {
   spec: TriggerSpec
@@ -97,8 +104,16 @@ export interface TriggerRegistration {
   inflight: boolean
   /** Last fire timestamp (ISO-8601). */
   lastFiredAt?: string
+  /** Next scheduled fire timestamp (ISO-8601), when the trigger kind can predict one. */
+  nextFireAt?: string | undefined
+  /** Last dispatch or terminal outcome for this trigger. */
+  lastOutcome?: TriggerFireOutcome
+  /** Most recent overlap-policy decision made by fire(). */
+  lastOverlapDecision?: 'dispatched' | 'queued' | 'skipped' | 'cancelled'
   /** Last error from the run callback, if any. */
   lastError?: string
+  /** Timestamp (ISO-8601) for lastError, if any. */
+  lastErrorAt?: string
   /**
    * Maximum number of queued fires when `overlap: 'queue'`. Defaults to the
    * coordinator's `defaultMaxQueueDepth` (1000). Fires arriving past the cap

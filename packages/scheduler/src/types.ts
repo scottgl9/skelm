@@ -61,6 +61,9 @@ export interface TriggerRegistration {
   updatedAt: number
   lastRunAt?: number
   nextRunAt?: number
+  lastOutcome?: 'dispatched' | 'skipped' | 'succeeded' | 'failed'
+  lastErrorAt?: number
+  runningCount?: number
   runCount: number
   errorCount: number
   status: 'active' | 'paused' | 'error'

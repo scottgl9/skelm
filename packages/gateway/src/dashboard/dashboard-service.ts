@@ -248,8 +248,15 @@ export class DashboardService {
       workflowId: reg.spec.workflowId,
       fired: reg.fired,
       inflight: reg.inflight,
+      queued: 0,
+      dropped: reg.dropped ?? 0,
+      runningCount: reg.inflight ? 1 : 0,
       lastFiredAt: reg.lastFiredAt ?? null,
+      nextFireAt: reg.nextFireAt ?? null,
+      lastOutcome: reg.lastOutcome ?? null,
+      lastOverlapDecision: reg.lastOverlapDecision ?? null,
       lastError: reg.lastError ?? null,
+      lastErrorAt: reg.lastErrorAt ?? null,
     }))
   }
 
