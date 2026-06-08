@@ -70,7 +70,7 @@ export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
         throw createError({ statusCode: 404, message: 'workflow not found' })
       }
       const registered = new Set(service.list().map((e) => e.id))
-      const runs = await collectRuns(gateway.runStore.listRuns({ limit: 5000 }))
+      const runs = await collectWorkflowRuns(gateway, entry)
       return {
         generatedAt: new Date().toISOString(),
         gateway: workflowGatewayReadiness(gateway),
@@ -251,6 +251,7 @@ interface WorkflowHealth {
     active: number
     byStatus: Record<RunStatus, number>
     recentFailures: WorkflowHealthRunFailure[]
+    truncated: boolean
   }
   activeRuns: WorkflowHealthRunRef[]
   triggers: Array<{
@@ -276,6 +277,7 @@ const RUN_STATUSES: readonly RunStatus[] = [
 ]
 
 const ACTIVE_RUN_STATUSES: ReadonlySet<RunStatus> = new Set(['pending', 'running', 'waiting'])
+const HEALTH_RUN_SCAN_LIMIT = 5_000
 
 async function workflowHealthList(
   gateway: Gateway,
@@ -283,7 +285,9 @@ async function workflowHealthList(
   recentFailuresLimit: number,
 ): Promise<WorkflowHealth[]> {
   const registered = new Set(service.list().map((e) => e.id))
-  const runs = await collectRuns(gateway.runStore.listRuns({ limit: 5000 }))
+  const runs = await collectRunWindow(
+    gateway.runStore.listRuns({ limit: HEALTH_RUN_SCAN_LIMIT + 1 }),
+  )
   return await Promise.all(
     gateway.registries.workflows
       .list()
@@ -295,7 +299,7 @@ async function workflowHealth(
   gateway: Gateway,
   entry: { id: string; path: string },
   registered: ReadonlySet<string>,
-  allRuns: readonly RunSummary[],
+  allRuns: RunWindow,
   recentFailuresLimit: number,
 ): Promise<WorkflowHealth> {
   const loader = gateway.getWorkflowLoader()
@@ -319,7 +323,7 @@ async function workflowHealth(
     }
   }
 
-  const workflowRuns = allRuns.filter((run) => runBelongsToWorkflow(run, entry, pipelineId))
+  const workflowRuns = allRuns.runs.filter((run) => runBelongsToWorkflow(run, entry, pipelineId))
   const byStatus = countRunsByStatus(workflowRuns)
   const activeRuns = workflowRuns
     .filter((run) => ACTIVE_RUN_STATUSES.has(run.status))
@@ -372,6 +376,7 @@ async function workflowHealth(
       active: activeRuns.length,
       byStatus,
       recentFailures,
+      truncated: allRuns.truncated,
     },
     activeRuns,
     triggers,
@@ -394,7 +399,7 @@ function workflowReadiness(opts: {
   const ready =
     opts.gatewayReady &&
     opts.registered &&
-    opts.loadable !== false &&
+    opts.loadable === true &&
     !opts.hasRecentFailures &&
     !opts.hasTriggerErrors
   let status: WorkflowReadinessStatus = ready ? 'ready' : 'degraded'
@@ -404,7 +409,8 @@ function workflowReadiness(opts: {
   else if (opts.loadable === false) {
     status = 'broken'
     reason = opts.loadError ?? 'workflow failed to load'
-  } else if (opts.hasTriggerErrors) reason = 'one or more triggers have errors'
+  } else if (opts.loadable === null) reason = 'workflow loadability is unchecked'
+  else if (opts.hasTriggerErrors) reason = 'one or more triggers have errors'
   else if (opts.hasRecentFailures) reason = 'one or more recent runs failed'
   return {
     status,
@@ -435,17 +441,20 @@ async function recentWorkflowFailures(
   runs: readonly RunSummary[],
   limit: number,
 ): Promise<WorkflowHealthRunFailure[]> {
-  const out: WorkflowHealthRunFailure[] = []
-  for (const run of runs.slice(0, limit)) {
-    const full = await gateway.runStore.getRun(run.runId)
-    out.push({
-      runId: run.runId,
-      pipelineId: run.pipelineId,
-      message: full?.error?.message ?? firstStepErrorMessage(full?.steps) ?? 'unknown error',
-      at: run.completedAt ?? run.startedAt,
-    })
-  }
-  return out
+  return await Promise.all(
+    [...runs]
+      .sort((a, b) => (b.completedAt ?? b.startedAt) - (a.completedAt ?? a.startedAt))
+      .slice(0, limit)
+      .map(async (run) => {
+        const full = await gateway.runStore.getRun(run.runId)
+        return {
+          runId: run.runId,
+          pipelineId: run.pipelineId,
+          message: full?.error?.message ?? firstStepErrorMessage(full?.steps) ?? 'unknown error',
+          at: run.completedAt ?? run.startedAt,
+        }
+      }),
+  )
 }
 
 function firstStepErrorMessage(
@@ -454,10 +463,49 @@ function firstStepErrorMessage(
   return steps?.find((step) => step.error?.message !== undefined)?.error?.message
 }
 
-async function collectRuns(iter: AsyncIterable<RunSummary>): Promise<RunSummary[]> {
+interface RunWindow {
+  runs: RunSummary[]
+  truncated: boolean
+}
+
+async function collectWorkflowRuns(
+  gateway: Gateway,
+  entry: { id: string; path: string },
+): Promise<RunWindow> {
+  const loader = gateway.getWorkflowLoader()
+  let pipelineId: string | undefined
+  if (loader !== undefined) {
+    try {
+      pipelineId = describePipeline(await loadPipelineFromPath(loader, entry.id, entry.path)).id
+    } catch {
+      return await collectRunWindow(gateway.runStore.listRuns({ limit: HEALTH_RUN_SCAN_LIMIT + 1 }))
+    }
+  }
+  const filters = new Set([entry.id, ...(pipelineId !== undefined ? [pipelineId] : [])])
+  const windows = await Promise.all(
+    [...filters].map((id) =>
+      collectRunWindow(
+        gateway.runStore.listRuns({ pipelineId: id, limit: HEALTH_RUN_SCAN_LIMIT + 1 }),
+      ),
+    ),
+  )
+  const byRunId = new Map<string, RunSummary>()
+  for (const window of windows) {
+    for (const run of window.runs) byRunId.set(run.runId, run)
+  }
+  return {
+    runs: [...byRunId.values()],
+    truncated: windows.some((window) => window.truncated),
+  }
+}
+
+async function collectRunWindow(iter: AsyncIterable<RunSummary>): Promise<RunWindow> {
   const out: RunSummary[] = []
   for await (const run of iter) out.push(run)
-  return out
+  return {
+    runs: out.slice(0, HEALTH_RUN_SCAN_LIMIT),
+    truncated: out.length > HEALTH_RUN_SCAN_LIMIT,
+  }
 }
 
 function countRunsByStatus(runs: readonly RunSummary[]): Record<RunStatus, number> {

@@ -178,7 +178,9 @@ surface.
 
 The collection route is failure-isolating: a workflow that fails to import is
 reported with `readiness.status: "broken"` while other workflows remain in the
-response.
+response. Health run counts are bounded; `runs.truncated: true` means the
+reported counts and refs are partial. If no workflow loader is configured,
+`readiness.checks.loadable` is `null` and `ready` is `false`.
 
 ## OpenAI compatibility (optional surface)
 

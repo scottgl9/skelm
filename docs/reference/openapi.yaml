@@ -729,7 +729,10 @@ components:
               properties:
                 gateway: { type: boolean }
                 registered: { type: boolean }
-                loadable: { type: boolean, nullable: true }
+                loadable:
+                  type: boolean
+                  nullable: true
+                  description: Null means loadability was unchecked because no workflow loader was configured.
                 hasRecentFailures: { type: boolean }
                 hasTriggerErrors: { type: boolean }
         runs:
@@ -737,6 +740,9 @@ components:
           properties:
             total: { type: integer }
             active: { type: integer }
+            truncated:
+              type: boolean
+              description: True when run counts and refs are based on the bounded health scan window.
             byStatus:
               type: object
               additionalProperties: { type: integer }
