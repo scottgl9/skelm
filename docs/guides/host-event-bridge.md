@@ -32,7 +32,7 @@ Pass the normalized event as the trigger payload or queue message. The gateway s
 
 ## Correlate runs and dedupe deliveries
 
-Adapters should pass provider delivery ids through `eventId` or `dedupeKey` whenever available. If a provider lacks a delivery id, the fallback dedupe key is derived from host identity, event type, thread, and timestamp. That fallback is useful for best-effort replay protection, but provider-supplied ids are preferred.
+Adapters should pass provider delivery ids through `eventId` or `dedupeKey` whenever available. If a provider lacks a delivery id, the fallback dedupe key is derived from host identity, event type, thread, and `occurredAt`. That timestamp is required for fallback keys so two undated events on the same thread cannot silently collide. Provider-supplied ids are still preferred for reliable deduplication.
 
 `run.correlationId` defaults to the normalized thread key when a thread is present. That gives adapters a stable handle for mapping follow-up events to the same conversation without knowing skelm run ids ahead of time.
 

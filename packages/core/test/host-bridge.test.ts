@@ -50,6 +50,14 @@ describe('host bridge normalization', () => {
   })
 
   it('rejects missing identifiers before creating ambiguous keys', () => {
+    expect(() =>
+      normalizeHostEvent({
+        host: { provider: '' },
+        type: 'x',
+        dedupeKey: 'provider-delivery-123',
+        payload: {},
+      }),
+    ).toThrow('host.provider')
     expect(() => normalizeHostEvent({ host, type: '', payload: {} })).toThrow('type')
     expect(() => normalizeHostEvent({ host, type: 'x', eventId: '', payload: {} })).toThrow(
       'eventId',
@@ -60,6 +68,17 @@ describe('host bridge normalization', () => {
     expect(() => normalizeHostEvent({ host, type: 'x', thread: { id: '' }, payload: {} })).toThrow(
       'thread.id',
     )
+  })
+
+  it('requires adapter ids or occurredAt before deriving fallback dedupe keys', () => {
+    expect(() =>
+      hostEventDedupeKey({
+        host,
+        type: 'message.created',
+        thread,
+        payload: {},
+      }),
+    ).toThrow('occurredAt')
   })
 })
 
@@ -86,6 +105,7 @@ describe('host bridge keys', () => {
         host,
         type: 'message.created',
         thread,
+        // 2025-12-31T23:06:40.000Z in epoch milliseconds.
         occurredAt: 1_767_222_400_000,
         payload: {},
       }),
@@ -109,6 +129,23 @@ describe('host bridge outbound actions', () => {
     expect(action.idempotencyKey).toContain('run-123')
   })
 
+  it('sorts structured body data before deriving idempotency keys', () => {
+    const left = createHostSendAction({
+      host,
+      target: thread,
+      body: { text: 'same', data: { b: 2, a: { d: 4, c: 3 } } },
+      run: { runId: 'run-123' },
+    })
+    const right = createHostSendAction({
+      host,
+      target: thread,
+      body: { text: 'same', data: { a: { c: 3, d: 4 }, b: 2 } },
+      run: { runId: 'run-123' },
+    })
+
+    expect(left.idempotencyKey).toBe(right.idempotencyKey)
+  })
+
   it('creates reply envelopes from normalized events', () => {
     const event = normalizeHostEvent({
       host,
@@ -128,7 +165,12 @@ describe('host bridge outbound actions', () => {
   })
 
   it('requires a thread for reply envelopes', () => {
-    const event = normalizeHostEvent({ host, type: 'message.created', payload: {} })
+    const event = normalizeHostEvent({
+      host,
+      type: 'message.created',
+      eventId: '$event-3',
+      payload: {},
+    })
     expect(() => createHostReplyAction({ event, body: { text: 'answer' } })).toThrow('event.thread')
   })
 })

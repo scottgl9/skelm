@@ -155,8 +155,8 @@ value:loadSkillBodies
 value:loadTsModule
 value:loop
 value:messageHasImage
-value:normalizeHostEvent
 value:nextCronFireTime
+value:normalizeHostEvent
 value:parallel
 value:parseCronExpression
 value:parseDuration

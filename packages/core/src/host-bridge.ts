@@ -1,3 +1,4 @@
+import { ConfigError } from './errors.js'
 import type { RunId } from './types-base.js'
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
@@ -64,7 +65,7 @@ export interface NormalizedHostEvent<TPayload = unknown> {
 /** Outbound body payload understood by host adapters. */
 export interface HostActionBody {
   readonly text?: string
-  readonly data?: unknown
+  readonly data?: Readonly<Record<string, unknown>>
 }
 
 /** Adapter-neutral send/reply action envelope emitted by workflows or hosts. */
@@ -91,7 +92,10 @@ export function hostThreadKey(host: HostIdentity, thread: HostThreadRef): string
   return hostThreadKeyParts(host, thread).map(encodeKeyPart).join(':')
 }
 
-/** Build the deterministic dedupe key used when an adapter did not supply one. */
+/**
+ * Build the deterministic dedupe key used when an adapter did not supply one.
+ * Adapters without a provider delivery id must supply occurredAt for the fallback key.
+ */
 export function hostEventDedupeKey(input: HostEventInput): string {
   if (input.dedupeKey !== undefined) {
     assertNonEmpty(input.dedupeKey, 'dedupeKey')
@@ -109,7 +113,7 @@ export function hostEventDedupeKey(input: HostEventInput): string {
       'thread-event',
       ...hostThreadKeyParts(input.host, input.thread),
       input.type,
-      normalizeTime(input.occurredAt),
+      normalizeRequiredTime(input.occurredAt, 'occurredAt'),
     ]
       .map(encodeKeyPart)
       .join(':')
@@ -118,7 +122,7 @@ export function hostEventDedupeKey(input: HostEventInput): string {
     'host-event',
     ...hostIdentityKeyParts(input.host),
     input.type,
-    normalizeTime(input.occurredAt),
+    normalizeRequiredTime(input.occurredAt, 'occurredAt'),
   ]
     .map(encodeKeyPart)
     .join(':')
@@ -128,13 +132,15 @@ export function hostEventDedupeKey(input: HostEventInput): string {
 export function normalizeHostEvent<TPayload>(
   input: HostEventInput<TPayload>,
 ): NormalizedHostEvent<TPayload> {
+  assertNonEmpty(input.host.provider, 'host.provider')
   assertNonEmpty(input.type, 'type')
   if (input.eventId !== undefined) assertNonEmpty(input.eventId, 'eventId')
   if (input.actor !== undefined) assertNonEmpty(input.actor.id, 'actor.id')
   if (input.thread !== undefined) assertNonEmpty(input.thread.id, 'thread.id')
 
-  const occurredAt = normalizeTime(input.occurredAt)
-  const receivedAt = normalizeTime(input.receivedAt)
+  const receivedAt =
+    normalizeOptionalTime(input.receivedAt, 'receivedAt') ?? new Date().toISOString()
+  const occurredAt = normalizeOptionalTime(input.occurredAt, 'occurredAt') ?? receivedAt
   const dedupeKey = hostEventDedupeKey(input)
   const run = input.run ?? defaultRunCorrelation(input, dedupeKey)
   const normalized: Mutable<NormalizedHostEvent<TPayload>> = {
@@ -162,6 +168,7 @@ export function createHostSendAction<TBody extends HostActionBody>(args: {
   readonly idempotencyKey?: string
   readonly metadata?: Readonly<Record<string, unknown>>
 }): HostOutboundAction<TBody> {
+  assertNonEmpty(args.host.provider, 'host.provider')
   assertNonEmpty(args.target.id, 'target.id')
   const run = args.run ?? {}
   const action: Mutable<HostOutboundAction<TBody>> = {
@@ -186,7 +193,7 @@ export function createHostReplyAction<TBody extends HostActionBody>(args: {
   readonly metadata?: Readonly<Record<string, unknown>>
 }): HostOutboundAction<TBody> {
   if (args.event.thread === undefined) {
-    throw new Error('createHostReplyAction(): event.thread is required')
+    throw new ConfigError('createHostReplyAction(): event.thread is required', 'host-bridge')
   }
   const run = args.run ?? args.event.run
   const action: Mutable<HostOutboundAction<TBody>> = {
@@ -216,7 +223,7 @@ function actionIdempotencyKey(
   body: HostActionBody,
 ): string {
   const text = body.text ?? ''
-  const data = body.data === undefined ? '' : JSON.stringify(body.data)
+  const data = body.data === undefined ? '' : stableStringify(body.data)
   return [
     kind,
     ...hostThreadKeyParts(host, thread),
@@ -228,15 +235,34 @@ function actionIdempotencyKey(
     .join(':')
 }
 
-function normalizeTime(value: string | number | Date | undefined): string {
-  if (value === undefined) return new Date(0).toISOString()
+function normalizeRequiredTime(value: string | number | Date | undefined, name: string): string {
+  if (value === undefined) {
+    throw new ConfigError(
+      `${name} is required when eventId and dedupeKey are omitted`,
+      'host-bridge',
+    )
+  }
+  return normalizeTime(value, name)
+}
+
+function normalizeOptionalTime(
+  value: string | number | Date | undefined,
+  name: string,
+): string | undefined {
+  if (value === undefined) return undefined
+  return normalizeTime(value, name)
+}
+
+function normalizeTime(value: string | number | Date, name: string): string {
   const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) throw new Error('host event timestamp must be valid')
+  if (Number.isNaN(date.getTime())) {
+    throw new ConfigError(`${name} must be a valid timestamp`, 'host-bridge')
+  }
   return date.toISOString()
 }
 
 function assertNonEmpty(value: string, name: string): void {
-  if (value.trim() === '') throw new Error(`${name} must be non-empty`)
+  if (value.trim() === '') throw new ConfigError(`${name} must be non-empty`, 'host-bridge')
 }
 
 function hostIdentityKeyParts(host: HostIdentity): string[] {
@@ -258,4 +284,17 @@ function hostThreadKeyParts(host: HostIdentity, thread: HostThreadRef): string[]
 
 function encodeKeyPart(part: string): string {
   return encodeURIComponent(part)
+}
+
+function stableStringify(value: Readonly<Record<string, unknown>>): string {
+  return JSON.stringify(sortJsonValue(value))
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJsonValue)
+  if (value === null || typeof value !== 'object') return value
+  const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) =>
+    left.localeCompare(right),
+  )
+  return Object.fromEntries(entries.map(([key, entryValue]) => [key, sortJsonValue(entryValue)]))
 }
