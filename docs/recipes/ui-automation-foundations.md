@@ -24,6 +24,9 @@ decide**, with the screenshot stored as a run artifact for later evidence.
 - `ctx.artifacts.put({ name, mimeType, data })` — persists bytes keyed by
   `{runId, stepId, name}`, emits a `tool.result` event for audit, enforces a
   default 256 MiB per-run quota.
+- `ctx.artifacts.materialize(ref, { path })` — writes stored bytes into the
+  current step workspace for handoff to filesystem tools without putting the
+  bytes in events.
 
 ## Sketch
 
@@ -45,12 +48,18 @@ export default pipeline({
       id: 'capture',
       run: async (ctx) => {
         const png = await captureScreenshot()      // your driver returns Uint8Array
-        const desc = await ctx.artifacts!.put({
+        if (ctx.artifacts === undefined) {
+          throw new Error('artifact store unavailable')
+        }
+        const desc = await ctx.artifacts.put({
           name: 'screen.png',
           mimeType: 'image/png',
           data: png,
         })
-        return { artifactId: desc.artifactId, path: writeTempPng(png) }
+        const file = await ctx.artifacts.materialize(desc, {
+          path: 'captures/screen.png',
+        })
+        return { artifactId: desc.artifactId, path: file.path }
       },
     }),
 
@@ -70,7 +79,6 @@ export default pipeline({
 })
 
 declare function captureScreenshot(): Promise<Uint8Array>
-declare function writeTempPng(bytes: Uint8Array): string
 ```
 
 ## Why these specific primitives?
@@ -122,7 +130,8 @@ package.
 - `pnpm vitest run packages/core/test/artifacts.test.ts` — artifact store
   contract + quota enforcement.
 - `pnpm vitest run packages/core/test/artifacts-ctx.test.ts` — `ctx.artifacts`
-  publishes the audit event without leaking bytes into the event log.
+  publishes audit events for artifact writes and materialization without
+  leaking bytes into the event log.
 - `pnpm vitest run packages/core/test/backend.test.ts` — vision capability
   enforced; image parts are routed to vision-capable backends and rejected
   on others.

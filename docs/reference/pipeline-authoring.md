@@ -135,7 +135,10 @@ code({
   id: 'capture',
   run: async (ctx) => {
     const png = await captureScreen()                  // your driver
-    const desc = await ctx.artifacts!.put({
+    if (ctx.artifacts === undefined) {
+      throw new Error('ctx.artifacts is unavailable in this runtime context')
+    }
+    const desc = await ctx.artifacts.put({
       name: 'screen.png',
       mimeType: 'image/png',
       data: png,                                       // Uint8Array | string
@@ -149,8 +152,41 @@ Each put publishes a `tool.result` event (`tool: 'artifacts.put'`) carrying
 descriptor metadata only — the bytes never appear in the event log. A
 default per-run quota of 256 MiB (`DEFAULT_ARTIFACT_QUOTA_BYTES`) is
 enforced; exceeding it throws `ArtifactQuotaExceededError` and writes
-nothing. Retrieve with `ctx.artifacts!.get({ runId, artifactId })`; list
-all artifacts for the current run with `ctx.artifacts!.list()`.
+nothing. Retrieve with `ctx.artifacts.get({ runId, artifactId })`; list
+all artifacts for the current run with `ctx.artifacts.list()`.
+
+To hand an artifact to a filesystem-based tool, materialize it into the
+current step workspace:
+
+```ts
+code({
+  id: 'export-report',
+  workspace: { mode: 'persistent', name: 'reports' },
+  run: async (ctx) => {
+    if (ctx.artifacts === undefined) {
+      throw new Error('ctx.artifacts is unavailable in this runtime context')
+    }
+    const desc = await ctx.artifacts.put({
+      name: 'report.txt',
+      mimeType: 'text/plain',
+      data: 'hello',
+    })
+    const file = await ctx.artifacts.materialize(desc, {
+      path: 'exports/report.txt',
+      overwrite: true,
+    })
+    return { path: file.path, bytesWritten: file.bytesWritten }
+  },
+})
+```
+
+`materialize()` requires `ctx.workspace`; it never writes relative to the
+process cwd. The target path must be relative, must stay inside the workspace,
+and cannot escape through `..` segments or symlinks. The materialization event
+is also descriptor-only (`artifactId`, `name`, `mimeType`, `size`, relative
+`path`, and `bytesWritten`) so raw artifact bytes do not enter the run log.
+Artifact names are single safe file names; use the materialization `path`
+option when a nested export path is needed.
 
 ### Read-only workflow assets via `ctx.assets`
 

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 import { Pool, type PoolClient } from 'pg'
 
+import { validateArtifactMetadata } from './artifact-types.js'
 import type { RunEvent } from './events.js'
 import {
   type ArtifactDescriptor,
@@ -399,6 +400,7 @@ export class PostgresRunStore implements RunStore {
     mimeType: string
     data: Uint8Array | string
   }): Promise<ArtifactDescriptor> {
+    validateArtifactMetadata(opts)
     const bytes =
       typeof opts.data === 'string' ? Buffer.from(opts.data, 'utf8') : Buffer.from(opts.data)
     this.artifactCounter += 1

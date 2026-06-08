@@ -289,7 +289,13 @@ async function runCodeStep(
     const workspaceCtx =
       preparedWorkspace === undefined
         ? ctx
-        : freezeContext({ ...ctx, workspace: preparedWorkspace.handle })
+        : ctx.artifacts === undefined
+          ? freezeContext({ ...ctx, workspace: preparedWorkspace.handle })
+          : freezeContext({
+              ...ctx,
+              workspace: preparedWorkspace.handle,
+              artifacts: bindArtifactWorkspace(ctx.artifacts, preparedWorkspace.handle.path),
+            })
 
     const resolvedPolicy = resolvePermissions(
       runtime?.defaultPermissions,
@@ -614,10 +620,13 @@ async function runAgentStep(
     const workspaceCtx =
       preparedWorkspace === undefined
         ? ctx
-        : freezeContext({
-            ...ctx,
-            workspace: preparedWorkspace.handle,
-          })
+        : ctx.artifacts === undefined
+          ? freezeContext({ ...ctx, workspace: preparedWorkspace.handle })
+          : freezeContext({
+              ...ctx,
+              workspace: preparedWorkspace.handle,
+              artifacts: bindArtifactWorkspace(ctx.artifacts, preparedWorkspace.handle.path),
+            })
     // Resolve permissions + secrets FIRST so step.prompt / step.system /
     // step.mcp functions receive ctx.secrets, matching the contract that
     // runCodeStep and runInferStep already implement. Without this ordering
@@ -1702,4 +1711,19 @@ export async function runDelegation(
     runId: nestedRun.runId,
     error: nestedRun.error?.message ?? nestedRun.error?.name ?? 'delegated run did not complete',
   }
+}
+
+function bindArtifactWorkspace(
+  artifacts: NonNullable<Context['artifacts']>,
+  path: string,
+): NonNullable<Context['artifacts']> {
+  const maybeBindable = artifacts as
+    | (typeof artifacts & {
+        withWorkspacePath?: (path: string) => NonNullable<Context['artifacts']>
+      })
+    | undefined
+  if (maybeBindable?.withWorkspacePath === undefined) {
+    throw new Error('artifact store handle does not support workspace binding')
+  }
+  return maybeBindable.withWorkspacePath(path)
 }
