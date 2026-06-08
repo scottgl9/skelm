@@ -30,6 +30,9 @@ Read-only summary cards from `/v1/dashboard/*`:
 - **Workflows table** — per-workflow success rate and last run
 - **Recent errors** — last failures with messages
 - **Triggers** — registered triggers with fire counts
+- **Workflow health API** — `/v1/workflows/health` is available for dashboards
+  that need readiness, active runs, recent failures, and trigger state in one
+  workflow-keyed response.
 
 Control panels backed by the REST surface:
 

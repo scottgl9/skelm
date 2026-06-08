@@ -169,6 +169,22 @@ curl -H "Authorization: Bearer $SKELM_TOKEN" \
 A minimal reference dashboard that consumes these endpoints lives in
 [`examples/dashboard-demo`](https://github.com/scottgl9/skelm/tree/main/examples/dashboard-demo).
 
+## Workflow health (`/v1/workflows/health`)
+
+Read-only workflow health endpoints compose registry entries, best-effort
+`describePipeline` loading, run-store summaries, active runs, and trigger state.
+They use the same bearer auth middleware as the rest of the gateway control
+surface.
+
+| Method | Path                         | Description |
+| ------ | ---------------------------- | ----------- |
+| GET    | `/v1/workflows/health`       | Health for all workflows. Query: `recentFailuresLimit=0..100` |
+| GET    | `/v1/workflows/:id/health`   | Health for one workflow id; URL-encode ids containing `/` |
+
+The collection route is failure-isolating: a workflow that fails to import is
+reported with `readiness.status: "broken"` while other workflows remain in the
+response.
+
 ## OpenAI compatibility (optional surface)
 
 | Method | Path                       | Description                          |

@@ -118,6 +118,8 @@ It is also where skelm hosts:
 | GET | `/audit` | Query audit log |
 | GET | `/v1/dashboard/*` | Aggregated read-only views (overview, runs, analytics, errors, schedules, approvals) |
 | GET | `/v1/workflows` | List explicitly registered workflows |
+| GET | `/v1/workflows/health` | Workflow readiness/status view |
+| GET | `/v1/workflows/:id/health` | Workflow readiness/status detail |
 | POST | `/v1/workflows/validate` | Compile-check a workflow source file (no persistence) |
 | POST | `/v1/workflows/register` | Register a workflow source path; persisted under `${stateDir}/registered-workflows/` |
 | PUT | `/v1/workflows/:id` | Replace a registered workflow |
@@ -141,6 +143,27 @@ Default port: `14738`, default host: `127.0.0.1`. Configure via `server.port` an
 - `description`, `version` — optional metadata
 
 The archive is validated by magic bytes, capped at `GatewayOptions.workflows.maxArchiveBytes` (default 5 MiB, applied to both the compressed and total uncompressed sizes), and extracted into `${stateDir}/uploaded-workflows/${encodeURIComponent(id)}/`. Archive entries with `..`, absolute paths, or non-allowlisted extensions (anything outside `.ts`, `.js`, `.mjs`, `.cjs`, `.json`, `.md`, `.txt`, `.yaml`, `.yml`) are rejected. `POST` refuses to register if the extraction dir already has contents — use `PUT` to replace. `DELETE /v1/workflows/:id` also wipes the extraction dir for archive-sourced workflows.
+
+### Workflow health
+
+`GET /v1/workflows/health` returns a read-only operational view for every
+registered/discovered workflow. `GET /v1/workflows/:id/health` returns the same
+shape for one workflow. The `:id` value is the workflow-registry id and must be
+URL-encoded when it contains `/`.
+
+Each workflow reports:
+
+- Readiness: gateway state, registry presence, loadability, recent failures,
+  trigger errors, and a summarized `ready` boolean.
+- Run status: total count, active count (`pending`, `running`, `waiting`),
+  counts by run status, active run refs, and recent failure messages.
+- Trigger state: kind, overlap policy, fire count, inflight flag, queue depth,
+  running count, last fire time, and last error.
+
+The collection route isolates broken workflow modules: a load failure marks that
+workflow `readiness.status: "broken"` and does not prevent other workflows from
+appearing. Use `?recentFailuresLimit=<0..100>` to tune the number of failed runs
+included per workflow; invalid values return `400`.
 
 ### Batch operations
 
