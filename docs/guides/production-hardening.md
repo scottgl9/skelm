@@ -67,6 +67,15 @@ do not fully control.
       checked into git.
 - [ ] Per-backend rate limits and request caps are configured.
 - [ ] If you use Postgres for `RunStore`, the user has DDL only on
+      the configured skelm schema and not on unrelated application schemas.
+- [ ] Workflows that use `ctx.state` document their namespace ownership:
+      `pipeline` for one workflow, `step` for private step data, and
+      `pipeline+name` for shared application/package state.
+- [ ] Shared cursors, locks, and reconciliation records use `ctx.state.cas`
+      instead of read-modify-write with `get` followed by `set`.
+- [ ] Retention-sensitive state uses explicit cleanup or TTL; TTL entries are
+      pruned lazily by the run store and should not be treated as immediate
+      deletion.
       migration and DML otherwise.
 
 ## Observability

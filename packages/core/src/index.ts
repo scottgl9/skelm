@@ -227,6 +227,7 @@ export {
   RegistryError,
   RunCancelledError,
   RunStateError,
+  StateConfigError,
   StepError,
   StepTimeoutError,
   WaitTimeoutError,

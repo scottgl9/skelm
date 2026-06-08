@@ -445,6 +445,69 @@ interface Context<TInput = unknown> {
 
 Cast step outputs when accessing: `ctx.steps['my-step'] as MyType`.
 
+## Durable application state — `ctx.state`
+
+`ctx.state` is workflow-owned durable application state, not just run-local
+scratch data. When the gateway uses SQLite or Postgres run storage, values
+survive process restart and later runs with the same namespace can read them.
+The in-memory store implements the same API for tests and local embedding, but
+only lasts for the lifetime of that store instance.
+
+```ts
+code({
+  id: 'checkpoint',
+  run: async (ctx) => {
+    const last = (await ctx.state.get<number>('cursor')) ?? 0
+    const next = last + 1
+    await ctx.state.set('cursor', next)
+    await ctx.state.append('decisions', { from: last, to: next })
+    return { cursor: next }
+  },
+})
+```
+
+State scopes:
+
+| Scope           | Namespace owner                          | Use for                                                                                       |
+| --------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `pipeline`      | The pipeline id. This is the default.    | Cursors, checkpoints, and idempotency keys shared by every step and run of one pipeline.       |
+| `step`          | The pipeline id plus current step id.    | Step-private state that later steps should not read accidentally.                              |
+| `pipeline+name` | A stable explicit name.                  | Shared package/application state used by multiple pipelines.                                   |
+
+Use `ctx.state.scope(config)` when one step needs more than its default scope:
+The derived handle does not inherit the current `StateConfig`; only the
+pipeline id and current step id carry over. Requesting `step` scope outside a
+step context, such as from `finalize`, fails with `StateConfigError`.
+
+```ts
+code({
+  id: 'sync',
+  state: { scope: 'step' },
+  run: async (ctx) => {
+    await ctx.state.set('last-batch-size', 12) // step-private
+
+    const shared = ctx.state.scope({
+      scope: 'pipeline+name',
+      name: 'github-sync',
+    })
+    await shared.cas('cursor', undefined, { page: 1 })
+  },
+})
+```
+
+Concurrency:
+
+Use `cas(key, expected, next)` for cursors, locks, and reconciliation records
+that concurrent runs may update. SQLite and Postgres perform CAS atomically.
+Plain `set()` is last-writer-wins. `append()` writes an ordered journal entry
+and `read(stream, { since, limit })` replays entries in store order.
+
+TTL:
+
+`set(key, value, { ttlMs })` stores expiring entries. Expired entries are
+pruned lazily when they are read or listed, so TTL is a retention hint rather
+than a scheduled deletion guarantee.
+
 ## Threaded conversations — `ctx.threads`
 
 For PR / issue / Slack threads the runtime exposes a small helper that keeps

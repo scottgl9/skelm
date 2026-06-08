@@ -116,6 +116,11 @@ export class RunStateError extends Error {
   }
 }
 
+/** Thrown when a durable state handle is configured with an invalid scope. */
+export class StateConfigError extends Error {
+  override readonly name = 'StateConfigError'
+}
+
 /** Thrown when a wait() step runs without a waitForInput handler wired by the runner. */
 export class WaitConfigError extends Error {
   override readonly name = 'WaitConfigError'

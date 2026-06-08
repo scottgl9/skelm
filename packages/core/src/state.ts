@@ -1,3 +1,4 @@
+import { StateConfigError } from './errors.js'
 import type { StateStore } from './run-store.js'
 import type { State, StateConfig, StateReadOptions, StateSetOptions } from './types.js'
 
@@ -6,6 +7,10 @@ export function createStateHandle(
   params: { pipelineId: string; stepId?: string; config?: StateConfig },
 ): State {
   const namespace = resolveStateNamespace(params)
+  const scopedParams = Object.freeze({
+    pipelineId: params.pipelineId,
+    ...(params.stepId !== undefined && { stepId: params.stepId }),
+  })
   return Object.freeze({
     get: <T>(key: string) => store.getState<T>(namespace, key),
     set: <T>(key: string, value: T, opts?: StateSetOptions) =>
@@ -24,6 +29,7 @@ export function createStateHandle(
         yield entry
       }
     },
+    scope: (config: StateConfig) => createStateHandle(store, { ...scopedParams, config }),
   })
 }
 
@@ -37,10 +43,13 @@ export function resolveStateNamespace(params: {
     case 'pipeline':
       return `pipeline:${params.pipelineId}`
     case 'step':
-      return `step:${params.pipelineId}:${params.stepId ?? 'pipeline'}`
+      if (params.stepId === undefined) {
+        throw new StateConfigError('state scope "step" requires a current step id')
+      }
+      return `step:${params.pipelineId}:${params.stepId}`
     case 'pipeline+name':
       if (params.config?.name === undefined || params.config.name.trim().length === 0) {
-        throw new Error('state scope "pipeline+name" requires a non-empty name')
+        throw new StateConfigError('state scope "pipeline+name" requires a non-empty name')
       }
       return `shared:${params.config.name}`
   }
