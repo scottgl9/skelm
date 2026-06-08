@@ -5,6 +5,7 @@ The gateway holds four registries that together describe everything it can run, 
 | Registry | Source | Watched? | Notes |
 |----------|--------|----------|-------|
 | `workflows` | FS scan of `registries.workflows.glob` | yes | Tracks `*.workflow.{mts,ts}` paths; modules import lazily on first use. |
+| `workflowPackages` | Explicit installed package roots | reload-only | Tracks package metadata declared in `package.json#skelm.workflowPackage`; no broad `node_modules` scan. |
 | `skills` | FS scan of `registries.skills.glob` | yes | Parses `SKILL.md` frontmatter into `Skill` objects. Malformed files are skipped (visible via `getErrors()`). |
 | `agents` | `registries.agents` in config | reload-only | Coding agents and ACP agents. Each entry declares `lifecycle: 'resident' \| 'ephemeral'` (see `docs/concepts/coding-agents.md`). |
 | `mcpServers` | `registries.mcpServers` in config | reload-only | Static MCP server declarations consumed by the MCP supervisor (Phase 7). |
@@ -35,6 +36,18 @@ interface Registry<T> {
 ```
 
 Override per project in `skelm.config.ts`.
+
+## Installable workflow packages
+
+Installable workflow packages are ordinary npm dependencies with package
+metadata under `skelm.workflowPackage`. Hosts pass explicit installed package
+roots to `discoverWorkflowPackage()` / `discoverWorkflowPackages()`, then call
+`WorkflowRegistry.registerPackage()` for each discovered package. The registry
+stores package metadata and stable package-relative workflow paths; workflow
+modules still load lazily through the existing workflow execution path.
+
+See [Workflow Packages](../guides/workflow-packages.md) for the package format
+and authoring guidance.
 
 ## SKILL.md format
 
