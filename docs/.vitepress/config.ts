@@ -106,6 +106,7 @@ export default defineConfig({
             { text: 'Writing a Backend', link: '/guides/writing-a-backend' },
             { text: 'Writing a Plugin', link: '/guides/writing-a-plugin' },
             { text: 'Writing a Custom Integration', link: '/guides/writing-a-custom-integration' },
+            { text: 'Host/Event Bridge Patterns', link: '/guides/host-event-bridge' },
             { text: 'Testing Workflows', link: '/guides/testing-workflows' },
             { text: 'External Scripts', link: '/guides/external-scripts' },
           ],

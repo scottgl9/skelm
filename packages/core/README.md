@@ -141,6 +141,7 @@ console.log(run.output)
 - **Typed `EventBus`** — `RunEvent` union covers run lifecycle, step lifecycle, agent turns, tool calls, decisions, and errors.
 - **Sequential runner** — `runPipeline()` with `AbortSignal` cancellation, finalize / last-step-adoption output resolution, and structured error capture.
 - **Persistent state primitives** — `ctx.state` for typed KV across runs; append-only journals for "what did the agent decide and why."
+- **Host bridge primitives** — normalize inbound host events, derive dedupe/thread keys, and emit outbound send/reply action envelopes.
 
 ## Public exports
 
@@ -160,6 +161,12 @@ export {
   type SkelmSchema, SchemaValidationError,
   // events
   EventBus, type RunEvent, type RunEventType, type EventListener, terminalEventTypeFor,
+  // host bridges
+  normalizeHostEvent, hostEventDedupeKey, hostIdentityKey, hostThreadKey,
+  createHostSendAction, createHostReplyAction,
+  type HostIdentity, type HostActor, type HostThreadRef,
+  type HostRunCorrelation, type HostEventInput, type NormalizedHostEvent,
+  type HostActionBody, type HostOutboundAction,
   // permissions
   resolvePermissions, TrustEnforcer,
   type AgentPermissions, type ResolvedPolicy, type ResolvedToolMatcher,

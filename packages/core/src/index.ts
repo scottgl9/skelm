@@ -234,6 +234,24 @@ export {
 } from './errors.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
+export {
+  createHostReplyAction,
+  createHostSendAction,
+  hostEventDedupeKey,
+  hostIdentityKey,
+  hostThreadKey,
+  normalizeHostEvent,
+} from './host-bridge.js'
+export type {
+  HostActionBody,
+  HostActor,
+  HostEventInput,
+  HostIdentity,
+  HostOutboundAction,
+  HostRunCorrelation,
+  HostThreadRef,
+  NormalizedHostEvent,
+} from './host-bridge.js'
 export { CRON_LOOKAHEAD_MS, nextCronFireTime, parseCronExpression } from './cron-expression.js'
 export type { ParsedCronExpression } from './cron-expression.js'
 export { parseDuration } from './duration.js'
