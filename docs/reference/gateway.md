@@ -156,14 +156,17 @@ Each workflow reports:
 - Readiness: gateway state, registry presence, loadability, recent failures,
   trigger errors, and a summarized `ready` boolean.
 - Run status: total count, active count (`pending`, `running`, `waiting`),
-  counts by run status, active run refs, and recent failure messages.
+  counts by run status, active run refs, recent failure messages, and a
+  `truncated` flag when the bounded run scan window was hit.
 - Trigger state: kind, overlap policy, fire count, inflight flag, queue depth,
   running count, last fire time, and last error.
 
 The collection route isolates broken workflow modules: a load failure marks that
 workflow `readiness.status: "broken"` and does not prevent other workflows from
 appearing. Use `?recentFailuresLimit=<0..100>` to tune the number of failed runs
-included per workflow; invalid values return `400`.
+included per workflow; invalid values return `400`. When no workflow loader is
+configured, `readiness.checks.loadable` is `null`, the workflow is degraded, and
+`ready` is `false` because loadability is unchecked.
 
 ### Batch operations
 

@@ -363,6 +363,7 @@ describe('/v1/workflows/*', () => {
       expect(workflow.runs.byStatus.completed).toBe(1)
       expect(workflow.runs.byStatus.failed).toBe(1)
       expect(workflow.runs.active).toBe(1)
+      expect(workflow.runs.truncated).toBe(false)
       expect(workflow.runs.recentFailures[0].message).toBe('boom')
       expect(workflow.activeRuns[0].runId).toBe('live')
       expect(workflow.triggers[0]).toMatchObject({
@@ -389,6 +390,16 @@ describe('/v1/workflows/*', () => {
       const body = await res.json()
       expect(body.workflow.id).toBe('workflows/detail.workflow.ts')
       expect(body.workflow.readiness.ready).toBe(true)
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('GET /v1/workflows/:id/health returns 404 for an unknown workflow', async () => {
+    const { gw, base } = await bootGateway()
+    try {
+      const res = await fetch(`${base}/v1/workflows/missing/health`)
+      expect(res.status).toBe(404)
     } finally {
       await gw.stop()
     }
