@@ -312,6 +312,7 @@ export type {
   WorkspaceManagerOptions,
   WorkspaceMetadata,
   WorkspaceSummary,
+  WorkspaceWriteOptions,
 } from './workspace.js'
 export {
   ALL_AGENTMEMORY_OPS,

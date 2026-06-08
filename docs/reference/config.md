@@ -85,6 +85,11 @@ export default defineConfig({
 
 `SkelmConfigBackendEntry` is a free-form record forwarded to the matching factory. Strings allowed for keys like `backends.default` (selectors), record values for backend-specific config (`apiKey`, `model`, `baseUrl`, …).
 
+`storage.workspaces.base` controls the gateway-managed persistent workspace
+base, and `storage.workspaces.ephemeralBase` controls temporary workspace
+placement. Per-step `workspace.writeRoot` and `workspace.exportRoot` are
+resolved inside the prepared workspace, not relative to these storage bases.
+
 ## Backends
 
 The CLI knows these ids and wires them automatically:
