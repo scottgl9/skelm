@@ -1,9 +1,23 @@
 import { execFile } from 'node:child_process' // @subprocess-ok: workspace git operations
-import { cp, mkdir, mkdtemp, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import {
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
-import type { RunStatus, WorkspaceConfig, WorkspaceHandle } from './types.js'
+import type { RunStatus, WorkspaceConfig, WorkspaceHandle, WorkspaceWriteOptions } from './types.js'
+
+export type { WorkspaceWriteOptions } from './types.js'
 
 const execFileAsync = promisify(execFile)
 const DEFAULT_PERSISTENT_BASE = join(homedir(), '.skelm', 'workspaces')
@@ -45,6 +59,8 @@ export interface PreparedWorkspace {
   finishStep(stepStatus: 'completed' | 'failed' | 'cancelled'): Promise<void>
   finishRun(runStatus: RunStatus): Promise<void>
 }
+
+type WorkspaceRootConfig = Pick<WorkspaceConfig, 'writeRoot' | 'exportRoot'>
 
 export class WorkspaceManager {
   constructor(private readonly options: WorkspaceManagerOptions = {}) {}
@@ -175,11 +191,7 @@ export class WorkspaceManager {
     if (workspace.seed?.copy) {
       await seedWorkspace(path, workspace.seed.copy)
     }
-    const handle: WorkspaceHandle = Object.freeze({
-      path,
-      mode: 'persistent',
-      name: workspace.name,
-    })
+    const handle = createWorkspaceHandle(path, 'persistent', workspace, workspace.name)
     let released = false
     return {
       handle,
@@ -221,10 +233,7 @@ export class WorkspaceManager {
       mode: 'ephemeral',
     })
     return {
-      handle: Object.freeze({
-        path,
-        mode: 'ephemeral',
-      }),
+      handle: createWorkspaceHandle(path, 'ephemeral', workspace),
       exposeAfterStep: cleanup !== 'on-step-end',
       async finishStep(): Promise<void> {
         if (cleanup === 'on-step-end') {
@@ -278,10 +287,7 @@ export class WorkspaceManager {
       await seedWorkspace(path, workspace.seed.copy)
     }
 
-    const handle: WorkspaceHandle = Object.freeze({
-      path,
-      mode: 'git-repo',
-    })
+    const handle = createWorkspaceHandle(path, 'git-repo', workspace)
     return {
       handle,
       exposeAfterStep: true,
@@ -304,10 +310,7 @@ export class WorkspaceManager {
       await seedWorkspace(path, workspace.seed.copy)
     }
     return {
-      handle: Object.freeze({
-        path,
-        mode: 'mounted',
-      }),
+      handle: createWorkspaceHandle(path, 'mounted', workspace),
       exposeAfterStep: true,
       async finishStep(): Promise<void> {},
       async finishRun(): Promise<void> {},
@@ -321,6 +324,101 @@ export class WorkspaceManager {
 }
 
 const DEFAULT_GIT_REPO_BASE = join(homedir(), '.skelm', 'repos')
+const DEFAULT_WRITE_ROOT = '.'
+const DEFAULT_EXPORT_ROOT = 'exports'
+
+function createWorkspaceHandle(
+  path: string,
+  mode: WorkspaceConfig['mode'],
+  config: WorkspaceRootConfig,
+  name?: string,
+): WorkspaceHandle {
+  const writeRoot = resolveWorkspaceChild(path, config.writeRoot ?? DEFAULT_WRITE_ROOT)
+  const exportRoot = resolveWorkspaceChild(path, config.exportRoot ?? DEFAULT_EXPORT_ROOT)
+  const handle: WorkspaceHandle = {
+    path,
+    mode,
+    ...(name !== undefined && { name }),
+    writeRoot,
+    exportRoot,
+    resolveWritePath: (target) =>
+      resolveScopedTarget(path, writeRoot, target, { createParent: false }),
+    resolveExportPath: (target) =>
+      resolveScopedTarget(path, exportRoot, target, { createParent: false }),
+    writeFile: (target, data, opts) => writeScopedFile(path, writeRoot, target, data, opts),
+    exportFile: (target, data, opts) => writeScopedFile(path, exportRoot, target, data, opts),
+  }
+  return Object.freeze(handle)
+}
+
+async function writeScopedFile(
+  workspacePath: string,
+  root: string,
+  target: string,
+  data: Uint8Array | string,
+  opts: WorkspaceWriteOptions = {},
+): Promise<string> {
+  const path = await resolveScopedTarget(workspacePath, root, target, { createParent: true })
+  await assertNotSymlink(path)
+  await writeFile(path, data, { flag: opts.overwrite === true ? 'w' : 'wx' })
+  return path
+}
+
+async function resolveScopedTarget(
+  workspacePath: string,
+  root: string,
+  target: string,
+  opts: { createParent: boolean },
+): Promise<string> {
+  const safeTarget = normalizeRelative(target)
+  const workspaceReal = await realpath(workspacePath)
+  if (opts.createParent) {
+    await mkdir(root, { recursive: true })
+  }
+  const rootReal = await realpath(root)
+  assertInside(workspaceReal, rootReal, 'workspace root')
+  const path = resolve(root, safeTarget)
+  const parent = dirname(path)
+  if (opts.createParent) {
+    await mkdir(parent, { recursive: true })
+  }
+  const parentReal = await realpath(parent)
+  assertInside(rootReal, parentReal, 'workspace scoped root')
+  return path
+}
+
+function resolveWorkspaceChild(workspacePath: string, child: string): string {
+  return resolve(workspacePath, normalizeRelative(child))
+}
+
+function normalizeRelative(path: string): string {
+  if (path === '' || isAbsolute(path)) {
+    throw new Error(`workspace path must be relative: ${path}`)
+  }
+  const normalized = normalize(path)
+  if (normalized === '..' || normalized.startsWith(`..${sep}`)) {
+    throw new Error(`workspace path escapes its root: ${path}`)
+  }
+  return normalized
+}
+
+function assertInside(root: string, candidate: string, label: string): void {
+  const rel = relative(root, candidate)
+  if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) return
+  throw new Error(`workspace path escapes ${label}: ${candidate}`)
+}
+
+async function assertNotSymlink(path: string): Promise<void> {
+  try {
+    const info = await lstat(path)
+    if (info.isSymbolicLink()) {
+      throw new Error(`workspace write target is a symlink: ${path}`)
+    }
+  } catch (error) {
+    if (isMissing(error)) return
+    throw error
+  }
+}
 
 function resolveRepoUrl(spec: string): string {
   if (/^[\w-]+\/[\w.-]+$/.test(spec)) {

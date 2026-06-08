@@ -220,6 +220,33 @@ Assets are read-only and scoped to the workflow/package root. Absolute paths,
 backslashes, `..` traversal, and symlink escapes are denied. Use
 `ctx.artifacts` for run outputs and `ctx.workspace` for mutable working files.
 
+### Workspace-scoped writes and exports
+
+When a step declares `workspace`, `ctx.workspace` exposes two bounded file
+helpers for deterministic code:
+
+```ts
+code({
+  id: 'render-report',
+  workspace: { mode: 'persistent', name: 'reports', writeRoot: 'scratch', exportRoot: 'published' },
+  run: async (ctx) => {
+    await ctx.workspace!.writeFile('draft.txt', 'working copy')
+    const report = await ctx.workspace!.exportFile('report.txt', 'final report')
+    return { report }
+  },
+})
+```
+
+`writeFile()` writes under `writeRoot` (default: the workspace root).
+`exportFile()` writes under `exportRoot` (default: `exports/`). Both accept
+relative paths only, create parent directories, refuse to overwrite unless
+`{ overwrite: true }` is passed, and reject path traversal or symlink escapes.
+
+Exports are ordinary workspace files: persistent and mounted workspace
+exports remain on disk, while ephemeral exports are removed with the
+workspace cleanup policy. Use `ctx.artifacts` when the bytes should live on
+the run record instead of in workspace storage.
+
 ### `agent(def)` — full agentic loop
 
 See [agent-step.md](agent-step.md) for the full reference.

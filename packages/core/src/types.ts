@@ -39,6 +39,8 @@ export type WorkspaceConfig =
       readonly mode: 'persistent'
       readonly name: string
       readonly base?: string
+      readonly writeRoot?: string
+      readonly exportRoot?: string
       readonly gitRoot?: boolean
       readonly cleanup?: 'never' | 'on-success'
       /** Seed files copied into the workspace before the step runs. */
@@ -47,6 +49,8 @@ export type WorkspaceConfig =
   | {
       readonly mode: 'ephemeral'
       readonly prefix?: string
+      readonly writeRoot?: string
+      readonly exportRoot?: string
       readonly cleanup?: 'on-step-end' | 'on-run-end' | 'on-success'
       /**
        * Optional seed: copy files/directories into the workspace before
@@ -58,6 +62,8 @@ export type WorkspaceConfig =
   | {
       readonly mode: 'mounted'
       readonly path: string
+      readonly writeRoot?: string
+      readonly exportRoot?: string
       /** Seed files copied into the workspace before the step runs. */
       readonly seed?: { readonly copy: readonly string[] }
     }
@@ -75,6 +81,8 @@ export type WorkspaceConfig =
        * need both the head and the base commits to compute `git diff base..head`.
        */
       readonly baseRef?: string
+      readonly writeRoot?: string
+      readonly exportRoot?: string
       /**
        * Cache directory for the clone. Defaults to
        * `~/.skelm/repos/<owner>__<name>`. Repeated runs against the same repo
@@ -92,10 +100,20 @@ export type WorkspaceConfig =
       readonly seed?: { readonly copy: readonly string[] }
     }
 
+export interface WorkspaceWriteOptions {
+  readonly overwrite?: boolean
+}
+
 export interface WorkspaceHandle {
   readonly path: string
   readonly mode: WorkspaceConfig['mode']
   readonly name?: string
+  readonly writeRoot: string
+  readonly exportRoot: string
+  resolveWritePath(path: string): Promise<string>
+  resolveExportPath(path: string): Promise<string>
+  writeFile(path: string, data: Uint8Array | string, opts?: WorkspaceWriteOptions): Promise<string>
+  exportFile(path: string, data: Uint8Array | string, opts?: WorkspaceWriteOptions): Promise<string>
 }
 
 export type StateScope = 'pipeline' | 'step' | 'pipeline+name'

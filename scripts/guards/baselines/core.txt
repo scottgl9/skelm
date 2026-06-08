@@ -389,3 +389,4 @@ type:WorkflowPlugin
 type:WorkspaceManagerOptions
 type:WorkspaceMetadata
 type:WorkspaceSummary
+type:WorkspaceWriteOptions

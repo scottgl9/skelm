@@ -223,6 +223,14 @@ workspace: {
 
 Paths are resolved relative to `process.cwd()` when the step executes.
 
+Each workspace mode also accepts `writeRoot?: string` and
+`exportRoot?: string`. `ctx.workspace.writeFile()` writes under `writeRoot`
+(default: the workspace root), and `ctx.workspace.exportFile()` writes under
+`exportRoot` (default: `exports/`). Both helpers require relative target
+paths and deny traversal or symlink escapes. Agent backend filesystem access
+still uses the resolved `fsRead` / `fsWrite` policy and the workspace-scoped
+gateway enforcement described above.
+
 ## Full example
 
 ```ts

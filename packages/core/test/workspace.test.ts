@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -38,6 +38,95 @@ describe('WorkspaceManager', () => {
           path: firstPath,
         }),
       ])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('denies traversal and symlink escapes from scoped write roots', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'skelm-workspaces-roots-'))
+    const outside = await mkdtemp(join(tmpdir(), 'skelm-workspaces-outside-'))
+    const manager = new WorkspaceManager({ persistentBase: dir })
+    try {
+      const workspace = await manager.prepare({
+        pipelineId: 'pipe',
+        runId: 'run-1',
+        workspace: { mode: 'persistent', name: 'main', exportRoot: 'exports' },
+      })
+
+      await expect(workspace.handle.exportFile('../escape.txt', 'nope')).rejects.toThrow(/escapes/)
+
+      await mkdir(join(workspace.handle.path, 'exports'), { recursive: true })
+      await symlink(outside, join(workspace.handle.path, 'exports', 'link'), 'dir')
+      await expect(workspace.handle.exportFile('link/escape.txt', 'nope')).rejects.toThrow(
+        /escapes/,
+      )
+
+      await workspace.finishStep('completed')
+      await workspace.finishRun('completed')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+      await rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('exports files under a mounted workspace declared export root', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'skelm-mounted-export-'))
+    const manager = new WorkspaceManager()
+    try {
+      const workspace = await manager.prepare({
+        pipelineId: 'pipe',
+        runId: 'run-1',
+        workspace: { mode: 'mounted', path: dir, exportRoot: 'published' },
+      })
+
+      const file = await workspace.handle.exportFile('report.txt', 'ready')
+
+      expect(file).toBe(join(dir, 'published', 'report.txt'))
+      expect(await readFile(file, 'utf8')).toBe('ready')
+      await workspace.finishStep('completed')
+      await workspace.finishRun('completed')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('removes exported files with ephemeral workspace cleanup', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'skelm-ephemeral-export-'))
+    const manager = new WorkspaceManager({ ephemeralBase: dir })
+    try {
+      const workspace = await manager.prepare({
+        pipelineId: 'pipe',
+        runId: 'run-1',
+        workspace: { mode: 'ephemeral', cleanup: 'on-run-end', exportRoot: 'published' },
+      })
+      const file = await workspace.handle.exportFile('report.txt', 'ready')
+      expect(await pathExists(file)).toBe(true)
+
+      await workspace.finishStep('completed')
+      await workspace.finishRun('completed')
+
+      expect(await pathExists(file)).toBe(false)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps exported files in persistent workspaces after run completion', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'skelm-persistent-export-'))
+    const manager = new WorkspaceManager({ persistentBase: dir })
+    try {
+      const workspace = await manager.prepare({
+        pipelineId: 'pipe',
+        runId: 'run-1',
+        workspace: { mode: 'persistent', name: 'main', exportRoot: 'published' },
+      })
+      const file = await workspace.handle.exportFile('report.txt', 'ready')
+
+      await workspace.finishStep('completed')
+      await workspace.finishRun('completed')
+
+      expect(await readFile(file, 'utf8')).toBe('ready')
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
