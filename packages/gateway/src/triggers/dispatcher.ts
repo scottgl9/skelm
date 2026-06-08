@@ -183,7 +183,11 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
           pipelineRegistry: makeGatewayPipelineRegistry(opts.gateway),
         })
         const result = await handle.wait()
-        output = (result as { output?: unknown }).output
+        if (result.status !== 'completed') {
+          const err = result.error as { message?: string } | undefined
+          throw new Error(err?.message ?? `triggered run ${runId} ${result.status}`)
+        }
+        output = result.output
       }
 
       // If the trigger came from a queue driver that wants to react to the

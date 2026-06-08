@@ -603,11 +603,25 @@ export async function runPipeline<TInput, TOutput>(
           await file.close()
         }
       } else {
-        const file = await open(path, 'wx')
         try {
-          await file.writeFile(found.data)
-        } finally {
-          await file.close()
+          const file = await open(path, 'wx')
+          try {
+            await file.writeFile(found.data)
+          } finally {
+            await file.close()
+          }
+        } catch (err) {
+          if (
+            typeof err === 'object' &&
+            err !== null &&
+            'code' in err &&
+            (err as NodeJS.ErrnoException).code === 'EEXIST'
+          ) {
+            throw new ArtifactMaterializationError(
+              `artifact target already exists (use overwrite: true to replace): ${relativePath}`,
+            )
+          }
+          throw err
         }
       }
       events.publish({

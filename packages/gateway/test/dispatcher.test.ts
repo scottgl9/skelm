@@ -261,6 +261,51 @@ describe('createTriggerDispatcher', () => {
     await gw.stop()
   })
 
+  it('records lastOutcome=failed and lastErrorAt when the triggered pipeline fails', async () => {
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
+    })
+    await gw.start()
+
+    const failingPipeline = pipeline({
+      id: 'always-fails',
+      steps: [
+        code({
+          id: 'boom',
+          run: () => {
+            throw new Error('pipeline step failed deliberately')
+          },
+        }),
+      ],
+    })
+
+    const errors: Error[] = []
+    const dispatcher = createTriggerDispatcher({
+      gateway: gw,
+      loadWorkflow: async () => ({ default: failingPipeline }),
+      onError: (err) => errors.push(err),
+    })
+
+    const coordinator = new TriggerCoordinator({ onFire: dispatcher })
+    coordinator.register({
+      kind: 'manual',
+      id: 'fail-trigger',
+      workflowId: 'workflows/hello.workflow.mts',
+    })
+    await coordinator.fire('fail-trigger')
+
+    await waitFor(() => coordinator.get('fail-trigger')?.lastOutcome === 'failed')
+    const reg = coordinator.get('fail-trigger')
+    expect(reg?.lastOutcome).toBe('failed')
+    expect(reg?.lastErrorAt).toBeDefined()
+    expect(reg?.lastError).toMatch(/pipeline step failed deliberately/)
+    await coordinator.stop()
+    await gw.stop()
+  })
+
   it('records lastError on the trigger when the workflow id is unknown', async () => {
     const gw = new Gateway({ stateDir, projectRoot, watchRegistries: false })
     await gw.start()

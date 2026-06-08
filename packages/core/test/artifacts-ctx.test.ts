@@ -187,6 +187,44 @@ describe('ctx.artifacts binding', () => {
     }
   })
 
+  it('rejects second materialize without overwrite as ArtifactMaterializationError, not raw EEXIST', async () => {
+    const workspaceBase = await mkdtemp(join(tmpdir(), 'skelm-artifact-no-overwrite-'))
+    const store = new MemoryRunStore()
+
+    try {
+      const wf = pipeline({
+        id: 'no-overwrite-report',
+        steps: [
+          code({
+            id: 'double-materialize',
+            workspace: { mode: 'ephemeral', cleanup: 'never' },
+            run: async (ctx) => {
+              const desc = await ctx.artifacts?.put({
+                name: 'report.txt',
+                mimeType: 'text/plain',
+                data: 'hello',
+              })
+              await ctx.artifacts?.materialize(desc, { path: 'report.txt' })
+              // Second call without overwrite=true must throw ArtifactMaterializationError,
+              // not the raw EEXIST syscall error from open(path, 'wx').
+              await ctx.artifacts?.materialize(desc, { path: 'report.txt' })
+            },
+          }),
+        ],
+      })
+
+      const run = await runPipeline(wf, undefined, {
+        store,
+        workspaceManager: new WorkspaceManager({ ephemeralBase: workspaceBase }),
+      })
+      expect(run.status).toBe('failed')
+      expect(run.error?.name).toBe('ArtifactMaterializationError')
+      expect(run.error?.message).toMatch(/already exists/)
+    } finally {
+      await rm(workspaceBase, { recursive: true, force: true })
+    }
+  })
+
   it('rejects materialization without a declared workspace', async () => {
     const store = new MemoryRunStore()
 
