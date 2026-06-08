@@ -70,11 +70,20 @@ export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
         throw createError({ statusCode: 404, message: 'workflow not found' })
       }
       const registered = new Set(service.list().map((e) => e.id))
-      const runs = await collectWorkflowRuns(gateway, entry)
+      // Load once and share between run collection and health reporting.
+      const preloaded = await loadWorkflowModule(gateway, entry)
+      const runs = await collectWorkflowRuns(gateway, entry, preloaded?.pipelineId)
       return {
         generatedAt: new Date().toISOString(),
         gateway: workflowGatewayReadiness(gateway),
-        workflow: await workflowHealth(gateway, entry, registered, runs, recentFailuresLimit),
+        workflow: await workflowHealth(
+          gateway,
+          entry,
+          registered,
+          runs,
+          recentFailuresLimit,
+          preloaded,
+        ),
       }
     }),
   )
@@ -210,6 +219,37 @@ export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
   )
 }
 
+interface WorkflowLoadData {
+  pipelineId?: string | undefined
+  description?: string | undefined
+  version?: string | undefined
+  loadable: boolean
+  loadError?: string | undefined
+}
+
+async function loadWorkflowModule(
+  gateway: Gateway,
+  entry: { id: string; path: string },
+): Promise<WorkflowLoadData | null> {
+  const loader = gateway.getWorkflowLoader()
+  if (loader === undefined) return null
+  try {
+    const pipeline = await loadPipelineFromPath(loader, entry.id, entry.path)
+    const desc = describePipeline(pipeline)
+    return {
+      pipelineId: desc.id,
+      description: desc.description,
+      version: desc.version,
+      loadable: true,
+    }
+  } catch (err) {
+    return {
+      loadable: false,
+      loadError: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
 type WorkflowReadinessStatus = 'ready' | 'degraded' | 'broken'
 
 interface WorkflowHealthRunFailure {
@@ -301,25 +341,34 @@ async function workflowHealth(
   registered: ReadonlySet<string>,
   allRuns: RunWindow,
   recentFailuresLimit: number,
+  preloaded?: WorkflowLoadData | null,
 ): Promise<WorkflowHealth> {
-  const loader = gateway.getWorkflowLoader()
   let pipelineId: string | undefined
   let description: string | undefined
   let version: string | undefined
   let loadable: boolean | null = null
   let loadError: string | undefined
 
-  if (loader !== undefined) {
-    try {
-      const pipeline = await loadPipelineFromPath(loader, entry.id, entry.path)
-      const desc = describePipeline(pipeline)
-      pipelineId = desc.id
-      description = desc.description
-      version = desc.version
-      loadable = true
-    } catch (err) {
-      loadable = false
-      loadError = err instanceof Error ? err.message : String(err)
+  if (preloaded !== undefined && preloaded !== null) {
+    pipelineId = preloaded.pipelineId
+    description = preloaded.description
+    version = preloaded.version
+    loadable = preloaded.loadable
+    loadError = preloaded.loadError
+  } else if (preloaded === undefined) {
+    const loader = gateway.getWorkflowLoader()
+    if (loader !== undefined) {
+      try {
+        const pipeline = await loadPipelineFromPath(loader, entry.id, entry.path)
+        const desc = describePipeline(pipeline)
+        pipelineId = desc.id
+        description = desc.description
+        version = desc.version
+        loadable = true
+      } catch (err) {
+        loadable = false
+        loadError = err instanceof Error ? err.message : String(err)
+      }
     }
   }
 
@@ -471,14 +520,26 @@ interface RunWindow {
 async function collectWorkflowRuns(
   gateway: Gateway,
   entry: { id: string; path: string },
+  pipelineIdHint?: string,
 ): Promise<RunWindow> {
-  const loader = gateway.getWorkflowLoader()
-  let pipelineId: string | undefined
-  if (loader !== undefined) {
-    try {
-      pipelineId = describePipeline(await loadPipelineFromPath(loader, entry.id, entry.path)).id
-    } catch {
-      return await collectRunWindow(gateway.runStore.listRuns({ limit: HEALTH_RUN_SCAN_LIMIT + 1 }))
+  let pipelineId = pipelineIdHint
+  if (pipelineId === undefined) {
+    const loader = gateway.getWorkflowLoader()
+    if (loader !== undefined) {
+      try {
+        pipelineId = describePipeline(await loadPipelineFromPath(loader, entry.id, entry.path)).id
+      } catch {
+        // Loader threw; fall back to a full scan filtered by the known entry
+        // identity. truncated reflects whether the scan may have missed runs
+        // for this workflow due to the overall run window being full.
+        const full = await collectRunWindow(
+          gateway.runStore.listRuns({ limit: HEALTH_RUN_SCAN_LIMIT + 1 }),
+        )
+        return {
+          runs: full.runs.filter((run) => runBelongsToWorkflow(run, entry, undefined)),
+          truncated: full.truncated,
+        }
+      }
     }
   }
   const filters = new Set([entry.id, ...(pipelineId !== undefined ? [pipelineId] : [])])
