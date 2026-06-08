@@ -41,4 +41,56 @@ describe('TriggerCoordinator metadata', () => {
     expect(reg.lastOutcome).toBe('failed')
     await c.stop()
   })
+
+  it('records failed outcome when any queued dispatch item fails', async () => {
+    let calls = 0
+    const c = new TriggerCoordinator({
+      defaultOverlap: 'queue',
+      onFire: async () => {
+        calls += 1
+        if (calls === 1) throw new Error('first failed')
+      },
+    })
+    c.register({ kind: 'manual', id: 'partial', workflowId: 'wf' })
+
+    const first = c.fire('partial')
+    const second = await c.fire('partial')
+    expect(second).toBe('queued')
+    await first
+    await c.stop()
+
+    expect(c.get('partial')?.lastOutcome).toBe('failed')
+    expect(c.get('partial')?.lastError).toBe('first failed')
+  })
+
+  it('records parallel dispatch decisions and terminal outcomes', async () => {
+    const c = new TriggerCoordinator({ onFire: async () => {} })
+    c.register({ kind: 'manual', id: 'parallel', workflowId: 'wf' })
+    c.markParallel('parallel')
+
+    const status = await c.fire('parallel')
+    await c.stop()
+
+    expect(status).toBe('dispatched')
+    expect(c.get('parallel')?.lastOverlapDecision).toBe('dispatched')
+    expect(c.get('parallel')?.lastOutcome).toBe('succeeded')
+  })
+
+  it('resets poll source failures after a successful poll tick without dispatch', async () => {
+    let fail = true
+    const c = new TriggerCoordinator({ onFire: async () => {} })
+    c.registerPollSource('source', () => {
+      if (fail) throw new Error('source unavailable')
+      return 'stable'
+    })
+    c.register({ kind: 'poll', id: 'poll', workflowId: 'wf', everyMs: 20, sourceFnId: 'source' })
+
+    await new Promise((r) => setTimeout(r, 5))
+    expect(c.get('poll')?.lastOutcome).toBe('failed')
+
+    fail = false
+    await new Promise((r) => setTimeout(r, 30))
+    expect(c.get('poll')?.lastOutcome).toBe('succeeded')
+    await c.stop()
+  })
 })

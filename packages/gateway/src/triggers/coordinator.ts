@@ -354,15 +354,18 @@ export class TriggerCoordinator {
             const value = await source()
             const key = dedupeFn(value)
             const last = this.pollLastKey.get(spec.id)
+            let dispatched = false
             if (key !== last) {
               this.pollLastKey.set(spec.id, key)
               if (last !== undefined) {
                 // Skip the very first observation so polling doesn't fire on
                 // initial state. Callers that want fire-on-startup can pair
                 // an `immediate` trigger with the same workflowId.
+                dispatched = true
                 await this.fire(spec.id)
               }
             }
+            if (!dispatched) reg.lastOutcome = 'succeeded'
           } catch (err) {
             this.recordError(reg, (err as Error).message)
           }
@@ -570,14 +573,16 @@ export class TriggerCoordinator {
       reg.lastOutcome = 'dispatched'
       reg.fired += 1
       this.incrementRunning(id)
+      let failed = false
       const dispatch = Promise.resolve()
         .then(() => this.opts.onFire(ctx))
         .catch((err) => {
+          failed = true
           this.recordError(reg, (err as Error).message)
           this.opts.onFireError?.(reg.spec.id, err)
         })
         .then(() => {
-          if (reg.lastOutcome !== 'failed') reg.lastOutcome = 'succeeded'
+          reg.lastOutcome = failed ? 'failed' : 'succeeded'
         })
         .finally(() => this.decrementRunning(id))
       this.trackDispatch(dispatch)
@@ -652,13 +657,15 @@ export class TriggerCoordinator {
     // async-stack recursion so long backlogs don't grow stack frames.
     try {
       let current: FireContext | undefined = ctx
+      let failed = false
       while (current !== undefined) {
         reg.lastFiredAt = current.firedAt
         reg.fired += 1
         try {
           await this.opts.onFire(current)
-          if (reg.lastOutcome !== 'failed') reg.lastOutcome = 'succeeded'
+          if (!failed) reg.lastOutcome = 'succeeded'
         } catch (err) {
+          failed = true
           this.recordError(reg, (err as Error).message)
           this.opts.onFireError?.(reg.spec.id, err)
         }

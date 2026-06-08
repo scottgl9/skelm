@@ -26,6 +26,8 @@ interface Fixture {
   store: MemoryRunStore
   workflows: WorkflowEntry[]
   schedules: TriggerRegistration[]
+  queueDepths: Map<string, number>
+  runningCounts: Map<string, number>
   approvals: Array<{ id: string; createdAt: string; request: unknown }>
   now: number
   service: DashboardService
@@ -36,18 +38,22 @@ function fixture(opts: { now?: number; cacheTtlMs?: number } = {}): Fixture {
   const store = new MemoryRunStore()
   const workflows: WorkflowEntry[] = []
   const schedules: TriggerRegistration[] = []
+  const queueDepths = new Map<string, number>()
+  const runningCounts = new Map<string, number>()
   const approvals: Array<{ id: string; createdAt: string; request: unknown }> = []
   const service = new DashboardService({
     runStore: store,
     listWorkflows: () => workflows,
     listSchedules: () => schedules,
+    queueDepth: (id) => queueDepths.get(id) ?? 0,
+    runningCount: (id) => runningCounts.get(id) ?? 0,
     approvals: { list: () => approvals },
     version: '0.3.8-test',
     startedAt: now - 3 * HOUR,
     now: () => now,
     cacheTtlMs: opts.cacheTtlMs ?? 0,
   })
-  return { store, workflows, schedules, approvals, now, service }
+  return { store, workflows, schedules, queueDepths, runningCounts, approvals, now, service }
 }
 
 describe('DashboardService.overview', () => {
@@ -260,6 +266,8 @@ describe('DashboardService.schedules / .approvals', () => {
       inflight: false,
       lastFiredAt: '2026-05-13T12:00:00Z',
     })
+    f.queueDepths.set('s1', 3)
+    f.runningCounts.set('s1', 2)
     const out = f.service.schedules()
     expect(out).toEqual([
       {
@@ -268,9 +276,9 @@ describe('DashboardService.schedules / .approvals', () => {
         workflowId: 'wf-a',
         fired: 3,
         inflight: false,
-        queued: 0,
+        queued: 3,
         dropped: 0,
-        runningCount: 0,
+        runningCount: 2,
         lastFiredAt: '2026-05-13T12:00:00Z',
         nextFireAt: null,
         lastOutcome: null,

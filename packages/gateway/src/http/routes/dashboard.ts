@@ -36,6 +36,8 @@ export function registerDashboardRoutes(router: Router, gateway: Gateway): void 
         runStore: gateway.runStore,
         listWorkflows: () => gateway.registries.workflows.list(),
         listSchedules: () => gateway.managers.triggers.list(),
+        queueDepth: (id) => gateway.managers.triggers.queueDepth(id),
+        runningCount: (id) => gateway.managers.triggers.runningCount(id),
         approvals: {
           list: () => {
             const gate = gateway.enforcement.approvalGate as {

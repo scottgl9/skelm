@@ -100,6 +100,30 @@ describe('Scheduler', () => {
     await scheduler.stop()
   })
 
+  it('reports initialDelayMs as the first interval nextRunAt', async () => {
+    const scheduler = new Scheduler(
+      {},
+      {
+        runStore: mockRunStore,
+        pipelineLoader: mockPipelineLoader,
+      },
+    )
+    const before = Date.now()
+
+    const registration = await scheduler.register({
+      id: 'test-initial-delay',
+      type: 'interval',
+      pipelineId: 'pipeline-1',
+      intervalMs: 60_000,
+      initialDelayMs: 5_000,
+      enabled: true,
+    })
+
+    expect(registration.nextRunAt).toBeGreaterThanOrEqual(before + 5_000)
+    expect(registration.nextRunAt).toBeLessThan(before + 10_000)
+    await scheduler.stop()
+  })
+
   it('lists all triggers', async () => {
     const scheduler = new Scheduler(
       {},
