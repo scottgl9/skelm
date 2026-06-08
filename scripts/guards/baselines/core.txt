@@ -114,6 +114,8 @@ value:createCronTrigger
 value:createCustomTrigger
 value:createDiscordTrigger
 value:createGitHubTrigger
+value:createHostReplyAction
+value:createHostSendAction
 value:createMatrixTrigger
 value:createMcpHost
 value:createOpenAIBackend
@@ -135,6 +137,9 @@ value:extractPromptText
 value:forEach
 value:formatSkillBlock
 value:globalCapabilityRegistry
+value:hostEventDedupeKey
+value:hostIdentityKey
+value:hostThreadKey
 value:idempotent
 value:imagePart
 value:imagePartFromFile
@@ -151,6 +156,7 @@ value:loadTsModule
 value:loop
 value:messageHasImage
 value:nextCronFireTime
+value:normalizeHostEvent
 value:parallel
 value:parseCronExpression
 value:parseDuration
@@ -245,6 +251,13 @@ type:GitHubPullRequestEvent
 type:GitHubPushEvent
 type:GitHubTriggerConfig
 type:GitHubWebhookEvent
+type:HostActionBody
+type:HostActor
+type:HostEventInput
+type:HostIdentity
+type:HostOutboundAction
+type:HostRunCorrelation
+type:HostThreadRef
 type:InferStep
 type:InferenceRequest
 type:InferenceResponse
@@ -270,6 +283,7 @@ type:ModelPlugin
 type:ModelProvider
 type:ModelProviderConfig
 type:NetworkPolicy
+type:NormalizedHostEvent
 type:OpenAIBackendOptions
 type:ParallelOnError
 type:ParallelStep
