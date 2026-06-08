@@ -129,6 +129,8 @@ export interface State {
   read(stream: string, opts?: StateReadOptions): AsyncIterable<unknown>
 }
 
+export type { AssetHost } from './assets.js'
+
 /**
  * Typed context passed to every step handler. The `steps` field accumulates
  * step outputs as the run progresses; later stages will narrow it via type
@@ -140,6 +142,14 @@ export interface Context<TInput = unknown> {
   readonly run: RunMetadata
   readonly signal: AbortSignal
   readonly state: State
+  /**
+   * Read-only accessor for bundled workflow assets such as prompts,
+   * templates, rules, schemas, and fixtures. Paths are relative to the
+   * running pipeline's `baseDir` (or the run's initial cwd for programmatic
+   * pipelines without a baseDir), use forward slashes, and may not escape the
+   * asset root through `..`, absolute paths, or symlinks.
+   */
+  readonly assets: import('./assets.js').AssetHost
   /**
    * Per-run accessor for tracking threaded conversation state (PR/issue
    * threads, Slack threads, …). Use over hand-rolled `last-comment-seen:*`
