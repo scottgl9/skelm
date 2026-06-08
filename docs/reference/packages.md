@@ -21,3 +21,14 @@ skelm ships as a set of focused packages. Install the meta-package `skelm` for t
 | `@skelm/otel` | OpenTelemetry tracing |
 
 For the full repository layout — including non-published directories (`examples`, `scripts/guards`, and `docs`) — see the **Repo shape** section of [`AGENTS.md`](https://github.com/scottgl9/skelm/blob/main/AGENTS.md).
+
+## Workflow packages
+
+Reusable workflows can also ship as regular npm dependencies. These are not new
+skelm framework packages; they are user or vendor packages that declare
+`skelm.workflowPackage` metadata in their own `package.json`. Hosts register
+them from explicit installed package roots with `discoverWorkflowPackage()` and
+`WorkflowRegistry.registerPackage()`.
+
+See [Workflow Packages](../guides/workflow-packages.md) for the manifest shape,
+asset convention, and registration flow.

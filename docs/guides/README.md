@@ -7,6 +7,7 @@ Task-oriented how-to documents. Each guide assumes you have read the [Concepts](
 - [Building Workflows](./building-workflows.md) — run workflow projects by directory and use the skelm builder to author workflows from a spec.
 - [Writing a Backend](./writing-a-backend.md) — implement `SkelmBackend` to power `infer()` and `agent()` steps with a private model or custom runtime.
 - [Writing a Plugin](./writing-a-plugin.md) — package providers, backends, hooks, secret drivers, or skill packs as a regular npm dependency.
+- [Workflow Packages](./workflow-packages.md) — package reusable workflows, docs, and package-local assets as explicit npm dependencies.
 - [Testing Workflows](./testing-workflows.md) — exercise pipelines without standing up a gateway, mocking the network, or hitting a real LLM.
 
 ## Operating the gateway

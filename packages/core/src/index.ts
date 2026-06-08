@@ -239,6 +239,18 @@ export type { ParsedCronExpression } from './cron-expression.js'
 export { parseDuration } from './duration.js'
 export { describePipeline, describeStep } from './introspect.js'
 export type { DescribedStep, PipelineDescription } from './introspect.js'
+export {
+  discoverWorkflowPackage,
+  discoverWorkflowPackages,
+  resolveWorkflowPackagePath,
+} from './workflows/packages.js'
+export type {
+  DiscoverWorkflowPackagesResult,
+  DiscoveredWorkflowPackage,
+  DiscoveredWorkflowPackageWorkflow,
+  WorkflowPackageManifest,
+  WorkflowPackageWorkflowManifest,
+} from './workflows/packages.js'
 export { createRoutingBackend } from './routing-backend.js'
 export type { RoutingBackendOptions } from './routing-backend.js'
 export { McpClient, McpProtocolError } from './mcp/index.js'

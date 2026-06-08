@@ -105,6 +105,7 @@ export default defineConfig({
             { text: 'Building Workflows', link: '/guides/building-workflows' },
             { text: 'Writing a Backend', link: '/guides/writing-a-backend' },
             { text: 'Writing a Plugin', link: '/guides/writing-a-plugin' },
+            { text: 'Workflow Packages', link: '/guides/workflow-packages' },
             { text: 'Writing a Custom Integration', link: '/guides/writing-a-custom-integration' },
             { text: 'Testing Workflows', link: '/guides/testing-workflows' },
             { text: 'External Scripts', link: '/guides/external-scripts' },

@@ -4,6 +4,8 @@
 
 import { RegistryError, toErrorMessage } from '../errors.js'
 import type { WorkflowPluginBase } from './base.js'
+import type { DiscoveredWorkflowPackage } from './packages.js'
+import { resolveWorkflowPackagePath } from './packages.js'
 import type { WorkflowConfig, WorkflowHealthStatus } from './types.js'
 
 /**
@@ -12,6 +14,8 @@ import type { WorkflowConfig, WorkflowHealthStatus } from './types.js'
 export class WorkflowRegistry {
   /** Registered workflows */
   private readonly workflows: Map<string, WorkflowPluginBase> = new Map()
+  /** Registered installable workflow packages */
+  private readonly workflowPackages: Map<string, DiscoveredWorkflowPackage> = new Map()
 
   /**
    * Register a workflow plugin
@@ -73,6 +77,65 @@ export class WorkflowRegistry {
   }
 
   /**
+   * Register an explicitly discovered installable workflow package.
+   */
+  registerPackage(pkg: DiscoveredWorkflowPackage): void {
+    if (this.workflowPackages.has(pkg.id)) {
+      throw new RegistryError(
+        `Workflow package with id '${pkg.id}' is already registered`,
+        'workflowPackage',
+        pkg.id,
+      )
+    }
+
+    const registeredWorkflowIds = new Set(
+      this.listPackages().flatMap((registered) =>
+        registered.workflows.map((workflow) => workflow.id),
+      ),
+    )
+    for (const workflow of pkg.workflows) {
+      if (registeredWorkflowIds.has(workflow.id)) {
+        throw new RegistryError(
+          `Workflow package '${pkg.id}' declares duplicate workflow id '${workflow.id}'`,
+          'workflowPackage',
+          workflow.id,
+        )
+      }
+    }
+
+    this.workflowPackages.set(pkg.id, pkg)
+  }
+
+  /**
+   * Get an installed workflow package by package id.
+   */
+  getPackage(id: string): DiscoveredWorkflowPackage | undefined {
+    return this.workflowPackages.get(id)
+  }
+
+  /**
+   * List installed workflow packages in registration order.
+   */
+  listPackages(): DiscoveredWorkflowPackage[] {
+    return Array.from(this.workflowPackages.values())
+  }
+
+  /**
+   * Resolve a package-relative path under a registered workflow package root.
+   */
+  resolvePackagePath(packageId: string, packageRelativePath: string): string {
+    const pkg = this.workflowPackages.get(packageId)
+    if (!pkg) {
+      throw new RegistryError(
+        `Workflow package with id '${packageId}' is not registered`,
+        'workflowPackage',
+        packageId,
+      )
+    }
+    return resolveWorkflowPackagePath(pkg, packageRelativePath)
+  }
+
+  /**
    * Initialize all registered workflows
    */
   async initializeAll(configs: Record<string, WorkflowConfig>): Promise<void> {
@@ -129,6 +192,7 @@ export class WorkflowRegistry {
   async shutdown(): Promise<void> {
     await this.stopAll()
     this.workflows.clear()
+    this.workflowPackages.clear()
   }
 
   /**

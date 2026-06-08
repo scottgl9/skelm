@@ -127,6 +127,8 @@ value:createWebhookTrigger
 value:defaultPromptOf
 value:defaultReplyOf
 value:defineConfig
+value:discoverWorkflowPackage
+value:discoverWorkflowPackages
 value:describePipeline
 value:describeStep
 value:executeAgentStep
@@ -161,6 +163,7 @@ value:pipeline
 value:pipelineStep
 value:releaseSession
 value:resolvePermissions
+value:resolveWorkflowPackagePath
 value:runPipeline
 value:saveSession
 value:selectProvider
@@ -230,6 +233,9 @@ type:CronTriggerConfig
 type:CustomTriggerConfig
 type:DelegateResult
 type:DescribedStep
+type:DiscoverWorkflowPackagesResult
+type:DiscoveredWorkflowPackage
+type:DiscoveredWorkflowPackageWorkflow
 type:DiscordInteraction
 type:DiscordMessage
 type:DiscordTriggerConfig
@@ -377,6 +383,8 @@ type:WaitStep
 type:WebhookTriggerConfig
 type:WhenPredicate
 type:WorkflowInvocation
+type:WorkflowPackageManifest
+type:WorkflowPackageWorkflowManifest
 type:WorkflowPlugin
 type:WorkspaceManagerOptions
 type:WorkspaceMetadata
