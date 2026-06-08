@@ -445,6 +445,71 @@ paths:
               schema: { $ref: '#/components/schemas/DashboardApprovals' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /v1/workflows/health:
+    get:
+      summary: Workflow health and readiness
+      parameters:
+        - in: query
+          name: recentFailuresLimit
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+            default: 5
+      responses:
+        '200':
+          description: Workflow health list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generatedAt: { type: string, format: date-time }
+                  gateway:
+                    type: object
+                    properties:
+                      state: { type: string }
+                      ready: { type: boolean }
+                  workflows:
+                    type: array
+                    items: { $ref: '#/components/schemas/WorkflowHealth' }
+        '400': { description: Invalid recentFailuresLimit }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/workflows/{id}/health:
+    get:
+      summary: Single workflow health and readiness
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: recentFailuresLimit
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+            default: 5
+      responses:
+        '200':
+          description: Workflow health
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generatedAt: { type: string, format: date-time }
+                  gateway:
+                    type: object
+                    properties:
+                      state: { type: string }
+                      ready: { type: boolean }
+                  workflow: { $ref: '#/components/schemas/WorkflowHealth' }
+        '400': { description: Invalid workflow id or recentFailuresLimit }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -643,3 +708,70 @@ components:
               createdAt: { type: string, format: date-time }
               ageMs: { type: integer }
               request: {}
+
+    WorkflowHealth:
+      type: object
+      properties:
+        id: { type: string }
+        file: { type: string }
+        source: { type: string, enum: [registered, glob] }
+        pipelineId: { type: string }
+        description: { type: string }
+        version: { type: string }
+        readiness:
+          type: object
+          properties:
+            status: { type: string, enum: [ready, degraded, broken] }
+            ready: { type: boolean }
+            reason: { type: string }
+            checks:
+              type: object
+              properties:
+                gateway: { type: boolean }
+                registered: { type: boolean }
+                loadable: { type: boolean, nullable: true }
+                hasRecentFailures: { type: boolean }
+                hasTriggerErrors: { type: boolean }
+        runs:
+          type: object
+          properties:
+            total: { type: integer }
+            active: { type: integer }
+            byStatus:
+              type: object
+              additionalProperties: { type: integer }
+            recentFailures:
+              type: array
+              items:
+                type: object
+                properties:
+                  runId: { type: string }
+                  pipelineId: { type: string }
+                  message: { type: string }
+                  at: { type: integer, format: int64 }
+        activeRuns:
+          type: array
+          items:
+            type: object
+            properties:
+              runId: { type: string }
+              pipelineId: { type: string }
+              status:
+                type: string
+                enum: [pending, running, waiting, completed, failed, cancelled]
+              startedAt: { type: integer, format: int64 }
+              triggerId: { type: string }
+        triggers:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              kind: { type: string }
+              overlap: { type: string }
+              fired: { type: integer }
+              inflight: { type: boolean }
+              queueDepth: { type: integer }
+              runningCount: { type: integer }
+              lastFiredAt: { type: string, format: date-time, nullable: true }
+              lastError: { type: string, nullable: true }

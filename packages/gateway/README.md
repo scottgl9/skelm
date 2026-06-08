@@ -64,6 +64,8 @@ The HTTP API speaks JSON over `h3`, with SSE for run event streams.
 | `GET`  | `/audit`                            | Tamper-evident, hash-chained audit   |
 | `GET`  | `/v1/dashboard/*`                   | Read-only aggregations for dashboards ([demo](https://github.com/scottgl9/skelm/tree/main/examples/dashboard-demo)) |
 | `GET`  | `/v1/workflows`                     | List explicitly registered workflows |
+| `GET`  | `/v1/workflows/health`              | Workflow readiness, run counts, active runs, failures, and trigger state |
+| `GET`  | `/v1/workflows/:id/health`          | Readiness and status for one workflow |
 | `POST` | `/v1/workflows/{validate,register}` | Compile-check or register a workflow — JSON `{ source: { type: "path", path } }` or a `multipart/form-data` `.zip` upload |
 | `PUT`/`DELETE` | `/v1/workflows/:id`         | Replace / unregister a registered workflow |
 | `POST` | `/v1/batch/{runs,cancel}`           | Fan-out start / cancel; per-item outcome with stable `description` category; default 50-item cap (configurable via `GatewayOptions.batch.maxItemsPerRequest`) |

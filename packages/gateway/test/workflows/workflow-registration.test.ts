@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MemoryRunStore, code, pipeline } from '@skelm/core'
+import { MemoryRunStore, type Run, type RunStatus, code, pipeline } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Gateway } from '../../src/index.js'
 import { bootGatewayWithRetry } from '../utils/boot-gateway.js'
@@ -28,7 +28,13 @@ const goodPipeline = pipeline({
   steps: [code({ id: 'one', run: () => ({ ok: true }) })],
 })
 
-async function bootGateway(opts: { allowedDirs?: string[] } = {}): Promise<{
+async function bootGateway(
+  opts: {
+    allowedDirs?: string[]
+    auth?: boolean
+    loadWorkflow?: (registryId: string, absolutePath: string) => Promise<unknown>
+  } = {},
+): Promise<{
   gw: Gateway
   base: string
 }> {
@@ -39,9 +45,13 @@ async function bootGateway(opts: { allowedDirs?: string[] } = {}): Promise<{
     enableHttp: true,
     httpPort: port,
     runStore: new MemoryRunStore(),
-    loadWorkflow: async () => goodPipeline,
+    loadWorkflow: opts.loadWorkflow ?? (async () => goodPipeline),
     ...(opts.allowedDirs !== undefined && { allowedRegistrationDirs: opts.allowedDirs }),
+    ...(opts.auth === true && { token: 'sekret' }),
     config: {
+      ...(opts.auth === true && {
+        server: { host: '127.0.0.1', port, auth: { mode: 'bearer' as const } },
+      }),
       registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } },
     },
   }))
@@ -302,4 +312,165 @@ describe('/v1/workflows/*', () => {
       }
     }
   })
+
+  it('GET /v1/workflows/health reports workflow runs, active runs, triggers, and failures', async () => {
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    const wfPath = join(projectRoot, 'workflows/a.workflow.ts')
+    await fs.writeFile(wfPath, 'export default {}')
+    const { gw, base } = await bootGateway()
+    try {
+      await gw.runStore.putRun(
+        makeRun({
+          runId: 'done',
+          pipelineId: 'workflows/a.workflow.ts',
+          workflowPath: wfPath,
+          status: 'completed',
+        }),
+      )
+      await gw.runStore.putRun(
+        makeRun({
+          runId: 'bad',
+          pipelineId: 'echo',
+          workflowPath: wfPath,
+          status: 'failed',
+          error: { name: 'Error', message: 'boom' },
+        }),
+      )
+      await gw.runStore.putRun(
+        makeRun({
+          runId: 'live',
+          pipelineId: 'workflows/a.workflow.ts',
+          workflowPath: wfPath,
+          triggerId: 'manual-a',
+          status: 'running',
+          completedAt: undefined,
+        }),
+      )
+      gw.managers.triggers.register({
+        kind: 'manual',
+        id: 'manual-a',
+        workflowId: 'workflows/a.workflow.ts',
+      })
+
+      const res = await fetch(`${base}/v1/workflows/health`)
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      const workflow = body.workflows.find(
+        (entry: { id: string }) => entry.id === 'workflows/a.workflow.ts',
+      )
+      expect(workflow.pipelineId).toBe('echo')
+      expect(workflow.runs.total).toBe(3)
+      expect(workflow.runs.byStatus.completed).toBe(1)
+      expect(workflow.runs.byStatus.failed).toBe(1)
+      expect(workflow.runs.active).toBe(1)
+      expect(workflow.runs.recentFailures[0].message).toBe('boom')
+      expect(workflow.activeRuns[0].runId).toBe('live')
+      expect(workflow.triggers[0]).toMatchObject({
+        id: 'manual-a',
+        kind: 'manual',
+        queueDepth: 0,
+        runningCount: 0,
+      })
+      expect(workflow.readiness.status).toBe('degraded')
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('GET /v1/workflows/:id/health returns one workflow health record', async () => {
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    const wfPath = join(projectRoot, 'workflows/detail.workflow.ts')
+    await fs.writeFile(wfPath, 'export default {}')
+    const { gw, base } = await bootGateway()
+    try {
+      const id = encodeURIComponent('workflows/detail.workflow.ts')
+      const res = await fetch(`${base}/v1/workflows/${id}/health`)
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.workflow.id).toBe('workflows/detail.workflow.ts')
+      expect(body.workflow.readiness.ready).toBe(true)
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('GET /v1/workflows/health rejects a bad recentFailuresLimit query', async () => {
+    const { gw, base } = await bootGateway()
+    try {
+      const res = await fetch(`${base}/v1/workflows/health?recentFailuresLimit=nope`)
+      expect(res.status).toBe(400)
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('GET /v1/workflows/health keeps broken workflow load failures isolated', async () => {
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    const goodPath = join(projectRoot, 'workflows/good.workflow.ts')
+    const brokenPath = join(projectRoot, 'workflows/broken.workflow.ts')
+    await fs.writeFile(goodPath, 'export default {}')
+    await fs.writeFile(brokenPath, 'export default {}')
+    const { gw, base } = await bootGateway({
+      loadWorkflow: async (_id, path) => {
+        if (path === brokenPath) throw new Error('broken import')
+        return goodPipeline
+      },
+    })
+    try {
+      const res = await fetch(`${base}/v1/workflows/health`)
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      const byId = new Map(body.workflows.map((entry: { id: string }) => [entry.id, entry]))
+      expect(
+        (byId.get('workflows/good.workflow.ts') as { readiness: { status: string } }).readiness
+          .status,
+      ).toBe('ready')
+      expect(
+        (byId.get('workflows/broken.workflow.ts') as { readiness: { status: string } }).readiness
+          .status,
+      ).toBe('broken')
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('GET /v1/workflows/health requires bearer auth when configured', async () => {
+    const { gw, base } = await bootGateway({ auth: true })
+    try {
+      const unauth = await fetch(`${base}/v1/workflows/health`)
+      expect(unauth.status).toBe(401)
+
+      const authed = await fetch(`${base}/v1/workflows/health`, {
+        headers: { authorization: 'Bearer sekret' },
+      })
+      expect(authed.status).toBe(200)
+    } finally {
+      await gw.stop()
+    }
+  })
 })
+
+function makeRun(o: {
+  runId: string
+  pipelineId: string
+  workflowPath?: string
+  triggerId?: string
+  status?: RunStatus
+  error?: { name: string; message: string }
+  completedAt?: number
+}): Run {
+  const startedAt = Date.now() - 1_000
+  return {
+    runId: o.runId,
+    pipelineId: o.pipelineId,
+    ...(o.workflowPath !== undefined && { workflowPath: o.workflowPath }),
+    ...(o.triggerId !== undefined && { triggerId: o.triggerId }),
+    status: o.status ?? 'completed',
+    input: {},
+    steps: [],
+    output: undefined,
+    error: o.error ?? undefined,
+    startedAt,
+    completedAt: o.completedAt ?? (o.status === 'running' ? undefined : startedAt + 500),
+  }
+}

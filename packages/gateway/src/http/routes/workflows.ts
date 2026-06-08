@@ -1,6 +1,6 @@
 import { mkdir, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { describePipeline } from '@skelm/core'
+import { type RunStatus, type RunSummary, describePipeline } from '@skelm/core'
 import {
   type H3Event,
   type MultiPartData,
@@ -8,6 +8,7 @@ import {
   createError,
   eventHandler,
   getHeader,
+  getQuery,
   readBody,
   readMultipartFormData,
 } from 'h3'
@@ -43,6 +44,40 @@ interface ValidateBody {
  */
 export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
   const service = gateway.getWorkflowRegistrationService()
+
+  router.get(
+    '/v1/workflows/health',
+    eventHandler(async (event) => {
+      const recentFailuresLimit = parseRecentFailuresLimit(getQuery(event).recentFailuresLimit)
+      return {
+        generatedAt: new Date().toISOString(),
+        gateway: workflowGatewayReadiness(gateway),
+        workflows: await workflowHealthList(gateway, service, recentFailuresLimit),
+      }
+    }),
+  )
+
+  router.get(
+    '/v1/workflows/:id/health',
+    eventHandler(async (event) => {
+      const id = decodeMaybe(event.context.params?.id)
+      if (id === undefined || id.length === 0) {
+        throw createError({ statusCode: 400, message: 'workflow id is required' })
+      }
+      const recentFailuresLimit = parseRecentFailuresLimit(getQuery(event).recentFailuresLimit)
+      const entry = gateway.registries.workflows.get(id)
+      if (entry === undefined) {
+        throw createError({ statusCode: 404, message: 'workflow not found' })
+      }
+      const registered = new Set(service.list().map((e) => e.id))
+      const runs = await collectRuns(gateway.runStore.listRuns({ limit: 5000 }))
+      return {
+        generatedAt: new Date().toISOString(),
+        gateway: workflowGatewayReadiness(gateway),
+        workflow: await workflowHealth(gateway, entry, registered, runs, recentFailuresLimit),
+      }
+    }),
+  )
 
   router.get(
     '/v1/workflows',
@@ -173,6 +208,277 @@ export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
       }
     }),
   )
+}
+
+type WorkflowReadinessStatus = 'ready' | 'degraded' | 'broken'
+
+interface WorkflowHealthRunFailure {
+  runId: string
+  pipelineId: string
+  message: string
+  at: number
+}
+
+interface WorkflowHealthRunRef {
+  runId: string
+  pipelineId: string
+  status: RunStatus
+  startedAt: number
+  triggerId?: string
+}
+
+interface WorkflowHealth {
+  id: string
+  file: string
+  source: 'registered' | 'glob'
+  pipelineId?: string
+  description?: string
+  version?: string
+  readiness: {
+    status: WorkflowReadinessStatus
+    ready: boolean
+    checks: {
+      gateway: boolean
+      registered: boolean
+      loadable: boolean | null
+      hasRecentFailures: boolean
+      hasTriggerErrors: boolean
+    }
+    reason?: string
+  }
+  runs: {
+    total: number
+    active: number
+    byStatus: Record<RunStatus, number>
+    recentFailures: WorkflowHealthRunFailure[]
+  }
+  activeRuns: WorkflowHealthRunRef[]
+  triggers: Array<{
+    id: string
+    kind: string
+    overlap: string
+    fired: number
+    inflight: boolean
+    queueDepth: number
+    runningCount: number
+    lastFiredAt: string | null
+    lastError: string | null
+  }>
+}
+
+const RUN_STATUSES: readonly RunStatus[] = [
+  'pending',
+  'running',
+  'waiting',
+  'completed',
+  'failed',
+  'cancelled',
+]
+
+const ACTIVE_RUN_STATUSES: ReadonlySet<RunStatus> = new Set(['pending', 'running', 'waiting'])
+
+async function workflowHealthList(
+  gateway: Gateway,
+  service: WorkflowRegistrationService,
+  recentFailuresLimit: number,
+): Promise<WorkflowHealth[]> {
+  const registered = new Set(service.list().map((e) => e.id))
+  const runs = await collectRuns(gateway.runStore.listRuns({ limit: 5000 }))
+  return await Promise.all(
+    gateway.registries.workflows
+      .list()
+      .map((entry) => workflowHealth(gateway, entry, registered, runs, recentFailuresLimit)),
+  )
+}
+
+async function workflowHealth(
+  gateway: Gateway,
+  entry: { id: string; path: string },
+  registered: ReadonlySet<string>,
+  allRuns: readonly RunSummary[],
+  recentFailuresLimit: number,
+): Promise<WorkflowHealth> {
+  const loader = gateway.getWorkflowLoader()
+  let pipelineId: string | undefined
+  let description: string | undefined
+  let version: string | undefined
+  let loadable: boolean | null = null
+  let loadError: string | undefined
+
+  if (loader !== undefined) {
+    try {
+      const pipeline = await loadPipelineFromPath(loader, entry.id, entry.path)
+      const desc = describePipeline(pipeline)
+      pipelineId = desc.id
+      description = desc.description
+      version = desc.version
+      loadable = true
+    } catch (err) {
+      loadable = false
+      loadError = err instanceof Error ? err.message : String(err)
+    }
+  }
+
+  const workflowRuns = allRuns.filter((run) => runBelongsToWorkflow(run, entry, pipelineId))
+  const byStatus = countRunsByStatus(workflowRuns)
+  const activeRuns = workflowRuns
+    .filter((run) => ACTIVE_RUN_STATUSES.has(run.status))
+    .map((run) => ({
+      runId: run.runId,
+      pipelineId: run.pipelineId,
+      status: run.status,
+      startedAt: run.startedAt,
+      ...(run.triggerId !== undefined && { triggerId: run.triggerId }),
+    }))
+  const triggers = gateway.managers.triggers
+    .list()
+    .filter((reg) => reg.spec.workflowId === entry.id || reg.spec.workflowId === pipelineId)
+    .map((reg) => ({
+      id: reg.spec.id,
+      kind: reg.spec.kind,
+      overlap: reg.overlap,
+      fired: reg.fired,
+      inflight: reg.inflight,
+      queueDepth: gateway.managers.triggers.queueDepth(reg.spec.id),
+      runningCount: gateway.managers.triggers.runningCount(reg.spec.id),
+      lastFiredAt: reg.lastFiredAt ?? null,
+      lastError: reg.lastError ?? null,
+    }))
+  const recentFailures = await recentWorkflowFailures(
+    gateway,
+    workflowRuns.filter((run) => run.status === 'failed'),
+    recentFailuresLimit,
+  )
+  const hasTriggerErrors = triggers.some((trigger) => trigger.lastError !== null)
+  const readiness = workflowReadiness({
+    gatewayReady: gateway.getState() === 'running',
+    registered: gateway.registries.workflows.get(entry.id) !== undefined,
+    loadable,
+    hasRecentFailures: recentFailures.length > 0,
+    hasTriggerErrors,
+    ...(loadError !== undefined && { loadError }),
+  })
+
+  return {
+    id: entry.id,
+    file: entry.path,
+    source: registered.has(entry.id) ? 'registered' : 'glob',
+    ...(pipelineId !== undefined && { pipelineId }),
+    ...(description !== undefined && { description }),
+    ...(version !== undefined && { version }),
+    readiness,
+    runs: {
+      total: workflowRuns.length,
+      active: activeRuns.length,
+      byStatus,
+      recentFailures,
+    },
+    activeRuns,
+    triggers,
+  }
+}
+
+function workflowGatewayReadiness(gateway: Gateway): { state: string; ready: boolean } {
+  const state = gateway.getState()
+  return { state, ready: state === 'running' }
+}
+
+function workflowReadiness(opts: {
+  gatewayReady: boolean
+  registered: boolean
+  loadable: boolean | null
+  hasRecentFailures: boolean
+  hasTriggerErrors: boolean
+  loadError?: string
+}): WorkflowHealth['readiness'] {
+  const ready =
+    opts.gatewayReady &&
+    opts.registered &&
+    opts.loadable !== false &&
+    !opts.hasRecentFailures &&
+    !opts.hasTriggerErrors
+  let status: WorkflowReadinessStatus = ready ? 'ready' : 'degraded'
+  let reason: string | undefined
+  if (!opts.gatewayReady) reason = 'gateway is not running'
+  else if (!opts.registered) reason = 'workflow is not registered'
+  else if (opts.loadable === false) {
+    status = 'broken'
+    reason = opts.loadError ?? 'workflow failed to load'
+  } else if (opts.hasTriggerErrors) reason = 'one or more triggers have errors'
+  else if (opts.hasRecentFailures) reason = 'one or more recent runs failed'
+  return {
+    status,
+    ready,
+    checks: {
+      gateway: opts.gatewayReady,
+      registered: opts.registered,
+      loadable: opts.loadable,
+      hasRecentFailures: opts.hasRecentFailures,
+      hasTriggerErrors: opts.hasTriggerErrors,
+    },
+    ...(reason !== undefined && { reason }),
+  }
+}
+
+function runBelongsToWorkflow(
+  run: RunSummary,
+  entry: { id: string; path: string },
+  pipelineId: string | undefined,
+): boolean {
+  return (
+    run.pipelineId === entry.id || run.pipelineId === pipelineId || run.workflowPath === entry.path
+  )
+}
+
+async function recentWorkflowFailures(
+  gateway: Gateway,
+  runs: readonly RunSummary[],
+  limit: number,
+): Promise<WorkflowHealthRunFailure[]> {
+  const out: WorkflowHealthRunFailure[] = []
+  for (const run of runs.slice(0, limit)) {
+    const full = await gateway.runStore.getRun(run.runId)
+    out.push({
+      runId: run.runId,
+      pipelineId: run.pipelineId,
+      message: full?.error?.message ?? firstStepErrorMessage(full?.steps) ?? 'unknown error',
+      at: run.completedAt ?? run.startedAt,
+    })
+  }
+  return out
+}
+
+function firstStepErrorMessage(
+  steps: readonly { error?: { message?: string } }[] | undefined,
+): string | undefined {
+  return steps?.find((step) => step.error?.message !== undefined)?.error?.message
+}
+
+async function collectRuns(iter: AsyncIterable<RunSummary>): Promise<RunSummary[]> {
+  const out: RunSummary[] = []
+  for await (const run of iter) out.push(run)
+  return out
+}
+
+function countRunsByStatus(runs: readonly RunSummary[]): Record<RunStatus, number> {
+  const out = Object.fromEntries(RUN_STATUSES.map((status) => [status, 0])) as Record<
+    RunStatus,
+    number
+  >
+  for (const run of runs) out[run.status] += 1
+  return out
+}
+
+function parseRecentFailuresLimit(raw: unknown): number {
+  if (raw === undefined) return 5
+  if (Array.isArray(raw) || typeof raw !== 'string' || raw.length === 0) {
+    throw createError({ statusCode: 400, message: 'recentFailuresLimit must be an integer' })
+  }
+  const limit = Number.parseInt(raw, 10)
+  if (!Number.isSafeInteger(limit) || limit < 0 || limit > 100 || String(limit) !== raw) {
+    throw createError({ statusCode: 400, message: 'recentFailuresLimit must be 0..100' })
+  }
+  return limit
 }
 
 function isMultipart(event: H3Event): boolean {
