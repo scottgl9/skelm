@@ -142,7 +142,7 @@ console.log(run.output)
 - **Sequential runner** — `runPipeline()` with `AbortSignal` cancellation, finalize / last-step-adoption output resolution, and structured error capture.
 - **Persistent state primitives** — `ctx.state` for typed KV across runs, scoped application state via `ctx.state.scope(...)`, and append-only journals for "what did the agent decide and why."
 - **Read-only workflow assets** — `ctx.assets` loads packaged prompts, templates, JSON, and binary fixtures relative to the workflow root, without broad filesystem permissions.
-- **Workspace-scoped writes and exports** — `ctx.workspace.writeFile()` and `ctx.workspace.exportFile()` materialize files under declared roots while denying traversal and symlink escapes.
+- **Workspace-scoped writes and exports** — `ctx.workspace.writeFile()` and `ctx.workspace.exportFile()` materialize files under declared roots while denying traversal and symlink escapes. The default write root is `scratch/`; set `writeRoot: '.'` only when a workflow intentionally needs whole-workspace writes.
 
 ## Public exports
 

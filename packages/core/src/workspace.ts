@@ -15,9 +15,8 @@ import {
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
+import { ConfigError, PermissionDeniedError } from './errors.js'
 import type { RunStatus, WorkspaceConfig, WorkspaceHandle, WorkspaceWriteOptions } from './types.js'
-
-export type { WorkspaceWriteOptions } from './types.js'
 
 const execFileAsync = promisify(execFile)
 const DEFAULT_PERSISTENT_BASE = join(homedir(), '.skelm', 'workspaces')
@@ -191,7 +190,7 @@ export class WorkspaceManager {
     if (workspace.seed?.copy) {
       await seedWorkspace(path, workspace.seed.copy)
     }
-    const handle = createWorkspaceHandle(path, 'persistent', workspace, workspace.name)
+    const handle = await createWorkspaceHandle(path, 'persistent', workspace, workspace.name)
     let released = false
     return {
       handle,
@@ -233,7 +232,7 @@ export class WorkspaceManager {
       mode: 'ephemeral',
     })
     return {
-      handle: createWorkspaceHandle(path, 'ephemeral', workspace),
+      handle: await createWorkspaceHandle(path, 'ephemeral', workspace),
       exposeAfterStep: cleanup !== 'on-step-end',
       async finishStep(): Promise<void> {
         if (cleanup === 'on-step-end') {
@@ -287,7 +286,7 @@ export class WorkspaceManager {
       await seedWorkspace(path, workspace.seed.copy)
     }
 
-    const handle = createWorkspaceHandle(path, 'git-repo', workspace)
+    const handle = await createWorkspaceHandle(path, 'git-repo', workspace)
     return {
       handle,
       exposeAfterStep: true,
@@ -303,14 +302,14 @@ export class WorkspaceManager {
     const path = resolvePath(workspace.path)
     const info = await stat(path)
     if (!info.isDirectory()) {
-      throw new Error(`mounted workspace path is not a directory: ${path}`)
+      throw new ConfigError(`mounted workspace path is not a directory: ${path}`, 'workspace')
     }
     // Seed: copy files into the workspace before the step runs
     if (workspace.seed?.copy) {
       await seedWorkspace(path, workspace.seed.copy)
     }
     return {
-      handle: createWorkspaceHandle(path, 'mounted', workspace),
+      handle: await createWorkspaceHandle(path, 'mounted', workspace),
       exposeAfterStep: true,
       async finishStep(): Promise<void> {},
       async finishRun(): Promise<void> {},
@@ -324,17 +323,21 @@ export class WorkspaceManager {
 }
 
 const DEFAULT_GIT_REPO_BASE = join(homedir(), '.skelm', 'repos')
-const DEFAULT_WRITE_ROOT = '.'
+const DEFAULT_WRITE_ROOT = 'scratch'
 const DEFAULT_EXPORT_ROOT = 'exports'
 
-function createWorkspaceHandle(
+async function createWorkspaceHandle(
   path: string,
   mode: WorkspaceConfig['mode'],
   config: WorkspaceRootConfig,
   name?: string,
-): WorkspaceHandle {
-  const writeRoot = resolveWorkspaceChild(path, config.writeRoot ?? DEFAULT_WRITE_ROOT)
-  const exportRoot = resolveWorkspaceChild(path, config.exportRoot ?? DEFAULT_EXPORT_ROOT)
+): Promise<WorkspaceHandle> {
+  const writeRootLogical = resolveWorkspaceChild(path, config.writeRoot ?? DEFAULT_WRITE_ROOT)
+  const exportRootLogical = resolveWorkspaceChild(path, config.exportRoot ?? DEFAULT_EXPORT_ROOT)
+  await mkdir(writeRootLogical, { recursive: true })
+  await mkdir(exportRootLogical, { recursive: true })
+  const writeRoot = await realpath(writeRootLogical)
+  const exportRoot = await realpath(exportRootLogical)
   const handle: WorkspaceHandle = {
     path,
     mode,
@@ -360,6 +363,8 @@ async function writeScopedFile(
 ): Promise<string> {
   const path = await resolveScopedTarget(workspacePath, root, target, { createParent: true })
   await assertNotSymlink(path)
+  // The non-overwrite path uses 'wx' so the final open fails if a symlink
+  // appears after the lstat check instead of following it.
   await writeFile(path, data, { flag: opts.overwrite === true ? 'w' : 'wx' })
   return path
 }
@@ -372,16 +377,14 @@ async function resolveScopedTarget(
 ): Promise<string> {
   const safeTarget = normalizeRelative(target)
   const workspaceReal = await realpath(workspacePath)
+  await mkdir(root, { recursive: true })
   if (opts.createParent) {
-    await mkdir(root, { recursive: true })
+    await mkdir(dirname(resolve(root, safeTarget)), { recursive: true })
   }
   const rootReal = await realpath(root)
   assertInside(workspaceReal, rootReal, 'workspace root')
   const path = resolve(root, safeTarget)
   const parent = dirname(path)
-  if (opts.createParent) {
-    await mkdir(parent, { recursive: true })
-  }
   const parentReal = await realpath(parent)
   assertInside(rootReal, parentReal, 'workspace scoped root')
   return path
@@ -393,11 +396,11 @@ function resolveWorkspaceChild(workspacePath: string, child: string): string {
 
 function normalizeRelative(path: string): string {
   if (path === '' || isAbsolute(path)) {
-    throw new Error(`workspace path must be relative: ${path}`)
+    throw new ConfigError(`workspace path must be relative: ${path}`, 'workspace')
   }
   const normalized = normalize(path)
   if (normalized === '..' || normalized.startsWith(`..${sep}`)) {
-    throw new Error(`workspace path escapes its root: ${path}`)
+    throw new PermissionDeniedError(`workspace path escapes its root: ${path}`)
   }
   return normalized
 }
@@ -405,14 +408,14 @@ function normalizeRelative(path: string): string {
 function assertInside(root: string, candidate: string, label: string): void {
   const rel = relative(root, candidate)
   if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) return
-  throw new Error(`workspace path escapes ${label}: ${candidate}`)
+  throw new PermissionDeniedError(`workspace path escapes ${label}: ${candidate}`)
 }
 
 async function assertNotSymlink(path: string): Promise<void> {
   try {
     const info = await lstat(path)
     if (info.isSymbolicLink()) {
-      throw new Error(`workspace write target is a symlink: ${path}`)
+      throw new PermissionDeniedError(`workspace write target is a symlink: ${path}`)
     }
   } catch (error) {
     if (isMissing(error)) return

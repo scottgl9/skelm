@@ -70,6 +70,52 @@ describe('WorkspaceManager', () => {
     }
   })
 
+  it('resolves write and export paths before any scoped files are written', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'skelm-workspaces-fresh-roots-'))
+    const manager = new WorkspaceManager({ persistentBase: dir })
+    try {
+      const workspace = await manager.prepare({
+        pipelineId: 'pipe',
+        runId: 'run-1',
+        workspace: { mode: 'persistent', name: 'main' },
+      })
+
+      await expect(workspace.handle.resolveWritePath('draft.txt')).resolves.toBe(
+        join(workspace.handle.writeRoot, 'draft.txt'),
+      )
+      await expect(workspace.handle.resolveExportPath('report.txt')).resolves.toBe(
+        join(workspace.handle.exportRoot, 'report.txt'),
+      )
+
+      await workspace.finishStep('completed')
+      await workspace.finishRun('completed')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not overwrite existing workspace files by default', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'skelm-workspaces-overwrite-'))
+    const manager = new WorkspaceManager({ persistentBase: dir })
+    try {
+      const workspace = await manager.prepare({
+        pipelineId: 'pipe',
+        runId: 'run-1',
+        workspace: { mode: 'persistent', name: 'main' },
+      })
+
+      const file = await workspace.handle.writeFile('draft.txt', 'first')
+      await expect(workspace.handle.writeFile('draft.txt', 'second')).rejects.toThrow(/EEXIST/)
+      await workspace.handle.writeFile('draft.txt', 'second', { overwrite: true })
+      expect(await readFile(file, 'utf8')).toBe('second')
+
+      await workspace.finishStep('completed')
+      await workspace.finishRun('completed')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   it('exports files under a mounted workspace declared export root', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'skelm-mounted-export-'))
     const manager = new WorkspaceManager()
@@ -82,7 +128,7 @@ describe('WorkspaceManager', () => {
 
       const file = await workspace.handle.exportFile('report.txt', 'ready')
 
-      expect(file).toBe(join(dir, 'published', 'report.txt'))
+      expect(file).toBe(join(workspace.handle.exportRoot, 'report.txt'))
       expect(await readFile(file, 'utf8')).toBe('ready')
       await workspace.finishStep('completed')
       await workspace.finishRun('completed')

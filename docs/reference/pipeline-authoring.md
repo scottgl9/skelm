@@ -237,10 +237,15 @@ code({
 })
 ```
 
-`writeFile()` writes under `writeRoot` (default: the workspace root).
+`writeFile()` writes under `writeRoot` (default: `scratch/`).
 `exportFile()` writes under `exportRoot` (default: `exports/`). Both accept
 relative paths only, create parent directories, refuse to overwrite unless
 `{ overwrite: true }` is passed, and reject path traversal or symlink escapes.
+
+This extends the public `WorkspaceHandle` interface with required
+`resolveWritePath`, `resolveExportPath`, `writeFile`, and `exportFile`
+methods. Consumers with custom `WorkspaceHandle` test doubles or integrations
+must implement those methods when upgrading.
 
 Exports are ordinary workspace files: persistent and mounted workspace
 exports remain on disk, while ephemeral exports are removed with the
