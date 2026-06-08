@@ -101,7 +101,15 @@ export interface WorkspaceHandle {
 export type StateScope = 'pipeline' | 'step' | 'pipeline+name'
 
 export interface StateConfig {
+  /**
+   * Namespace used by the state handle. Defaults to `pipeline`, which is
+   * shared by every step and every run of the same pipeline id.
+   */
   readonly scope?: StateScope
+  /**
+   * Required with `pipeline+name`. Use a stable package/workflow-owned name
+   * for cross-pipeline application state such as cursors or shared caches.
+   */
   readonly name?: string
 }
 
@@ -127,6 +135,13 @@ export interface State {
   cas<T>(key: string, expected: T | undefined, next: T): Promise<boolean>
   append(stream: string, entry: unknown): Promise<void>
   read(stream: string, opts?: StateReadOptions): AsyncIterable<unknown>
+  /**
+   * Create another state handle with the same pipeline/step identity but a
+   * different namespace. Useful when a step needs both its default pipeline
+   * state and a named shared application namespace. The current StateConfig is
+   * not inherited; only the pipeline id and current step id carry over.
+   */
+  scope(config: StateConfig): State
 }
 
 export type { AssetHost } from './assets.js'

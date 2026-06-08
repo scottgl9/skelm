@@ -84,6 +84,7 @@ value:ScriptTrigger
 value:SkillParseError
 value:SlackTrigger
 value:SqliteRunStore
+value:StateConfigError
 value:StepError
 value:StepTimeoutError
 value:TriggerError

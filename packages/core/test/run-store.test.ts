@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { code, pipeline } from '../src/builders.js'
+import { StateConfigError } from '../src/errors.js'
 import { EventBus } from '../src/events.js'
 import { MemoryRunStore, SqliteRunStore } from '../src/run-store.js'
 import { runPipeline } from '../src/runner.js'
@@ -222,6 +223,103 @@ describe('runPipeline with RunStore', () => {
       flag: 'ready',
       journal: [{ from: 'shared-a' }],
     })
+  })
+
+  it('can derive scoped state handles from the current context', async () => {
+    const store = new MemoryRunStore()
+    const wf = pipeline({
+      id: 'scoped-handle',
+      steps: [
+        code({
+          id: 'write',
+          run: async (ctx) => {
+            await ctx.state.set('pipeline-key', 'pipeline')
+            const shared = ctx.state.scope({ scope: 'pipeline+name', name: 'package-cache' })
+            await shared.set('cursor', { page: 2 })
+            await shared.append('journal', { event: 'advanced' })
+            return null
+          },
+        }),
+        code({
+          id: 'read-step',
+          state: { scope: 'step' },
+          run: async (ctx) => {
+            await ctx.state.set('step-key', 'step-only')
+            const pipelineState = ctx.state.scope({ scope: 'pipeline' })
+            const shared = ctx.state.scope({ scope: 'pipeline+name', name: 'package-cache' })
+            return {
+              pipeline: await pipelineState.get<string>('pipeline-key'),
+              stepLocal: await ctx.state.get<string>('step-key'),
+              sharedCursor: await shared.get<{ page: number }>('cursor'),
+              sharedJournal: await collect(shared.read('journal')),
+            }
+          },
+        }),
+        code({
+          id: 'read-pipeline',
+          run: async (ctx) => ({
+            stepKeyVisible: await ctx.state.get<string>('step-key'),
+            sharedCursor: await ctx.state
+              .scope({ scope: 'pipeline+name', name: 'package-cache' })
+              .get<{ page: number }>('cursor'),
+          }),
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined, { store })
+
+    expect(run.steps?.[1]?.output).toEqual({
+      pipeline: 'pipeline',
+      stepLocal: 'step-only',
+      sharedCursor: { page: 2 },
+      sharedJournal: [{ event: 'advanced' }],
+    })
+    expect(run.output).toEqual({
+      stepKeyVisible: undefined,
+      sharedCursor: { page: 2 },
+    })
+  })
+
+  it('rejects unnamed shared state scopes at handle derivation time', async () => {
+    const wf = pipeline({
+      id: 'bad-scope',
+      steps: [
+        code({
+          id: 'derive',
+          run: (ctx) => ctx.state.scope({ scope: 'pipeline+name' }).get('x'),
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf)
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('StateConfigError')
+    expect(run.error?.message).toContain('state scope "pipeline+name" requires a non-empty name')
+  })
+
+  it('rejects step-scoped state handles without a current step id', async () => {
+    const wf = pipeline({
+      id: 'bad-step-scope',
+      steps: [
+        code({
+          id: 'seed',
+          run: () => 'ok',
+        }),
+      ],
+      finalize: (ctx) => ctx.state.scope({ scope: 'step' }).get('x'),
+    })
+
+    const run = await runPipeline(wf)
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('StateConfigError')
+    expect(run.error?.message).toContain('state scope "step" requires a current step id')
+  })
+
+  it('exports invalid state scopes as typed errors', () => {
+    expect(new StateConfigError('bad').name).toBe('StateConfigError')
   })
 })
 

@@ -140,7 +140,7 @@ console.log(run.output)
 - **Default-deny permission model** — `AgentPermissions` and `TrustEnforcer` for agent step gating. Optional fields default to deny.
 - **Typed `EventBus`** — `RunEvent` union covers run lifecycle, step lifecycle, agent turns, tool calls, decisions, and errors.
 - **Sequential runner** — `runPipeline()` with `AbortSignal` cancellation, finalize / last-step-adoption output resolution, and structured error capture.
-- **Persistent state primitives** — `ctx.state` for typed KV across runs; append-only journals for "what did the agent decide and why."
+- **Persistent state primitives** — `ctx.state` for typed KV across runs, scoped application state via `ctx.state.scope(...)`, and append-only journals for "what did the agent decide and why."
 - **Read-only workflow assets** — `ctx.assets` loads packaged prompts, templates, JSON, and binary fixtures relative to the workflow root, without broad filesystem permissions.
 
 ## Public exports
