@@ -141,6 +141,7 @@ console.log(run.output)
 - **Typed `EventBus`** — `RunEvent` union covers run lifecycle, step lifecycle, agent turns, tool calls, decisions, and errors.
 - **Sequential runner** — `runPipeline()` with `AbortSignal` cancellation, finalize / last-step-adoption output resolution, and structured error capture.
 - **Persistent state primitives** — `ctx.state` for typed KV across runs; append-only journals for "what did the agent decide and why."
+- **Read-only workflow assets** — `ctx.assets` loads packaged prompts, templates, JSON, and binary fixtures relative to the workflow root, without broad filesystem permissions.
 
 ## Public exports
 
@@ -151,7 +152,7 @@ export {
   // runtime
   runPipeline, Runner, type RunOptions,
   // types
-  type Pipeline, type Step, type CodeStep,
+  type AssetHost, type Pipeline, type Step, type CodeStep,
   type Context, type Run, type RunMetadata, type StepResult,
   type RunId, type StepId, type StepKind, type RunStatus, type StepStatus,
   type RetryPolicy,

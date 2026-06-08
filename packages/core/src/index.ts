@@ -217,6 +217,7 @@ export {
 export type { PersistentSessionRecord } from './persistent-workflow-store.js'
 export {
   ConfigError,
+  AssetPathError,
   DEFAULT_MAX_DELEGATION_DEPTH,
   DelegationCycleError,
   DelegationDepthError,
@@ -373,6 +374,7 @@ export type {
 } from './enforcement/index.js'
 export type {
   AgentStep,
+  AssetHost,
   BranchStep,
   CodeStep,
   Context,

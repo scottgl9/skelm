@@ -10,6 +10,7 @@ value:AgentProviderNotFoundError
 value:AgentRegistry
 value:ApprovalDeniedError
 value:ArtifactQuotaExceededError
+value:AssetPathError
 value:AutoApproveGate
 value:AutoDenyGate
 value:BackendAuthenticationError
@@ -186,6 +187,7 @@ type:AgentProviderConfig
 type:AgentRequest
 type:AgentResponse
 type:AgentStep
+type:AssetHost
 type:AgentToolCall
 type:AgentToolResult
 type:AgentmemoryContextBlock

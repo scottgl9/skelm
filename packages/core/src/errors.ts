@@ -94,6 +94,18 @@ export class ExecConfigError extends Error {
   override readonly name = 'ExecConfigError'
 }
 
+/** Thrown when a workflow asset path is invalid or cannot be read from its asset root. */
+export class AssetPathError extends Error {
+  override readonly name = 'AssetPathError'
+  override readonly cause?: unknown
+  constructor(message: string, cause?: unknown) {
+    super(message)
+    if (cause !== undefined) {
+      this.cause = cause
+    }
+  }
+}
+
 /** Thrown when Runner.resume() or awaitResume() is called against an illegal run state. */
 export class RunStateError extends Error {
   override readonly name = 'RunStateError'

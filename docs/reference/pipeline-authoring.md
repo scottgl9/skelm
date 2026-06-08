@@ -152,6 +152,38 @@ enforced; exceeding it throws `ArtifactQuotaExceededError` and writes
 nothing. Retrieve with `ctx.artifacts!.get({ runId, artifactId })`; list
 all artifacts for the current run with `ctx.artifacts!.list()`.
 
+### Read-only workflow assets via `ctx.assets`
+
+Use `ctx.assets` for bundled, versioned inputs such as prompts, templates,
+rules, schemas, and fixtures. Asset paths are relative to the pipeline
+`baseDir` that the workflow loader sets from the workflow file directory;
+programmatic pipelines should set `pipeline({ baseDir, ... })` for the same
+stable behavior. Lookups do not depend on `process.cwd()` after the run starts.
+
+```ts
+code({
+  id: 'load-prompt',
+  run: async (ctx) => {
+    const prompt = await ctx.assets.getText('assets/review-prompt.md')
+    const rubric = await ctx.assets.getJson<{ labels: string[] }>('assets/rubric.json')
+    const fixture = await ctx.assets.getBytes('assets/fixtures/input.bin')
+    return { prompt, rubric, fixtureSize: fixture.byteLength }
+  },
+})
+```
+
+Available helpers:
+
+- `ctx.assets.getText(path)` — UTF-8 text.
+- `ctx.assets.getJson<T = unknown>(path)` — parsed JSON.
+- `ctx.assets.getBytes(path)` — raw bytes as `Uint8Array`.
+- `ctx.assets.exists(path)` — `false` for missing files or paths outside the asset root.
+- `ctx.assets.list(prefix?)` — sorted recursive file paths under the asset root.
+
+Assets are read-only and scoped to the workflow/package root. Absolute paths,
+backslashes, `..` traversal, and symlink escapes are denied. Use
+`ctx.artifacts` for run outputs and `ctx.workspace` for mutable working files.
+
 ### `agent(def)` — full agentic loop
 
 See [agent-step.md](agent-step.md) for the full reference.
@@ -370,6 +402,7 @@ interface Context<TInput = unknown> {
   steps: Record<string, unknown>    // keyed by step id
   run: RunMetadata                  // runId, pipelineId, startedAt
   state: State                      // typed KV + append-only streams
+  assets: AssetHost                 // read-only workflow/package assets
   threads: ThreadHost               // see "Threaded conversations"
 }
 ```

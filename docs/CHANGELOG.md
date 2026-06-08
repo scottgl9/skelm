@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+
+- **Read-only workflow assets.** Pipeline contexts now expose `ctx.assets`
+  helpers for loading workflow-root-relative text, JSON, bytes, existence, and
+  recursive asset listings without relying on `process.cwd()` or broad
+  filesystem permissions.
+
 ## [0.4.7] - 2026-06-05
 
 ### Breaking Changes

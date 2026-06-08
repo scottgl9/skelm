@@ -1,3 +1,4 @@
+import { createAssetHost } from './assets.js'
 import {
   type AgentRequest,
   BackendCapabilityError,
@@ -520,6 +521,7 @@ export async function runPipeline<TInput, TOutput>(
   const store = options.store
   const stateStore = options.stateStore ?? options.store ?? defaultStateStore
   const threadHost = createThreadHost(stateStore)
+  const assetHost = createAssetHost(pipeline.baseDir ?? process.cwd())
   // ArtifactStore is part of the RunStore surface; fall back to the default
   // in-memory store so ctx.artifacts is always available even when the caller
   // didn't wire a durable store.
@@ -861,6 +863,7 @@ export async function runPipeline<TInput, TOutput>(
         run: runMeta,
         signal: controller.signal,
         state: createStateHandle(stateStore, { pipelineId: pipeline.id, stepId: step.id }),
+        assets: assetHost,
         threads: threadHost,
         workspace: currentWorkspace as WorkspaceHandle | undefined,
         get<T = unknown>(stepId: StepId): T | undefined {
@@ -931,6 +934,7 @@ export async function runPipeline<TInput, TOutput>(
           stepId: step.id,
           ...(step.state !== undefined && { config: step.state }),
         }),
+        assets: assetHost,
         threads: threadHost,
         workspace: currentWorkspace as WorkspaceHandle | undefined,
         artifacts: makeArtifactsHandle(step.id),
@@ -1065,6 +1069,7 @@ export async function runPipeline<TInput, TOutput>(
         run: runMeta,
         signal: controller.signal,
         state: createStateHandle(stateStore, { pipelineId: pipeline.id }),
+        assets: assetHost,
         threads: threadHost,
         workspace: currentWorkspace as WorkspaceHandle | undefined,
         get<T = unknown>(stepId: StepId): T | undefined {
