@@ -96,6 +96,8 @@ describe('HTTP schedule metadata', () => {
       const schedule = await fetch(`${base}/schedules/interval-meta`).then((r) => r.json())
       expect(schedule.nextFireAt).toBe(created.nextFireAt)
       expect(schedule.lastFiredAt).toEqual(expect.any(String))
+      // With no workflow registered, the gateway dispatcher treats the manual
+      // schedule fire as a no-op dispatch that completed successfully.
       expect(schedule.lastOutcome).toBe('succeeded')
       expect(schedule.lastOverlapDecision).toBe('dispatched')
     } finally {

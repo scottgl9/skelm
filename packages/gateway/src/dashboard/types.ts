@@ -1,4 +1,5 @@
 import type { RunStatus } from '@skelm/core'
+import type { TriggerFireOutcome } from '../triggers/types.js'
 
 export interface DashboardGatewaySummary {
   status: 'running'
@@ -113,7 +114,7 @@ export interface DashboardScheduleStatus {
   runningCount: number
   lastFiredAt: string | null
   nextFireAt: string | null
-  lastOutcome: string | null
+  lastOutcome: TriggerFireOutcome | null
   lastOverlapDecision: string | null
   lastError: string | null
   lastErrorAt: string | null

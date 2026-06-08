@@ -2,7 +2,7 @@ import { parseDuration } from '@skelm/core'
 import { type Router, createError, eventHandler, readBody } from 'h3'
 import type { Gateway } from '../../lifecycle/gateway.js'
 import { isValidIntervalMs } from '../../triggers/pipeline-trigger-to-spec.js'
-import type { TriggerRegistration, TriggerSpec } from '../../triggers/types.js'
+import type { TriggerFireOutcome, TriggerRegistration, TriggerSpec } from '../../triggers/types.js'
 
 export function registerScheduleRoutes(router: Router, gateway: Gateway): void {
   router.get(
@@ -330,7 +330,7 @@ function registrationToSchedule(
   input?: unknown
   lastFiredAt?: string
   nextFireAt?: string
-  lastOutcome?: string
+  lastOutcome?: TriggerFireOutcome
   lastOverlapDecision?: string
   lastError?: string
   lastErrorAt?: string

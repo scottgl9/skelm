@@ -41,6 +41,8 @@ export interface DashboardServiceDeps {
   runStore: RunStore
   listWorkflows: () => ReadonlyArray<WorkflowEntry>
   listSchedules: () => ReadonlyArray<TriggerRegistration>
+  queueDepth?: (triggerId: string) => number
+  runningCount?: (triggerId: string) => number
   approvals: DashboardApprovalSource
   version: string
   startedAt: number
@@ -248,9 +250,9 @@ export class DashboardService {
       workflowId: reg.spec.workflowId,
       fired: reg.fired,
       inflight: reg.inflight,
-      queued: 0,
+      queued: this.deps.queueDepth?.(reg.spec.id) ?? 0,
       dropped: reg.dropped ?? 0,
-      runningCount: reg.inflight ? 1 : 0,
+      runningCount: this.deps.runningCount?.(reg.spec.id) ?? (reg.inflight ? 1 : 0),
       lastFiredAt: reg.lastFiredAt ?? null,
       nextFireAt: reg.nextFireAt ?? null,
       lastOutcome: reg.lastOutcome ?? null,

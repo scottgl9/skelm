@@ -52,12 +52,13 @@ await scheduler.start()
 
 ## Metadata
 
-Each `TriggerRegistration` records operator metadata: `runCount`,
-`errorCount`, `lastRunAt`, `nextRunAt`, `runningCount`, `lastOutcome`,
-`lastError`, and `lastErrorAt`. Invalid cron expressions and invalid interval
-durations move the registration to `status: 'error'` instead of arming a timer.
-Intervals must be finite and within Node's supported timer range
-(`1..2147483647` ms).
+Each `TriggerRegistration` records baseline operator metadata: `runCount`,
+`errorCount`, `lastRunAt`, `lastError`, and `lastErrorAt`. It also reports
+scheduling/runtime state through `nextRunAt`, `runningCount`, and `lastOutcome`
+(`dispatched`, `skipped`, `succeeded`, or `failed`). Invalid cron expressions
+and invalid interval durations move the registration to `status: 'error'`
+instead of arming a timer. Intervals must be finite and within Node's supported
+timer range (`1..2147483647` ms).
 
 ## Public exports
 

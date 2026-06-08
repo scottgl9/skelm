@@ -61,6 +61,7 @@ export interface TriggerRegistration {
   updatedAt: number
   lastRunAt?: number
   nextRunAt?: number
+  /** Standalone scheduler outcomes intentionally omit gateway queue/cancel states. */
   lastOutcome?: 'dispatched' | 'skipped' | 'succeeded' | 'failed'
   lastErrorAt?: number
   runningCount?: number
