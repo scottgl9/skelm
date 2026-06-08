@@ -1,11 +1,15 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { RegistryError } from '../../src/errors.js'
-import { discoverWorkflowPackage, discoverWorkflowPackages } from '../../src/workflows/packages.js'
+import {
+  discoverWorkflowPackage,
+  discoverWorkflowPackages,
+  resolveWorkflowPackagePath,
+} from '../../src/workflows/packages.js'
 import { WorkflowRegistry } from '../../src/workflows/registry.js'
 
 let tempRoot: string
@@ -58,7 +62,6 @@ describe('workflow package discovery', () => {
 
   it('reports a missing workflow package manifest', async () => {
     const root = join(tempRoot, 'missing')
-    await writeFile(join(tempRoot, 'missing-package-root'), '')
     await mkdirPackage(root, { name: 'plain-package', version: '1.0.0' })
 
     await expect(discoverWorkflowPackage(root)).rejects.toThrow('missing skelm.workflowPackage')
@@ -82,6 +85,26 @@ describe('workflow package discovery', () => {
     expect(result.errors[0].message).toContain("id 'acme.shared' is already discovered")
   })
 
+  it('collects duplicate workflow ids across discovered packages', async () => {
+    const first = await createPackage('first-discovered', {
+      id: 'acme.first-discovered',
+      workflows: [{ id: 'shared.workflow', path: './workflows/one.workflow.mts' }],
+    })
+    const second = await createPackage('second-discovered', {
+      id: 'acme.second-discovered',
+      workflows: [{ id: 'shared.workflow', path: './workflows/two.workflow.mts' }],
+    })
+
+    const result = await discoverWorkflowPackages([first, second])
+
+    expect(result.packages.map((pkg) => pkg.id)).toEqual(['acme.first-discovered'])
+    expect(result.errors).toHaveLength(1)
+    expect(result.errors[0]).toBeInstanceOf(RegistryError)
+    expect(result.errors[0].message).toContain(
+      "workflow id 'shared.workflow' already declared by package 'acme.first-discovered'",
+    )
+  })
+
   it('rejects duplicate workflow ids inside a package manifest', async () => {
     const root = await createPackage('dupe-workflows', {
       id: 'acme.dupe',
@@ -96,28 +119,52 @@ describe('workflow package discovery', () => {
     )
   })
 
-  it('keeps package-relative paths stable regardless of process cwd', async () => {
-    const root = await createPackage('cwd-stable', {
-      id: 'acme.cwd',
-      workflows: [{ id: 'cwd.workflow', path: './workflows/cwd.workflow.mts' }],
+  it('normalizes explicit package roots before resolving package-relative paths', async () => {
+    const root = await createPackage('absolute-root', {
+      id: 'acme.absolute',
+      workflows: [{ id: 'absolute.workflow', path: './workflows/absolute.workflow.mts' }],
     })
-    const originalCwd = process.cwd()
+    const pkg = await discoverWorkflowPackage(root)
+    const registry = new WorkflowRegistry()
 
-    try {
-      process.chdir(tempRoot)
-      const pkg = await discoverWorkflowPackage(root)
-      const registry = new WorkflowRegistry()
-      registry.registerPackage(pkg)
+    registry.registerPackage(pkg)
 
-      expect(registry.resolvePackagePath('acme.cwd', './prompts/review.md')).toBe(
-        join(root, 'prompts/review.md'),
-      )
-      expect(() => registry.resolvePackagePath('acme.cwd', '../escape.md')).toThrow(
-        'outside the package root',
-      )
-    } finally {
-      process.chdir(originalCwd)
-    }
+    expect(isAbsolute(pkg.packageRoot)).toBe(true)
+    expect(registry.resolvePackagePath('acme.absolute', './prompts/review.md')).toBe(
+      join(root, 'prompts/review.md'),
+    )
+    expect(() => registry.resolvePackagePath('acme.absolute', '../escape.md')).toThrow(
+      'outside the package root',
+    )
+  })
+
+  it('resolves standalone package-relative paths inside a discovered package', async () => {
+    const pkg = await discoverWorkflowPackage(
+      await createPackage('standalone-resolve', {
+        id: 'acme.standalone',
+        workflows: [{ id: 'standalone.workflow', path: './workflows/standalone.workflow.mts' }],
+      }),
+    )
+
+    expect(resolveWorkflowPackagePath(pkg, './assets/prompt.md')).toBe(
+      join(pkg.packageRoot, 'assets/prompt.md'),
+    )
+    expect(() => resolveWorkflowPackagePath(pkg, '/tmp/escape.md')).toThrow(
+      "declares invalid path path '/tmp/escape.md'",
+    )
+    expect(() => resolveWorkflowPackagePath(pkg, '../escape.md')).toThrow(
+      'outside the package root',
+    )
+  })
+
+  it('rejects empty optional manifest strings', async () => {
+    const root = await createPackage('empty-strings', {
+      id: 'acme.empty',
+      name: '',
+      workflows: [{ id: 'empty.workflow', path: './workflows/empty.workflow.mts' }],
+    })
+
+    await expect(discoverWorkflowPackage(root)).rejects.toThrow('skelm.workflowPackage.name')
   })
 
   it('rejects duplicate workflow ids across registered packages', async () => {
@@ -158,6 +205,6 @@ async function createPackage(
 
 async function mkdirPackage(root: string, packageJson: Record<string, unknown>): Promise<void> {
   await rm(root, { recursive: true, force: true })
-  await import('node:fs/promises').then(({ mkdir }) => mkdir(root, { recursive: true }))
+  await mkdir(root, { recursive: true })
   await writeFile(join(root, 'package.json'), `${JSON.stringify(packageJson, null, 2)}\n`)
 }

@@ -38,8 +38,10 @@ Declare workflow package metadata in `package.json` under
 ```
 
 `id` values are stable runtime identifiers. Package ids and workflow ids must be
-unique among registered packages. Workflow `path`, `assets`, and `docs` values
-are package-relative and must stay inside the package root.
+unique among discovered and registered packages. Optional metadata strings such
+as `name`, `version`, and `description` must be non-empty when provided.
+Workflow `path`, `assets`, and `docs` values are package-relative and must stay
+inside the package root.
 
 ## Discovery and registration
 

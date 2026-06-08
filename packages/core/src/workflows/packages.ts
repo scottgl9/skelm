@@ -125,6 +125,7 @@ export async function discoverWorkflowPackages(
   const packages: DiscoveredWorkflowPackage[] = []
   const errors: RegistryError[] = []
   const packageIds = new Set<string>()
+  const workflowIds = new Map<string, string>()
 
   for (const packageRoot of packageRoots) {
     try {
@@ -136,7 +137,20 @@ export async function discoverWorkflowPackages(
           pkg.id,
         )
       }
+      for (const workflow of pkg.workflows) {
+        const existingPackageId = workflowIds.get(workflow.id)
+        if (existingPackageId !== undefined) {
+          throw new RegistryError(
+            `Workflow package '${pkg.id}' declares workflow id '${workflow.id}' already declared by package '${existingPackageId}'`,
+            'workflowPackage',
+            workflow.id,
+          )
+        }
+      }
       packageIds.add(pkg.id)
+      for (const workflow of pkg.workflows) {
+        workflowIds.set(workflow.id, pkg.id)
+      }
       packages.push(pkg)
     } catch (error) {
       errors.push(
@@ -190,9 +204,14 @@ function readWorkflowPackageManifest(
 
   return {
     id: requireString(manifest.id, 'skelm.workflowPackage.id', manifestPath),
-    ...(typeof manifest.name === 'string' && { name: manifest.name }),
-    ...(typeof manifest.version === 'string' && { version: manifest.version }),
-    ...(typeof manifest.description === 'string' && { description: manifest.description }),
+    ...optionalString(manifest.name, 'skelm.workflowPackage.name', manifestPath, 'name'),
+    ...optionalString(manifest.version, 'skelm.workflowPackage.version', manifestPath, 'version'),
+    ...optionalString(
+      manifest.description,
+      'skelm.workflowPackage.description',
+      manifestPath,
+      'description',
+    ),
     workflows: workflows.map((workflow, index) =>
       readWorkflowManifest(workflow, manifestPath, index),
     ),
@@ -216,9 +235,24 @@ function readWorkflowManifest(
   return {
     id: requireString(value.id, `skelm.workflowPackage.workflows[${index}].id`, manifestPath),
     path: requireString(value.path, `skelm.workflowPackage.workflows[${index}].path`, manifestPath),
-    ...(typeof value.export === 'string' && { export: value.export }),
-    ...(typeof value.name === 'string' && { name: value.name }),
-    ...(typeof value.description === 'string' && { description: value.description }),
+    ...optionalString(
+      value.export,
+      `skelm.workflowPackage.workflows[${index}].export`,
+      manifestPath,
+      'export',
+    ),
+    ...optionalString(
+      value.name,
+      `skelm.workflowPackage.workflows[${index}].name`,
+      manifestPath,
+      'name',
+    ),
+    ...optionalString(
+      value.description,
+      `skelm.workflowPackage.workflows[${index}].description`,
+      manifestPath,
+      'description',
+    ),
   }
 }
 
@@ -271,6 +305,24 @@ function requireString(value: unknown, field: string, manifestPath: string): str
     )
   }
   return value
+}
+
+function optionalString<Key extends string>(
+  value: unknown,
+  field: string,
+  manifestPath: string,
+  key: Key,
+): { readonly [K in Key]?: string } {
+  if (value === undefined) {
+    return {}
+  }
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new RegistryError(
+      `${field} in ${manifestPath} must be a non-empty string when provided`,
+      'workflowPackage',
+    )
+  }
+  return { [key]: value } as { readonly [K in Key]?: string }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
