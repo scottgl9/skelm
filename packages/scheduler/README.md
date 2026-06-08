@@ -50,6 +50,15 @@ await scheduler.start()
 - **Overlap** — choose what happens when a trigger fires while a previous run is still in flight: `skip`, `queue`, or `parallel`.
 - **Retry / backoff** — handled at the pipeline runner layer; the scheduler treats every firing as a fresh request.
 
+## Metadata
+
+Each `TriggerRegistration` records operator metadata: `runCount`,
+`errorCount`, `lastRunAt`, `nextRunAt`, `runningCount`, `lastOutcome`,
+`lastError`, and `lastErrorAt`. Invalid cron expressions and invalid interval
+durations move the registration to `status: 'error'` instead of arming a timer.
+Intervals must be finite and within Node's supported timer range
+(`1..2147483647` ms).
+
 ## Public exports
 
 ```ts

@@ -119,7 +119,9 @@ export class TriggerCoordinator {
     if (this.stopping) return
     if (!this.registrations.has(triggerId)) return
     const next = nextFireTime(parsed, new Date())
+    const reg = this.registrations.get(triggerId)
     if (next === null) {
+      if (reg !== undefined) reg.nextFireAt = undefined
       // No fire within nextFireTime's lookahead window. This does NOT mean the
       // cron never fires — a valid but sparse expression (e.g. `0 0 29 2 *`,
       // whose next Feb 29 can be years out across a non-leap century) also
@@ -135,6 +137,7 @@ export class TriggerCoordinator {
       this.cronTimers.set(triggerId, recheck)
       return
     }
+    if (reg !== undefined) reg.nextFireAt = next.toISOString()
     const delay = Math.max(0, next.getTime() - Date.now())
     // A sparse cron (e.g. annual `0 0 1 1 *`) can be months out — a delay
     // well beyond setTimeout's 2^31-1 ms ceiling, where Node would clamp it
@@ -236,6 +239,7 @@ export class TriggerCoordinator {
     // so a slow pipeline doesn't pile up backlog when caller didn't ask.
     const effectiveOverlap: OverlapPolicy =
       overlap ?? this.opts.defaultOverlap ?? (spec.kind === 'queue' ? 'queue' : 'skip')
+    const now = Date.now()
     const reg: TriggerRegistration = {
       spec,
       overlap: effectiveOverlap,
@@ -253,10 +257,15 @@ export class TriggerCoordinator {
         // (Node clamps <= 0 / > 2^31-1 to 1ms → tight-loop DoS). The spec
         // builders reject these up front; this guards any other path.
         if (!isValidIntervalMs(spec.everyMs)) {
-          reg.lastError = `invalid interval everyMs=${spec.everyMs} (must be 1..${MAX_INTERVAL_MS}ms)`
+          this.recordError(
+            reg,
+            `invalid interval everyMs=${spec.everyMs} (must be 1..${MAX_INTERVAL_MS}ms)`,
+          )
           break
         }
+        reg.nextFireAt = new Date(now + spec.everyMs).toISOString()
         const t = setInterval(() => {
+          reg.nextFireAt = new Date(Date.now() + spec.everyMs).toISOString()
           this.fireDetached(spec.id)
         }, spec.everyMs)
         t.unref?.()
@@ -266,7 +275,7 @@ export class TriggerCoordinator {
       case 'cron': {
         const parsed = parseCron(spec.cron, spec.tz)
         if (parsed === null) {
-          reg.lastError = `unsupported cron expression: ${spec.cron}`
+          this.recordError(reg, `unsupported cron expression: ${spec.cron}`)
           break
         }
         this.scheduleNextCron(spec.id, parsed)
@@ -281,20 +290,24 @@ export class TriggerCoordinator {
       case 'at': {
         const ts = Date.parse(spec.when)
         if (Number.isNaN(ts)) {
-          reg.lastError = `invalid 'at' timestamp: ${spec.when}`
+          this.recordError(reg, `invalid 'at' timestamp: ${spec.when}`)
           break
         }
         const delay = ts - Date.now()
         if (delay <= 0) {
+          reg.nextFireAt = new Date().toISOString()
           setImmediate(() => {
+            reg.nextFireAt = undefined
             this.fireDetached(spec.id)
           }).unref?.()
         } else {
+          reg.nextFireAt = new Date(ts).toISOString()
           // A far-future `when` (> 2^31-1 ms ≈ 24.8 days out) would overflow
           // setTimeout and clamp to 1ms — firing the trigger IMMEDIATELY
           // instead of at the scheduled time. LongTimer chunks the delay so
           // an `at` weeks/months away fires exactly once, when it should.
           const t = new LongTimer(delay, () => {
+            reg.nextFireAt = undefined
             this.fireDetached(spec.id)
           })
           this.atTimers.set(spec.id, t)
@@ -310,7 +323,7 @@ export class TriggerCoordinator {
           const key = `${method} ${spec.path}`
           const existing = this.webhookRoutes.get(key)
           if (existing !== undefined && existing !== spec.id) {
-            reg.lastError = `webhook ${key} already bound to trigger ${existing}`
+            this.recordError(reg, `webhook ${key} already bound to trigger ${existing}`)
             break
           }
         }
@@ -320,12 +333,15 @@ export class TriggerCoordinator {
       }
       case 'poll': {
         if (!isValidIntervalMs(spec.everyMs)) {
-          reg.lastError = `invalid poll everyMs=${spec.everyMs} (must be 1..${MAX_INTERVAL_MS}ms)`
+          this.recordError(
+            reg,
+            `invalid poll everyMs=${spec.everyMs} (must be 1..${MAX_INTERVAL_MS}ms)`,
+          )
           break
         }
         const source = this.pollSources.get(spec.sourceFnId)
         if (source === undefined) {
-          reg.lastError = `poll source not registered: ${spec.sourceFnId}`
+          this.recordError(reg, `poll source not registered: ${spec.sourceFnId}`)
           break
         }
         const dedupeFn =
@@ -348,12 +364,14 @@ export class TriggerCoordinator {
               }
             }
           } catch (err) {
-            reg.lastError = (err as Error).message
+            this.recordError(reg, (err as Error).message)
           }
         }
         // First tick records baseline; subsequent ticks fire on change.
         void tick()
+        reg.nextFireAt = new Date(Date.now() + spec.everyMs).toISOString()
         const t = setInterval(() => {
+          reg.nextFireAt = new Date(Date.now() + spec.everyMs).toISOString()
           void tick()
         }, spec.everyMs)
         t.unref?.()
@@ -370,14 +388,14 @@ export class TriggerCoordinator {
             (err) => {
               const current = this.registrations.get(spec.id)
               if (current !== undefined) {
-                current.lastError = `file-watch error: ${err.message}`
+                this.recordError(current, `file-watch error: ${err.message}`)
               }
               this.opts.onFireError?.(spec.id, err)
             },
           )
           this.fileWatchers.set(spec.id, watcher)
         } catch (err) {
-          reg.lastError = `file-watch start failed: ${(err as Error).message}`
+          this.recordError(reg, `file-watch start failed: ${(err as Error).message}`)
         }
         break
       }
@@ -394,21 +412,21 @@ export class TriggerCoordinator {
             (err) => {
               const current = this.registrations.get(spec.id)
               if (current !== undefined) {
-                current.lastError = `event-source start failed: ${err.message}`
+                this.recordError(current, `event-source start failed: ${err.message}`)
               }
             },
           )
           manager.start()
           this.eventSourceManagers.set(spec.id, manager)
         } catch (err) {
-          reg.lastError = `event-source start failed: ${(err as Error).message}`
+          this.recordError(reg, `event-source start failed: ${(err as Error).message}`)
         }
         break
       }
       case 'queue': {
         const driver = this.queueDrivers.get(spec.driver)
         if (driver === undefined) {
-          reg.lastError = `queue driver not registered: ${spec.driver}`
+          this.recordError(reg, `queue driver not registered: ${spec.driver}`)
           break
         }
         try {
@@ -420,12 +438,12 @@ export class TriggerCoordinator {
           })
           if (startResult instanceof Promise) {
             void startResult.catch((err: Error) => {
-              reg.lastError = `queue driver start failed: ${err.message}`
+              this.recordError(reg, `queue driver start failed: ${err.message}`)
             })
           }
           this.queueDriverBindings.set(spec.id, spec.driver)
         } catch (err) {
-          reg.lastError = `queue driver start failed: ${(err as Error).message}`
+          this.recordError(reg, `queue driver start failed: ${(err as Error).message}`)
         }
         break
       }
@@ -518,6 +536,12 @@ export class TriggerCoordinator {
     }
   }
 
+  private recordError(reg: TriggerRegistration, message: string): void {
+    reg.lastError = message
+    reg.lastErrorAt = new Date().toISOString()
+    reg.lastOutcome = 'failed'
+  }
+
   async fire(id: string, when?: Date, payload?: unknown): Promise<FireStatus> {
     if (this.stopping) return 'stopping'
     const reg = this.registrations.get(id)
@@ -542,13 +566,18 @@ export class TriggerCoordinator {
     // lock), not by this trigger-level gate.
     if (reg.parallel === true) {
       reg.lastFiredAt = ctx.firedAt
+      reg.lastOverlapDecision = 'dispatched'
+      reg.lastOutcome = 'dispatched'
       reg.fired += 1
       this.incrementRunning(id)
       const dispatch = Promise.resolve()
         .then(() => this.opts.onFire(ctx))
         .catch((err) => {
-          reg.lastError = (err as Error).message
+          this.recordError(reg, (err as Error).message)
           this.opts.onFireError?.(reg.spec.id, err)
+        })
+        .then(() => {
+          if (reg.lastOutcome !== 'failed') reg.lastOutcome = 'succeeded'
         })
         .finally(() => this.decrementRunning(id))
       this.trackDispatch(dispatch)
@@ -565,30 +594,40 @@ export class TriggerCoordinator {
     if (reg.inflight) {
       switch (reg.overlap) {
         case 'skip':
+          reg.lastOverlapDecision = 'skipped'
+          reg.lastOutcome = 'skipped'
           return 'skipped'
         case 'queue': {
           const q = this.queues.get(id) ?? []
           const cap = reg.maxQueueDepth ?? this.opts.defaultMaxQueueDepth ?? DEFAULT_MAX_QUEUE_DEPTH
           if (q.length >= cap) {
             reg.dropped += 1
+            reg.lastOverlapDecision = 'skipped'
+            reg.lastOutcome = 'skipped'
             this.opts.onQueueDrop?.(id, q.length)
             return 'skipped'
           }
           q.push(ctx)
           this.queues.set(id, q)
+          reg.lastOverlapDecision = 'queued'
+          reg.lastOutcome = 'queued'
           return 'queued'
         }
         case 'cancel':
           // No real cancellation channel in Phase 10; treat as skip.
+          reg.lastOverlapDecision = 'cancelled'
+          reg.lastOutcome = 'cancelled'
           return 'cancelled'
       }
     }
     reg.inflight = true
+    reg.lastOverlapDecision = 'dispatched'
+    reg.lastOutcome = 'dispatched'
     this.incrementRunning(id)
     const dispatch = Promise.resolve()
       .then(() => this.dispatch(reg, ctx))
       .catch((err) => {
-        reg.lastError = (err as Error).message
+        this.recordError(reg, (err as Error).message)
         this.opts.onFireError?.(reg.spec.id, err)
         reg.inflight = false
       })
@@ -618,8 +657,9 @@ export class TriggerCoordinator {
         reg.fired += 1
         try {
           await this.opts.onFire(current)
+          if (reg.lastOutcome !== 'failed') reg.lastOutcome = 'succeeded'
         } catch (err) {
-          reg.lastError = (err as Error).message
+          this.recordError(reg, (err as Error).message)
           this.opts.onFireError?.(reg.spec.id, err)
         }
         if (this.stopping) break

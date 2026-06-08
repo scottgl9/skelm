@@ -329,7 +329,11 @@ function registrationToSchedule(
   runningCount: number
   input?: unknown
   lastFiredAt?: string
+  nextFireAt?: string
+  lastOutcome?: string
+  lastOverlapDecision?: string
   lastError?: string
+  lastErrorAt?: string
 } {
   const spec = reg.spec
   let trigger: Record<string, unknown>
@@ -400,6 +404,10 @@ function registrationToSchedule(
   }
   if (reg.input !== undefined) out.input = reg.input
   if (reg.lastFiredAt !== undefined) out.lastFiredAt = reg.lastFiredAt
+  if (reg.nextFireAt !== undefined) out.nextFireAt = reg.nextFireAt
+  if (reg.lastOutcome !== undefined) out.lastOutcome = reg.lastOutcome
+  if (reg.lastOverlapDecision !== undefined) out.lastOverlapDecision = reg.lastOverlapDecision
   if (reg.lastError !== undefined) out.lastError = reg.lastError
+  if (reg.lastErrorAt !== undefined) out.lastErrorAt = reg.lastErrorAt
   return out
 }

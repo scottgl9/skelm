@@ -9,6 +9,8 @@ import type {
   TriggerRegistration,
 } from './types.js'
 
+const MAX_INTERVAL_MS = 2_147_483_647
+
 /** The slice of `RunStore` the scheduler depends on for recording triggered runs. */
 export type SchedulerRunStore = Pick<RunStore, 'putRun'>
 
@@ -265,10 +267,14 @@ export class Scheduler {
       if (registration) {
         registration.status = 'error'
         registration.lastError = `Invalid cron expression "${trigger.schedule}": ${(err as Error).message}`
+        registration.lastErrorAt = Date.now()
+        registration.lastOutcome = 'failed'
       }
       console.error(`Trigger ${trigger.id} disabled: invalid cron "${trigger.schedule}"`)
       return
     }
+    const registration = this.triggers.get(trigger.id)
+    if (registration) registration.nextRunAt = Date.now() + delay
     const handle = setTimeout(() => {
       const reg = this.triggers.get(trigger.id)
       if (!reg || reg.status !== 'active' || !trigger.enabled) return
@@ -289,8 +295,23 @@ export class Scheduler {
   }
 
   private startIntervalTrigger(trigger: IntervalTrigger): void {
+    const registration = this.triggers.get(trigger.id)
+    if (
+      !Number.isFinite(trigger.intervalMs) ||
+      trigger.intervalMs < 1 ||
+      trigger.intervalMs > MAX_INTERVAL_MS
+    ) {
+      if (registration) {
+        registration.status = 'error'
+        registration.lastError = `Invalid interval ${trigger.intervalMs}: must be 1..${MAX_INTERVAL_MS}ms`
+        registration.lastErrorAt = Date.now()
+        registration.lastOutcome = 'failed'
+      }
+      return
+    }
     const fireIfActive = () => {
       if (trigger.enabled && this.triggers.get(trigger.id)?.status === 'active') {
+        if (registration) registration.nextRunAt = Date.now() + trigger.intervalMs
         this.fire(trigger)
       }
     }
@@ -300,6 +321,7 @@ export class Scheduler {
       this.intervalJobs.set(trigger.id, interval)
     }
     if (trigger.initialDelayMs !== undefined) {
+      if (registration) registration.nextRunAt = Date.now() + trigger.initialDelayMs
       const initial = setTimeout(() => {
         fireIfActive()
         startInterval()
@@ -310,6 +332,7 @@ export class Scheduler {
     }
 
     const job = setInterval(fireIfActive, trigger.intervalMs)
+    if (registration) registration.nextRunAt = Date.now() + trigger.intervalMs
     job.unref?.()
 
     this.intervalJobs.set(trigger.id, job)
@@ -337,12 +360,18 @@ export class Scheduler {
     const isRunning = (this.runningCount.get(trigger.id) ?? 0) > 0
     const policy = trigger.overlap ?? 'wait'
 
-    if (isRunning && policy === 'fail-fast') return
+    if (isRunning && policy === 'fail-fast') {
+      const registration = this.triggers.get(trigger.id)
+      if (registration) registration.lastOutcome = 'skipped'
+      return
+    }
 
     const start = isRunning && policy === 'wait' && previous ? previous : Promise.resolve()
 
     const promise = start.then(() => this.executeTrigger(trigger))
     this.lastRun.set(trigger.id, promise)
+    const registration = this.triggers.get(trigger.id)
+    if (registration) registration.lastOutcome = 'dispatched'
     this.track(promise)
   }
 
@@ -350,7 +379,9 @@ export class Scheduler {
     const registration = this.triggers.get(trigger.id)
     if (!registration) return
 
-    this.runningCount.set(trigger.id, (this.runningCount.get(trigger.id) ?? 0) + 1)
+    const currentRunning = (this.runningCount.get(trigger.id) ?? 0) + 1
+    this.runningCount.set(trigger.id, currentRunning)
+    registration.runningCount = currentRunning
     try {
       const ctx: TriggerContext = {
         triggerId: trigger.id,
@@ -377,6 +408,7 @@ export class Scheduler {
         registration.runCount++
         registration.lastRunAt = Date.now()
         registration.status = 'active'
+        registration.lastOutcome = 'succeeded'
       } else {
         const pipeline = await this.pipelineLoader(trigger.pipelineId)
         if (!pipeline) {
@@ -388,12 +420,18 @@ export class Scheduler {
         registration.runCount++
         registration.lastRunAt = Date.now()
         registration.status = run.status === 'failed' ? 'error' : 'active'
-        if (run.error?.message) registration.lastError = run.error.message
+        registration.lastOutcome = run.status === 'failed' ? 'failed' : 'succeeded'
+        if (run.error?.message) {
+          registration.lastError = run.error.message
+          registration.lastErrorAt = Date.now()
+        }
       }
     } catch (err) {
       registration.errorCount++
       registration.status = 'error'
       registration.lastError = (err as Error).message
+      registration.lastErrorAt = Date.now()
+      registration.lastOutcome = 'failed'
       console.error(`Trigger ${trigger.id} error:`, err)
     } finally {
       const n = (this.runningCount.get(trigger.id) ?? 1) - 1
@@ -402,6 +440,7 @@ export class Scheduler {
       } else {
         this.runningCount.set(trigger.id, n)
       }
+      registration.runningCount = this.runningCount.get(trigger.id) ?? 0
     }
   }
 }

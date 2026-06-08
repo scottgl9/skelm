@@ -626,8 +626,15 @@ components:
         workflowId: { type: string }
         fired: { type: integer }
         inflight: { type: boolean }
+        queued: { type: integer }
+        dropped: { type: integer }
+        runningCount: { type: integer }
         lastFiredAt: { type: string, format: date-time, nullable: true }
+        nextFireAt: { type: string, format: date-time, nullable: true }
+        lastOutcome: { type: string, nullable: true }
+        lastOverlapDecision: { type: string, nullable: true }
         lastError: { type: string, nullable: true }
+        lastErrorAt: { type: string, format: date-time, nullable: true }
 
     DashboardApprovals:
       type: object

@@ -117,6 +117,11 @@ cancel the workflow's running turns. This is distinct from `skelm gateway stop`
 | POST   | `/schedules`          | Add a schedule                       |
 | DELETE | `/schedules/:id`      | Remove a schedule                    |
 
+Schedule responses include `fired`, `inflight`, `queued`, `runningCount`,
+`dropped`, `lastFiredAt`, `nextFireAt`, `lastOutcome`,
+`lastOverlapDecision`, `lastError`, and `lastErrorAt` when applicable.
+Webhook credentials such as `secret` and MS Graph `clientState` are redacted.
+
 ## Sessions
 
 | Method | Path                          | Description                          |
@@ -151,7 +156,7 @@ a five-second TTL.
 | GET    | `/v1/dashboard/runs`          | Filtered run list. Query: `workflowId`, `status`, `dateFrom`, `dateTo` (epoch ms), `limit` |
 | GET    | `/v1/dashboard/analytics`     | Time-bucketed series. Query: `metric=runs-per-hour\|success-rate\|avg-duration`, `resolution=hour\|day\|week`, `dateFrom`, `dateTo`, `workflowId?` |
 | GET    | `/v1/dashboard/errors`        | Recent failed runs + groupings by pipeline + message. Query: `limit`                       |
-| GET    | `/v1/dashboard/schedules`     | Trigger status: kind, workflowId, fired count, inflight, lastFiredAt, lastError            |
+| GET    | `/v1/dashboard/schedules`     | Trigger status: kind, workflowId, fired count, inflight, queue/running counts, next/last fire metadata, lastError |
 | GET    | `/v1/dashboard/approvals`     | Pending approvals with `ageMs`; reports `pendingCount` and `oldestPendingAgeMs`            |
 
 Example:
