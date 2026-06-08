@@ -68,8 +68,19 @@ export interface AuditEntry {
 // Artifact handle shapes live in a leaf module to keep types.ts from
 // inline-importing this file (which would close a types ↔ run-store
 // cycle). Re-exported here for back-compat.
-export type { ArtifactRef, ArtifactDescriptor, ArtifactStoreHandle } from './artifact-types.js'
+export {
+  ArtifactMaterializationError,
+  ArtifactValidationError,
+} from './artifact-types.js'
+export type {
+  ArtifactDescriptor,
+  ArtifactMaterialization,
+  ArtifactMaterializeOptions,
+  ArtifactRef,
+  ArtifactStoreHandle,
+} from './artifact-types.js'
 import type { ArtifactDescriptor, ArtifactRef } from './artifact-types.js'
+import { validateArtifactMetadata } from './artifact-types.js'
 
 /** Raised by `putArtifact` when adding an artifact would exceed the per-run quota. */
 export class ArtifactQuotaExceededError extends Error {
@@ -378,6 +389,7 @@ export class MemoryRunStore implements RunStore {
     mimeType: string
     data: Uint8Array | string
   }): Promise<ArtifactDescriptor> {
+    validateArtifactMetadata(opts)
     const bytes =
       typeof opts.data === 'string'
         ? Buffer.from(opts.data, 'utf8')
@@ -816,6 +828,7 @@ export class SqliteRunStore implements RunStore {
     mimeType: string
     data: Uint8Array | string
   }): Promise<ArtifactDescriptor> {
+    validateArtifactMetadata(opts)
     const bytes =
       typeof opts.data === 'string'
         ? Buffer.from(opts.data, 'utf8')

@@ -9,7 +9,9 @@ value:AgentProviderError
 value:AgentProviderNotFoundError
 value:AgentRegistry
 value:ApprovalDeniedError
+value:ArtifactMaterializationError
 value:ArtifactQuotaExceededError
+value:ArtifactValidationError
 value:AssetPathError
 value:AutoApproveGate
 value:AutoDenyGate
@@ -211,8 +213,11 @@ type:ApprovalGate
 type:ApprovalPolicy
 type:ApprovalRequest
 type:ArtifactDescriptor
+type:ArtifactMaterialization
+type:ArtifactMaterializeOptions
 type:ArtifactRef
 type:ArtifactStore
+type:ArtifactStoreHandle
 type:AuditEntry
 type:AuditEvent
 type:AuditWriter

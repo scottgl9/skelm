@@ -1,3 +1,6 @@
+import { constants } from 'node:fs'
+import { mkdir, open, realpath, stat } from 'node:fs/promises'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { createAssetHost } from './assets.js'
 import {
   type AgentRequest,
@@ -44,8 +47,10 @@ import {
   resolvePermissions,
 } from './permissions.js'
 import {
+  ArtifactMaterializationError,
   type ArtifactStore,
   type ArtifactStoreHandle,
+  ArtifactValidationError,
   MemoryRunStore,
   type RunStore,
   type StateStore,
@@ -526,7 +531,10 @@ export async function runPipeline<TInput, TOutput>(
   // in-memory store so ctx.artifacts is always available even when the caller
   // didn't wire a durable store.
   const artifactStore: ArtifactStore = options.store ?? defaultStateStore
-  const makeArtifactsHandle = (stepId: StepId): ArtifactStoreHandle => ({
+  const makeArtifactsHandle = (
+    stepId: StepId,
+    materializationRoot?: string,
+  ): ArtifactStoreHandle & { withWorkspacePath(path: string): ArtifactStoreHandle } => ({
     put: async (opts) => {
       const startedAt = Date.now()
       const descriptor = await artifactStore.putArtifact({
@@ -554,6 +562,77 @@ export async function runPipeline<TInput, TOutput>(
     },
     get: (ref) => artifactStore.getArtifact(ref),
     list: (opts) => artifactStore.listArtifacts(runId, opts),
+    materialize: async (ref, opts = {}) => {
+      const workspacePath = materializationRoot
+      if (workspacePath === undefined) {
+        throw new ArtifactMaterializationError(
+          'ctx.artifacts.materialize requires the current step to declare a workspace',
+        )
+      }
+      const startedAt = Date.now()
+      if (ref.runId !== runId) {
+        throw new ArtifactMaterializationError(
+          `artifact ${ref.artifactId} belongs to run ${ref.runId}, not current run ${runId}`,
+        )
+      }
+      const found = await artifactStore.getArtifact(ref)
+      if (found === null) {
+        throw new ArtifactMaterializationError(
+          `artifact ${ref.artifactId} was not found for run ${ref.runId}`,
+        )
+      }
+      if (opts.maxBytes !== undefined && found.data.byteLength > opts.maxBytes) {
+        throw new ArtifactMaterializationError(
+          `artifact ${ref.artifactId} is ${found.data.byteLength} bytes, exceeding maxBytes ${opts.maxBytes}`,
+        )
+      }
+      const relativePath = opts.path ?? found.descriptor.name
+      const path = await resolveArtifactMaterializationPath(workspacePath, relativePath)
+      await assertMaterializationTargetAllowed(workspacePath, path)
+      await mkdir(dirname(path), { recursive: true })
+      await assertMaterializationTargetAllowed(workspacePath, path)
+      if (opts.overwrite === true) {
+        const file = await open(
+          path,
+          constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+          0o644,
+        )
+        try {
+          await file.writeFile(found.data)
+        } finally {
+          await file.close()
+        }
+      } else {
+        const file = await open(path, 'wx')
+        try {
+          await file.writeFile(found.data)
+        } finally {
+          await file.close()
+        }
+      }
+      events.publish({
+        type: 'tool.result',
+        runId,
+        stepId,
+        tool: 'artifacts.materialize',
+        result: {
+          artifactId: found.descriptor.artifactId,
+          name: found.descriptor.name,
+          mimeType: found.descriptor.mimeType,
+          size: found.descriptor.size,
+          path: relativePath,
+          bytesWritten: found.data.byteLength,
+        },
+        durationMs: Date.now() - startedAt,
+        at: Date.now(),
+      })
+      return {
+        descriptor: found.descriptor,
+        path,
+        bytesWritten: found.data.byteLength,
+      }
+    },
+    withWorkspacePath: (path) => makeArtifactsHandle(stepId, path),
   })
   const storeWrites: Promise<void>[] = []
   const workspaceManager = options.workspaceManager ?? new WorkspaceManager()
@@ -1140,6 +1219,69 @@ export async function runPipeline<TInput, TOutput>(
 }
 
 export { SchemaValidationError }
+
+async function resolveArtifactMaterializationPath(
+  root: string,
+  requested: string,
+): Promise<string> {
+  if (requested.length === 0 || requested.includes('\0')) {
+    throw new ArtifactValidationError('artifact materialization path must be a non-empty path')
+  }
+  if (isAbsolute(requested)) {
+    throw new ArtifactValidationError('artifact materialization path must be relative')
+  }
+  for (const segment of requested.split(/[\\/]+/)) {
+    if (segment === '' || segment === '.' || segment === '..') {
+      throw new ArtifactValidationError(
+        'artifact materialization path must not contain empty, dot, or parent segments',
+      )
+    }
+  }
+  const path = resolve(root, requested)
+  assertInsideRoot(root, path, 'artifact materialization path must stay inside the workspace')
+  return path
+}
+
+async function assertMaterializationTargetAllowed(root: string, path: string): Promise<void> {
+  const rootReal = await realpath(root)
+  const parentReal = await realpathNearestExistingParent(path)
+  assertInsideRoot(rootReal, parentReal, 'artifact materialization parent escapes the workspace')
+  try {
+    const info = await stat(path)
+    if (!info.isFile()) {
+      throw new ArtifactValidationError('artifact materialization target must be a file')
+    }
+    const targetReal = await realpath(path)
+    assertInsideRoot(rootReal, targetReal, 'artifact materialization target escapes the workspace')
+  } catch (error) {
+    if (isMissingPath(error)) return
+    throw error
+  }
+}
+
+async function realpathNearestExistingParent(path: string): Promise<string> {
+  let current = dirname(path)
+  while (true) {
+    try {
+      return await realpath(current)
+    } catch (error) {
+      if (!isMissingPath(error)) throw error
+      const parent = dirname(current)
+      if (parent === current) throw error
+      current = parent
+    }
+  }
+}
+
+function assertInsideRoot(root: string, path: string, message: string): void {
+  const rel = relative(resolve(root), resolve(path))
+  if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) return
+  throw new ArtifactValidationError(message)
+}
+
+function isMissingPath(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
+}
 
 async function finalizeStoredRun<TRun extends Run>(
   run: TRun,
