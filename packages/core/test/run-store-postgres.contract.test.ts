@@ -3,7 +3,8 @@ import { setTimeout } from 'node:timers/promises'
 import { Pool as PgPool, type Pool } from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { PostgresRunStoreOptions } from '../src/run-store-postgres.js'
-import { ArtifactQuotaExceededError, PostgresRunStore } from '../src/run-store.js'
+import { PostgresRunStore } from '../src/run-store-postgres.js'
+import { ArtifactQuotaExceededError } from '../src/run-store.js'
 import type { Run } from '../src/types.js'
 
 const postgresUrl = process.env.SKELM_TEST_POSTGRES_URL
