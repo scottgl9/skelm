@@ -38,6 +38,13 @@ export interface TriggerCoordinatorOptions {
    * is a no-op.
    */
   onFireError?: (triggerId: string, err: unknown) => void
+  /**
+   * Invoked after each interval tick updates `registration.nextFireAt` so
+   * callers can persist the new timestamp. Without this hook any restart
+   * after the first successful interval fire replays the original
+   * create-time snapshot, causing drift.
+   */
+  onNextFireAtUpdated?: (registration: TriggerRegistration) => void
 }
 
 const DEFAULT_MAX_QUEUE_DEPTH = 1000
@@ -274,23 +281,39 @@ export class TriggerCoordinator {
           options.restoredNextFireAt !== undefined
             ? Date.parse(options.restoredNextFireAt)
             : Number.NaN
-        const firstDelay =
-          !Number.isNaN(restoredMs) && restoredMs > now ? restoredMs - now : spec.everyMs
+        let firstDelay: number
+        if (!Number.isNaN(restoredMs) && restoredMs > now) {
+          // Stored timestamp is still in the future: wait exactly that long.
+          firstDelay = restoredMs - now
+        } else if (!Number.isNaN(restoredMs)) {
+          // Overdue: align the next fire to the original cadence rather than
+          // falling back to `now + everyMs`, which would drift the anchor on
+          // every restart. Compute how many full cycles have elapsed and
+          // schedule the next cadence-aligned tick.
+          const cyclesMissed = Math.floor((now - restoredMs) / spec.everyMs)
+          firstDelay = restoredMs + (cyclesMissed + 1) * spec.everyMs - now
+        } else {
+          firstDelay = spec.everyMs
+        }
         reg.nextFireAt = new Date(now + firstDelay).toISOString()
+        const notifyPersist = (r: TriggerRegistration) => this.opts.onNextFireAtUpdated?.(r)
         if (firstDelay === spec.everyMs) {
           const t = setInterval(() => {
             reg.nextFireAt = new Date(Date.now() + spec.everyMs).toISOString()
+            notifyPersist(reg)
             this.fireDetached(spec.id)
           }, spec.everyMs)
           t.unref?.()
           this.intervalTimers.set(spec.id, t)
         } else {
-          // Wait until the original nextFireAt, then resume on a regular interval.
+          // Wait until the cadence-aligned nextFireAt, then resume on a regular interval.
           const t = setTimeout(() => {
             reg.nextFireAt = new Date(Date.now() + spec.everyMs).toISOString()
+            notifyPersist(reg)
             this.fireDetached(spec.id)
             const interval = setInterval(() => {
               reg.nextFireAt = new Date(Date.now() + spec.everyMs).toISOString()
+              notifyPersist(reg)
               this.fireDetached(spec.id)
             }, spec.everyMs)
             interval.unref?.()

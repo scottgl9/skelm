@@ -426,4 +426,46 @@ describe('TriggerCoordinator', () => {
     expect(reg.lastError).toContain('poll source not registered')
     await c.stop()
   })
+
+  it('interval: onNextFireAtUpdated called after each tick so nextFireAt can be re-persisted', async () => {
+    const updated: string[] = []
+    const c = new TriggerCoordinator({
+      onFire: async () => {},
+      onNextFireAtUpdated: (reg) => {
+        if (reg.nextFireAt !== undefined) updated.push(reg.nextFireAt)
+      },
+    })
+    c.register({ kind: 'interval', id: 'iv', workflowId: 'wf', everyMs: 30 })
+    // Wait for at least two interval ticks.
+    await new Promise((r) => setTimeout(r, 100))
+    await c.stop()
+    expect(updated.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('interval: overdue restoredNextFireAt preserves cadence anchor instead of drifting to now+everyMs', () => {
+    const anchor = new Date(Date.now() - 10_000).toISOString() // stored 10 s ago
+    const everyMs = 60_000
+    const updated: string[] = []
+    const c = new TriggerCoordinator({
+      onFire: async () => {},
+      onNextFireAtUpdated: (reg) => {
+        if (reg.nextFireAt !== undefined) updated.push(reg.nextFireAt)
+      },
+    })
+    const reg = c.register({ kind: 'interval', id: 'iv2', workflowId: 'wf', everyMs }, undefined, {
+      restoredNextFireAt: anchor,
+    })
+    c.stop()
+
+    // firstDelay should be cadence-aligned: anchor + 1*everyMs - now ≈ 50 s,
+    // NOT everyMs (60 s) which is what the drift path would produce.
+    const nextMs = Date.parse(reg.nextFireAt!)
+    const anchorMs = Date.parse(anchor)
+    const expectedNextMs = anchorMs + everyMs
+    // Should be within 500 ms of the cadence-aligned target.
+    expect(Math.abs(nextMs - expectedNextMs)).toBeLessThan(500)
+    // Must NOT be ≈ now + everyMs (the drifting fallback).
+    const driftMs = Date.now() + everyMs
+    expect(Math.abs(nextMs - driftMs)).toBeGreaterThan(5_000)
+  })
 })
