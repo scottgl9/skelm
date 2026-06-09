@@ -956,6 +956,9 @@ export class Gateway implements GatewayContext {
           `[skelm trigger] queue full for "${triggerId}" (depth ${queueDepth}); fire dropped\n`,
         )
       },
+      onNextFireAtUpdated: (registration) => {
+        void this.dynamicScheduleStoreInternal?.upsert(registration)
+      },
     })
     await mcp.startAll(this.config.registries?.mcpServers ?? [])
     await codingAgents.startAll(this.config.registries?.agents ?? [])
