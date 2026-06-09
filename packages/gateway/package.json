@@ -1,10 +1,10 @@
 {
   "name": "@skelm/gateway",
-  "version": "0.4.7",
-  "description": "skelm gateway — long-running orchestrator owning config, registries, permissions, audit, agent lifecycle, and the HTTP surface",
+  "version": "0.4.8",
+  "description": "skelm gateway — long-running service that hosts pipelines, enforces permissions, manages triggers, and exposes the HTTP control surface",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
-  "homepage": "https://skelm.dev/",
+  "homepage": "https://skelm.dev",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/scottgl9/skelm.git",

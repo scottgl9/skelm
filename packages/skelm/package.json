@@ -1,10 +1,10 @@
 {
   "name": "skelm",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "description": "Open-source agentic workflow engine for secure, long-running workflows — author, schedule, and operate typed TypeScript pipelines that mix code, inference, and agents under default-deny permissions.",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
-  "homepage": "https://skelm.dev/",
+  "homepage": "https://skelm.dev",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/scottgl9/skelm.git",

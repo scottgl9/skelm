@@ -1,10 +1,10 @@
 {
   "name": "@skelm/core",
-  "version": "0.4.7",
-  "description": "skelm runtime, types, and builders",
+  "version": "0.4.8",
+  "description": "skelm core — pipeline runtime, typed builders, permission enforcement, and run store abstractions",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
-  "homepage": "https://skelm.dev/",
+  "homepage": "https://skelm.dev",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/scottgl9/skelm.git",
