@@ -122,7 +122,11 @@ export class TriggerCoordinator {
    * Stops chaining when the trigger is unregistered or the coordinator
    * is stopping.
    */
-  private scheduleNextCron(triggerId: string, parsed: ParsedCron, restoredNextFireAt?: string): void {
+  private scheduleNextCron(
+    triggerId: string,
+    parsed: ParsedCron,
+    restoredNextFireAt?: string,
+  ): void {
     if (this.stopping) return
     if (!this.registrations.has(triggerId)) return
     // On gateway restart, honour the stored nextFireAt if it is still in the

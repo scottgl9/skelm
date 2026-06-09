@@ -1,5 +1,11 @@
 import { runWithMemoryTurns } from '@skelm/agentmemory'
-import { BackendCapabilityError, combineSignals, toErrorMessage } from '@skelm/core'
+import {
+  BackendCapabilityError,
+  combineSignals,
+  extractJsonFromText,
+  toErrorMessage,
+  validate,
+} from '@skelm/core'
 import type { AgentRequest, AgentResponse, BackendContext } from '@skelm/core'
 import { type ModelMessage, Output, generateText, stepCountIs, streamText } from 'ai'
 import { VercelAiBackendError, VercelAiBackendTimeoutError } from './errors.js'
@@ -106,17 +112,6 @@ interface DispatchParams {
 async function dispatchVercelAi(p: DispatchParams): Promise<AgentResponse> {
   const { options, request, context, system, tools, promptOrMessages, maxTurns, signal } = p
   {
-    // When the step declares an `output` schema, route through the AI SDK's
-    // `Output.object({ schema })` adapter so the underlying provider uses
-    // its native structured-output mode (function-calling /
-    // response_format / etc.) for the final answer. This keeps tool calls
-    // working during the loop AND eliminates the previous parseStructured
-    // fallback that rejected plain text from smaller open-weight models
-    // (qwen, llama, …) that didn't always wrap responses in JSON.
-    //
-    // SkelmSchema is StandardSchemaV1, which the SDK accepts directly via
-    // FlexibleSchema.
-
     if (context.onPartial !== undefined) {
       // Streaming path: use streamText to emit partial chunks as they arrive.
       // onError captures upstream errors instead of letting the AI SDK dump
@@ -180,13 +175,25 @@ async function dispatchVercelAi(p: DispatchParams): Promise<AgentResponse> {
 
       if (request.outputSchema !== undefined) {
         const output = (finalResult as { output?: unknown }).output
-        // Only trust the SDK's structured output if it is a non-empty object;
-        // local OpenAI-compatible endpoints that don't natively support JSON
-        // schema mode may yield undefined or {} — fall back to the accumulated
-        // text so extractJsonFromText can parse it in the runner.
-        if (output !== undefined && output !== null && typeof output === 'object' &&
-            Object.keys(output as object).length > 0) {
-          response.structured = output
+        if (output !== undefined && output !== null && typeof output === 'object') {
+          // Validate against the schema to distinguish a genuine structured result
+          // (including valid empty objects like z.object({})) from the {} that
+          // local OpenAI-compatible endpoints return when they don't support JSON mode.
+          try {
+            await validate(request.outputSchema, output, 'output')
+            response.structured = output
+          } catch {
+            // output={} was a provider stub. Parse the text stream to satisfy the
+            // structured-output contract so callers always see response.structured.
+            try {
+              const candidate = extractJsonFromText(fullText)
+              response.structured = await validate(request.outputSchema, candidate, 'output')
+            } catch {
+              // Text also doesn't satisfy the schema — surface it as text and let
+              // the runner produce a SchemaValidationError with full context.
+              response.text = fullText
+            }
+          }
         } else {
           response.text = fullText
         }
@@ -231,15 +238,11 @@ async function dispatchVercelAi(p: DispatchParams): Promise<AgentResponse> {
 
     if (request.outputSchema !== undefined) {
       const output = (result as { output?: unknown }).output
-      // Only trust the SDK's structured output if it is a non-empty object.
-      if (output !== undefined && output !== null && typeof output === 'object' &&
-          Object.keys(output as object).length > 0) {
-        // result.output is the typed object produced by the Output.object
-        // adapter; the SDK has already validated against the schema.
+      // generateText with Output.object() validates internally and throws if the
+      // schema doesn't match, so output here is always schema-valid (including {}).
+      if (output !== undefined && output !== null && typeof output === 'object') {
         response.structured = output
       } else {
-        // Model returned text JSON rather than native structured output.
-        // Fall back to text so extractJsonFromText can parse it in the runner.
         response.text = result.text
       }
     } else {

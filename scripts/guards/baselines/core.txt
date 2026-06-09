@@ -135,6 +135,7 @@ value:describePipeline
 value:describeStep
 value:executeAgentStep
 value:executeInferStep
+value:extractJsonFromText
 value:extractPromptText
 value:forEach
 value:formatSkillBlock
@@ -190,7 +191,6 @@ type:AgentProviderConfig
 type:AgentRequest
 type:AgentResponse
 type:AgentStep
-type:AssetHost
 type:AgentToolCall
 type:AgentToolResult
 type:AgentmemoryContextBlock
@@ -219,6 +219,7 @@ type:ArtifactMaterializeOptions
 type:ArtifactRef
 type:ArtifactStore
 type:ArtifactStoreHandle
+type:AssetHost
 type:AuditEntry
 type:AuditEvent
 type:AuditWriter

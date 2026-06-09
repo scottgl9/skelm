@@ -3,8 +3,8 @@ value:IntegrationBase
 value:IntegrationCredentialsError
 value:IntegrationRateLimitError
 value:IntegrationSdkError
-value:IntegrationWorkflowPlugin
 value:IntegrationUnsupportedOperationError
+value:IntegrationWorkflowPlugin
 value:createIntegrationPlugin
 value:defineIntegration
 type:ChatUiConfig
