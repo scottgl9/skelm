@@ -122,10 +122,18 @@ export class TriggerCoordinator {
    * Stops chaining when the trigger is unregistered or the coordinator
    * is stopping.
    */
-  private scheduleNextCron(triggerId: string, parsed: ParsedCron): void {
+  private scheduleNextCron(triggerId: string, parsed: ParsedCron, restoredNextFireAt?: string): void {
     if (this.stopping) return
     if (!this.registrations.has(triggerId)) return
-    const next = nextFireTime(parsed, new Date())
+    // On gateway restart, honour the stored nextFireAt if it is still in the
+    // future — this prevents the cron from drifting by the gateway downtime.
+    let next: Date | null
+    if (restoredNextFireAt !== undefined) {
+      const ts = Date.parse(restoredNextFireAt)
+      next = !Number.isNaN(ts) && ts > Date.now() ? new Date(ts) : nextFireTime(parsed, new Date())
+    } else {
+      next = nextFireTime(parsed, new Date())
+    }
     const reg = this.registrations.get(triggerId)
     if (next === null) {
       if (reg !== undefined) reg.nextFireAt = undefined
@@ -330,7 +338,7 @@ export class TriggerCoordinator {
           this.recordError(reg, `unsupported cron expression: ${spec.cron}`)
           break
         }
-        this.scheduleNextCron(spec.id, parsed)
+        this.scheduleNextCron(spec.id, parsed, options.restoredNextFireAt)
         break
       }
       case 'immediate':

@@ -179,7 +179,17 @@ async function dispatchVercelAi(p: DispatchParams): Promise<AgentResponse> {
       if (usage !== undefined) response.usage = usage
 
       if (request.outputSchema !== undefined) {
-        response.structured = (finalResult as { output?: unknown }).output
+        const output = (finalResult as { output?: unknown }).output
+        // Only trust the SDK's structured output if it is a non-empty object;
+        // local OpenAI-compatible endpoints that don't natively support JSON
+        // schema mode may yield undefined or {} — fall back to the accumulated
+        // text so extractJsonFromText can parse it in the runner.
+        if (output !== undefined && output !== null && typeof output === 'object' &&
+            Object.keys(output as object).length > 0) {
+          response.structured = output
+        } else {
+          response.text = fullText
+        }
       } else {
         response.text = fullText
       }
@@ -220,9 +230,18 @@ async function dispatchVercelAi(p: DispatchParams): Promise<AgentResponse> {
     if (usage !== undefined) response.usage = usage
 
     if (request.outputSchema !== undefined) {
-      // result.output is the typed object produced by the Output.object
-      // adapter; the SDK has already validated against the schema.
-      response.structured = (result as { output?: unknown }).output
+      const output = (result as { output?: unknown }).output
+      // Only trust the SDK's structured output if it is a non-empty object.
+      if (output !== undefined && output !== null && typeof output === 'object' &&
+          Object.keys(output as object).length > 0) {
+        // result.output is the typed object produced by the Output.object
+        // adapter; the SDK has already validated against the schema.
+        response.structured = output
+      } else {
+        // Model returned text JSON rather than native structured output.
+        // Fall back to text so extractJsonFromText can parse it in the runner.
+        response.text = result.text
+      }
     } else {
       response.text = result.text
     }
