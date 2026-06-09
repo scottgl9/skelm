@@ -7,7 +7,14 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "ignore": ["dist/**", "coverage/**", "node_modules/**", "planning/**", "test_plan/**"]
+    "ignore": [
+      "dist/**",
+      "coverage/**",
+      "node_modules/**",
+      "planning/**",
+      "test_plan/**",
+      "graphify-out/**"
+    ]
   },
   "formatter": {
     "enabled": true,
