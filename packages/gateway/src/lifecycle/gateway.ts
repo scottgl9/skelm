@@ -29,6 +29,7 @@ import { GatewayRuntime } from '../execution/gateway-runtime.js'
 import { AcpSessionManager, defaultAcpSessionStorePath } from '../managers/acp-session-manager.js'
 import { CodingAgentManager } from '../managers/coding-agent-manager.js'
 import { McpServerManager } from '../managers/mcp-server-manager.js'
+import { GatewayObservability } from '../observability/index.js'
 import { EgressProxy, InMemoryTokenPolicyStore, type TokenPolicyMap } from '../proxy/index.js'
 import {
   AgentRegistry,
@@ -92,13 +93,7 @@ export class Gateway implements GatewayContext {
   private tokenPolicyStore: TokenPolicyMap | null = null
   private agentmemoryClient: AgentmemoryClient | null = null
   private readonly runtimeInternal: GatewayRuntime
-  private metricsInternal: import('@skelm/metrics').MetricsCollector | null = null
-  // Captured as a function reference (not the module itself) so production
-  // bundles only pull in @opentelemetry/api when enableOtel is true.
-  private otelAttach: ((events: import('@skelm/core').EventBus) => { dispose(): void }) | null =
-    null
-  private otelDisposers: Array<{ dispose(): void }> = []
-  private metricsBus: import('@skelm/core').EventBus | null = null
+  private readonly observability = new GatewayObservability()
   /** Single shared EventBus that every per-request Runner publishes into,
    *  and that GET /runs/:id/stream subscribes to. Lazily-constructed; the
    *  first reader or writer creates it. */
@@ -356,29 +351,21 @@ export class Gateway implements GatewayContext {
    * subscribes to via attachMetricsBus().
    */
   get metrics(): import('@skelm/metrics').MetricsCollector | null {
-    return this.metricsInternal
+    return this.observability.collector
   }
 
-  /**
-   * Subscribe an EventBus into the metrics collector. The dispatcher calls
-   * this with the per-run bus the Runner uses, so step events surface in
-   * /metrics. No-ops when metrics are disabled.
-   */
+  /** Subscribe an EventBus into the metrics collector. No-op when disabled. */
   attachMetricsBus(bus: import('@skelm/core').EventBus): void {
-    if (this.metricsInternal === null) return
-    this.metricsInternal.attach(bus)
+    this.observability.attachMetricsBus(bus)
   }
 
   /**
    * Subscribe an EventBus into the OpenTelemetry collector when
-   * enableOtel:true. The dispatcher calls this alongside attachMetricsBus
-   * so every run produces a `run:<pipelineId>` span and one `step:<id>`
-   * span per step. No-ops when otel is disabled. Disposers are tracked
-   * so stop() can unsubscribe.
+   * enableOtel:true. No-op when disabled. Disposers are tracked so stop()
+   * can unsubscribe.
    */
   attachOtelBus(bus: import('@skelm/core').EventBus): void {
-    if (this.otelAttach === null) return
-    this.otelDisposers.push(this.otelAttach(bus))
+    this.observability.attachOtelBus(bus)
   }
 
   async startPipelineAsync(pipelineId: string, input: unknown): Promise<{ runId: string }> {
@@ -639,16 +626,12 @@ export class Gateway implements GatewayContext {
         )
       }
       await this.replayDynamicSchedules()
-      if (this.options.enableMetrics) {
-        const { MetricsCollector } = await import('@skelm/metrics')
-        this.metricsInternal = new MetricsCollector()
-      }
-      if (this.options.enableOtel) {
-        // Captured behind a closure so the dynamic import only happens once
-        // and per-run attach calls are synchronous (matches metrics).
-        const { attachOpenTelemetry } = await import('@skelm/otel')
-        this.otelAttach = (bus) => attachOpenTelemetry(bus)
-      }
+      await this.observability.init({
+        ...(this.options.enableMetrics !== undefined && {
+          enableMetrics: this.options.enableMetrics,
+        }),
+        ...(this.options.enableOtel !== undefined && { enableOtel: this.options.enableOtel }),
+      })
       await this.initAgentmemory()
       // Start the egress proxy before HTTP server
       await this.startEgressProxy()
@@ -823,20 +806,7 @@ export class Gateway implements GatewayContext {
         }),
       ])
     } finally {
-      // Unsubscribe every OTel attachment so spans stop being emitted and
-      // the subscriber listeners on freed buses are released. Disposers
-      // are individually try/catch'd via the `?.()` so a single failure
-      // doesn't prevent the rest of stop() from running.
-      for (const disposer of this.otelDisposers) {
-        try {
-          disposer.dispose()
-        } catch {
-          /* otel dispose failures must not block gateway stop */
-        }
-      }
-      this.otelDisposers = []
-      this.otelAttach = null
-      this.metricsInternal = null
+      this.observability.dispose()
       this.state = 'stopped'
       this.lockfile = null
       this.discovery = null
