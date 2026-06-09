@@ -6,12 +6,134 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-06-09
+
 ### Added
+
+- **PostgreSQL run store.** `@skelm/core` now ships a PostgreSQL-backed
+  `RunStore` implementation as a production-grade alternative to SQLite, with
+  explicit advisory locking, contract-stable reads/writes, and concurrent-load
+  coverage in the contract suite.
+
+- **Artifact materialization APIs and hardening.** New `ctx.artifacts` methods
+  expose a structured API for materializing, reading, and listing run artifacts.
+  `EEXIST` conflicts are wrapped as `ArtifactMaterializationError`; triggered
+  runs that fail during materialization now record `lastOutcome=failed`.
+
+- **Durable state ergonomics.** `wait()` / resume APIs surface clearer typed
+  helpers and more predictable error paths when state is missing or stale.
+
+- **Scheduler metadata hardening.** Trigger metadata is persisted and
+  re-validated on every scheduler tick so overdue cadences and stale entries are
+  detected and corrected rather than silently skipped.
+
+- **Workspace-scoped export roots.** Workflow workspaces can now declare their
+  own export root so downstream steps receive the scoped path rather than the
+  bare working directory.
+
+- **Workflow health endpoints.** New `GET /v1/workflows/:id/health` and
+  aggregate health summary endpoints let operators query workflow liveness
+  through the gateway API.
 
 - **Read-only workflow assets.** Pipeline contexts now expose `ctx.assets`
   helpers for loading workflow-root-relative text, JSON, bytes, existence, and
   recursive asset listings without relying on `process.cwd()` or broad
   filesystem permissions.
+
+### Fixed
+
+- **Dynamic schedules survive gateway restarts.** Schedules created at runtime
+  are now persisted to disk and re-armed on startup; a race condition in
+  one-shot replay and duplicate-fire handling was also corrected.
+
+- **Waiting runs resume after restart.** Runs parked at `wait()` steps are
+  re-queued on gateway start and resume correctly via the existing
+  `/runs/:id/resume` path.
+
+- **Resume rejection and `workflowPath` preserved on restart.** Synchronous
+  resume rejections no longer lose their error, and the `workflowPath` field
+  on the run record is persisted and reloaded across restarts.
+
+- **Interval trigger timing corrected.** `nextFireAt` is persisted on every
+  tick — not only on first arm — so overdue-cadence recovery works correctly
+  and the value survives gateway restarts.
+
+- **Trigger re-registration stops existing resources.** Re-registering a
+  trigger with the same ID now tears down the previously armed timer or stream
+  before installing the replacement, preventing resource leaks.
+
+- **CLI gateway startup hardened.** Readiness probes are authenticated before
+  the CLI reports the gateway as live; detached gateway starts block until
+  readiness is confirmed; stale discovery entries are recovered rather than
+  causing a hard failure.
+
+- **`ChainAuditWriter` initializes from last entry only.** `doInitialize()`
+  now calls `readLastEntry()` instead of `readAll()`, reducing memory pressure
+  on gateways with large audit files.
+
+- **Detail-route pipeline load consolidated; fallback truncation fixed.** The
+  pipeline-load path for the run-detail route now matches all other routes, and
+  truncated fallback output is no longer incorrectly trimmed.
+
+- **Async file-watch errors handled.** Previously unhandled rejections from
+  the file-watch trigger are now caught and routed through `lastError` on the
+  registration.
+
+- **Gateway configuration enforced correctly.** The configured bearer token is
+  honored on all incoming requests; the audit log file is created with
+  owner-read/write permissions rather than world-readable defaults.
+
+- **Run-store and HTTP↔lifecycle import cycles removed.** Internal import
+  cycles between `run-store`, `core`, and the gateway HTTP layer are
+  eliminated, improving cold-start reliability.
+
+- **Postgres run-store contract stabilized.** Concurrent `updateRun` calls no
+  longer race; advisory-lock behavior is validated by the contract suite.
+
+- **SQLite run updates made transactional.** Concurrent writes no longer
+  produce torn rows.
+
+- **Missing backends fail explicitly.** An `agent()` or `infer()` step that
+  names a backend id not registered in the gateway now fails at step start with
+  a typed error rather than silently falling through.
+
+- **Audit subscriptions scoped per run.** `EventBus` subscriptions created
+  inside `ChainAuditWriter` are now bound to the run id so concurrent runs do
+  not receive each other's events.
+
+- **Vercel AI structured output paths cleaned up.** The `Output.object()`
+  adapter is removed; all structured output paths use text generation followed
+  by JSON parsing. When the SDK returns empty or missing structured output the
+  backend falls back to text automatically.
+
+- **Vercel AI agent system prompt modes honored.** The backend now applies the
+  `systemPromptMode` field from the agent step rather than always using the
+  default mode.
+
+- **Truncated agent-loop responses surfaced.** `@skelm/agent` now propagates
+  the `stop_reason: 'max_tokens'` / `'length'` finish signal as a typed event
+  instead of silently returning a partial result.
+
+- **Skelm agent backend id and secret resolver threaded correctly.** The
+  backend id is passed through the agent dispatch path and the secret resolver
+  is forwarded to the skelm-agent backend on every request.
+
+- **Finish metadata preserved through `infer()` steps.** The `finishReason`,
+  `usage`, and `model` fields on `InferResponse` are propagated through the
+  vercel-ai and native backends rather than being dropped.
+
+- **OpenCode non-loopback URLs rejected.** `@skelm/opencode` refuses to
+  connect to an opencode server on a non-loopback address, closing a potential
+  SSRF surface during dev mode.
+
+- **Resume error messages clarified.** Unknown-run and state-mismatch errors
+  on the `/runs/:id/resume` path now return descriptive messages instead of
+  opaque 500s.
+
+### Chore
+
+- **OpenCode SDK dependency updated** to pick up upstream fixes.
+- Graphify output directory excluded from Biome linting and git tracking.
 
 ## [0.4.7] - 2026-06-05
 
@@ -662,7 +784,11 @@ First public release on npmjs.com. Versions of all published packages are aligne
 
 Pre-public releases distributed via GitHub Packages and git tags. See `git log` for full history.
 
-[Unreleased]: https://github.com/scottgl9/skelm/compare/v0.4.4...HEAD
+[Unreleased]: https://github.com/scottgl9/skelm/compare/v0.4.8...HEAD
+[0.4.8]: https://github.com/scottgl9/skelm/compare/v0.4.7...v0.4.8
+[0.4.7]: https://github.com/scottgl9/skelm/compare/v0.4.6...v0.4.7
+[0.4.6]: https://github.com/scottgl9/skelm/compare/v0.4.5...v0.4.6
+[0.4.5]: https://github.com/scottgl9/skelm/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/scottgl9/skelm/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/scottgl9/skelm/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/scottgl9/skelm/compare/v0.4.1...v0.4.2

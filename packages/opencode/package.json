@@ -1,10 +1,10 @@
 {
   "name": "@skelm/opencode",
-  "version": "0.4.7",
-  "description": "Opencode.ai backend for skelm with full permission enforcement",
+  "version": "0.4.8",
+  "description": "Opencode.ai agent backend for skelm — spawn and drive opencode sessions under skelm's permission policy",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
-  "homepage": "https://skelm.dev/",
+  "homepage": "https://skelm.dev",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/scottgl9/skelm.git",

@@ -1,10 +1,10 @@
 {
   "name": "@skelm/cli",
-  "version": "0.4.7",
-  "description": "skelm CLI primitives. End users install the meta-package `skelm`, which depends on this and exposes the `skelm` bin. This package is the programmatic entry point for tooling that wants to drive the CLI directly.",
+  "version": "0.4.8",
+  "description": "skelm CLI — run pipelines, manage the gateway, and operate triggers from the command line",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
-  "homepage": "https://skelm.dev/",
+  "homepage": "https://skelm.dev",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/scottgl9/skelm.git",

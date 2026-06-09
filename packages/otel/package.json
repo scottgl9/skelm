@@ -1,10 +1,10 @@
 {
   "name": "@skelm/otel",
-  "version": "0.4.7",
-  "description": "OpenTelemetry integration for skelm event streams",
+  "version": "0.4.8",
+  "description": "OpenTelemetry tracing for skelm — export pipeline and step spans to any OTLP-compatible backend",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
-  "homepage": "https://skelm.dev/",
+  "homepage": "https://skelm.dev",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/scottgl9/skelm.git",

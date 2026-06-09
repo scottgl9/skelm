@@ -1,10 +1,10 @@
 {
   "name": "@skelm/agentmemory",
-  "version": "0.4.7",
-  "description": "First-class agentmemory integration for skelm — typed REST client and gateway-wired AgentmemoryHandle implementation",
+  "version": "0.4.8",
+  "description": "Agentmemory integration for skelm — typed REST client and gateway-wired handle for long-term agent memory",
   "license": "MIT",
   "author": "Scott Glover <scottgl@gmail.com>",
-  "homepage": "https://skelm.dev/",
+  "homepage": "https://skelm.dev",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/scottgl9/skelm.git",
