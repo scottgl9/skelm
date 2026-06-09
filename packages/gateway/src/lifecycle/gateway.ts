@@ -978,6 +978,7 @@ export class Gateway implements GatewayContext {
       }
       const reg = this.managersInternal.triggers.register(record.spec, record.overlap, {
         ...(record.input !== undefined && { input: record.input }),
+        ...(record.nextFireAt !== undefined && { restoredNextFireAt: record.nextFireAt }),
       })
       if (reg.lastError !== undefined) {
         process.stderr.write(

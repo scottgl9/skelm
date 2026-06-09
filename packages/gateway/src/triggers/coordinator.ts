@@ -229,7 +229,12 @@ export class TriggerCoordinator {
   register(
     spec: TriggerSpec,
     overlap?: OverlapPolicy,
-    options: { input?: unknown; declared?: boolean; maxQueueDepth?: number } = {},
+    options: {
+      input?: unknown
+      declared?: boolean
+      maxQueueDepth?: number
+      restoredNextFireAt?: string
+    } = {},
   ): TriggerRegistration {
     // Queue triggers default to `overlap: 'queue'` rather than the global
     // `'skip'` default: dropping messages just because the previous fire is
@@ -263,13 +268,37 @@ export class TriggerCoordinator {
           )
           break
         }
-        reg.nextFireAt = new Date(now + spec.everyMs).toISOString()
-        const t = setInterval(() => {
-          reg.nextFireAt = new Date(Date.now() + spec.everyMs).toISOString()
-          this.fireDetached(spec.id)
-        }, spec.everyMs)
-        t.unref?.()
-        this.intervalTimers.set(spec.id, t)
+        // On gateway restart, restore the original nextFireAt so the interval
+        // doesn't drift by the gateway downtime duration.
+        const restoredMs =
+          options.restoredNextFireAt !== undefined
+            ? Date.parse(options.restoredNextFireAt)
+            : Number.NaN
+        const firstDelay =
+          !Number.isNaN(restoredMs) && restoredMs > now ? restoredMs - now : spec.everyMs
+        reg.nextFireAt = new Date(now + firstDelay).toISOString()
+        if (firstDelay === spec.everyMs) {
+          const t = setInterval(() => {
+            reg.nextFireAt = new Date(Date.now() + spec.everyMs).toISOString()
+            this.fireDetached(spec.id)
+          }, spec.everyMs)
+          t.unref?.()
+          this.intervalTimers.set(spec.id, t)
+        } else {
+          // Wait until the original nextFireAt, then resume on a regular interval.
+          const t = setTimeout(() => {
+            reg.nextFireAt = new Date(Date.now() + spec.everyMs).toISOString()
+            this.fireDetached(spec.id)
+            const interval = setInterval(() => {
+              reg.nextFireAt = new Date(Date.now() + spec.everyMs).toISOString()
+              this.fireDetached(spec.id)
+            }, spec.everyMs)
+            interval.unref?.()
+            this.intervalTimers.set(spec.id, interval)
+          }, firstDelay)
+          t.unref?.()
+          this.intervalTimers.set(spec.id, t)
+        }
         break
       }
       case 'cron': {

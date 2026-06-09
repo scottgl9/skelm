@@ -6,6 +6,7 @@ export interface PersistedDynamicSchedule {
   spec: TriggerSpec
   overlap: OverlapPolicy
   input?: unknown
+  nextFireAt?: string
 }
 
 export class DynamicScheduleStore {
@@ -36,6 +37,7 @@ export class DynamicScheduleStore {
         spec: registration.spec,
         overlap: registration.overlap,
         ...(registration.input !== undefined && { input: registration.input }),
+        ...(registration.nextFireAt !== undefined && { nextFireAt: registration.nextFireAt }),
       }
       const next = records.filter((item) => item.spec.id !== registration.spec.id)
       next.push(record)
