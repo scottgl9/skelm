@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentmemoryOperation } from '../../src/permissions.js'
-import { TrustEnforcer, resolvePermissions } from '../../src/permissions.js'
+import { makeEnforcer } from '../../src/testing/permissions.js'
 
 // Adversarial coverage for the `agentmemory` permission dimension.
 //
@@ -18,13 +18,6 @@ const ALL_OPS: readonly AgentmemoryOperation[] = [
   'recall',
   'graph',
 ]
-
-function makeEnforcer(
-  defaults: Parameters<typeof resolvePermissions>[0],
-  step: Parameters<typeof resolvePermissions>[1],
-): TrustEnforcer {
-  return new TrustEnforcer(resolvePermissions(defaults, step))
-}
 
 describe('agentmemory permission — default-deny', () => {
   it('omitted permissions denies every agentmemory op', () => {
