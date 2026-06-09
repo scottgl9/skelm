@@ -19,7 +19,7 @@ import { EXIT } from './exit-codes.js'
 import { readinessHeaders } from './internal/gateway-client.js'
 import type { MainIO, MainResult } from './internal/io.js'
 import { writeJsonOutput } from './internal/output.js'
-import { loadSkelmConfig } from './load-config.js'
+import { loadGatewayConfig } from './load-config.js'
 import { loadWorkflowFromFile } from './load-workflow.js'
 
 export interface GatewayArgs {
@@ -35,6 +35,8 @@ export interface GatewayArgs {
   systemd?: boolean
   /** Install as a launchd user agent (macOS). Defaults true on darwin when neither flag is set. */
   launchd?: boolean
+  /** Explicit path to the gateway config file (skelm.gateway.ts or skelm.config.ts). */
+  gatewayConfig?: string
 }
 
 function defaultStateDir(): string {
@@ -311,9 +313,11 @@ async function startGateway(args: GatewayArgs, io: MainIO): Promise<MainResult> 
     }
   }
 
-  // Load skelm.config.ts from cwd (walking up). Config drives port, host,
-  // registry globs, and default permissions.
-  const { config } = await loadSkelmConfig({ fromDir: process.cwd() })
+  // Load gateway config. Precedence: --gateway-config flag → SKELM_GATEWAY_CONFIG
+  // env → ~/.skelm/skelm.gateway.* → cwd walkup → defaults.
+  const { config } = await loadGatewayConfig(
+    args.gatewayConfig !== undefined ? { fromPath: args.gatewayConfig } : undefined,
+  )
   const serverCfg = config.server ?? {}
   // CLI flags (--http-port / --http-host) win over skelm.config.ts.
   const httpPort = args.httpPort ?? serverCfg.port
@@ -628,6 +632,7 @@ async function detachGateway(args: GatewayArgs, io: MainIO): Promise<MainResult>
     (stateDir !== homeStateDir() ? await getPort({ host: '127.0.0.1', reserve: true }) : undefined)
   if (httpPort !== undefined) argv.push('--http-port', String(httpPort))
   if (args.httpHost !== undefined) argv.push('--http-host', args.httpHost)
+  if (args.gatewayConfig !== undefined) argv.push('--gateway-config', args.gatewayConfig)
   // Ensure SKELM_STATE_DIR is passed to the child process
   const childEnv = { ...process.env }
   if (process.env.SKELM_STATE_DIR) {

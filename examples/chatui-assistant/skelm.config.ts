@@ -1,4 +1,4 @@
-import { defineConfig } from '@skelm/core'
+import { defineWorkflowConfig } from '@skelm/core'
 import { createRemoteTriggerSource } from '@skelm/integrations'
 import { createPiSdkBackend } from '@skelm/pi'
 import { createTerminalFrontend } from './chatui-frontend.mts'
@@ -19,7 +19,7 @@ import { createTerminalFrontend } from './chatui-frontend.mts'
 // (The embedded, gateway-foreground variant is still available via
 // `ChatUiIntegration.createTriggerSource({ frontend })`; see drive.mts.)
 
-export default defineConfig({
+export default defineWorkflowConfig({
   registries: {
     workflows: { glob: '*.workflow.{mts,ts}' },
   },

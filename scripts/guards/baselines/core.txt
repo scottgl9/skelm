@@ -42,6 +42,7 @@ value:DiscordTrigger
 value:EnvSecretResolver
 value:EventBus
 value:ExecConfigError
+value:GATEWAY_CONFIG_FILENAMES
 value:GitHubTrigger
 value:InvokePipelineNotFoundError
 value:JsonRpcLineTransport
@@ -131,6 +132,8 @@ value:createWebhookTrigger
 value:defaultPromptOf
 value:defaultReplyOf
 value:defineConfig
+value:defineGatewayConfig
+value:defineWorkflowConfig
 value:describePipeline
 value:describeStep
 value:executeAgentStep

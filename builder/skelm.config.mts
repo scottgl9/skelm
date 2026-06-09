@@ -1,7 +1,7 @@
 import { createCodexBackend } from '@skelm/codex'
 import { createRemoteTriggerSource } from '@skelm/integrations'
 import { createPiSdkBackend } from '@skelm/pi'
-import { createRoutingBackend, defineConfig } from 'skelm'
+import { createRoutingBackend, defineWorkflowConfig } from 'skelm'
 import { createTerminalFrontend } from './chatui-frontend.mts'
 
 // Backend selection with native runtime fallback. Codex is the default; if a
@@ -41,7 +41,7 @@ const agentBackend =
             console.error(`[builder] ${info.from} unavailable — falling over to ${info.to}`),
         })
 
-export default defineConfig({
+export default defineWorkflowConfig({
   registries: {
     workflows: { glob: '*.workflow.{mts,ts}' },
   },

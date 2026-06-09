@@ -1,4 +1,4 @@
-import { defineConfig } from '@skelm/core'
+import { defineWorkflowConfig } from '@skelm/core'
 
 // Minimal config that turns on the agentmemory integration and grants the
 // three ops the automatic backend loop uses (observe / search / session) as
@@ -6,7 +6,7 @@ import { defineConfig } from '@skelm/core'
 //
 // `secretName` is optional: set it (to a name your gateway's SecretResolver
 // knows) only when your agentmemory server requires a bearer token.
-export default defineConfig({
+export default defineWorkflowConfig({
   agentmemory: {
     enabled: true,
     url: 'http://localhost:3111',

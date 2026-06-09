@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { DEFAULT_CONFIG, type SkelmConfig, pickExport } from '@skelm/core'
+import { CONFIG_FILENAMES, DEFAULT_CONFIG, type SkelmConfig, pickExport } from '@skelm/core'
 import { parse as parseDotEnv } from 'dotenv'
 
 export interface ResolvedConfig {
@@ -74,6 +75,74 @@ export async function loadSkelmConfig(opts?: {
 }
 
 /**
+ * Load the gateway/operator config following the lookup precedence from the
+ * architecture recommendation:
+ *
+ *  1. Explicit path (`opts.fromPath` — from `--gateway-config` CLI flag)
+ *  2. `SKELM_GATEWAY_CONFIG` environment variable
+ *  3. `~/.skelm/skelm.gateway.*` (operator home config)
+ *  4. Walk up from cwd: nearest `skelm.gateway.*` then `skelm.config.*`
+ *     (legacy fallback for users who have not yet split their config)
+ *  5. Framework defaults (`DEFAULT_CONFIG`, framework permission baseline stripped)
+ */
+export async function loadGatewayConfig(opts?: {
+  fromPath?: string
+}): Promise<ResolvedConfig> {
+  // 1. Explicit path
+  if (opts?.fromPath !== undefined) {
+    const absolute = resolve(opts.fromPath)
+    if (!existsSync(absolute)) {
+      throw new Error(`gateway config file not found: ${absolute}`)
+    }
+    return loadFromPath(absolute)
+  }
+
+  // 2. SKELM_GATEWAY_CONFIG env var
+  const envPath = process.env.SKELM_GATEWAY_CONFIG
+  if (envPath !== undefined && envPath !== '') {
+    const absolute = resolve(envPath)
+    if (!existsSync(absolute)) {
+      throw new Error(`SKELM_GATEWAY_CONFIG path not found: ${absolute}`)
+    }
+    return loadFromPath(absolute)
+  }
+
+  // 3. ~/.skelm/skelm.gateway.*
+  const homeConfig = findHomeGatewayConfig()
+  if (homeConfig !== null) {
+    return loadFromPath(homeConfig)
+  }
+
+  // 4. Cwd walkup: skelm.gateway.* then skelm.config.*
+  const found = walkUpForGatewayConfig(process.cwd())
+  if (found !== null) {
+    return loadFromPath(found)
+  }
+
+  // 5. Framework defaults (no-config path)
+  const projectRoot = process.cwd()
+  return {
+    config: applyEnvLayers(withoutFrameworkPermissionDefaults(DEFAULT_CONFIG), projectRoot),
+    source: null,
+    projectRoot,
+    hasExplicitDefaultPermissions: false,
+    hasExplicitPermissionProfiles: false,
+  }
+}
+
+async function loadFromPath(absolute: string): Promise<ResolvedConfig> {
+  const config = await importConfigModule(absolute)
+  const projectRoot = dirname(absolute)
+  return {
+    config: applyEnvLayers(mergeWithDefaults(config), projectRoot),
+    source: absolute,
+    projectRoot,
+    hasExplicitDefaultPermissions: config.defaults?.permissions !== undefined,
+    hasExplicitPermissionProfiles: config.defaults?.permissionProfiles !== undefined,
+  }
+}
+
+/**
  * Merge a `.env` file at `projectRoot` and `config.env` into `process.env`
  * with precedence `process.env > .env > config.env`. The returned config has
  * its `env` field replaced with the fully-merged view so callers can inspect
@@ -108,7 +177,16 @@ function withoutFrameworkPermissionDefaults(config: SkelmConfig): SkelmConfig {
   return { ...config, defaults: restDefaults }
 }
 
-const CONFIG_FILENAMES = [
+const GATEWAY_CONFIG_FILENAMES = [
+  'skelm.gateway.mts',
+  'skelm.gateway.ts',
+  'skelm.gateway.js',
+  'skelm.gateway.mjs',
+]
+
+// Fallback names used when no skelm.gateway.* is present — covers users who
+// have not yet migrated to the split config layout.
+const LEGACY_GATEWAY_FALLBACK = [
   'skelm.config.mts',
   'skelm.config.ts',
   'skelm.config.js',
@@ -127,6 +205,32 @@ function walkUpForConfig(start: string): string | null {
     if (parent === dir) return null
     dir = parent
   }
+}
+
+function walkUpForGatewayConfig(start: string): string | null {
+  let dir = resolve(start)
+  while (true) {
+    for (const name of GATEWAY_CONFIG_FILENAMES) {
+      const candidate = join(dir, name)
+      if (existsSync(candidate)) return candidate
+    }
+    for (const name of LEGACY_GATEWAY_FALLBACK) {
+      const candidate = join(dir, name)
+      if (existsSync(candidate)) return candidate
+    }
+    const parent = dirname(dir)
+    if (parent === dir) return null
+    dir = parent
+  }
+}
+
+function findHomeGatewayConfig(): string | null {
+  const skelmDir = join(homedir(), '.skelm')
+  for (const name of GATEWAY_CONFIG_FILENAMES) {
+    const candidate = join(skelmDir, name)
+    if (existsSync(candidate)) return candidate
+  }
+  return null
 }
 
 async function importConfigModule(absolutePath: string): Promise<SkelmConfig> {

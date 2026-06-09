@@ -1,4 +1,4 @@
-import { defineConfig } from '@skelm/core'
+import { defineWorkflowConfig } from '@skelm/core'
 import { TelegramIntegration } from '@skelm/integrations'
 import { createPiSdkBackend } from '@skelm/pi'
 
@@ -31,7 +31,7 @@ const telegram = new TelegramIntegration({
 
 await telegram.init()
 
-export default defineConfig({
+export default defineWorkflowConfig({
   registries: {
     workflows: { glob: '*.workflow.{mts,ts}' },
   },

@@ -1,5 +1,5 @@
 import { createSkelmAgentBackend } from '@skelm/agent'
-import { defineConfig } from '@skelm/core'
+import { defineWorkflowConfig } from '@skelm/core'
 
 // Multi-agent delegation demo: a `router` agent hands research questions off to
 // a `research-specialist` agent via the built-in `delegate` tool. Both are
@@ -9,7 +9,7 @@ import { defineConfig } from '@skelm/core'
 // Point the backend at any OpenAI-compatible chat endpoint:
 //   SKELM_AGENT_URL=http://localhost:8000/v1 SKELM_AGENT_MODEL=qwen36 \
 //     skelm run router.workflow.mts --input '{"message":"What is a quine?"}'
-export default defineConfig({
+export default defineWorkflowConfig({
   registries: {
     workflows: { glob: '*.workflow.{mts,ts}' },
   },

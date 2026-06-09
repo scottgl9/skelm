@@ -1,13 +1,24 @@
-# Config reference (`skelm.config.ts`)
+# Config reference
 
-The CLI walks up from `cwd` to find `skelm.config.ts` (or `.js` / `.mjs`). When none is found, the gateway uses [`DEFAULT_CONFIG`](https://github.com/scottgl9/skelm/blob/main/packages/core/src/config.ts).
+skelm uses two config files with distinct ownership:
+
+| File | Owner | Purpose |
+|---|---|---|
+| `skelm.config.ts` | workflow author, project-local | workflows, backends, permissions, trigger sources |
+| `skelm.gateway.ts` | operator, runtime-local | server port/host, storage, plugins, gateway auth |
+
+## Workflow project config (`skelm.config.ts`)
+
+The CLI walks up from `cwd` (or from the workflow file's directory) to find the nearest `skelm.config.ts`. When no config is found the gateway uses [`DEFAULT_CONFIG`](https://github.com/scottgl9/skelm/blob/main/packages/core/src/config.ts).
+
+Use `defineWorkflowConfig` (or `defineConfig`) when authoring this file.
 
 ## Shape
 
 ```ts
-import { defineConfig } from 'skelm'
+import { defineWorkflowConfig } from 'skelm'
 
-export default defineConfig({
+export default defineWorkflowConfig({
   entrypoint?: string,                       // workflow run by `skelm run <dir>` (relative to this file)
 
   // ── Backends ────────────────────────────────────────────────────────
@@ -300,14 +311,14 @@ For the full list of variables skelm reads at runtime, see the [Environment vari
 
 ## entrypoint
 
-When `skelm run <directory>` targets a directory, the CLI looks for a
-`skelm.config.*` in that directory and runs the workflow named by its
-`entrypoint` field, resolved relative to the config file. This lets a workflow
-project be run by directory:
+When `skelm run <directory>` targets a directory, the CLI looks for the nearest
+`skelm.config.*` and runs the workflow named by its `entrypoint` field, resolved
+relative to the config file. This lets a workflow project be run by directory:
 
 ```ts
 // myproject/skelm.config.mts
-export default defineConfig({ entrypoint: './myproject.workflow.mts' })
+import { defineWorkflowConfig } from 'skelm'
+export default defineWorkflowConfig({ entrypoint: './myproject.workflow.mts' })
 ```
 
 ```bash
@@ -319,6 +330,47 @@ single unambiguous `*.workflow.{mts,ts}` file. See the
 [`skelm run` reference](./cli.md). Note the gateway resolves backends from the
 config it was **started** with, so a project's own backend wiring only applies
 when the gateway runs with that config.
+
+## Gateway config (`skelm.gateway.ts`)
+
+The gateway config is operator-owned and runtime-local. It controls how the gateway process is hosted, where it stores data, and which plugins it loads. Use `defineGatewayConfig` when authoring this file.
+
+### Lookup precedence
+
+1. `--gateway-config <path>` CLI flag
+2. `SKELM_GATEWAY_CONFIG` environment variable
+3. `~/.skelm/skelm.gateway.ts` (operator home config — recommended production location)
+4. Walk up from cwd: nearest `skelm.gateway.*` then `skelm.config.*` (backwards compat)
+5. Framework defaults
+
+### Starting the gateway with an explicit config
+
+```bash
+skelm gateway start --foreground --gateway-config /etc/skelm/prod.gateway.ts
+SKELM_GATEWAY_CONFIG=/etc/skelm/prod.gateway.ts skelm gateway start --foreground
+```
+
+### Example gateway config
+
+```ts
+// ~/.skelm/skelm.gateway.ts
+import { defineGatewayConfig } from 'skelm'
+
+export default defineGatewayConfig({
+  server: {
+    port: 14738,
+    host: '127.0.0.1',
+    auth: { mode: 'bearer' },
+  },
+  storage: {
+    runs:  { driver: 'sqlite' },
+    state: { driver: 'sqlite' },
+  },
+  secrets: { driver: 'env' },
+})
+```
+
+The gateway config shape is currently identical to the workflow config shape. The schemas will diverge in a future release (Phase 3) once commonly-migrated projects have adopted the split.
 
 ## Notes
 
