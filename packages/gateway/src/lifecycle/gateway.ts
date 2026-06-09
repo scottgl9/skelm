@@ -1,13 +1,8 @@
 import { mkdtempSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { AgentmemoryClient } from '@skelm/agentmemory'
 import {
-  type AgentmemoryAuditEvent,
-  AgentmemoryClient,
-  createAgentmemoryHandle,
-} from '@skelm/agentmemory'
-import {
-  ALL_AGENTMEMORY_OPS,
   type AgentPermissions,
   type ApprovalGate,
   type AuditWriter,
@@ -21,17 +16,16 @@ import {
   PermissionResolver,
   PostgresRunStore,
   type RunStore,
-  Runner,
+  type Runner,
   type SecretResolver,
   type SkelmConfig,
   SqliteRunStore,
   WorkspaceManager,
-  validate,
 } from '@skelm/core'
 import { SuspendApprovalGate } from '../approvals/suspend-gate.js'
 import { ChainAuditWriter } from '../audit/chain.js'
 import { BreakpointRegistry } from '../debug/breakpoint-registry.js'
-import { loadPipelineFromPath, makeGatewayPipelineRegistry } from '../http/routes/utils.js'
+import { GatewayRuntime } from '../execution/gateway-runtime.js'
 import { AcpSessionManager, defaultAcpSessionStorePath } from '../managers/acp-session-manager.js'
 import { CodingAgentManager } from '../managers/coding-agent-manager.js'
 import { McpServerManager } from '../managers/mcp-server-manager.js'
@@ -42,7 +36,6 @@ import {
   SkillRegistry,
   WorkflowRegistry,
 } from '../registries/index.js'
-import { createSkillSource } from '../registries/skill-source.js'
 import { FileSecretResolver } from '../secrets/file-driver.js'
 import { TriggerCoordinator } from '../triggers/coordinator.js'
 import { createTriggerDispatcher } from '../triggers/dispatcher.js'
@@ -71,10 +64,6 @@ export type {
   GatewayState,
 } from './gateway-types.js'
 
-// Re-exported under the local name for site readability; the canonical
-// list lives in @skelm/core/permissions (ALL_AGENTMEMORY_OPS).
-const AGENTMEMORY_OPS = ALL_AGENTMEMORY_OPS
-
 /**
  * Long-running gateway lifecycle. Phase 2 wired the lockfile, discovery
  * file, and signal handlers; Phase 3 adds config-driven registries with
@@ -102,8 +91,7 @@ export class Gateway implements GatewayContext {
   private egressProxy: EgressProxy | null = null
   private tokenPolicyStore: TokenPolicyMap | null = null
   private agentmemoryClient: AgentmemoryClient | null = null
-  private readonly inFlightRuns = new Map<string, AbortController>()
-  private readonly inFlightRunners = new Map<string, import('@skelm/core').Runner>()
+  private readonly runtimeInternal: GatewayRuntime
   private metricsInternal: import('@skelm/metrics').MetricsCollector | null = null
   // Captured as a function reference (not the module itself) so production
   // bundles only pull in @opentelemetry/api when enableOtel is true.
@@ -126,35 +114,6 @@ export class Gateway implements GatewayContext {
   private reloadInFlight: Promise<void> | null = null
   /** Coalesced follow-up reload promise — at most one outstanding. */
   private reloadPendingAfter: Promise<void> | null = null
-  /**
-   * Per-workflow project permission ceilings registered by `skelm run <dir>`
-   * activation. Keyed by workflow id; isolates one project's
-   * `defaults.permissions` to only that project's workflows so two activated
-   * projects can't cross-contaminate ceilings. Unset → fall back to the
-   * gateway's operator-wide `config.defaults.permissions`.
-   */
-  private readonly workflowProjectPermissions = new Map<
-    string,
-    {
-      defaultPermissions?: AgentPermissions
-      permissionProfiles?: Readonly<Record<string, AgentPermissions>>
-    }
-  >()
-  /**
-   * Per-workflow default backend ids registered by `skelm run <dir>`
-   * activation from the project's `config.backends.{agent,infer}`. Keyed by
-   * workflow id so each workflow uses its own project's choice when an
-   * `agent()` / `infer()` step omits `backend:` — without it the runtime
-   * fell back to "first backend with run()", which is non-deterministic
-   * across project configs that absorb multiple instances.
-   */
-  private readonly workflowProjectBackends = new Map<
-    string,
-    {
-      defaultAgentBackend?: string
-      defaultInferBackend?: string
-    }
-  >()
 
   constructor(private readonly options: GatewayOptions = {}) {
     // A config-less gateway (embedded / probe / test construction) that is
@@ -205,6 +164,7 @@ export class Gateway implements GatewayContext {
     }
     this.breakpointsInternal = new BreakpointRegistry()
     this.backendsInternal = options.backends
+    this.runtimeInternal = new GatewayRuntime(this)
   }
 
   getState(): GatewayState {
@@ -217,6 +177,10 @@ export class Gateway implements GatewayContext {
 
   getConfig(): SkelmConfig {
     return this.config
+  }
+
+  getAgentmemoryClient(): AgentmemoryClient | null {
+    return this.agentmemoryClient
   }
 
   /**
@@ -318,40 +282,18 @@ export class Gateway implements GatewayContext {
     return this.eventsBusInternal
   }
 
-  /**
-   * Register an AbortController for an in-flight run so that
-   * `gateway.cancel(runId)` can abort it. The dispatcher calls this when
-   * it starts a run and pairs it with `unregisterRun` once the run
-   * settles.
-   */
-  registerRun(
-    runId: string,
-    controller: AbortController,
-    runner?: import('@skelm/core').Runner,
-  ): void {
-    this.inFlightRuns.set(runId, controller)
-    if (runner !== undefined) this.inFlightRunners.set(runId, runner)
+  registerRun(runId: string, controller: AbortController, runner?: Runner): void {
+    this.runtimeInternal.registerRun(runId, controller, runner)
   }
 
   unregisterRun(runId: string): void {
-    this.inFlightRuns.delete(runId)
-    this.inFlightRunners.delete(runId)
+    this.runtimeInternal.unregisterRun(runId)
   }
 
-  /**
-   * The Runner managing an in-flight run. Used by the HTTP layer to forward
-   * resume() calls (POST /runs/:runId/resume) to the right Runner instance.
-   * Returns undefined when the run is unknown or already completed.
-   */
-  getRunner(runId: string): import('@skelm/core').Runner | undefined {
-    return this.inFlightRunners.get(runId)
+  getRunner(runId: string): Runner | undefined {
+    return this.runtimeInternal.getRunner(runId)
   }
 
-  /**
-   * Cancel a running run by aborting its registered AbortController.
-   * Returns false if the runId is not in flight (already completed,
-   * never started, or unknown to the gateway).
-   */
   /**
    * Returns the loader the HTTP /pipelines/:id route uses to import workflow
    * modules. undefined when no loader was configured at construction time.
@@ -439,223 +381,24 @@ export class Gateway implements GatewayContext {
     this.otelDisposers.push(this.otelAttach(bus))
   }
 
-  /**
-   * Shared async-start path used by `POST /pipelines/:id/start` and the batch
-   * fan-out route. Constructs a Runner with the gateway's enforcement, wires
-   * skills + sub-pipeline lookup, registers the run for cancellation, and
-   * fires it without awaiting. Returns the registered runId; callers handle
-   * idempotency and response shaping.
-   *
-   * Thrown errors carry a `.statusCode` so h3 surfaces them with the right
-   * HTTP status (404 for unknown id, 501 when no loader is wired). Errors
-   * raised by `loadPipelineFromPath` (load failure, missing default export)
-   * propagate through unchanged.
-   */
   async startPipelineAsync(pipelineId: string, input: unknown): Promise<{ runId: string }> {
-    const entry = this.registries.workflows.get(pipelineId)
-    if (entry === undefined) {
-      throw startPipelineError(404, 'pipeline not found')
-    }
-    const loader = this.getWorkflowLoader()
-    if (loader === undefined) {
-      throw startPipelineError(501, 'gateway has no workflow loader')
-    }
-    const pipeline = await loadPipelineFromPath(loader, pipelineId, entry.path)
-    const { runId } = this.#startRunnerAsync(pipeline, input, entry.path)
-    return { runId }
+    return this.runtimeInternal.startPipelineAsync(pipelineId, input)
   }
 
-  /**
-   * Async ad-hoc start by absolute workflow path. The caller (HTTP routes)
-   * is responsible for validating the path against the loader trust boundary
-   * before handing it here. Mirrors {@link startPipelineAsync} but for a file
-   * that need not be in the workflow registry, so `POST /runs` and
-   * `POST /pipelines/start-file` share one start path.
-   */
   async startAdhocRunByFile(
     absolutePath: string,
     registryId: string,
     input: unknown,
   ): Promise<{ runId: string; pipelineId: string }> {
-    const loader = this.getWorkflowLoader()
-    if (loader === undefined) {
-      throw startPipelineError(501, 'gateway has no workflow loader')
-    }
-    const pipeline = await loadPipelineFromPath(loader, registryId, absolutePath)
-    const { runId } = this.#startRunnerAsync(pipeline, input, absolutePath)
-    return { runId, pipelineId: pipeline.id }
+    return this.runtimeInternal.startAdhocRunByFile(absolutePath, registryId, input)
   }
 
-  /**
-   * Resume a run that survived a gateway restart while parked at wait().
-   * The original in-memory Runner is gone after restart, but the RunStore keeps
-   * the workflow path, input, completed prior steps, and waiting snapshot. Build
-   * a fresh Runner that starts at the waiting step and supplies the resume value.
-   */
   async resumeWaitingRun(runId: string, resumeValue: unknown): Promise<void> {
-    const stored = await this.runStore.getRun(runId)
-    if (stored === null) {
-      throw startPipelineError(
-        404,
-        'no in-flight runner for run (already completed, or unknown to this gateway)',
-      )
-    }
-    if (stored.status !== 'waiting' || stored.waiting === undefined) {
-      throw startPipelineError(400, `run ${runId} is not waiting`)
-    }
-    if (stored.workflowPath === undefined) {
-      throw startPipelineError(400, `run ${runId} has no workflowPath; cannot rehydrate`)
-    }
-    const loader = this.getWorkflowLoader()
-    if (loader === undefined) {
-      throw startPipelineError(501, 'gateway has no workflow loader')
-    }
-    const pipeline = await loadPipelineFromPath(loader, stored.pipelineId, stored.workflowPath)
-    // Validate the resume value against the waiting step's output schema BEFORE
-    // starting the runner. This preserves the synchronous rejection contract for
-    // invalid resume payloads after restart, rather than accepting then failing
-    // asynchronously inside the pipeline.
-    const waitingStepId = stored.waiting.stepId
-    const waitingStep = pipeline.steps.find(
-      (s): s is import('@skelm/core').WaitStep => s.kind === 'wait' && s.id === waitingStepId,
-    )
-    if (waitingStep === undefined) {
-      throw startPipelineError(400, `waiting step ${waitingStepId} not found in pipeline`)
-    }
-    if (waitingStep.outputSchema !== undefined) {
-      try {
-        await validate(waitingStep.outputSchema, resumeValue, 'output')
-      } catch (err) {
-        throw startPipelineError(400, (err as Error).message)
-      }
-    }
-    const enforcement = this.enforcement
-    const runner = new Runner({
-      approvalGate: enforcement.approvalGate,
-      secretResolver: enforcement.secretResolver,
-      auditWriter: enforcement.auditWriter,
-      store: this.runStore,
-      events: this.events,
-      workspaceManager: this.workspaceManager,
-      ...(this.backendsInternal !== undefined && { backends: this.backendsInternal }),
-    })
-    this.attachMetricsBus(runner.events)
-    this.attachOtelBus(runner.events)
-    const controller = new AbortController()
-    this.registerRun(runId, controller, runner)
-
-    const resumeAccepted = new Promise<void>((resolve, reject) => {
-      const unsubscribe = this.events.forRun(runId, (event) => {
-        if (event.type === 'run.resumed') {
-          unsubscribe()
-          resolve()
-        } else if (event.type === 'run.failed') {
-          unsubscribe()
-          reject(new Error(event.error.message))
-        } else if (event.type === 'run.cancelled') {
-          unsubscribe()
-          reject(new Error(`run ${runId} was cancelled`))
-        }
-      })
-    })
-
-    let handle: ReturnType<Runner['start']>
-    try {
-      handle = runner.start(pipeline as Parameters<Runner['start']>[0], stored.input as never, {
-        runId,
-        signal: controller.signal,
-        skillSource: createSkillSource({
-          registry: this.registries.skills,
-          workflowPath: stored.workflowPath,
-        }),
-        pipelineRegistry: makeGatewayPipelineRegistry(this),
-        ...this.defaultPermissionRunOptions(pipeline.id),
-        ...this.defaultBackendRunOptions(pipeline.id),
-        ...this.egressRunOptions(),
-        ...this.agentmemoryRunOptions(),
-        resumeFromWaiting: { run: stored, resumeValue },
-        workflowPath: stored.workflowPath,
-        ...(stored.triggerId !== undefined && { triggerId: stored.triggerId }),
-      })
-    } catch (err) {
-      this.unregisterRun(runId)
-      throw err
-    }
-
-    void handle
-      .wait()
-      .catch((err) => {
-        console.error(
-          `gateway: rehydrated run ${runId} wait rejected:`,
-          (err as Error)?.message ?? err,
-        )
-      })
-      .finally(() => this.unregisterRun(runId))
-
-    await resumeAccepted
-  }
-
-  #startRunnerAsync(
-    pipeline: import('@skelm/core').Pipeline,
-    input: unknown,
-    workflowPath: string,
-  ): { runId: string } {
-    const enforcement = this.enforcement
-    const runner = new Runner({
-      approvalGate: enforcement.approvalGate,
-      secretResolver: enforcement.secretResolver,
-      auditWriter: enforcement.auditWriter,
-      store: this.runStore,
-      events: this.events,
-      workspaceManager: this.workspaceManager,
-      ...(this.backendsInternal !== undefined && { backends: this.backendsInternal }),
-    })
-    this.attachMetricsBus(runner.events)
-    this.attachOtelBus(runner.events)
-    const controller = new AbortController()
-    const runId = crypto.randomUUID()
-    this.registerRun(runId, controller, runner)
-    // If runner.start() throws synchronously the run never gets a handle, so
-    // the `.finally(unregisterRun)` below would leak the registration. Unwind
-    // here so an in-flight cancellation can't see a phantom runId.
-    let handle: ReturnType<Runner['start']>
-    try {
-      handle = runner.start(pipeline as Parameters<Runner['start']>[0], (input ?? {}) as never, {
-        runId,
-        signal: controller.signal,
-        workflowPath,
-        skillSource: createSkillSource({
-          registry: this.registries.skills,
-          workflowPath,
-        }),
-        pipelineRegistry: makeGatewayPipelineRegistry(this),
-        ...this.defaultPermissionRunOptions(pipeline.id),
-        ...this.defaultBackendRunOptions(pipeline.id),
-        ...this.egressRunOptions(),
-        ...this.agentmemoryRunOptions(),
-      })
-    } catch (err) {
-      this.unregisterRun(runId)
-      throw err
-    }
-    void handle
-      .wait()
-      .catch((err) => {
-        // Runner already persists the failure to the run store; this log
-        // surfaces it in the gateway process output so an operator tailing
-        // stderr sees the rejection instead of silent loss.
-        console.error(`gateway: run ${runId} wait rejected:`, (err as Error)?.message ?? err)
-      })
-      .finally(() => this.unregisterRun(runId))
-    return { runId }
+    return this.runtimeInternal.resumeWaitingRun(runId, resumeValue)
   }
 
   cancel(runId: string, reason?: string): boolean {
-    const controller = this.inFlightRuns.get(runId)
-    if (controller === undefined) return false
-    controller.abort(reason)
-    this.inFlightRuns.delete(runId)
-    return true
+    return this.runtimeInternal.cancel(runId, reason)
   }
 
   /** Process / session supervisors hosted by the gateway. */
@@ -729,122 +472,27 @@ export class Gateway implements GatewayContext {
     return env
   }
 
-  /**
-   * The egress-proxy wiring to pass into every `Runner.start()` the gateway
-   * drives. Without it the runner's `hasEgressProxy` hint is false (so the
-   * network dimension is treated as unenforceable for subprocess backends like
-   * Pi RPC) AND subprocess steps spawn with no `HTTP_PROXY`, bypassing the
-   * proxy entirely. The trigger dispatcher already supplies these; every
-   * HTTP run path (`skelm run`, `/pipelines/:id/run`, `/v1/*`) must too.
-   */
   egressRunOptions(): {
     registerEgressToken: (runId: string, stepId: string, policy: NetworkPolicy) => string
     unregisterEgressToken: (runId: string, stepId: string) => void
     getProxyEnv: (egressToken?: string) => Record<string, string> | undefined
   } {
-    return {
-      registerEgressToken: (runId, stepId, policy) =>
-        this.registerEgressToken(runId, stepId, policy),
-      unregisterEgressToken: (runId, stepId) => this.unregisterEgressToken(runId, stepId),
-      getProxyEnv: (egressToken) => this.getProxyEnvVars(egressToken),
-    }
+    return this.runtimeInternal.egressRunOptions()
   }
 
-  /**
-   * Run-options block exposing the agentmemory handle factory. Spread into
-   * `runner.start(...)` alongside `egressRunOptions()` so backends receive
-   * `BackendContext.agentmemory` when the integration is enabled AND the
-   * step's resolved policy permits at least one agentmemory operation.
-   * Returns an empty object when agentmemory is disabled.
-   */
   agentmemoryRunOptions(): {
     agentmemoryHandleFactory?: import('@skelm/core').AgentmemoryHandleFactory
   } {
-    const client = this.agentmemoryClient
-    if (client === null) return {}
-    const defaultProject = this.projectRoot
-    // Capture the audit writer at factory-build time so each per-step handle
-    // emits one audit row per agentmemory op into the same ChainAuditWriter
-    // that records every other privileged action — the "exactly one audit
-    // writer" invariant from AGENTS.md. Without this, memory ops were
-    // invisible to `skelm audit query` and to compliance review.
-    const auditWriter = this.enforcementInternal?.auditWriter
-    return {
-      agentmemoryHandleFactory: (ctx) => {
-        // Optional per agent: only hand out a handle when the step's resolved
-        // policy permits at least one agentmemory op. A step that didn't opt in
-        // gets no handle at all, so the backend's memory hooks become a clean
-        // no-op instead of calling into a handle that denies every op (which
-        // would spew `permission.denied` events and waste work every turn).
-        const anyAllowed = AGENTMEMORY_OPS.some((op) => ctx.canUseAgentmemory(op).allow)
-        if (!anyAllowed) return undefined
-        const eventsBus = ctx.events
-        return createAgentmemoryHandle({
-          client,
-          canUseAgentmemory: ctx.canUseAgentmemory,
-          defaultProject,
-          runId: ctx.runId,
-          stepId: ctx.stepId,
-          ...(eventsBus !== undefined ? { events: (event) => eventsBus.publish(event) } : {}),
-          ...(auditWriter !== undefined
-            ? { audit: (event) => writeAgentmemoryAudit(auditWriter, event, ctx.runId) }
-            : {}),
-        })
-      },
-    }
+    return this.runtimeInternal.agentmemoryRunOptions()
   }
 
-  /**
-   * Project-default permissions to apply to every gateway-driven run. Spread
-   * into `runner.start(...)` so a workflow's resolved policy intersects with the
-   * operator's `config.defaults.permissions` ceiling (and named profiles).
-   *
-   * Only the operator's explicitly-declared defaults are applied — the merge in
-   * the CLI loader never propagates the framework deny-all baseline, and the
-   * gateway's no-config fallback strips it too, so an unset default stays
-   * `undefined` (no narrowing) rather than denying every step.
-   */
   defaultPermissionRunOptions(workflowId?: string): {
     defaultPermissions?: AgentPermissions
     permissionProfiles?: Readonly<Record<string, AgentPermissions>>
   } {
-    // Per-workflow project permissions (registered on `skelm run <dir>`
-    // activation) take precedence so each activated project's
-    // defaults.permissions binds ONLY its own workflows. This keeps two
-    // active projects from cross-contaminating ceilings — without it, the
-    // last one to activate would silently override the other's.
-    if (workflowId !== undefined) {
-      const project = this.workflowProjectPermissions.get(workflowId)
-      if (project !== undefined) {
-        return {
-          ...(project.defaultPermissions !== undefined && {
-            defaultPermissions: project.defaultPermissions,
-          }),
-          ...(project.permissionProfiles !== undefined && {
-            permissionProfiles: project.permissionProfiles,
-          }),
-        }
-      }
-    }
-    const defaults = this.config.defaults
-    return {
-      ...(defaults?.permissions !== undefined && { defaultPermissions: defaults.permissions }),
-      ...(defaults?.permissionProfiles !== undefined && {
-        permissionProfiles: defaults.permissionProfiles,
-      }),
-    }
+    return this.runtimeInternal.defaultPermissionRunOptions(workflowId)
   }
 
-  /**
-   * Register a project's `defaults.permissions` + `defaults.permissionProfiles`
-   * for a specific workflow id, so subsequent runs of that workflow use the
-   * project's ceiling instead of the operator-wide one. Called by
-   * `ProjectActivationService` once per workflow per activation.
-   *
-   * Per-workflow keying is intentional: it isolates each project's policy to
-   * its own workflows so `skelm run a/` followed by `skelm run b/` doesn't
-   * leak a's ceiling onto b's workflows (or vice versa).
-   */
   registerWorkflowProjectPermissions(
     workflowId: string,
     permissions: {
@@ -852,76 +500,29 @@ export class Gateway implements GatewayContext {
       permissionProfiles?: Readonly<Record<string, AgentPermissions>>
     },
   ): void {
-    if (
-      permissions.defaultPermissions === undefined &&
-      permissions.permissionProfiles === undefined
-    ) {
-      this.workflowProjectPermissions.delete(workflowId)
-      return
-    }
-    this.workflowProjectPermissions.set(workflowId, permissions)
+    this.runtimeInternal.registerWorkflowProjectPermissions(workflowId, permissions)
   }
 
-  /** Drop a workflow's per-project permission ceiling — paired with deactivate. */
   unregisterWorkflowProjectPermissions(workflowId: string): void {
-    this.workflowProjectPermissions.delete(workflowId)
+    this.runtimeInternal.unregisterWorkflowProjectPermissions(workflowId)
   }
 
-  /**
-   * Per-workflow default backend ids, sourced from the activated project's
-   * `config.backends.{agent,infer}`. Spread into `runner.start(...)` so an
-   * `agent()` / `infer()` step that omits `backend:` resolves to the
-   * project's declared default instead of an arbitrary first-registered
-   * instance.
-   */
   defaultBackendRunOptions(workflowId?: string): {
     defaultAgentBackend?: string
     defaultInferBackend?: string
   } {
-    if (workflowId !== undefined) {
-      const project = this.workflowProjectBackends.get(workflowId)
-      if (project !== undefined) {
-        return {
-          ...(project.defaultAgentBackend !== undefined && {
-            defaultAgentBackend: project.defaultAgentBackend,
-          }),
-          ...(project.defaultInferBackend !== undefined && {
-            defaultInferBackend: project.defaultInferBackend,
-          }),
-        }
-      }
-    }
-    // Operator-wide fallback: read the gateway's own `backends.{agent,infer}`
-    // if it was started against a config that set them.
-    const cfg = this.config.backends ?? {}
-    const agent = typeof cfg.agent === 'string' ? cfg.agent : undefined
-    const infer = typeof cfg.infer === 'string' ? cfg.infer : undefined
-    return {
-      ...(agent !== undefined && { defaultAgentBackend: agent }),
-      ...(infer !== undefined && { defaultInferBackend: infer }),
-    }
+    return this.runtimeInternal.defaultBackendRunOptions(workflowId)
   }
 
-  /**
-   * Register a project's default backend ids for a specific workflow id, so
-   * subsequent runs of that workflow resolve `agent()`/`infer()` steps with
-   * no explicit `backend:` to the project's choice. Called by
-   * `ProjectActivationService` once per workflow per activation.
-   */
   registerWorkflowProjectBackends(
     workflowId: string,
     backends: { defaultAgentBackend?: string; defaultInferBackend?: string },
   ): void {
-    if (backends.defaultAgentBackend === undefined && backends.defaultInferBackend === undefined) {
-      this.workflowProjectBackends.delete(workflowId)
-      return
-    }
-    this.workflowProjectBackends.set(workflowId, backends)
+    this.runtimeInternal.registerWorkflowProjectBackends(workflowId, backends)
   }
 
-  /** Drop a workflow's per-project backend defaults — paired with deactivate. */
   unregisterWorkflowProjectBackends(workflowId: string): void {
-    this.workflowProjectBackends.delete(workflowId)
+    this.runtimeInternal.unregisterWorkflowProjectBackends(workflowId)
   }
 
   private async initAgentmemory(): Promise<void> {
@@ -1556,32 +1157,6 @@ function requireStarted<T>(value: T | null, notAvailableMsg: string): T {
   return value
 }
 
-// Translate one AgentmemoryAuditEvent into an AuditEvent and fire-and-forget
-// the write. The agentmemory handle invokes `audit(...)` synchronously (void
-// return) but AuditWriter.write returns a Promise — we attach a no-op `.catch`
-// so a writer failure can never surface as an unhandled rejection in the
-// gateway's main loop. Action names mirror the event `type` (e.g.
-// 'agentmemory.observe', 'agentmemory.session.start') so `skelm audit query
-// --action 'agentmemory.*'` selects them cleanly.
-function writeAgentmemoryAudit(
-  writer: AuditWriter,
-  event: AgentmemoryAuditEvent,
-  runId: string | undefined,
-): void {
-  const { type, at: _at, ...details } = event
-  void writer
-    .write({
-      timestamp: new Date(event.at).toISOString(),
-      ...(runId !== undefined ? { runId } : {}),
-      actor: 'agentmemory',
-      action: type,
-      details,
-    })
-    .catch(() => {
-      /* audit writer failures are non-fatal for the agent loop */
-    })
-}
-
 // Drop `permissions` from a config `defaults` block. Used for the no-config
 // fallback so the framework deny-all baseline is never applied as an operator
 // permission ceiling (mirrors the CLI loader's deliberate exclusion).
@@ -1590,12 +1165,6 @@ function stripPermissionDefaults(
 ): NonNullable<SkelmConfig['defaults']> {
   const { permissions: _permissions, ...rest } = defaults
   return rest
-}
-
-function startPipelineError(statusCode: number, message: string): Error & { statusCode: number } {
-  const err = new Error(message) as Error & { statusCode: number }
-  err.statusCode = statusCode
-  return err
 }
 
 function expandHome(p: string): string {

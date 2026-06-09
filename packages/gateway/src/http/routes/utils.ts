@@ -5,6 +5,8 @@ import type { Pipeline } from '@skelm/core'
 import { createError } from 'h3'
 import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 
+type PipelineRegistryGateway = Pick<GatewayContext, 'getWorkflowLoader' | 'registries'>
+
 /**
  * Validate a file path the caller wants the gateway to load. Defends the
  * gateway-as-loader trust boundary against:
@@ -117,7 +119,7 @@ export async function loadPipelineFromPath(
  * handler, and the trigger dispatcher all share a single implementation.
  */
 export function makeGatewayPipelineRegistry(
-  gateway: GatewayContext,
+  gateway: PipelineRegistryGateway,
 ): (pipelineId: string) => Promise<Pipeline | undefined> {
   return async (pipelineId) => {
     const loader = gateway.getWorkflowLoader()
