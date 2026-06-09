@@ -110,11 +110,51 @@ export class ChainAuditWriter implements AuditWriter {
     const fh = await fs.open(this.path, 'a', 0o600)
     await fh.close()
     await fs.chmod(this.path, 0o600)
-    const existing = await this.readAll()
-    if (existing.length > 0) {
-      const last = existing[existing.length - 1] as ChainEntry
+    const last = await this.readLastEntry()
+    if (last !== null) {
       this.lastHash = last.entryHash
       this.nextSeq = last.seq + 1
+    }
+  }
+
+  /**
+   * Read only the last entry from the audit log by seeking backwards from EOF.
+   * Avoids loading the entire file into memory when the log is large.
+   */
+  private async readLastEntry(): Promise<ChainEntry | null> {
+    let fh: Awaited<ReturnType<typeof fs.open>> | undefined
+    try {
+      fh = await fs.open(this.path, 'r')
+      const { size } = await fh.stat()
+      if (size === 0) return null
+      // Read backwards in 4KiB chunks until we find a complete JSON line.
+      const chunkSize = 4096
+      let pos = size
+      let tail = ''
+      while (pos > 0) {
+        const readSize = Math.min(chunkSize, pos)
+        pos -= readSize
+        const buf = Buffer.alloc(readSize)
+        await fh.read(buf, 0, readSize, pos)
+        tail = buf.toString('utf8') + tail
+        // Find the last complete line (not the trailing newline).
+        const trimmed = tail.trimEnd()
+        const nl = trimmed.lastIndexOf('\n')
+        const candidate = nl === -1 ? trimmed : trimmed.slice(nl + 1)
+        if (candidate.length > 0) {
+          try {
+            return JSON.parse(candidate) as ChainEntry
+          } catch {
+            // incomplete chunk — read more
+          }
+        }
+      }
+      return null
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw err
+    } finally {
+      await fh?.close()
     }
   }
 }
