@@ -1,5 +1,5 @@
 import { type Router, createError, eventHandler, readBody } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 
 export const DEFAULT_BATCH_CAP = 50
 
@@ -25,7 +25,7 @@ interface BatchCancelBody {
  * the batch path automatically. Per-item errors never fail the whole
  * batch; the /cancel handler forwards to gateway.cancel(runId).
  */
-export function registerBatchRoutes(router: Router, gateway: Gateway): void {
+export function registerBatchRoutes(router: Router, gateway: GatewayContext): void {
   router.post(
     '/v1/batch/runs',
     eventHandler(async (event) => {
@@ -70,7 +70,7 @@ export function registerBatchRoutes(router: Router, gateway: Gateway): void {
 }
 
 async function startOne(
-  gateway: Gateway,
+  gateway: GatewayContext,
   item: BatchRunItem,
 ): Promise<{
   id: string

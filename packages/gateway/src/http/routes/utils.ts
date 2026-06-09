@@ -3,7 +3,7 @@ import { stat } from 'node:fs/promises'
 import { isAbsolute, normalize } from 'node:path'
 import type { Pipeline } from '@skelm/core'
 import { createError } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 
 /**
  * Validate a file path the caller wants the gateway to load. Defends the
@@ -117,7 +117,7 @@ export async function loadPipelineFromPath(
  * handler, and the trigger dispatcher all share a single implementation.
  */
 export function makeGatewayPipelineRegistry(
-  gateway: Gateway,
+  gateway: GatewayContext,
 ): (pipelineId: string) => Promise<Pipeline | undefined> {
   return async (pipelineId) => {
     const loader = gateway.getWorkflowLoader()

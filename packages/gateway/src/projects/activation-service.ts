@@ -12,7 +12,7 @@ import {
   pickExport,
 } from '@skelm/core'
 
-import type { Gateway } from '../lifecycle/gateway.js'
+import type { GatewayContext } from '../lifecycle/gateway-types.js'
 import { pipelineTriggerToSpec } from '../triggers/pipeline-trigger-to-spec.js'
 import { WorkflowRegistrationError } from '../workflows/workflow-registration-service.js'
 
@@ -114,7 +114,7 @@ export class ProjectActivationService {
    *  permission ceiling and other per-project bookkeeping. */
   private readonly workflowProjectDirs = new Map<string, string>()
 
-  constructor(private readonly gateway: Gateway) {}
+  constructor(private readonly gateway: GatewayContext) {}
 
   list(): string[] {
     return [...this.active]

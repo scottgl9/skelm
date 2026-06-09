@@ -1,5 +1,5 @@
 import { type Router, createError, eventHandler } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 
 /**
  * Liveness vs readiness:
@@ -12,7 +12,7 @@ import type { Gateway } from '../../lifecycle/gateway.js'
  *   GET /health  — legacy alias for /healthz; preserved for callers
  *                  that already poll it.
  */
-export function registerHealthRoutes(router: Router, gateway: Gateway): void {
+export function registerHealthRoutes(router: Router, gateway: GatewayContext): void {
   const liveness = () => ({
     status: 'ok',
     pid: process.pid,

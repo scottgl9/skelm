@@ -1,5 +1,5 @@
 import { type Router, createError, eventHandler, readBody } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 
 // Intentionally narrow: only hot-reloadable, side-effect-bounded, non-security-relevant
 // fields belong here. Auth, trust roots, secret-driver paths, and storage settings require
@@ -29,7 +29,7 @@ function redactMatchingKeys(record: Record<string, unknown>, skip: ReadonlySet<s
  * or a nested `server` object; any other key returns 400. Applied changes go
  * through Gateway.reload() so existing infrastructure picks them up.
  */
-export function registerConfigRoutes(router: Router, gateway: Gateway): void {
+export function registerConfigRoutes(router: Router, gateway: GatewayContext): void {
   router.get(
     '/v1/config',
     eventHandler(async () => sanitize(gateway.getConfig())),

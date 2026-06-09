@@ -12,7 +12,7 @@ import {
   readBody,
   readMultipartFormData,
 } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import type { WorkflowArchiveService } from '../../workflows/workflow-archive-service.js'
 import {
   WorkflowRegistrationError,
@@ -42,7 +42,7 @@ interface ValidateBody {
  * gateway.getWorkflowRegistrationService(), so dispatched runs see
  * registered workflows just like glob-discovered ones.
  */
-export function registerWorkflowRoutes(router: Router, gateway: Gateway): void {
+export function registerWorkflowRoutes(router: Router, gateway: GatewayContext): void {
   const service = gateway.getWorkflowRegistrationService()
 
   router.get(
@@ -228,7 +228,7 @@ interface WorkflowLoadData {
 }
 
 async function loadWorkflowModule(
-  gateway: Gateway,
+  gateway: GatewayContext,
   entry: { id: string; path: string },
 ): Promise<WorkflowLoadData | null> {
   const loader = gateway.getWorkflowLoader()
@@ -320,7 +320,7 @@ const ACTIVE_RUN_STATUSES: ReadonlySet<RunStatus> = new Set(['pending', 'running
 const HEALTH_RUN_SCAN_LIMIT = 5_000
 
 async function workflowHealthList(
-  gateway: Gateway,
+  gateway: GatewayContext,
   service: WorkflowRegistrationService,
   recentFailuresLimit: number,
 ): Promise<WorkflowHealth[]> {
@@ -336,7 +336,7 @@ async function workflowHealthList(
 }
 
 async function workflowHealth(
-  gateway: Gateway,
+  gateway: GatewayContext,
   entry: { id: string; path: string },
   registered: ReadonlySet<string>,
   allRuns: RunWindow,
@@ -432,7 +432,7 @@ async function workflowHealth(
   }
 }
 
-function workflowGatewayReadiness(gateway: Gateway): { state: string; ready: boolean } {
+function workflowGatewayReadiness(gateway: GatewayContext): { state: string; ready: boolean } {
   const state = gateway.getState()
   return { state, ready: state === 'running' }
 }
@@ -486,7 +486,7 @@ function runBelongsToWorkflow(
 }
 
 async function recentWorkflowFailures(
-  gateway: Gateway,
+  gateway: GatewayContext,
   runs: readonly RunSummary[],
   limit: number,
 ): Promise<WorkflowHealthRunFailure[]> {
@@ -518,7 +518,7 @@ interface RunWindow {
 }
 
 async function collectWorkflowRuns(
-  gateway: Gateway,
+  gateway: GatewayContext,
   entry: { id: string; path: string },
   pipelineIdHint?: string,
 ): Promise<RunWindow> {
@@ -597,7 +597,7 @@ function isMultipart(event: H3Event): boolean {
 
 async function registerFromArchive(
   event: H3Event,
-  gateway: Gateway,
+  gateway: GatewayContext,
   service: WorkflowRegistrationService,
   archive: WorkflowArchiveService,
   mode: 'register' | 'replace',
@@ -651,7 +651,7 @@ async function registerFromArchive(
 }
 
 async function materializeInlineJsonWorkflow(
-  gateway: Gateway,
+  gateway: GatewayContext,
   id: string,
   body: RegisterBody,
   mode: 'register' | 'replace',
@@ -759,7 +759,7 @@ function extractSourcePath(source: unknown): string {
 }
 
 function requireLoader(
-  gateway: Gateway,
+  gateway: GatewayContext,
 ): (registryId: string, absolutePath: string) => Promise<unknown> {
   const loader = gateway.getWorkflowLoader()
   if (loader === undefined) {

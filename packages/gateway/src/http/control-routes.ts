@@ -12,7 +12,7 @@ import {
   eventHandler,
   setResponseHeader,
 } from 'h3'
-import type { Gateway } from '../lifecycle/gateway.js'
+import type { GatewayContext } from '../lifecycle/gateway-types.js'
 import { DEFAULT_WEBHOOK_DEDUPE_TTL_MS } from '../triggers/dedupe-store.js'
 import { registerApprovalRoutes } from './routes/approvals.js'
 import { registerAuditRoutes } from './routes/audit.js'
@@ -43,7 +43,7 @@ const DEFAULT_WEBHOOK_MAX_BODY_BYTES = 1_048_576
  * A Router (instead of bare app.use) is used so the explicit control routes
  * always win over the webhook dispatch fallback registered after.
  */
-export function mountControlRoutes(app: App, gateway: Gateway): void {
+export function mountControlRoutes(app: App, gateway: GatewayContext): void {
   // preemptive: false so unmatched paths fall through to the webhook handler.
   const router = createRouter()
 

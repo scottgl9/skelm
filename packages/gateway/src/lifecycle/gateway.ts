@@ -31,7 +31,6 @@ import {
 import { SuspendApprovalGate } from '../approvals/suspend-gate.js'
 import { ChainAuditWriter } from '../audit/chain.js'
 import { BreakpointRegistry } from '../debug/breakpoint-registry.js'
-import { type SkelmServer, createServer } from '../http/index.js'
 import { loadPipelineFromPath, makeGatewayPipelineRegistry } from '../http/routes/utils.js'
 import { AcpSessionManager, defaultAcpSessionStorePath } from '../managers/acp-session-manager.js'
 import { CodingAgentManager } from '../managers/coding-agent-manager.js'
@@ -53,6 +52,7 @@ import type { WorkflowArchiveService } from '../workflows/workflow-archive-servi
 import type { WorkflowRegistrationService } from '../workflows/workflow-registration-service.js'
 import { type DiscoveryRecord, removeDiscovery, writeDiscovery } from './discovery.js'
 import type {
+  GatewayContext,
   GatewayEnforcement,
   GatewayManagers,
   GatewayOptions,
@@ -63,6 +63,7 @@ import { type LockfileContents, acquireLockfile, releaseLockfile } from './lockf
 import { recoverInterruptedRuns } from './recovery.js'
 
 export type {
+  GatewayContext,
   GatewayEnforcement,
   GatewayManagers,
   GatewayOptions,
@@ -80,7 +81,7 @@ const AGENTMEMORY_OPS = ALL_AGENTMEMORY_OPS
  * FS watching for workflows and skills. Subsequent phases inject
  * enforcement, audit, HTTP listener, supervisors, and the scheduler.
  */
-export class Gateway {
+export class Gateway implements GatewayContext {
   readonly stateDir: string
   readonly projectRoot: string
   readonly lockfilePath: string
@@ -97,7 +98,7 @@ export class Gateway {
   private managersInternal: GatewayManagers | null = null
   private runStoreInternal: RunStore | null = null
   private workspaceManagerInternal: WorkspaceManager | null = null
-  private httpServer: SkelmServer | null = null
+  private httpServer: import('../http/types.js').SkelmServer | null = null
   private egressProxy: EgressProxy | null = null
   private tokenPolicyStore: TokenPolicyMap | null = null
   private agentmemoryClient: AgentmemoryClient | null = null
@@ -1256,6 +1257,7 @@ export class Gateway {
     const host = this.options.httpHost ?? this.config.server?.host ?? '127.0.0.1'
     const auth = this.config.server?.auth?.mode === 'bearer' ? 'bearer' : 'none'
     const token = this.effectiveHttpToken()
+    const { createServer } = await import('../http/index.js')
     this.httpServer = createServer(
       {
         port,

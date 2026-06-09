@@ -1062,6 +1062,3 @@ function expiresAt(opts: StateSetOptions): number | null {
 function valuesEqual(left: unknown, right: unknown): boolean {
   return encodeValue(left) === encodeValue(right)
 }
-
-export type { PostgresRunStoreOptions } from './run-store-postgres.js'
-export { NotImplementedError, PostgresRunStore } from './run-store-postgres.js'

@@ -1,9 +1,9 @@
 import { type Router, createError, eventHandler, readBody } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { runPipelineSync } from './pipeline-runner.js'
 import { openaiContentFor } from './utils.js'
 
-export function registerOpenAIRoutes(router: Router, gateway: Gateway): void {
+export function registerOpenAIRoutes(router: Router, gateway: GatewayContext): void {
   router.post(
     '/v1/chat/completions',
     eventHandler(async (event) => {

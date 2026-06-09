@@ -1,5 +1,5 @@
 import { type Router, createError, eventHandler, readBody } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import {
   ProjectActivationError,
   ProjectActivationService,
@@ -19,7 +19,7 @@ interface DeactivateBody {
  * applies. One service instance per gateway keeps the activated-dir set (used
  * for refresh detection) alive for the gateway's lifetime.
  */
-export function registerProjectRoutes(router: Router, gateway: Gateway): void {
+export function registerProjectRoutes(router: Router, gateway: GatewayContext): void {
   const service = new ProjectActivationService(gateway)
 
   router.post(

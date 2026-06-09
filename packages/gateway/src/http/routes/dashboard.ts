@@ -2,7 +2,7 @@ import type { RunStatus } from '@skelm/core'
 import { type Router, createError, eventHandler, getQuery } from 'h3'
 import { DashboardService } from '../../dashboard/dashboard-service.js'
 import type { AnalyticsMetric, AnalyticsResolution } from '../../dashboard/types.js'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 
 const GATEWAY_VERSION = '0.4.7'
 
@@ -28,7 +28,7 @@ const VALID_STATUSES: ReadonlySet<RunStatus> = new Set([
  * on first request so a Gateway that starts without the dashboard ever being
  * called incurs no extra cost.
  */
-export function registerDashboardRoutes(router: Router, gateway: Gateway): void {
+export function registerDashboardRoutes(router: Router, gateway: GatewayContext): void {
   let service: DashboardService | null = null
   const getService = (): DashboardService => {
     if (service === null) {

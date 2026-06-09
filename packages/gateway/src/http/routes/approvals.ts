@@ -1,7 +1,7 @@
 import { type H3Event, type Router, createError, eventHandler, readBody } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 
-export function registerApprovalRoutes(router: Router, gateway: Gateway): void {
+export function registerApprovalRoutes(router: Router, gateway: GatewayContext): void {
   router.get(
     '/approvals',
     eventHandler(async () => {
@@ -26,7 +26,7 @@ export function registerApprovalRoutes(router: Router, gateway: Gateway): void {
 
 async function deliverApproval(
   event: H3Event,
-  gateway: Gateway,
+  gateway: GatewayContext,
   approve: boolean,
 ): Promise<{ delivered: boolean }> {
   const runId = event.context.params?.runId
