@@ -236,6 +236,13 @@ export function gatewayFixture(opts: {
    */
   configFile?: string | ((ctx: Context) => string)
   startupTimeoutMs?: number
+  /**
+   * When true, delete the dataDir before starting the gateway so each
+   * test invocation begins with a clean run database and no stale
+   * dynamic-schedules. Use for sections that need isolation rather than
+   * durability across invocations.
+   */
+  cleanDataDir?: boolean
 }): {
   readonly port: number
   start(): CodeStep<{ pid: number; port: number; dataDir: string }>
@@ -255,6 +262,12 @@ export function gatewayFixture(opts: {
               ? opts.dataDir(ctx)
               : (opts.dataDir ?? ctx.workspace?.path ?? `/tmp/skelm-gw-${port}`)
           const cwd = typeof opts.configFile === 'function' ? opts.configFile(ctx) : opts.configFile
+          if (opts.cleanDataDir === true) {
+            await ctx.exec?.({
+              command: 'bash',
+              args: ['-c', `rm -rf -- ${JSON.stringify(dataDir)}`],
+            })
+          }
           // The CLI's `gateway start` does not (yet) accept --data-dir or
           // --config flags; it picks them up from SKELM_STATE_DIR and the
           // working directory. Pass both per-instance so two fixtures on

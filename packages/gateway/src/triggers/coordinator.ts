@@ -274,6 +274,10 @@ export class TriggerCoordinator {
       ...(options.declared === true && { declared: true }),
       ...(options.maxQueueDepth !== undefined && { maxQueueDepth: options.maxQueueDepth }),
     }
+    // Clean up any existing timer/manager resources for this ID before (re-)arming.
+    // Without this, re-registering the same trigger ID leaves the old setInterval /
+    // EventSourceManager / file-watcher running concurrently with the new one.
+    this.cleanupResources(spec.id)
     this.registrations.set(spec.id, reg)
     switch (spec.kind) {
       case 'interval': {
@@ -521,7 +525,12 @@ export class TriggerCoordinator {
     return reg
   }
 
-  unregister(id: string): void {
+  /**
+   * Stop and remove all running timer/manager resources for `id` without
+   * touching the registration record or dispatch state. Used by `register()`
+   * to clean up before re-arming the same ID, and by `unregister()`.
+   */
+  private cleanupResources(id: string): void {
     const t1 = this.intervalTimers.get(id)
     const t2 = this.cronTimers.get(id)
     const t3 = this.atTimers.get(id)
@@ -552,11 +561,9 @@ export class TriggerCoordinator {
       eventSource.stop()
       this.eventSourceManagers.delete(id)
     }
-    // Remove webhook route if any.
     for (const [key, triggerId] of this.webhookRoutes.entries()) {
       if (triggerId === id) this.webhookRoutes.delete(key)
     }
-    // Stop the queue driver bound to this trigger, if any.
     const driverId = this.queueDriverBindings.get(id)
     if (driverId !== undefined) {
       const driver = this.queueDrivers.get(driverId)
@@ -567,6 +574,10 @@ export class TriggerCoordinator {
       this.queueDriverBindings.delete(id)
     }
     this.pollLastKey.delete(id)
+  }
+
+  unregister(id: string): void {
+    this.cleanupResources(id)
     this.activeDispatches.delete(id)
     this.registrations.delete(id)
     this.queues.delete(id)
