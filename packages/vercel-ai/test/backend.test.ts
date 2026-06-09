@@ -178,7 +178,7 @@ describe('createVercelAiBackend — run()', () => {
     expect(result?.stopReason).toBe('stop')
   })
 
-  it('returns structured value via Output.object when outputSchema is set (F006)', async () => {
+  it('returns structured value when outputSchema is set and SDK output passes schema validation (F006)', async () => {
     let capturedResponseFormat: unknown
     const model = new MockLanguageModelV3({
       doGenerate: async (opts: { responseFormat?: unknown }) => {
@@ -203,6 +203,35 @@ describe('createVercelAiBackend — run()', () => {
     expect(result?.text).toBeUndefined()
     // Output.object adapter requested JSON-mode from the provider.
     expect((capturedResponseFormat as { type?: string })?.type).toBe('json')
+  })
+
+  it('streaming path parses text into structured when SDK output={} fails schema validation (provider lacks JSON mode)', async () => {
+    // streamText can return output={} without throwing when the provider doesn't
+    // natively support JSON mode. validate() distinguishes this from a valid empty
+    // schema like z.object({}) where {} is the correct structured value.
+    // When output={} fails, the backend parses fullText via extractJsonFromText
+    // to satisfy the structured-output contract so callers always see response.structured.
+    const fakeStream = {
+      textStream: (async function* () {
+        yield '{"action":"go"}'
+      })(),
+      finishReason: Promise.resolve('stop' as const),
+      usage: Promise.resolve({ inputTokens: 10, outputTokens: 5, totalTokens: 15 }),
+      output: {}, // local endpoint: empty object, not the real structured result
+    } as unknown as ReturnType<typeof ai.streamText>
+    streamTextOverride.current = () => fakeStream
+    const backend = createVercelAiBackend({ model: mockModel('unused') })
+    try {
+      const result = await backend.run?.(
+        { prompt: 'p', outputSchema: z.object({ action: z.string() }) },
+        { ...makeCtx(), onPartial: () => {} },
+      )
+      // output={} fails → text is parsed → structured is populated from text
+      expect(result?.structured).toEqual({ action: 'go' })
+      expect(result?.text).toBeUndefined()
+    } finally {
+      streamTextOverride.current = undefined
+    }
   })
 
   it('does NOT request structured output when outputSchema is absent', async () => {

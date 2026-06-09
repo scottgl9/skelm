@@ -459,7 +459,7 @@ describe('TriggerCoordinator', () => {
 
     // firstDelay should be cadence-aligned: anchor + 1*everyMs - now ≈ 50 s,
     // NOT everyMs (60 s) which is what the drift path would produce.
-    const nextMs = Date.parse(reg.nextFireAt!)
+    const nextMs = Date.parse(reg.nextFireAt ?? '')
     const anchorMs = Date.parse(anchor)
     const expectedNextMs = anchorMs + everyMs
     // Should be within 500 ms of the cadence-aligned target.
