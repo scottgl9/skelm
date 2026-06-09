@@ -1,4 +1,4 @@
-import { defineConfig } from '@skelm/core'
+import { defineWorkflowConfig } from '@skelm/core'
 import { TelegramIntegration } from '@skelm/integrations'
 import { createPiSdkBackend } from '@skelm/pi'
 
@@ -20,7 +20,7 @@ const telegram = new TelegramIntegration({
 // the long-poll loop. Errors here will surface from `skelm gateway start`.
 await telegram.init()
 
-export default defineConfig({
+export default defineWorkflowConfig({
   registries: {
     workflows: { glob: '*.pipeline.{mts,ts}' },
   },

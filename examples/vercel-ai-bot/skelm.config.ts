@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai'
-import { defineConfig } from '@skelm/core'
+import { defineWorkflowConfig } from '@skelm/core'
 import { createVercelAiBackend } from '@skelm/vercel-ai'
 
 // Point @ai-sdk/openai at any OpenAI-compatible endpoint:
@@ -12,7 +12,7 @@ const openai = createOpenAI({
 
 const modelId = process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
 
-export default defineConfig({
+export default defineWorkflowConfig({
   registries: {
     workflows: { glob: '*.pipeline.{mts,ts}' },
   },

@@ -175,6 +175,9 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
             ...(typeof parsed.flags['http-host'] === 'string' && {
               httpHost: parsed.flags['http-host'],
             }),
+            ...(typeof parsed.flags['gateway-config'] === 'string' && {
+              gatewayConfig: parsed.flags['gateway-config'],
+            }),
           },
           io,
         )

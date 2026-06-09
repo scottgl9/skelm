@@ -1,4 +1,4 @@
-import { defineConfig } from '@skelm/core'
+import { defineWorkflowConfig } from '@skelm/core'
 import { MatrixIntegration } from '@skelm/integrations'
 import { createPiSdkBackend } from '@skelm/pi'
 
@@ -41,7 +41,7 @@ const matrix = new MatrixIntegration({
 
 await matrix.init()
 
-export default defineConfig({
+export default defineWorkflowConfig({
   registries: {
     workflows: { glob: '*.workflow.{mts,ts}' },
   },

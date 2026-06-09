@@ -229,15 +229,42 @@ export function defineConfig(config: SkelmConfig): SkelmConfig {
 }
 
 /**
- * Candidate `skelm.config.*` basenames, in resolution order. Shared so the CLI
- * (directory entrypoint resolution) and the gateway (runtime project
- * activation) probe for the config file the same way and never drift.
+ * Identity helper for `skelm.config.ts` when used as a workflow-project config.
+ * Functionally identical to `defineConfig`; the name signals that the file is
+ * owned by the workflow author, not the gateway operator.
+ */
+export function defineWorkflowConfig(config: SkelmConfig): SkelmConfig {
+  return Object.freeze({ ...config })
+}
+
+/**
+ * Identity helper for `skelm.gateway.ts` — the gateway/operator runtime config.
+ * Functionally identical to `defineConfig`; use this name when authoring the
+ * gateway config so the intent is clear at a glance.
+ */
+export function defineGatewayConfig(config: SkelmConfig): SkelmConfig {
+  return Object.freeze({ ...config })
+}
+
+/**
+ * Candidate workflow-project config basenames, in resolution order. Shared so
+ * the CLI and the gateway activation service probe the same way and never drift.
  */
 export const CONFIG_FILENAMES = [
   'skelm.config.mts',
   'skelm.config.ts',
   'skelm.config.js',
   'skelm.config.mjs',
+] as const
+
+/**
+ * Candidate gateway config basenames, in resolution order.
+ */
+export const GATEWAY_CONFIG_FILENAMES = [
+  'skelm.gateway.mts',
+  'skelm.gateway.ts',
+  'skelm.gateway.js',
+  'skelm.gateway.mjs',
 ] as const
 
 /** Default configuration used when no skelm.config.ts is found. */
