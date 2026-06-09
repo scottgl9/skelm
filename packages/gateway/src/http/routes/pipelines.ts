@@ -1,6 +1,6 @@
 import { Runner, describePipeline } from '@skelm/core'
 import { type Router, createError, eventHandler, readBody } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { createSkillSource } from '../../registries/skill-source.js'
 import {
   adhocPipelineId,
@@ -14,7 +14,7 @@ import {
 // Per-(pipeline, idempotency-key) → runId map shared by /run and /start.
 const idempotency = new Map<string, string>()
 
-export function registerPipelineRoutes(router: Router, gateway: Gateway): void {
+export function registerPipelineRoutes(router: Router, gateway: GatewayContext): void {
   router.get(
     '/pipelines',
     eventHandler(async () => {

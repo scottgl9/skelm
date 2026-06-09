@@ -1,9 +1,9 @@
 import type { RunEvent } from '@skelm/core'
 import { type Router, createError, eventHandler, getQuery, readBody } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { adhocPipelineId, validateWorkflowFile } from './utils.js'
 
-export function registerRunRoutes(router: Router, gateway: Gateway): void {
+export function registerRunRoutes(router: Router, gateway: GatewayContext): void {
   // POST /runs — async ad-hoc start of a workflow by absolute path. Returns
   // immediately with the new runId; callers poll GET /runs/:runId or
   // subscribe via GET /runs/:runId/stream. Body: { pipelinePath, input?,

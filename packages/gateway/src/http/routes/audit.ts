@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { type Router, createError, eventHandler, getQuery } from 'h3'
 import { ChainAuditWriter } from '../../audit/chain.js'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 
 /**
  * Audit log read API. Backed by the gateway's existing ChainAuditWriter at
@@ -12,7 +12,7 @@ import type { Gateway } from '../../lifecycle/gateway.js'
  *   query: runId?, actor?, action?, since?, until?, limit?
  * GET /audit/verify  — walk the chain and report the first integrity break
  */
-export function registerAuditRoutes(router: Router, gateway: Gateway): void {
+export function registerAuditRoutes(router: Router, gateway: GatewayContext): void {
   // The gateway uses ChainAuditWriter against <stateDir>/audit.jsonl when no
   // explicit auditWriter is injected. Constructing a sibling reader against
   // the same path here is safe — ChainAuditWriter.readAll() opens, reads,

@@ -22,6 +22,7 @@ import {
   setResponseStatus,
   toNodeListener,
 } from 'h3'
+import type { GatewayContext } from '../lifecycle/gateway-types.js'
 import type { AuthMode, ServerConfig } from './config.js'
 import { validateServerConfig } from './config.js'
 import { mountControlRoutes } from './control-routes.js'
@@ -46,7 +47,7 @@ export function createServer(
     runStore: RunStore
     runner: Runner
     /** When supplied, mounts the gateway control surface (auth-gated). */
-    gateway?: import('../lifecycle/gateway.js').Gateway
+    gateway?: GatewayContext
   },
 ): SkelmServer {
   validateServerConfig(config)

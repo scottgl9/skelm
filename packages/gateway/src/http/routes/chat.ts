@@ -1,5 +1,5 @@
 import { type Router, createError, eventHandler, readBody } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { decodeMaybe } from './utils.js'
 
 interface SubmitBody {
@@ -23,7 +23,7 @@ const CHAT_TRANSPORTS = new Set(['tui', 'web'])
  * which fires the workflow and reports the runId so the client can tail
  * `/runs/:runId/stream` for partials and the final reply.
  */
-export function registerChatRoutes(router: Router, gateway: Gateway): void {
+export function registerChatRoutes(router: Router, gateway: GatewayContext): void {
   router.post(
     '/v1/chat/:sourceId/submit',
     eventHandler(async (event) => {

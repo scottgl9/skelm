@@ -1,8 +1,8 @@
 import { type Router, createError, eventHandler, readBody } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { decodeMaybe } from './utils.js'
 
-export function registerDebugRoutes(router: Router, gateway: Gateway): void {
+export function registerDebugRoutes(router: Router, gateway: GatewayContext): void {
   router.get(
     '/debug/breakpoints',
     eventHandler(async () => ({ breakpoints: gateway.breakpoints.list() })),

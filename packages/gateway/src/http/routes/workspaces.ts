@@ -1,5 +1,5 @@
 import { type Router, createError, eventHandler } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { decodeMaybe } from './utils.js'
 
 /**
@@ -17,7 +17,7 @@ import { decodeMaybe } from './utils.js'
  * per-request Runners use) so a persistent workspace created by a run and the
  * workspace these routes list/show/clean resolve to one base directory.
  */
-export function registerWorkspaceRoutes(router: Router, gateway: Gateway): void {
+export function registerWorkspaceRoutes(router: Router, gateway: GatewayContext): void {
   const manager = gateway.workspaceManager
 
   router.get(

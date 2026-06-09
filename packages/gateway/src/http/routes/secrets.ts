@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { type Router, createError, eventHandler, readBody } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { FileSecretResolver } from '../../secrets/file-driver.js'
 import { decodeMaybe } from './utils.js'
 
@@ -21,7 +21,7 @@ import { decodeMaybe } from './utils.js'
  *
  * Path: <stateDir>/secrets.json unless config.secrets.file overrides it.
  */
-export function registerSecretRoutes(router: Router, gateway: Gateway): void {
+export function registerSecretRoutes(router: Router, gateway: GatewayContext): void {
   // The gateway's own enforcement may already be using FileSecretResolver
   // against a config-specified path. Reading that back through a cast
   // keeps a single source of truth without exposing internal config.

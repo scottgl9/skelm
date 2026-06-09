@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { type BackendRegistry, type RunEvent, Runner, isPersistentWorkflow } from '@skelm/core'
 import { makeGatewayPipelineRegistry } from '../http/routes/utils.js'
-import type { Gateway } from '../lifecycle/gateway.js'
+import type { GatewayContext } from '../lifecycle/gateway-types.js'
 import { runPersistentWorkflowTurn } from './persistent-workflow-turn.js'
 import type { FireContext, RunCallback } from './types.js'
 
@@ -14,7 +14,7 @@ import type { FireContext, RunCallback } from './types.js'
 export type WorkflowLoader = (registryId: string, absolutePath: string) => Promise<unknown>
 
 export interface CreateDispatcherOptions {
-  gateway: Gateway
+  gateway: GatewayContext
   loadWorkflow: WorkflowLoader
   /**
    * Pre-built backend instances to register for dispatched runs. Consumers

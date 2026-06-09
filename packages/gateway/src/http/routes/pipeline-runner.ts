@@ -1,6 +1,6 @@
 import { Runner } from '@skelm/core'
 import { createError } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { createSkillSource } from '../../registries/skill-source.js'
 import { extractPipeline, makeGatewayPipelineRegistry } from './utils.js'
 
@@ -9,7 +9,7 @@ import { extractPipeline, makeGatewayPipelineRegistry } from './utils.js'
  * stack. Shared by /pipelines/:id/run and the /v1/* OpenAI-compat routes.
  */
 export async function runPipelineSync(
-  gateway: Gateway,
+  gateway: GatewayContext,
   pipelineId: string,
   input: unknown,
 ): Promise<{

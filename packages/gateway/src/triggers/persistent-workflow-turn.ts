@@ -27,7 +27,7 @@ import {
   releaseSession,
   saveSession,
 } from '@skelm/core'
-import type { Gateway } from '../lifecycle/gateway.js'
+import type { GatewayContext } from '../lifecycle/gateway-types.js'
 
 /** One stored conversation message. */
 interface TurnMessage {
@@ -40,7 +40,7 @@ interface TurnMessage {
 const MAX_HISTORY_MESSAGES = 40
 
 export interface RunPersistentWorkflowTurnOptions {
-  gateway: Gateway
+  gateway: GatewayContext
   workflow: PersistentWorkflow
   payload: unknown
   triggerId: string

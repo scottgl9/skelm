@@ -1,7 +1,7 @@
 import { type Router, createError, eventHandler, readBody } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 
-export function registerSessionRoutes(router: Router, gateway: Gateway): void {
+export function registerSessionRoutes(router: Router, gateway: GatewayContext): void {
   router.get(
     '/sessions',
     eventHandler(async () => gateway.managers.acpSessions.list()),

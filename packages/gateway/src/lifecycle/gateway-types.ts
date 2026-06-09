@@ -1,13 +1,19 @@
 import type {
+  AgentPermissions,
+  AgentmemoryHandleFactory,
   ApprovalGate,
   AuditWriter,
   BackendRegistry,
+  EventBus,
+  NetworkPolicy,
   PermissionResolver,
   RunStore,
+  Runner,
   SecretResolver,
   SkelmConfig,
+  WorkspaceManager,
 } from '@skelm/core'
-
+import type { BreakpointRegistry } from '../debug/breakpoint-registry.js'
 import type { AcpSessionManager } from '../managers/acp-session-manager.js'
 import type { CodingAgentManager } from '../managers/coding-agent-manager.js'
 import type { McpServerManager } from '../managers/mcp-server-manager.js'
@@ -18,6 +24,9 @@ import type {
   WorkflowRegistry,
 } from '../registries/index.js'
 import type { TriggerCoordinator } from '../triggers/coordinator.js'
+import type { WorkflowArchiveService } from '../workflows/workflow-archive-service.js'
+import type { WorkflowRegistrationService } from '../workflows/workflow-registration-service.js'
+import type { DiscoveryRecord } from './discovery.js'
 
 export type GatewayState = 'stopped' | 'starting' | 'running' | 'paused' | 'stopping'
 
@@ -137,4 +146,106 @@ export interface GatewayManagers {
   codingAgents: CodingAgentManager
   acpSessions: AcpSessionManager
   triggers: TriggerCoordinator
+}
+
+/**
+ * The contract the HTTP route layer depends on. All route handler functions
+ * accept this interface rather than the concrete Gateway class so that the
+ * HTTP layer and the lifecycle layer do not form a static import cycle.
+ *
+ * Gateway implements this interface (verified by the `implements` clause).
+ */
+export interface GatewayContext {
+  // ── core stores / services ──────────────────────────────────────────────
+  readonly stateDir: string
+  readonly runStore: RunStore
+  readonly events: EventBus
+  readonly registries: GatewayRegistries
+  readonly managers: GatewayManagers
+  readonly enforcement: GatewayEnforcement
+  readonly backends: BackendRegistry | undefined
+  readonly workspaceManager: WorkspaceManager
+  readonly breakpoints: BreakpointRegistry
+  readonly metrics: import('@skelm/metrics').MetricsCollector | null
+
+  // ── run lifecycle ────────────────────────────────────────────────────────
+  cancel(runId: string, reason?: string): boolean
+  getRunner(runId: string): Runner | undefined
+  registerRun(runId: string, controller: AbortController, runner?: Runner): void
+  unregisterRun(runId: string): void
+  resumeWaitingRun(runId: string, resumeValue: unknown): Promise<void>
+  startAdhocRunByFile(
+    absolutePath: string,
+    registryId: string,
+    input: unknown,
+  ): Promise<{ runId: string; pipelineId: string }>
+  startPipelineAsync(pipelineId: string, input: unknown): Promise<{ runId: string }>
+
+  // ── pipeline / workflow loading ──────────────────────────────────────────
+  getWorkflowLoader(): ((registryId: string, absolutePath: string) => Promise<unknown>) | undefined
+  getWorkflowRegistrationService(): WorkflowRegistrationService
+  getWorkflowArchiveService(): WorkflowArchiveService
+  getAllowedRegistrationDirs(): string[]
+  getWorkflowMaxArchiveBytes(): number
+
+  // ── scheduling ───────────────────────────────────────────────────────────
+  persistDynamicSchedule(
+    registration: import('../triggers/types.js').TriggerRegistration,
+  ): Promise<void>
+  deleteDynamicSchedule(id: string): Promise<void>
+
+  // ── config / state ───────────────────────────────────────────────────────
+  getConfig(): import('@skelm/core').SkelmConfig
+  getDiscovery(): DiscoveryRecord | null
+  getState(): GatewayState
+
+  // ── gateway control ──────────────────────────────────────────────────────
+  reload(nextConfig?: import('@skelm/core').SkelmConfig): Promise<void>
+  pause(): Promise<void>
+  resume(): Promise<void>
+
+  // ── observability ────────────────────────────────────────────────────────
+  attachMetricsBus(bus: EventBus): void
+  attachOtelBus(bus: EventBus): void
+
+  // ── run option helpers ───────────────────────────────────────────────────
+  getBatchMaxItemsPerRequest(): number
+  egressRunOptions(): {
+    registerEgressToken: (runId: string, stepId: string, policy: NetworkPolicy) => string
+    unregisterEgressToken: (runId: string, stepId: string) => void
+    getProxyEnv: (egressToken?: string) => Record<string, string> | undefined
+  }
+  agentmemoryRunOptions(): {
+    agentmemoryHandleFactory?: AgentmemoryHandleFactory
+  }
+  defaultPermissionRunOptions(workflowId?: string): {
+    defaultPermissions?: AgentPermissions
+    permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+  }
+  defaultBackendRunOptions(workflowId?: string): {
+    defaultAgentBackend?: string
+    defaultInferBackend?: string
+  }
+  isUnrestrictedGranted(workflowId: string): boolean
+  absorbBackends(registry: BackendRegistry): {
+    absorbed: string[]
+    skipped: string[]
+  }
+  reinitAgentmemory(): Promise<void>
+  registerWorkflowProjectPermissions(
+    workflowId: string,
+    permissions: {
+      defaultPermissions?: AgentPermissions
+      permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+    },
+  ): void
+  unregisterWorkflowProjectPermissions(workflowId: string): void
+  registerWorkflowProjectBackends(
+    workflowId: string,
+    backends: {
+      defaultAgentBackend?: string
+      defaultInferBackend?: string
+    },
+  ): void
+  unregisterWorkflowProjectBackends(workflowId: string): void
 }

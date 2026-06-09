@@ -1,10 +1,10 @@
 import { parseDuration } from '@skelm/core'
 import { type Router, createError, eventHandler, readBody } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { isValidIntervalMs } from '../../triggers/pipeline-trigger-to-spec.js'
 import type { TriggerFireOutcome, TriggerRegistration, TriggerSpec } from '../../triggers/types.js'
 
-export function registerScheduleRoutes(router: Router, gateway: Gateway): void {
+export function registerScheduleRoutes(router: Router, gateway: GatewayContext): void {
   router.get(
     '/triggers',
     eventHandler(async () => gateway.managers.triggers.list()),

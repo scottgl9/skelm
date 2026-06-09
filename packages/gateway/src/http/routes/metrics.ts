@@ -1,7 +1,7 @@
 import { type Router, createError, eventHandler } from 'h3'
-import type { Gateway } from '../../lifecycle/gateway.js'
+import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 
-export function registerMetricsRoutes(router: Router, gateway: Gateway): void {
+export function registerMetricsRoutes(router: Router, gateway: GatewayContext): void {
   router.get(
     '/metrics',
     eventHandler(async (event) => {
