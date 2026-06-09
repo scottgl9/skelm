@@ -1,19 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TrustEnforcer, resolvePermissions } from '../../src/permissions.js'
-
-// Adversarial coverage for the `delegation` permission dimension.
-//
-// Default-deny: omitting `permissions.delegation` denies every delegation
-// target. Explicit-deny: a policy that allowlists one target denies any other.
-// Intersection: a step can never widen the project default's delegation
-// allowlist, and a `*` step under a scoped default stays scoped.
-
-function makeEnforcer(
-  defaults: Parameters<typeof resolvePermissions>[0],
-  step: Parameters<typeof resolvePermissions>[1],
-): TrustEnforcer {
-  return new TrustEnforcer(resolvePermissions(defaults, step))
-}
+import { makeEnforcer } from '../../src/testing/permissions.js'
 
 describe('delegation permission — default-deny', () => {
   it('omitted delegation field denies every target', () => {
