@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { CONFIG_FILENAMES, DEFAULT_CONFIG, type SkelmConfig, pickExport } from '@skelm/core'
 import { parse as parseDotEnv } from 'dotenv'
@@ -84,6 +84,18 @@ export async function loadSkelmConfig(opts?: {
  *  4. Walk up from cwd: nearest `skelm.gateway.*` then `skelm.config.*`
  *     (legacy fallback for users who have not yet split their config)
  *  5. Framework defaults (`DEFAULT_CONFIG`, framework permission baseline stripped)
+ *
+ * When a `skelm.gateway.*` file is found (cases 1–4 above, not the legacy
+ * `skelm.config.*` fallback), the loader also looks for a co-located
+ * `skelm.config.*` and merges its workflow-specific fields (`instances`,
+ * `triggerSources`, `registries`, `backends`, `env`, `defaults.permissions`)
+ * into the returned config. This allows the gateway to register pre-built
+ * backend instances and discover workflows declared in the project config
+ * without requiring authors to duplicate those fields in `skelm.gateway.*`.
+ *
+ * For a home-dir gateway (`~/.skelm/skelm.gateway.*`) with no sibling
+ * `skelm.config.*`, the loader falls back to walking up from `process.cwd()`
+ * to find the nearest project config.
  */
 export async function loadGatewayConfig(opts?: {
   fromPath?: string
@@ -94,7 +106,7 @@ export async function loadGatewayConfig(opts?: {
     if (!existsSync(absolute)) {
       throw new Error(`gateway config file not found: ${absolute}`)
     }
-    return loadFromPath(absolute)
+    return loadGatewayFromPath(absolute)
   }
 
   // 2. SKELM_GATEWAY_CONFIG env var
@@ -104,19 +116,19 @@ export async function loadGatewayConfig(opts?: {
     if (!existsSync(absolute)) {
       throw new Error(`SKELM_GATEWAY_CONFIG path not found: ${absolute}`)
     }
-    return loadFromPath(absolute)
+    return loadGatewayFromPath(absolute)
   }
 
   // 3. ~/.skelm/skelm.gateway.*
   const homeConfig = findHomeGatewayConfig()
   if (homeConfig !== null) {
-    return loadFromPath(homeConfig)
+    return loadGatewayFromPath(homeConfig)
   }
 
   // 4. Cwd walkup: skelm.gateway.* then skelm.config.*
   const found = walkUpForGatewayConfig(process.cwd())
   if (found !== null) {
-    return loadFromPath(found)
+    return loadGatewayFromPath(found)
   }
 
   // 5. Framework defaults (no-config path)
@@ -127,6 +139,171 @@ export async function loadGatewayConfig(opts?: {
     projectRoot,
     hasExplicitDefaultPermissions: false,
     hasExplicitPermissionProfiles: false,
+  }
+}
+
+/**
+ * Load a gateway config from `absolute` and, when it is a `skelm.gateway.*`
+ * file, also load a co-located `skelm.config.*` and merge workflow-specific
+ * fields so pre-built backend `instances` and workflow registries are
+ * available at gateway startup.
+ */
+async function loadGatewayFromPath(absolute: string): Promise<ResolvedConfig> {
+  const gatewayResult = await loadFromPath(absolute)
+
+  // Legacy path: the loaded file is skelm.config.* (pre-split fallback).
+  // Don't attempt to load a second config — everything is already in the
+  // one file.
+  if (!isGatewayFile(absolute)) {
+    return gatewayResult
+  }
+
+  // Split-config path: find and load the nearest skelm.config.* alongside
+  // the gateway file, then merge workflow-specific fields.
+  const workflowConfigPath = findColocatedWorkflowConfig(gatewayResult.projectRoot)
+  if (workflowConfigPath === null) return gatewayResult
+
+  const workflowResult = await loadFromPath(workflowConfigPath)
+  return mergeWorkflowIntoGateway(gatewayResult, workflowResult)
+}
+
+/** Returns true when `filePath` is a `skelm.gateway.*` file (not a legacy skelm.config.*). */
+function isGatewayFile(filePath: string): boolean {
+  return GATEWAY_CONFIG_FILENAMES_SET.has(basename(filePath))
+}
+
+/**
+ * Find a `skelm.config.*` co-located with the gateway file at `projectRoot`.
+ * For home-dir gateways (`~/.skelm/`) that have no sibling project config,
+ * falls back to walking up from `process.cwd()`.
+ */
+function findColocatedWorkflowConfig(projectRoot: string): string | null {
+  for (const name of CONFIG_FILENAMES) {
+    const candidate = join(projectRoot, name)
+    if (existsSync(candidate)) return candidate
+  }
+  // Home-dir gateway: the project config lives wherever the user ran the CLI.
+  if (projectRoot === join(homedir(), '.skelm')) {
+    return walkUpForConfig(process.cwd())
+  }
+  return null
+}
+
+/**
+ * Merge workflow-specific fields from `workflow` into `gateway`, returning a
+ * combined config suitable for gateway startup. Gateway (operator) fields take
+ * precedence; workflow fields provide instances, backends, registries, and
+ * environment variables that would otherwise be missing when the operator has
+ * split their config across two files.
+ *
+ * Merge semantics:
+ * - `instances`: additive — workflow instances not already in gateway are appended
+ * - `triggerSources`: additive — same dedup-by-id rule
+ * - `backends`: workflow provides base config, gateway config overrides
+ * - `registries`: workflow provides base; gateway overrides individual sub-keys
+ * - `pipelines`: workflow provides base; gateway overrides
+ * - `defaults.permissions`: workflow's project ceiling if gateway has none
+ * - `defaults.permissionProfiles`: merged (workflow base, gateway override)
+ * - `defaults.unrestrictedGrants`: gateway only (operator-only security grant)
+ * - `env`: workflow env applied first; gateway env wins on conflict
+ * - Operator fields (server, secrets, storage, plugins, agentmemory): gateway only
+ */
+function mergeWorkflowIntoGateway(
+  gateway: ResolvedConfig,
+  workflow: ResolvedConfig,
+): ResolvedConfig {
+  const gc = gateway.config
+  const wc = workflow.config
+
+  // instances: additive, deduped by id (gateway wins on conflict)
+  const gatewayInstanceIds = new Set((gc.instances ?? []).map((b) => b.id))
+  const mergedInstances: typeof gc.instances = [
+    ...(gc.instances ?? []),
+    ...(wc.instances ?? []).filter((b) => !gatewayInstanceIds.has(b.id)),
+  ]
+
+  // triggerSources: additive, deduped by id (gateway wins on conflict)
+  const gatewaySourceIds = new Set((gc.triggerSources ?? []).map((s) => s.id))
+  const mergedTriggerSources: typeof gc.triggerSources = [
+    ...(gc.triggerSources ?? []),
+    ...(wc.triggerSources ?? []).filter((s) => !gatewaySourceIds.has(s.id)),
+  ]
+
+  const mergedDefaults = mergeDefaults(gc.defaults, wc.defaults)
+  const mergedRegistries = mergeRegistries(gc.registries, wc.registries)
+
+  const merged: SkelmConfig = {
+    // Operator fields (server, secrets, storage, plugins, agentmemory) come
+    // from gateway via this spread. Workflow fields below override the
+    // DEFAULT_CONFIG values that mergeWithDefaults injected into gc.
+    ...gc,
+    ...(mergedInstances.length > 0 && { instances: mergedInstances }),
+    ...(mergedTriggerSources.length > 0 && { triggerSources: mergedTriggerSources }),
+    // backends: workflow provides the project-specific entries; gateway overrides
+    backends: { ...wc.backends, ...gc.backends },
+    // registries: workflow declares the workflow/skill globs and MCP servers;
+    // conditional spread avoids assigning `undefined` under exactOptionalPropertyTypes
+    ...(mergedRegistries !== undefined && { registries: mergedRegistries }),
+    // pipelines: workflow declares discovery config
+    pipelines: { ...wc.pipelines, ...gc.pipelines },
+    // defaults: gateway keeps unrestrictedGrants; permissions from workflow if
+    // the gateway config didn't set them; conditional spread for exactOptionalPropertyTypes
+    ...(mergedDefaults !== undefined && { defaults: mergedDefaults }),
+    // env: workflow env vars applied to process.env by loadFromPath above;
+    // reflect the full merged view here so callers can inspect it
+    env: { ...wc.env, ...gc.env },
+  }
+
+  return {
+    config: merged,
+    source: gateway.source,
+    projectRoot: gateway.projectRoot,
+    hasExplicitDefaultPermissions:
+      gateway.hasExplicitDefaultPermissions || workflow.hasExplicitDefaultPermissions,
+    hasExplicitPermissionProfiles:
+      gateway.hasExplicitPermissionProfiles || workflow.hasExplicitPermissionProfiles,
+  }
+}
+
+function mergeRegistries(
+  gatewayReg: SkelmConfig['registries'],
+  workflowReg: SkelmConfig['registries'],
+): SkelmConfig['registries'] {
+  if (gatewayReg === undefined && workflowReg === undefined) return undefined
+  return {
+    ...workflowReg,
+    ...gatewayReg,
+    mcpServers: [...(workflowReg?.mcpServers ?? []), ...(gatewayReg?.mcpServers ?? [])],
+    agents: [...(workflowReg?.agents ?? []), ...(gatewayReg?.agents ?? [])],
+  }
+}
+
+function mergeDefaults(
+  gatewayDef: SkelmConfig['defaults'],
+  workflowDef: SkelmConfig['defaults'],
+): SkelmConfig['defaults'] {
+  if (gatewayDef === undefined && workflowDef === undefined) return undefined
+  return {
+    // Workflow provides project-level defaults as the base
+    ...workflowDef,
+    // Gateway overrides (unrestrictedGrants, explicit operator permissions)
+    ...gatewayDef,
+    // permissionProfiles: merged (workflow base, gateway override)
+    ...(workflowDef?.permissionProfiles !== undefined ||
+    gatewayDef?.permissionProfiles !== undefined
+      ? {
+          permissionProfiles: {
+            ...workflowDef?.permissionProfiles,
+            ...gatewayDef?.permissionProfiles,
+          },
+        }
+      : {}),
+    // permissions: use gateway's explicit ceiling if set; otherwise use workflow's
+    ...(gatewayDef?.permissions !== undefined
+      ? { permissions: gatewayDef.permissions }
+      : workflowDef?.permissions !== undefined
+        ? { permissions: workflowDef.permissions }
+        : {}),
   }
 }
 
@@ -183,6 +360,8 @@ const GATEWAY_CONFIG_FILENAMES = [
   'skelm.gateway.js',
   'skelm.gateway.mjs',
 ]
+
+const GATEWAY_CONFIG_FILENAMES_SET = new Set(GATEWAY_CONFIG_FILENAMES)
 
 // Fallback names used when no skelm.gateway.* is present — covers users who
 // have not yet migrated to the split config layout.

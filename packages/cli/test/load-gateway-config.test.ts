@@ -175,4 +175,158 @@ describe('loadGatewayConfig', () => {
       expect(source).toBeNull()
     })
   })
+
+  describe('dual-load: skelm.gateway.* + co-located skelm.config.*', () => {
+    let savedCwd: string
+    let savedEnv: string | undefined
+
+    beforeEach(() => {
+      savedCwd = process.cwd()
+      savedEnv = process.env.SKELM_GATEWAY_CONFIG
+      clearEnv('SKELM_GATEWAY_CONFIG')
+    })
+
+    afterEach(() => {
+      process.env.SKELM_GATEWAY_CONFIG = savedEnv ?? ''
+      process.chdir(savedCwd)
+    })
+
+    it('merges instances from skelm.config.* when skelm.gateway.* is found in cwd', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'skelm-gw-dual-'))
+      writeConfig(
+        dir,
+        'skelm.gateway.mjs',
+        `
+        export default { server: { port: 9999 } }
+      `,
+      )
+      writeConfig(
+        dir,
+        'skelm.config.mjs',
+        `
+        const fakeBackend = { id: 'my-backend', infer: async () => ({}) }
+        export default { instances: [fakeBackend] }
+      `,
+      )
+      process.chdir(dir)
+      const { config, source } = await loadGatewayConfig()
+      // Source is the gateway file
+      expect(source).toContain('skelm.gateway.mjs')
+      // Server config from gateway file
+      expect(config.server?.port).toBe(9999)
+      // instances from workflow config
+      expect(config.instances).toHaveLength(1)
+      expect(config.instances?.[0]?.id).toBe('my-backend')
+    })
+
+    it('merges instances from skelm.config.* when using explicit --gateway-config path', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'skelm-gw-dual-explicit-'))
+      const gatewayPath = writeConfig(
+        dir,
+        'skelm.gateway.mjs',
+        `
+        export default { server: { port: 8888 } }
+      `,
+      )
+      writeConfig(
+        dir,
+        'skelm.config.mjs',
+        `
+        const fakeBackend = { id: 'explicit-backend', infer: async () => ({}) }
+        export default { instances: [fakeBackend] }
+      `,
+      )
+      const { config, source } = await loadGatewayConfig({ fromPath: gatewayPath })
+      expect(source).toBe(gatewayPath)
+      expect(config.server?.port).toBe(8888)
+      expect(config.instances).toHaveLength(1)
+      expect(config.instances?.[0]?.id).toBe('explicit-backend')
+    })
+
+    it('gateway instances win over workflow instances with the same id', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'skelm-gw-dual-dedup-'))
+      writeConfig(
+        dir,
+        'skelm.gateway.mjs',
+        `
+        const gw = { id: 'shared-id', source: 'gateway' }
+        export default { instances: [gw] }
+      `,
+      )
+      writeConfig(
+        dir,
+        'skelm.config.mjs',
+        `
+        const wf = { id: 'shared-id', source: 'workflow' }
+        export default { instances: [wf] }
+      `,
+      )
+      process.chdir(dir)
+      const { config } = await loadGatewayConfig()
+      expect(config.instances).toHaveLength(1)
+      expect((config.instances?.[0] as Record<string, unknown>)?.source).toBe('gateway')
+    })
+
+    it('workflow env vars are merged into the returned config env', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'skelm-gw-dual-env-'))
+      writeConfig(
+        dir,
+        'skelm.gateway.mjs',
+        `
+        export default { env: { FROM_GATEWAY: 'yes' } }
+      `,
+      )
+      writeConfig(
+        dir,
+        'skelm.config.mjs',
+        `
+        export default { env: { FROM_WORKFLOW: 'yes' } }
+      `,
+      )
+      process.chdir(dir)
+      const { config } = await loadGatewayConfig()
+      expect(config.env?.FROM_GATEWAY).toBe('yes')
+      expect(config.env?.FROM_WORKFLOW).toBe('yes')
+    })
+
+    it('does not attempt dual-load for legacy skelm.config.* fallback', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'skelm-gw-legacy-'))
+      // Only skelm.config.mjs (no skelm.gateway.mjs) — legacy path
+      writeConfig(
+        dir,
+        'skelm.config.mjs',
+        `
+        export default { env: { FROM: 'legacy', server: { port: 7777 } } }
+      `,
+      )
+      process.chdir(dir)
+      const { config, source } = await loadGatewayConfig()
+      expect(source).toContain('skelm.config.mjs')
+      // No double-load — env is read once
+      expect(config.env?.FROM).toBe('legacy')
+    })
+
+    it('uses SKELM_GATEWAY_CONFIG path and merges co-located skelm.config.*', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'skelm-gw-dual-envvar-'))
+      const gatewayPath = writeConfig(
+        dir,
+        'skelm.gateway.mjs',
+        `
+        export default { server: { port: 5555 } }
+      `,
+      )
+      writeConfig(
+        dir,
+        'skelm.config.mjs',
+        `
+        const b = { id: 'env-var-backend', infer: async () => ({}) }
+        export default { instances: [b] }
+      `,
+      )
+      process.env.SKELM_GATEWAY_CONFIG = gatewayPath
+      const { config } = await loadGatewayConfig()
+      expect(config.server?.port).toBe(5555)
+      expect(config.instances?.[0]?.id).toBe('env-var-backend')
+    })
+  })
 })
