@@ -51,6 +51,9 @@ Gateway flags:
   skelm gateway status [--json]            Show running pid / url / state
   skelm gateway stop                       SIGTERM the running gateway
   skelm gateway reload                     SIGHUP the running gateway
+  skelm gateway config list [--json]       Print the resolved gateway config (secrets redacted)
+  skelm gateway config get <path>          Print one config value by dotted path (e.g. server.port)
+  skelm gateway backend list [--json]      List configured backend ids
   skelm gateway install                    Install as a persistent service; auto-detects systemd (linux) / launchd (macOS)
   skelm gateway install   --systemd        Force a systemd user unit (~/.config/systemd/user/skelm-gateway.service)
   skelm gateway install   --launchd        Force a launchd agent (~/Library/LaunchAgents/com.skelm.gateway.plist)
@@ -203,6 +206,9 @@ Gateway flags:
   skelm gateway status [--json]            Show running pid / url / state
   skelm gateway stop                       SIGTERM the running gateway
   skelm gateway reload                     SIGHUP the running gateway
+  skelm gateway config list [--json]       Print the resolved gateway config (secrets redacted)
+  skelm gateway config get <path>          Print one config value by dotted path (e.g. server.port)
+  skelm gateway backend list [--json]      List configured backend ids
   skelm gateway install                    Install as a persistent service; auto-detects systemd (linux) / launchd (macOS)
   skelm gateway install   --systemd        Force a systemd user unit (~/.config/systemd/user/skelm-gateway.service)
   skelm gateway install   --launchd        Force a launchd agent (~/Library/LaunchAgents/com.skelm.gateway.plist)

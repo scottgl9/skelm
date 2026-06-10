@@ -135,6 +135,9 @@ every privileged action is enforced and audited there.
 | `stop`        | Stop the running gateway (delegates to systemd if the unit is installed)     |
 | `reload`      | SIGHUP the running gateway (hot-reload config)                               |
 | `status`      | Print pid, url, reachability, and lifecycle state. `--json` available        |
+| `config list` | Print the resolved gateway config with secrets redacted (`--json`). Read-only; no running gateway needed. |
+| `config get <path>` | Print one config value by dotted path, e.g. `server.port` (redacted). |
+| `backend list` | List configured backend ids (`--json`).                                     |
 
 `pause` and `resume` are exposed via the HTTP control surface
 (`POST /gateway/pause|resume`); see the [HTTP reference](./http.md).

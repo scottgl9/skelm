@@ -9,6 +9,7 @@ import { builderCommand } from './builder.js'
 import { debugCommand } from './debug.js'
 import { describeCommand } from './describe.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
+import { gatewayInspectCommand } from './gateway-inspect.js'
 import { gatewayCommand } from './gateway.js'
 import { HELP_TEXT, getHelpText } from './help.js'
 import { historyCommand } from './history.js'
@@ -137,6 +138,23 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
       }
       case 'gateway': {
         const subcommand = parsed.positional[0]
+        // Read-only config inspection runs locally (no gateway needed), with
+        // every secret value redacted. Mutation is deliberately out of scope.
+        if (subcommand === 'config' || subcommand === 'backend') {
+          const r = await gatewayInspectCommand(
+            {
+              subcommand,
+              ...(typeof parsed.positional[1] === 'string' && { action: parsed.positional[1] }),
+              ...(typeof parsed.positional[2] === 'string' && { path: parsed.positional[2] }),
+              ...(parsed.flags.json === true && { json: true }),
+              ...(typeof parsed.flags['gateway-config'] === 'string' && {
+                gatewayConfig: parsed.flags['gateway-config'],
+              }),
+            },
+            io,
+          )
+          return { exitCode: r.exitCode }
+        }
         const valid = new Set([
           'start',
           'stop',
