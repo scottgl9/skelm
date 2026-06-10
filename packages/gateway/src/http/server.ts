@@ -374,20 +374,17 @@ export function createServer(
       }
 
       // Buffer live events that arrive while we're draining the persisted
-      // history, then merge them after replay with composite-key dedup.
-      // Dedup key: type|at|stepId|delta|attempt (high-entropy fields per-run).
-      //
-      // TODO(sse-dedup): two identical `step.partial` tokens emitted in
-      // the same wall-clock millisecond for the same stepId share a key
-      // and the second is silently dropped during the (narrow) replay-tail
-      // merge window. A fast-streaming LLM on a local gateway can emit
-      // dozens of tokens per ms. The right long-term fix is a stable
-      // sequence number on RunEvent (sqlite rowid or runner-assigned
-      // monotonic counter) so the key is unambiguous; for now the race
-      // is short-lived and limited to repeated tokens.
+      // history, then merge them after replay, deduping by the per-run sequence
+      // `EventBus.publish` stamps on every event. `seq` rides on both the
+      // persisted copy and the live event, so the replay/tail merge is exact
+      // even when many `step.partial` tokens share a wall-clock ms — the old
+      // composite key `type|at|stepId|delta|attempt` collided on repeated
+      // tokens and silently dropped the duplicate. Falls back to the composite
+      // key for any event that lacks a seq.
       const tailBuffer: RunEvent[] = []
       const seen = new Set<string>()
       const keyOf = (e: RunEvent): string => {
+        if (e.seq !== undefined) return `seq:${e.seq}`
         const stepId = 'stepId' in e ? (e.stepId ?? '') : ''
         const delta = 'delta' in e ? String(e.delta) : ''
         const attempt = 'attempt' in e ? String(e.attempt) : ''

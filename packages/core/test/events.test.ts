@@ -33,6 +33,45 @@ describe('EventBus', () => {
     expect(seen[0]?.runId).toBe('r1')
   })
 
+  it('stamps a monotonic per-run sequence on publish (disambiguating same-ms duplicates)', () => {
+    const bus = new EventBus()
+    const seen: RunEvent[] = []
+    bus.subscribe((e) => seen.push(e))
+    bus.publish({ type: 'run.started', runId: 'r1', at: 1 })
+    // Two identical step.partial tokens in the same wall-clock ms — the exact
+    // case the old composite SSE dedup key collided on.
+    bus.publish({
+      type: 'step.partial',
+      runId: 'r1',
+      stepId: 's',
+      kind: 'agent',
+      delta: 'x',
+      at: 1,
+    })
+    bus.publish({
+      type: 'step.partial',
+      runId: 'r1',
+      stepId: 's',
+      kind: 'agent',
+      delta: 'x',
+      at: 1,
+    })
+    bus.publish({ type: 'run.started', runId: 'r2', at: 1 })
+
+    expect(seen.map((e) => e.seq)).toEqual([1, 2, 3, 1])
+    expect(seen[1]?.seq).not.toBe(seen[2]?.seq)
+  })
+
+  it('resets the per-run sequence after a terminal event', () => {
+    const bus = new EventBus()
+    const seen: RunEvent[] = []
+    bus.subscribe((e) => seen.push(e))
+    bus.publish({ type: 'run.started', runId: 'r', at: 0 })
+    bus.publish({ type: 'run.completed', runId: 'r', output: null, durationMs: 1, at: 1 })
+    bus.publish({ type: 'run.started', runId: 'r', at: 2 })
+    expect(seen.map((e) => e.seq)).toEqual([1, 2, 1])
+  })
+
   it('forRun is indexed by runId — global subscribers do not see per-run events twice', () => {
     const bus = new EventBus()
     let global = 0
