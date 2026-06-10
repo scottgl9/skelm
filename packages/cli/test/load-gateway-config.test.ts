@@ -306,6 +306,40 @@ describe('loadGatewayConfig', () => {
       expect(config.env?.FROM).toBe('legacy')
     })
 
+    it('does not lift workflow defaults.permissions into the gateway-global defaults', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'skelm-gw-dual-perms-'))
+      // Gateway omits permissions; workflow sets a project-level ceiling (networkEgress allow).
+      writeConfig(dir, 'skelm.gateway.mjs', 'export default { server: { port: 3333 } }')
+      writeConfig(
+        dir,
+        'skelm.config.mjs',
+        `export default { defaults: { permissions: { networkEgress: 'allow' } } }`,
+      )
+      process.chdir(dir)
+      const { config, hasExplicitDefaultPermissions } = await loadGatewayConfig()
+      // Workflow's networkEgress:'allow' must not appear in the operator-global defaults.
+      // (Framework deny-all from DEFAULT_CONFIG may still be present; we check the
+      // workflow-specific 'allow' grant is not present.)
+      expect(config.defaults?.permissions?.networkEgress).not.toBe('allow')
+      // Gateway did not explicitly set permissions, so hasExplicitDefaultPermissions is false.
+      expect(hasExplicitDefaultPermissions).toBe(false)
+    })
+
+    it('does not lift workflow defaults.permissionProfiles into the gateway-global defaults', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'skelm-gw-dual-profiles-'))
+      writeConfig(dir, 'skelm.gateway.mjs', 'export default { server: { port: 4444 } }')
+      writeConfig(
+        dir,
+        'skelm.config.mjs',
+        `export default { defaults: { permissionProfiles: { analyst: { networkEgress: 'allow' } } } }`,
+      )
+      process.chdir(dir)
+      const { config, hasExplicitPermissionProfiles } = await loadGatewayConfig()
+      // Workflow's named profile must not appear as a gateway-global profile.
+      expect(config.defaults?.permissionProfiles?.analyst).toBeUndefined()
+      expect(hasExplicitPermissionProfiles).toBe(false)
+    })
+
     it('uses SKELM_GATEWAY_CONFIG path and merges co-located skelm.config.*', async () => {
       const dir = mkdtempSync(join(tmpdir(), 'skelm-gw-dual-envvar-'))
       const gatewayPath = writeConfig(

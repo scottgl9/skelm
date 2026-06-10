@@ -202,8 +202,9 @@ function findColocatedWorkflowConfig(projectRoot: string): string | null {
  * - `backends`: workflow provides base config, gateway config overrides
  * - `registries`: workflow provides base; gateway overrides individual sub-keys
  * - `pipelines`: workflow provides base; gateway overrides
- * - `defaults.permissions`: workflow's project ceiling if gateway has none
- * - `defaults.permissionProfiles`: merged (workflow base, gateway override)
+ * - `defaults.backend`: workflow provides fallback if gateway has none
+ * - `defaults.permissions`: gateway only — not lifted from workflow (cross-project contamination risk)
+ * - `defaults.permissionProfiles`: gateway only — not lifted from workflow
  * - `defaults.unrestrictedGrants`: gateway only (operator-only security grant)
  * - `env`: workflow env applied first; gateway env wins on conflict
  * - Operator fields (server, secrets, storage, plugins, agentmemory): gateway only
@@ -258,10 +259,8 @@ function mergeWorkflowIntoGateway(
     config: merged,
     source: gateway.source,
     projectRoot: gateway.projectRoot,
-    hasExplicitDefaultPermissions:
-      gateway.hasExplicitDefaultPermissions || workflow.hasExplicitDefaultPermissions,
-    hasExplicitPermissionProfiles:
-      gateway.hasExplicitPermissionProfiles || workflow.hasExplicitPermissionProfiles,
+    hasExplicitDefaultPermissions: gateway.hasExplicitDefaultPermissions,
+    hasExplicitPermissionProfiles: gateway.hasExplicitPermissionProfiles,
   }
 }
 
@@ -284,26 +283,12 @@ function mergeDefaults(
 ): SkelmConfig['defaults'] {
   if (gatewayDef === undefined && workflowDef === undefined) return undefined
   return {
-    // Workflow provides project-level defaults as the base
-    ...workflowDef,
-    // Gateway overrides (unrestrictedGrants, explicit operator permissions)
+    // backend: workflow provides convenience fallback; gateway overrides
+    ...(workflowDef?.backend !== undefined && { backend: workflowDef.backend }),
+    // Gateway takes full precedence. permissions/permissionProfiles/unrestrictedGrants
+    // are NOT lifted from the workflow: doing so would let one project's ceiling become
+    // the gateway-global default, contaminating unrelated projects on the same gateway.
     ...gatewayDef,
-    // permissionProfiles: merged (workflow base, gateway override)
-    ...(workflowDef?.permissionProfiles !== undefined ||
-    gatewayDef?.permissionProfiles !== undefined
-      ? {
-          permissionProfiles: {
-            ...workflowDef?.permissionProfiles,
-            ...gatewayDef?.permissionProfiles,
-          },
-        }
-      : {}),
-    // permissions: use gateway's explicit ceiling if set; otherwise use workflow's
-    ...(gatewayDef?.permissions !== undefined
-      ? { permissions: gatewayDef.permissions }
-      : workflowDef?.permissions !== undefined
-        ? { permissions: workflowDef.permissions }
-        : {}),
   }
 }
 
