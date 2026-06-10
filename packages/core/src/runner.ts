@@ -674,19 +674,27 @@ export async function runPipeline<TInput, TOutput>(
             })
           }
           storeWrites.push(
-            store.appendEvent(event).finally(() => {
-              appendInflight -= 1
-              if (appendSaturated && appendInflight === 0) {
-                appendSaturated = false
-                events.publish({
-                  type: 'run.warning',
-                  runId,
-                  code: 'store.recovered',
-                  message: 'appendEvent queue drained',
-                  at: Date.now(),
-                })
-              }
-            }),
+            store
+              .appendEvent(event)
+              // Best-effort event writes must never poison the run: an
+              // uncaught rejection here both surfaces as an unhandledRejection
+              // (fatal to the gateway loop) and rejects the finalize-time
+              // Promise.all, skipping the terminal putRun so a completed run is
+              // left 'running'. Match the updateRun writes' .catch.
+              .catch((err) => logStoreFailure('append-event', runId, err))
+              .finally(() => {
+                appendInflight -= 1
+                if (appendSaturated && appendInflight === 0) {
+                  appendSaturated = false
+                  events.publish({
+                    type: 'run.warning',
+                    runId,
+                    code: 'store.recovered',
+                    message: 'appendEvent queue drained',
+                    at: Date.now(),
+                  })
+                }
+              }),
           )
         })
   // Mirror wait/resume into the persisted Run record so HTTP clients can
