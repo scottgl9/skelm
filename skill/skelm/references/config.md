@@ -173,7 +173,8 @@ export default defineConfig({
 
   defaults: {
     permissions: {
-      allowedExecutables: [],
+      allowDefaultSafeExecutables: true,
+      allowedExecutables: ['pnpm'],
       allowedTools: [],
       allowedSkills: [],
       allowedMcpServers: [],
@@ -183,7 +184,7 @@ export default defineConfig({
     },
     permissionProfiles: {
       'github-write': {
-        allowedExecutables: ['git'],
+        allowedExecutables: ['git', 'pnpm'],
         allowedTools:       ['gh.*'],
         allowedMcpServers:  ['github'],
         fsRead:             ['./'],

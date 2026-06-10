@@ -11,6 +11,7 @@ interface AgentPermissions {
   profile?: string                            // named profile from skelm.config.ts
   allowedTools?: ToolMatcher                  // tools agent may call
   deniedTools?: ToolMatcher                   // tools explicitly blocked
+  allowDefaultSafeExecutables?: boolean       // add skelm's built-in safe exec set
   allowedExecutables?: readonly string[]      // binaries for exec/bash
   allowedMcpServers?: readonly string[]       // MCP server ids from config
   allowedSkills?: readonly string[]           // skill ids agent may load
@@ -75,6 +76,52 @@ resolved policy:   { networkEgress: 'deny', fsRead: ['./'] }
 ```
 
 The step's `'allow'` loses to the default `'deny'`. The `/tmp` fs-read root is dropped because it wasn't in the default.
+
+## Default safe executables
+
+`allowDefaultSafeExecutables: true` opts a permission layer into skelm's built-in list of common Linux diagnostics and userland commands:
+
+```ts
+defaults: {
+  permissions: {
+    allowDefaultSafeExecutables: true,
+    allowedExecutables: ['pnpm'], // optional project-specific additions
+  },
+}
+```
+
+The built-in set is:
+
+```ts
+[
+  'awk', 'basename', 'cat', 'curl', 'cut', 'date', 'df', 'dirname',
+  'dmesg', 'du', 'echo', 'env', 'file', 'find', 'free', 'gh', 'git',
+  'grep', 'groups', 'head', 'hostname', 'id', 'journalctl', 'jq', 'ls',
+  'lsof', 'mkdir', 'openssl', 'pgrep', 'printenv', 'ps', 'pwd',
+  'readlink', 'realpath', 'rg', 'sed', 'sort', 'stat', 'systemctl',
+  'tail', 'test', 'timeout', 'tr', 'uname', 'uniq', 'uptime', 'wc',
+  'which', 'who', 'whoami',
+]
+```
+
+The flag is explicit and layer-local. It adds that list to the same layer's `allowedExecutables` before the normal intersection runs, so custom additions compose and later layers can still narrow:
+
+```ts
+defaults: {
+  permissions: {
+    allowDefaultSafeExecutables: true,
+    allowedExecutables: ['pnpm'],
+  },
+}
+
+agent({
+  permissions: {
+    allowedExecutables: ['git', 'pnpm'], // narrows to these two
+  },
+})
+```
+
+Omitting the flag preserves default-deny. Shells, interpreters, deletion tools, and privilege escalation commands are intentionally not in the built-in set; grant them manually only when the step truly needs them.
 
 ## Named profiles
 

@@ -185,7 +185,7 @@ Unknown tool names fall through to `ctx.mcpHost.invokeTool(name, args)` (gated b
 ## Security model
 
 - **Default-deny is structural.** Every permission dimension defaults to `undefined`, which `resolvePermissions` treats as deny. Step-level grants are *intersected* with the project-default policy — if your config sets `networkEgress: 'deny'`, a step requesting `networkEgress: 'allow'` resolves to deny. The backend honors the *resolved* policy, not the step's raw request.
-- **No undeclared exec.** Until you grant `allowedExecutables`, the `exec` tool refuses every binary the model names — even if `allowedTools: ['*']` is set. The same is true for `fs_read` / `fs_write` (gated by `fsRead`/`fsWrite`) and `http_fetch` (gated by `networkEgress`).
+- **No undeclared exec.** Until you grant `allowedExecutables` or explicitly opt into `allowDefaultSafeExecutables`, the `exec` tool refuses every binary the model names — even if `allowedTools: ['*']` is set. The same is true for `fs_read` / `fs_write` (gated by `fsRead`/`fsWrite`) and `http_fetch` (gated by `networkEgress`).
 - **No URL-scheme abuse.** `http_fetch` parses the URL before checking permissions; `file://`, `gopher://`, etc. fail at the URL parser. Non-allowlisted hostnames (including unintended loopback) fail at `canFetch`.
 - **Secrets stay masked.** `get_secret` confirms availability but returns a fixed sentinel; the raw value reaches the tool's host context (env vars passed to allowed executables) but never the model's transcript.
 - **Audit by event.** Denials publish `permission.denied` (dimension-tagged) and successful exec / fetch / fs / skill / secret ops publish their respective events. The runner's audit writer is the durable record.

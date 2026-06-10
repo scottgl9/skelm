@@ -46,6 +46,8 @@ export default defineConfig({
   defaults: {
     // Project-wide permission baseline. Step-level permissions intersect with these.
     permissions: {
+      // Set true to include skelm's built-in common Linux executable set.
+      allowDefaultSafeExecutables: false,
       allowedExecutables: [],
       allowedTools: [],
       allowedSkills: [],
@@ -62,7 +64,8 @@ export default defineConfig({
       //   networkEgress: 'deny',
       // },
       // 'github-write': {
-      //   allowedExecutables: ['git'],
+      //   // Requires matching grants in defaults.permissions above.
+      //   allowedExecutables: ['git', 'pnpm'],
       //   allowedTools: ['gh.*'],
       //   allowedMcpServers: ['github'],
       //   fsRead: ['./'],

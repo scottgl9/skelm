@@ -154,7 +154,7 @@ The permission model has these dimensions. Every field is optional and defaults 
 |-------------|------------------------------------|------------------------------------------------------|
 | Profile     | `profile`                          | Named profile from `skelm.config.ts` to apply first  |
 | Tool        | `allowedTools` / `deniedTools`     | Tool ids; `'gh.*'` is sugar for prefix match; `'*'` allows everything |
-| Executable  | `allowedExecutables`               | Binaries allowed for any exec/bash tool              |
+| Executable  | `allowDefaultSafeExecutables` / `allowedExecutables` | Built-in common Linux set plus custom binaries for exec/bash |
 | MCP server  | `allowedMcpServers`                | MCP server ids the agent may attach                  |
 | Skill       | `allowedSkills`                    | Skill ids the agent may load                         |
 | Secret      | `allowedSecrets`                   | Secret names the step may resolve via `SecretResolver` |

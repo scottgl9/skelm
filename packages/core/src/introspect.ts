@@ -100,6 +100,9 @@ function summarizePermissions(permissions: import('./permissions.js').AgentPermi
   const parts: string[] = []
   const tools = formatToolMatcher(permissions.allowedTools)
   if (tools !== undefined) parts.push(`tools=${tools}`)
+  if (permissions.allowDefaultSafeExecutables === true) {
+    parts.push('exec=default-safe')
+  }
   if (permissions.allowedExecutables?.length) {
     parts.push(`exec=${permissions.allowedExecutables.join(',')}`)
   }

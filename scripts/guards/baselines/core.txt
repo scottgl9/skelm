@@ -35,6 +35,7 @@ value:CustomTrigger
 value:DEFAULT_ARTIFACT_QUOTA_BYTES
 value:DEFAULT_CONFIG
 value:DEFAULT_MAX_DELEGATION_DEPTH
+value:DEFAULT_SAFE_EXECUTABLES
 value:DEFAULT_SESSION_LOCK_STALE_MS
 value:DelegationCycleError
 value:DelegationDepthError

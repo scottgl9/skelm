@@ -19,6 +19,15 @@ describe('TrustEnforcer.canExec — allowlist', () => {
     expect(enforcer().canExec('git').allow).toBe(false)
   })
 
+  it('default-deny: denies safe executables unless allowDefaultSafeExecutables is explicit', () => {
+    expect(new TrustEnforcer(resolvePermissions({}, undefined)).canExec('which').allow).toBe(false)
+    expect(
+      new TrustEnforcer(
+        resolvePermissions({ allowDefaultSafeExecutables: true }, undefined),
+      ).canExec('which').allow,
+    ).toBe(true)
+  })
+
   it('allows a bare name that exactly matches an allowlist entry', () => {
     expect(enforcer(['git']).canExec('git')).toEqual({ allow: true })
   })

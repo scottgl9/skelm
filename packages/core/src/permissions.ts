@@ -68,6 +68,60 @@ export const ALL_AGENTMEMORY_OPS = [
   'graph',
 ] as const satisfies readonly AgentmemoryOperation[]
 
+/** Built-in executable set for projects that opt into common non-shell diagnostics. */
+export const DEFAULT_SAFE_EXECUTABLES = Object.freeze([
+  'awk',
+  'basename',
+  'cat',
+  'curl',
+  'cut',
+  'date',
+  'df',
+  'dirname',
+  'dmesg',
+  'du',
+  'echo',
+  'env',
+  'file',
+  'find',
+  'free',
+  'gh',
+  'git',
+  'grep',
+  'groups',
+  'head',
+  'hostname',
+  'id',
+  'journalctl',
+  'jq',
+  'ls',
+  'lsof',
+  'mkdir',
+  'openssl',
+  'pgrep',
+  'printenv',
+  'ps',
+  'pwd',
+  'readlink',
+  'realpath',
+  'rg',
+  'sed',
+  'sort',
+  'stat',
+  'systemctl',
+  'tail',
+  'test',
+  'timeout',
+  'tr',
+  'uname',
+  'uniq',
+  'uptime',
+  'wc',
+  'which',
+  'who',
+  'whoami',
+] as const)
+
 /**
  * Per-operation gate for the agentmemory dimension. Each flag defaults to
  * deny when omitted. `'deny'` blocks every op as a quick disable.
@@ -108,6 +162,13 @@ export interface AgentPermissions {
   allowedTools?: ToolMatcher
   /** Tool ids explicitly forbidden even if `allowedTools` would permit. */
   deniedTools?: ToolMatcher
+  /**
+   * Add `DEFAULT_SAFE_EXECUTABLES` to this layer's executable allowlist before
+   * permission layers are intersected. Default-deny: omitted/false adds
+   * nothing. Shells, interpreters, deletion tools, and privilege escalation are
+   * intentionally excluded from the built-in set.
+   */
+  allowDefaultSafeExecutables?: boolean
   /** Executables allowed for any exec/bash tool. */
   allowedExecutables?: readonly string[]
   /** MCP server ids permitted to attach. */
@@ -252,7 +313,7 @@ export function resolvePermissions(
   return Object.freeze({
     allowedTools: intersectToolMatchers(inputs.map((p) => p.allowedTools)),
     deniedTools: unionToolMatchers(inputs.map((p) => p.deniedTools)),
-    allowedExecutables: intersectExecutables(inputs.map((p) => p.allowedExecutables)),
+    allowedExecutables: intersectExecutables(inputs.map(expandExecutableLayer)),
     allowedMcpServers: intersectStrings(inputs.map((p) => p.allowedMcpServers)),
     allowedSkills: intersectStrings(inputs.map((p) => p.allowedSkills)),
     allowedAgents: intersectToolMatchers(inputs.map((p) => p.delegation)),
@@ -604,6 +665,12 @@ function intersectExecutables(
     acc = next
   }
   return acc
+}
+
+function expandExecutableLayer(permissions: AgentPermissions): readonly string[] | undefined {
+  if (permissions.allowDefaultSafeExecutables !== true) return permissions.allowedExecutables
+  if (permissions.allowedExecutables === undefined) return DEFAULT_SAFE_EXECUTABLES
+  return [...DEFAULT_SAFE_EXECUTABLES, ...permissions.allowedExecutables]
 }
 
 function intersectExecutableEntry(left: string, right: string): string | undefined {

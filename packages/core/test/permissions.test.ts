@@ -7,7 +7,12 @@ import {
   type ApprovalRequest,
   AutoApproveGate,
 } from '../src/enforcement/index.js'
-import { TrustEnforcer, intersectResolvedPolicies, resolvePermissions } from '../src/permissions.js'
+import {
+  DEFAULT_SAFE_EXECUTABLES,
+  TrustEnforcer,
+  intersectResolvedPolicies,
+  resolvePermissions,
+} from '../src/permissions.js'
 import { runPipeline } from '../src/runner.js'
 
 describe('resolvePermissions — default-deny', () => {
@@ -29,6 +34,32 @@ describe('resolvePermissions — default-deny', () => {
       { allowedExecutables: ['rg', 'curl'] },
     )
     expect([...policy.allowedExecutables].sort()).toEqual(['rg'])
+  })
+
+  it('adds default safe executables only when explicitly requested', () => {
+    const policy = resolvePermissions({ allowDefaultSafeExecutables: true }, undefined)
+    expect(policy.allowedExecutables).toEqual(new Set(DEFAULT_SAFE_EXECUTABLES))
+    expect(new TrustEnforcer(policy).canExec('git')).toEqual({ allow: true })
+    expect(new TrustEnforcer(policy).canExec('bash').allow).toBe(false)
+    expect(new TrustEnforcer(policy).canExec('rm').allow).toBe(false)
+    expect(new TrustEnforcer(policy).canExec('sudo').allow).toBe(false)
+  })
+
+  it('composes default safe executables with custom executables in the same layer', () => {
+    const policy = resolvePermissions(
+      { allowDefaultSafeExecutables: true, allowedExecutables: ['pnpm'] },
+      undefined,
+    )
+    expect([...policy.allowedExecutables]).toContain('git')
+    expect([...policy.allowedExecutables]).toContain('pnpm')
+  })
+
+  it('lets step-level permissions narrow the default safe executable set', () => {
+    const policy = resolvePermissions(
+      { allowDefaultSafeExecutables: true, allowedExecutables: ['pnpm'] },
+      { allowedExecutables: ['git', 'pnpm'] },
+    )
+    expect([...policy.allowedExecutables].sort()).toEqual(['git', 'pnpm'])
   })
 
   it('intersects executable bare-name ceilings with exact absolute-path step grants', () => {

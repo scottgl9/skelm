@@ -72,6 +72,7 @@ export default pipeline({
         allowedTools: ['gh.search_issues', 'slack.post_message'],
         allowedMcpServers: ['github'],
         allowedSkills: ['sre-runbook'],
+        // Or set allowDefaultSafeExecutables in skelm.config.ts defaults.
         allowedExecutables: [],
         fsRead: [],
         fsWrite: [],
