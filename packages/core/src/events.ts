@@ -5,7 +5,7 @@ import type { RunId, RunStatus, SerializedError, StepId, StepKind } from './type
  * Discriminated union of run-level events emitted by the runtime. Every
  * event carries enough information to reconstruct a run's behavior offline.
  */
-export type RunEvent =
+type RunEventBody =
   | { type: 'run.created'; runId: RunId; pipelineId: string; input: unknown; at: number }
   | { type: 'run.started'; runId: RunId; at: number }
   | {
@@ -140,6 +140,16 @@ export type RunEvent =
       at: number
     }
 
+/**
+ * A run event. `EventBus.publish` stamps a monotonic per-run `seq` before
+ * fan-out, giving consumers an unambiguous total order within a run even when
+ * many events share a wall-clock millisecond (a fast LLM can emit dozens of
+ * `step.partial` tokens per ms). The same value is carried on the persisted
+ * copy, so SSE replay/tail-merge dedup is exact, and it is the basis for
+ * deterministic event-log ordering.
+ */
+export type RunEvent = RunEventBody & { seq?: number }
+
 export type RunEventType = RunEvent['type']
 
 /** A subscriber receives every event in publication order. */
@@ -158,8 +168,17 @@ export type EventListener = (event: RunEvent) => void
 export class EventBus {
   private readonly listeners: Set<EventListener> = new Set()
   private readonly byRun: Map<RunId, Set<EventListener>> = new Map()
+  private readonly seqByRun: Map<RunId, number> = new Map()
 
   publish(event: RunEvent): void {
+    // Stamp a monotonic per-run sequence once, before fan-out, so live
+    // subscribers and the persisted copy share the same `seq`. This gives an
+    // unambiguous order within a run even when events collide on `at` (ms).
+    if (event.seq === undefined) {
+      const next = (this.seqByRun.get(event.runId) ?? 0) + 1
+      this.seqByRun.set(event.runId, next)
+      event.seq = next
+    }
     for (const listener of this.listeners) {
       this.invoke(listener, event)
     }
@@ -168,6 +187,15 @@ export class EventBus {
       for (const listener of indexed) {
         this.invoke(listener, event)
       }
+    }
+    // Release the per-run counter once the run reaches a terminal event so the
+    // map doesn't grow unbounded across many runs.
+    if (
+      event.type === 'run.completed' ||
+      event.type === 'run.failed' ||
+      event.type === 'run.cancelled'
+    ) {
+      this.seqByRun.delete(event.runId)
     }
   }
 
