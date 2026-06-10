@@ -9,7 +9,7 @@ skelm uses two config files with distinct ownership:
 
 ## Workflow project config (`skelm.config.ts`)
 
-The CLI walks up from `cwd` (or from the workflow file's directory) to find the nearest `skelm.config.ts`. When no config is found the gateway uses [`DEFAULT_CONFIG`](https://github.com/scottgl9/skelm/blob/main/packages/core/src/config.ts).
+For `skelm run <directory>`, the CLI walks up from that directory to find the nearest `skelm.config.ts`. For `skelm run <file>`, the CLI also walks up from the workflow file's directory; if a config is found, its path is sent to the gateway as `configPath` and the gateway loads it, applying its `defaults.permissions`, `defaults.permissionProfiles`, and backend selections on top of gateway-wide defaults for that run only. A config load failure is non-fatal and falls back silently to gateway-wide defaults. When no config is found the gateway uses [`DEFAULT_CONFIG`](https://github.com/scottgl9/skelm/blob/main/packages/core/src/config.ts).
 
 Use `defineWorkflowConfig` when authoring this file. TypeScript will reject gateway-only fields (`server`, `storage`, `plugins`, `secrets`) at the type level.
 

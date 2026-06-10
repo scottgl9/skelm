@@ -1,18 +1,12 @@
 import { defineWorkflowConfig } from '@skelm/core'
 
-// Minimal config that turns on the agentmemory integration and grants the
-// three ops the automatic backend loop uses (observe / search / session) as
-// project defaults. Per-step permissions intersect with these — nothing widens.
+// Project-level permission ceiling: grants the three agentmemory ops the
+// automatic backend loop uses (observe / search / session). Per-step
+// permissions intersect with these — nothing widens.
 //
-// `secretName` is optional: set it (to a name your gateway's SecretResolver
-// knows) only when your agentmemory server requires a bearer token.
+// The agentmemory integration itself (URL, secret, timeout) is configured in
+// skelm.gateway.ts — that is operator-owned and runtime-local.
 export default defineWorkflowConfig({
-  agentmemory: {
-    enabled: true,
-    url: 'http://localhost:3111',
-    // secretName: 'AGENTMEMORY_SECRET',
-    timeoutMs: 3000,
-  },
   defaults: {
     permissions: {
       agentmemory: {

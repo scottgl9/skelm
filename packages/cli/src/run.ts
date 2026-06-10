@@ -1,5 +1,6 @@
 import { accessSync, createReadStream, createWriteStream, constants as fsConstants } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import {
   BackendCapabilityError,
@@ -21,6 +22,7 @@ import {
 } from './internal/gateway-client.js'
 import type { MainIO } from './internal/io.js'
 import { safeForTty } from './internal/safe-text.js'
+import { findSkelmConfigPath } from './load-config.js'
 import { CliError } from './load-workflow.js'
 import { tuiCommand } from './tui.js'
 
@@ -136,12 +138,20 @@ export async function runCommand(
     // The gateway's stream handler is replay-then-tail: even if the run
     // completes between start and subscribe (sub-second runs), the
     // client receives every persisted event in order.
+    //
+    // Include the nearest skelm.config.* from the workflow file's directory
+    // so the gateway can apply its defaults.permissions and backends for this run.
+    const configPath = findSkelmConfigPath(dirname(absPath))
     const startRes = await fetchHttp(
       `${client.discovery.url}/pipelines/start-file`,
       {
         method: 'POST',
         headers: client.headers,
-        body: JSON.stringify({ file: absPath, input: input ?? {} }),
+        body: JSON.stringify({
+          file: absPath,
+          input: input ?? {},
+          ...(configPath !== null && { configPath }),
+        }),
       },
       io as MainIO,
     )

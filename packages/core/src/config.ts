@@ -193,6 +193,12 @@ export interface SkelmWorkflowConfig extends SkelmConfigBase {
  */
 export interface SkelmGatewayConfig extends SkelmConfigBase {
   defaults?: {
+    /** Default backend id. Equivalent to the top-level `backend` field; both are checked. */
+    backend?: string
+    /** Gateway-wide permission baseline; intersected with per-project ceilings. */
+    permissions?: AgentPermissions
+    /** Named permission profiles available to all projects hosted by this gateway. */
+    permissionProfiles?: Readonly<Record<string, AgentPermissions>>
     /**
      * Operator grant for the full permission bypass. Workflow / persistent-workflow
      * ids listed here may run `unrestricted` IF they also set
