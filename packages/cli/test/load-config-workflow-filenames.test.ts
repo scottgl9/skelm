@@ -21,10 +21,10 @@ describe('workflow config filename resolution', () => {
 
   it('finds skelm.config.ts when present', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'skelm-wf-cfg-'))
-    writeConfigIn(dir, 'skelm.config.mjs', 'export default { env: { FROM: "config" } }')
+    writeConfigIn(dir, 'skelm.config.ts', 'export default { env: { FROM: "config-ts" } }')
     const { config, source } = await loadSkelmConfig({ fromDir: dir })
-    expect(config.env?.FROM).toBe('config')
-    expect(source).toContain('skelm.config')
+    expect(config.env?.FROM).toBe('config-ts')
+    expect(source).toContain('skelm.config.ts')
   })
 
   it('returns default config when no skelm.config.* is present', async () => {

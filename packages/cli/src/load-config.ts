@@ -193,6 +193,14 @@ const LEGACY_GATEWAY_FALLBACK = [
   'skelm.config.mjs',
 ]
 
+/**
+ * Walk up from `fromDir` to find the nearest `skelm.config.*`, returning its
+ * absolute path or null. Does not load or execute the file.
+ */
+export function findSkelmConfigPath(fromDir: string): string | null {
+  return walkUpForConfig(fromDir)
+}
+
 function walkUpForConfig(start: string): string | null {
   let dir = resolve(start)
   // Stop at filesystem root.

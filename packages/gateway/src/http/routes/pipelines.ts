@@ -1,4 +1,5 @@
-import { Runner, describePipeline } from '@skelm/core'
+import { pathToFileURL } from 'node:url'
+import { Runner, type SkelmConfig, describePipeline, pickExport } from '@skelm/core'
 import { type Router, createError, eventHandler, readBody } from 'h3'
 import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { createSkillSource } from '../../registries/skill-source.js'
@@ -285,11 +286,39 @@ export function registerPipelineRoutes(router: Router, gateway: GatewayContext):
       const rawBody = await readBody(event).catch(() => undefined)
       const body =
         rawBody !== null && typeof rawBody === 'object'
-          ? (rawBody as { file?: unknown; input?: unknown })
+          ? (rawBody as { file?: unknown; input?: unknown; configPath?: unknown })
           : {}
       const filePath = await validateWorkflowFile(body.file)
       const id = adhocPipelineId(filePath)
       const input = body.input ?? {}
+
+      // Load the nearest skelm.config.* from the workflow file's directory when
+      // the CLI resolved one and sent its path. Apply its defaults.permissions
+      // and backends on top of the gateway-wide defaults for this run only.
+      const perFilePermissions: {
+        defaultPermissions?: import('@skelm/core').AgentPermissions
+        permissionProfiles?: Readonly<Record<string, import('@skelm/core').AgentPermissions>>
+      } = {}
+      const perFileBackends: { defaultAgentBackend?: string; defaultInferBackend?: string } = {}
+      if (typeof body.configPath === 'string') {
+        try {
+          const mod = (await import(pathToFileURL(body.configPath).href)) as Record<string, unknown>
+          const fc = pickExport(mod, 'default') as SkelmConfig | undefined
+          if (fc !== null && typeof fc === 'object') {
+            if (fc.defaults?.permissions !== undefined)
+              perFilePermissions.defaultPermissions = fc.defaults.permissions
+            if (fc.defaults?.permissionProfiles !== undefined)
+              perFilePermissions.permissionProfiles = fc.defaults.permissionProfiles
+            const agentB = fc.backends?.agent ?? fc.backends?.default ?? fc.backend
+            const inferB = fc.backends?.infer ?? fc.backends?.default ?? fc.backend
+            if (typeof agentB === 'string') perFileBackends.defaultAgentBackend = agentB
+            if (typeof inferB === 'string') perFileBackends.defaultInferBackend = inferB
+          }
+        } catch {
+          // Config load failure is non-fatal for an adhoc run; gateway-wide defaults apply.
+        }
+      }
+
       const pipeline = await loadPipelineFromPath(loader, id, filePath)
       const enforcement = gateway.enforcement
       const runner = new Runner({
@@ -319,6 +348,9 @@ export function registerPipelineRoutes(router: Router, gateway: GatewayContext):
           pipelineRegistry: makeGatewayPipelineRegistry(gateway),
           ...gateway.defaultPermissionRunOptions(pipeline.id),
           ...gateway.defaultBackendRunOptions(pipeline.id),
+          // Per-file config overrides take precedence over gateway-wide defaults
+          ...perFilePermissions,
+          ...perFileBackends,
           ...gateway.egressRunOptions(),
           ...gateway.agentmemoryRunOptions(),
         })

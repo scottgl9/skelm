@@ -247,4 +247,57 @@ describe('POST /pipelines/start-file', () => {
     expect(finalState?.status).toBe('completed')
     expect(finalState?.output).toEqual({ greeting: 'hello, async' })
   })
+
+  it('applies defaults from configPath when provided', async () => {
+    const configFile = join(stateDir, 'skelm.config.mjs')
+    await fs.writeFile(
+      configFile,
+      'export default { defaults: { permissions: { allowedExecutables: ["node"] } } }',
+    )
+    const startRes = await fetch(`${base}/pipelines/start-file`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ file: HELLO_FIXTURE, input: { name: 'cfg' }, configPath: configFile }),
+    })
+    expect(startRes.status).toBe(200)
+    const { runId } = await startRes.json()
+    const deadline = Date.now() + 5_000
+    let finalState: { status?: string; output?: unknown } | null = null
+    while (Date.now() < deadline) {
+      const r = await fetch(`${base}/runs/${runId}`)
+      if (r.ok) {
+        finalState = await r.json()
+        if (finalState?.status === 'completed' || finalState?.status === 'failed') break
+      }
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    expect(finalState?.status).toBe('completed')
+    expect(finalState?.output).toEqual({ greeting: 'hello, cfg' })
+  })
+
+  it('falls back to gateway defaults when configPath does not exist', async () => {
+    const startRes = await fetch(`${base}/pipelines/start-file`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        file: HELLO_FIXTURE,
+        input: { name: 'fallback' },
+        configPath: join(stateDir, 'nonexistent.config.mjs'),
+      }),
+    })
+    expect(startRes.status).toBe(200)
+    const { runId } = await startRes.json()
+    const deadline = Date.now() + 5_000
+    let finalState: { status?: string; output?: unknown } | null = null
+    while (Date.now() < deadline) {
+      const r = await fetch(`${base}/runs/${runId}`)
+      if (r.ok) {
+        finalState = await r.json()
+        if (finalState?.status === 'completed' || finalState?.status === 'failed') break
+      }
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    expect(finalState?.status).toBe('completed')
+    expect(finalState?.output).toEqual({ greeting: 'hello, fallback' })
+  })
 })
