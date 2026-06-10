@@ -48,7 +48,9 @@ export type {
   SkelmConfigServer,
   SkelmConfigStorage,
   SkelmConfigTriggerSourceEntry,
+  SkelmGatewayConfig,
   SkelmTriggerSource,
+  SkelmWorkflowConfig,
 } from './config.js'
 
 export {

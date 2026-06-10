@@ -350,7 +350,9 @@ type:SkelmConfigSecrets
 type:SkelmConfigServer
 type:SkelmConfigStorage
 type:SkelmConfigTriggerSourceEntry
+type:SkelmGatewayConfig
 type:SkelmPlugin
+type:SkelmWorkflowConfig
 type:SkelmSchema
 type:SkelmTriggerSource
 type:Skill
