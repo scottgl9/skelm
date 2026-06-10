@@ -159,3 +159,7 @@ packages/*/src/**/*.d.ts.map
 
 # graphify knowledge graph output
 graphify-out/
+
+# codegraph
+.codegraph
+.codegraph/
