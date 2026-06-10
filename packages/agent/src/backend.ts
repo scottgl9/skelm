@@ -45,6 +45,9 @@ import { TrustEnforcer } from '@skelm/core/permissions'
 import type { ModelRegistry } from './models/registry.js'
 import type { ResolvedModel } from './models/types.js'
 import { buildSystemPromptFromRequest } from './prompt.js'
+import type { SerializedSession } from './session/agent-session.js'
+import type { SessionMessage } from './session/messages.js'
+import type { SessionStore } from './session/store/types.js'
 import { BUILTIN_TOOLS, type ToolExecutionContext, type ToolResult, toOpenAITool } from './tools.js'
 
 export interface SkelmAgentOptions {
@@ -103,6 +106,17 @@ export interface SkelmAgentOptions {
    * the per-call request omits an explicit model.
    */
   defaultModel?: { provider: string; id: string }
+  /**
+   * Optional persistence for `run()` conversations. When set, the backend
+   * advertises `capabilities.sessionLifecycle: true` and an `agent()` step
+   * that supplies `sessionId` resumes the prior conversation: the saved
+   * message history (user/assistant/tool turns) is seeded ahead of the new
+   * prompt, and the full updated history is saved back on completion. A
+   * fresh system prompt is rebuilt every run, so the persisted system turn
+   * is never replayed. Leave unset to keep the stateless single-shot
+   * behavior (default).
+   */
+  sessionStore?: SessionStore
 }
 
 function resolveCallModel(
@@ -215,11 +229,87 @@ function toOpenAIChatContent(
   return parts
 }
 
-function baseCapabilities(vision: boolean): BackendCapabilities {
+// ── Session persistence mapping (Milestone A) ──────────────────────────────
+// The agent loop runs on OpenAI chat messages; sessions persist the
+// wire-format-neutral SessionMessage. These map between the two.
+
+/**
+ * Restore persisted session messages into the agent loop's OpenAI shape.
+ * System turns are skipped — the loop rebuilds the system prompt fresh every
+ * run (current date / tools / skills), so a stale persisted system turn must
+ * never be replayed.
+ */
+function sessionMessagesToOpenAI(messages: readonly SessionMessage[]): OpenAIMessage[] {
+  const out: OpenAIMessage[] = []
+  for (const m of messages) {
+    if (m.role === 'system') continue
+    if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+      out.push({
+        role: 'assistant',
+        ...(m.content.length > 0 && { content: m.content }),
+        tool_calls: m.toolCalls.map((tc) => ({
+          id: tc.id,
+          type: 'function' as const,
+          function: { name: tc.name, arguments: tc.arguments },
+        })),
+      })
+    } else if (m.role === 'tool') {
+      out.push({
+        role: 'tool',
+        content: m.content,
+        ...(m.toolCallId !== undefined && { tool_call_id: m.toolCallId }),
+      })
+    } else {
+      out.push({ role: m.role, content: m.content })
+    }
+  }
+  return out
+}
+
+/**
+ * Convert the agent loop's OpenAI messages into the persistable SessionMessage
+ * shape. System turns are dropped (rebuilt per run); multimodal user content
+ * is flattened to its text — images are not re-sent on restore, a documented
+ * limitation of session persistence v1.
+ */
+function openAIToSessionMessages(messages: readonly OpenAIMessage[]): SessionMessage[] {
+  const out: SessionMessage[] = []
+  for (const m of messages) {
+    if (m.role === 'system') continue
+    const content =
+      typeof m.content === 'string'
+        ? m.content
+        : Array.isArray(m.content)
+          ? m.content
+              .filter(
+                (p): p is { type: 'text'; text: string } =>
+                  (p as { type?: string }).type === 'text',
+              )
+              .map((p) => p.text)
+              .join('')
+          : ''
+    out.push({
+      role: m.role as SessionMessage['role'],
+      content,
+      ...(m.tool_calls &&
+        m.tool_calls.length > 0 && {
+          toolCalls: m.tool_calls.map((tc) => ({
+            id: tc.id,
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          })),
+        }),
+      ...(m.tool_call_id !== undefined && { toolCallId: m.tool_call_id }),
+    })
+  }
+  return out
+}
+
+function baseCapabilities(vision: boolean, sessionLifecycle: boolean): BackendCapabilities {
   return {
     prompt: true,
     streaming: false,
-    sessionLifecycle: false,
+    sessionLifecycle,
     mcp: true,
     vision,
     skills: true,
@@ -245,6 +335,11 @@ async function runAgentLoop(
     cwd: string
     agentDefRoot: string
     maxTokens: number | undefined
+    // Session persistence (Milestone A). When both are set, the prior
+    // conversation for `persistSessionId` is seeded ahead of the new prompt
+    // and the updated history is saved back on completion.
+    sessionStore?: SessionStore
+    persistSessionId?: string
   },
 ): Promise<{
   text: string
@@ -388,11 +483,21 @@ async function runAgentLoop(
       ...(mcpServerSummaries && { mcpServers: mcpServerSummaries }),
     })
 
+    // Session lifecycle: seed the prior conversation ahead of the new prompt
+    // when a store + explicit sessionId are configured. The system turn is
+    // rebuilt fresh below, so persisted system turns are dropped on restore.
+    let priorMessages: OpenAIMessage[] = []
+    if (opts.sessionStore !== undefined && opts.persistSessionId !== undefined) {
+      const saved = await opts.sessionStore.load(opts.persistSessionId)
+      if (saved !== undefined) priorMessages = sessionMessagesToOpenAI(saved.messages)
+    }
+
     const messages: OpenAIMessage[] = [
       {
         role: 'system',
         content: memoryRecall.length > 0 ? `${memoryRecall}\n\n${systemContent}` : systemContent,
       },
+      ...priorMessages,
       { role: 'user', content: toOpenAIChatContent(req.prompt) },
     ]
 
@@ -448,6 +553,17 @@ async function runAgentLoop(
             project: opts.cwd,
             cwd: opts.cwd,
           })
+        }
+        // Persist the full conversation (this run's prompt, any tool turns,
+        // and the final answer) so the next run with the same sessionId
+        // resumes it. The system turn is dropped by openAIToSessionMessages.
+        if (opts.sessionStore !== undefined && opts.persistSessionId !== undefined) {
+          const finalMessages: OpenAIMessage[] = [...messages, { role: 'assistant', content: text }]
+          const serialized: SerializedSession = {
+            version: 1,
+            messages: openAIToSessionMessages(finalMessages),
+          }
+          await opts.sessionStore.save(opts.persistSessionId, serialized)
         }
         return {
           text,
@@ -592,7 +708,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
   // (forward image content to the upstream and let it succeed or fail
   // loudly). Set `vision: false` to flip on the framework's vision gate so
   // image prompts are rejected at step start with no HTTP egress.
-  const capabilities = baseCapabilities(opts.vision ?? true)
+  const capabilities = baseCapabilities(opts.vision ?? true, opts.sessionStore !== undefined)
 
   const backend: SkelmBackend = {
     id: resolvedId,
@@ -726,6 +842,8 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
         cwd,
         agentDefRoot,
         maxTokens: perCallMax,
+        ...(opts.sessionStore !== undefined && { sessionStore: opts.sessionStore }),
+        ...(req.sessionId !== undefined && { persistSessionId: req.sessionId }),
       })
 
       let structured: unknown | undefined

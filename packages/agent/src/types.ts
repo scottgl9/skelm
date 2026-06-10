@@ -8,7 +8,7 @@
  * Capabilities:
  * - prompt: true
  * - streaming: false
- * - sessionLifecycle: false
+ * - sessionLifecycle: true when a `sessionStore` is configured, else false
  * - mcp: true (delegates MCP tools to attached McpHost)
  * - skills: true (wraps skillSource with canLoadSkill enforcement)
  * - modelSelection: true
@@ -18,7 +18,7 @@
 export interface SkelmAgentBackendCapabilities {
   prompt: true
   streaming: false
-  sessionLifecycle: false
+  sessionLifecycle: boolean
   mcp: true
   skills: true
   modelSelection: true

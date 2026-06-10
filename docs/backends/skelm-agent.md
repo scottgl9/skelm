@@ -68,11 +68,26 @@ a string-keyed `backends:` entry — pass a configured instance through
 | `headers`    | `Record<string,string>` | —     | Extra LLM request headers, e.g. OpenRouter `HTTP-Referer` and `X-OpenRouter-Title`. |
 | `model`      | `string` | —                | Default model when the step doesn't specify one.                         |
 | `timeoutMs`  | `number` | `300_000`        | LLM HTTP timeout in ms.                                                  |
+| `sessionStore` | `SessionStore` | —          | Persist `run()` conversations across turns. See **Session persistence** below. |
 
 The backend issues a non-streaming Chat Completions request. `baseUrl` may be
 `http://localhost:11434`, `http://localhost:8000/v1`,
 `https://openrouter.ai/api/v1`, or an exact URL ending in
 `/chat/completions`.
+
+### Session persistence
+
+By default each `agent()` run is stateless. Configure a `sessionStore`
+(`InMemorySessionStore`, `FileSessionStore`, or your own `SessionStore`) to
+make runs resumable: the backend then advertises
+`capabilities.sessionLifecycle: true`, and an `agent()` step that supplies a
+`sessionId` resumes the prior conversation — the saved user/assistant/tool
+turns are seeded ahead of the new prompt, and the full updated history is saved
+back on completion. The system prompt is rebuilt fresh every run (current date,
+tools, skills), so a persisted system turn is never replayed. Runs without a
+`sessionId`, or with no `sessionStore` configured, stay stateless and persist
+nothing. (Multimodal image content is flattened to its text in the persisted
+history and is not re-sent on resume.)
 
 ## Provider examples
 
@@ -129,6 +144,7 @@ tool calls (`tools`, assistant `tool_calls`, and `role: "tool"` messages).
 | `skills`            | `true`     | `load_skill` returns metadata for skills allowed by `allowedSkills`.        |
 | `toolPermissions`   | `'native'` | Every built-in tool calls `TrustEnforcer` before its side effect.           |
 | `streaming`         | `false`    | Use `@skelm/pi` SDK or `@skelm/opencode` for streaming output.              |
+| `sessionLifecycle`  | `false`\*  | `true` when a `sessionStore` is configured; an `agent()` step that supplies `sessionId` then resumes the saved conversation. Default `false` (stateless). |
 
 ## Built-in tools
 
