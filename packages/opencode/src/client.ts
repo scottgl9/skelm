@@ -523,6 +523,7 @@ export function encodeProxyUrlWithToken(proxyUrl: string, token: string | undefi
 
 // Map a skelm ResolvedPolicy to opencode's per-prompt tool allow/deny map.
 // opencode tool names: bash, read, edit, glob, grep, list, webSearch.
+/** @internal — exported for unit tests only; not re-exported from the package index. */
 export function buildOpencodeToolsFromPolicy(policy: ResolvedPolicy): Record<string, boolean> {
   // star = all tools allowed; return empty map to let opencode use its defaults.
   if (policy.allowedTools.star) return {}
@@ -540,8 +541,10 @@ export function buildOpencodeToolsFromPolicy(policy: ResolvedPolicy): Record<str
     list: policy.fsRead.size > 0 || allow('list'),
     // opencode's webSearch runs in-process and does NOT traverse the gateway
     // egress proxy, so a per-host `allowHosts` policy cannot be enforced on it.
-    // Enable it only under a blanket `networkEgress: 'allow'` (matching the
-    // codex mapper); anything narrower must not get an unproxied web tool.
-    webSearch: policy.networkEgress === 'allow' || allow('webSearch'),
+    // Enable it ONLY under a blanket `networkEgress: 'allow'` (matching the
+    // codex mapper). Deliberately no `allow('webSearch')` escape: an explicit
+    // allowedTools entry under a restricted egress policy would still be an
+    // unproxied web tool, defeating the host allowlist the step declared.
+    webSearch: policy.networkEgress === 'allow',
   }
 }
