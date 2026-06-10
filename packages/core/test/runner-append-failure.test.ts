@@ -68,6 +68,13 @@ class FailingAppendStore implements Partial<RunStore> {
   }
 }
 
+class ThrowingAppendStore extends FailingAppendStore {
+  override appendEvent(_event: RunEvent): Promise<void> {
+    this.appendCalls += 1
+    throw new Error('simulated synchronous appendEvent throw')
+  }
+}
+
 describe('runner — appendEvent failure isolation', () => {
   const wf = pipeline({
     id: 'append-failure',
@@ -104,6 +111,18 @@ describe('runner — appendEvent failure isolation', () => {
     const run = await runPipeline(wf, undefined, { store, events })
 
     expect(run.status).toBe('completed')
+    const persisted = await store.getRun(run.runId)
+    expect(persisted?.status).toBe('completed')
+  })
+
+  it('finalizes a completed run even when appendEvent throws synchronously', async () => {
+    const store = new ThrowingAppendStore() as unknown as RunStore
+    const events = new EventBus()
+
+    const run = await runPipeline(wf, undefined, { store, events })
+
+    expect(run.status).toBe('completed')
+    expect((store as unknown as ThrowingAppendStore).appendCalls).toBeGreaterThan(0)
     const persisted = await store.getRun(run.runId)
     expect(persisted?.status).toBe('completed')
   })
