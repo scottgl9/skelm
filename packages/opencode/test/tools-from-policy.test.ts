@@ -37,4 +37,15 @@ describe('buildOpencodeToolsFromPolicy — webSearch egress gating', () => {
     // web tool for an allowHosts policy, bypassing the per-host allowlist.
     expect(toolsFor({ allowHosts: ['api.example.com'] }).webSearch).toBe(false)
   })
+
+  it('does not let an explicit allowedTools webSearch escape a restricted egress policy', () => {
+    // There is no allowedTools name-escape for webSearch: an explicit allow
+    // under a per-host policy would still be an unproxied web tool.
+    const policy = resolvePermissions(undefined, {
+      ...basePerms,
+      allowedTools: ['webSearch'],
+      networkEgress: { allowHosts: ['api.example.com'] },
+    })
+    expect(buildOpencodeToolsFromPolicy(policy).webSearch).toBe(false)
+  })
 })
