@@ -11,9 +11,9 @@ skelm uses two config files with distinct ownership:
 
 The CLI walks up from `cwd` (or from the workflow file's directory) to find the nearest `skelm.config.ts`. When no config is found the gateway uses [`DEFAULT_CONFIG`](https://github.com/scottgl9/skelm/blob/main/packages/core/src/config.ts).
 
-Use `defineWorkflowConfig` (or `defineConfig`) when authoring this file.
+Use `defineWorkflowConfig` when authoring this file. TypeScript will reject gateway-only fields (`server`, `storage`, `plugins`, `secrets`) at the type level.
 
-## Shape
+## Shape (`SkelmWorkflowConfig`)
 
 ```ts
 import { defineWorkflowConfig } from 'skelm'
@@ -25,7 +25,7 @@ export default defineWorkflowConfig({
   backend?: string,                          // legacy single-backend selector; prefer `backends.default`
   backends?: {
     default?: string,                        // used by both infer() and agent() unless overridden
-    infer?:     string,                        // optional override for infer()
+    infer?:   string,                        // optional override for infer()
     agent?:   string,                        // optional override for agent()
     [id: string]: SkelmConfigBackendEntry | string | undefined,
   },
@@ -58,36 +58,8 @@ export default defineWorkflowConfig({
     permissionProfiles?: Record<string, AgentPermissions>,
   },
 
-  // ── Operational surfaces ────────────────────────────────────────────
-  secrets?: {
-    driver?: 'env' | 'file',
-    file?:   string,                         // path to JSON secrets file when driver === 'file'
-  },
-  storage?: {
-    runs?: {
-      driver?: 'sqlite' | 'memory' | 'postgres',
-      // sqlite only:
-      path?: string,
-      // postgres only (PostgreSQL 15+):
-      url?: string,
-      schema?: string,
-      poolSize?: number,
-      artifactQuotaBytes?: number,
-    },
-    state?:      { driver?: 'sqlite' | 'memory', path?: string },
-    workspaces?: { base?: string, ephemeralBase?: string },
-  },
-  server?: {
-    port?:              number,              // default: 14738
-    host?:              string,              // default: 127.0.0.1
-    auth?:              { mode: 'none' | 'bearer' },
-    maxConcurrentRuns?: number,              // default: 10
-    proxy?: {
-      enabled?: boolean,                     // default: true
-      port?: number,                         // default: server.port + 1
-    },
-  },
-  plugins?: readonly string[],               // package names imported at gateway startup
+  // ── Trigger sources ─────────────────────────────────────────────────
+  triggerSources?: readonly SkelmConfigTriggerSourceEntry[],
 
   // ── Environment variables ───────────────────────────────────────────
   env?: Record<string, string>,              // static defaults; layered with .env (see below)
@@ -95,11 +67,6 @@ export default defineWorkflowConfig({
 ```
 
 `SkelmConfigBackendEntry` is a free-form record forwarded to the matching factory. Strings allowed for keys like `backends.default` (selectors), record values for backend-specific config (`apiKey`, `model`, `baseUrl`, …).
-
-`storage.workspaces.base` controls the gateway-managed persistent workspace
-base, and `storage.workspaces.ephemeralBase` controls temporary workspace
-placement. Per-step `workspace.writeRoot` and `workspace.exportRoot` are
-resolved inside the prepared workspace, not relative to these storage bases.
 
 ## Backends
 
@@ -118,10 +85,10 @@ The CLI knows these ids and wires them automatically:
 For Pi, either configure the `pi` backend entry or register an instance:
 
 ```ts
-import { defineConfig } from 'skelm'
+import { defineWorkflowConfig } from 'skelm'
 import { createPiSdkBackend } from '@skelm/pi'
 
-export default defineConfig({
+export default defineWorkflowConfig({
   backends: {
     agent: 'pi',
     pi: {
@@ -190,11 +157,13 @@ interface SkelmConfigMcpServerEntry {
 
 ## Full example
 
+`skelm.config.ts` (workflow project):
+
 ```ts
-import { defineConfig } from 'skelm'
+import { defineWorkflowConfig } from 'skelm'
 import { createPiSdkBackend } from '@skelm/pi'
 
-export default defineConfig({
+export default defineWorkflowConfig({
   backends: {
     default: 'openai',
     agent:   'pi',
@@ -238,7 +207,15 @@ export default defineConfig({
       },
     },
   },
+})
+```
 
+`skelm.gateway.ts` (operator):
+
+```ts
+import { defineGatewayConfig } from 'skelm'
+
+export default defineGatewayConfig({
   secrets: { driver: 'env' },
 
   storage: {
@@ -255,10 +232,10 @@ export default defineConfig({
 })
 ```
 
-Postgres-backed runs storage:
+Postgres-backed runs storage (in `skelm.gateway.ts`):
 
 ```ts
-export default defineConfig({
+export default defineGatewayConfig({
   storage: {
     runs: {
       driver: 'postgres',
@@ -284,9 +261,9 @@ Precedence is `process.env > .env > config.env`. The CLI merges the lower layers
 
 ```ts
 // skelm.config.mts
-import { defineConfig } from 'skelm'
+import { defineWorkflowConfig } from 'skelm'
 
-export default defineConfig({
+export default defineWorkflowConfig({
   env: {
     OPENAI_MODEL: 'gpt-4o-mini',
     OPENAI_BASE_URL: 'https://api.openai.com/v1',
@@ -333,7 +310,65 @@ when the gateway runs with that config.
 
 ## Gateway config (`skelm.gateway.ts`)
 
-The gateway config is operator-owned and runtime-local. It controls how the gateway process is hosted, where it stores data, and which plugins it loads. Use `defineGatewayConfig` when authoring this file.
+The gateway config is operator-owned and runtime-local. It controls how the gateway process is hosted, where it stores data, and which plugins it loads. Use `defineGatewayConfig` when authoring this file. TypeScript will reject workflow-only fields (`entrypoint`, `instances`, `registries`, `triggerSources`) at the type level.
+
+### Shape (`SkelmGatewayConfig`)
+
+```ts
+import { defineGatewayConfig } from 'skelm'
+
+export default defineGatewayConfig({
+  // ── Server ───────────────────────────────────────────────────────────
+  server?: {
+    port?:              number,              // default: 14738
+    host?:              string,              // default: 127.0.0.1
+    auth?:              { mode: 'none' | 'bearer' },
+    maxConcurrentRuns?: number,              // default: 10
+    proxy?: {
+      enabled?: boolean,                     // default: true
+      port?: number,                         // default: server.port + 1
+    },
+  },
+
+  // ── Storage ──────────────────────────────────────────────────────────
+  storage?: {
+    runs?: {
+      driver?: 'sqlite' | 'memory' | 'postgres',
+      // sqlite only:
+      path?: string,
+      // postgres only (PostgreSQL 15+):
+      url?: string,
+      schema?: string,
+      poolSize?: number,
+      artifactQuotaBytes?: number,
+    },
+    state?:      { driver?: 'sqlite' | 'memory', path?: string },
+    workspaces?: { base?: string, ephemeralBase?: string },
+  },
+
+  // ── Secrets ──────────────────────────────────────────────────────────
+  secrets?: {
+    driver?: 'env' | 'file',
+    file?:   string,                         // path to JSON secrets file when driver === 'file'
+  },
+
+  // ── Plugins & integrations ───────────────────────────────────────────
+  plugins?: readonly string[],               // package names imported at gateway startup
+  agentmemory?: { enabled?: boolean, url?: string, secretName?: string, timeoutMs?: number },
+
+  // ── Operator grants ──────────────────────────────────────────────────
+  defaults?: {
+    unrestrictedGrants?: readonly string[],  // workflow ids allowed to run unrestricted
+  },
+
+  // ── Shared with workflow config ───────────────────────────────────────
+  backend?: string,
+  backends?: SkelmConfigBackends,
+  env?: Record<string, string>,
+})
+```
+
+`storage.workspaces.base` controls the gateway-managed persistent workspace base; `storage.workspaces.ephemeralBase` controls temporary workspace placement.
 
 ### Lookup precedence
 
@@ -369,8 +404,6 @@ export default defineGatewayConfig({
   secrets: { driver: 'env' },
 })
 ```
-
-The gateway config shape is currently identical to the workflow config shape. The schemas will diverge in a future release (Phase 3) once commonly-migrated projects have adopted the split.
 
 ## Notes
 

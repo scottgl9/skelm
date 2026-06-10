@@ -125,7 +125,30 @@ export interface SkelmConfigRegistries {
   agents?: readonly SkelmConfigAgentEntry[]
 }
 
-export interface SkelmConfig {
+// Fields shared by both workflow and gateway configs (not exported — internal base).
+interface SkelmConfigBase {
+  /** Default backend id used by infer()/agent() steps that don't specify one. */
+  backend?: string
+  backends?: SkelmConfigBackends
+  /**
+   * Static environment variables applied at CLI / gateway startup. Merged
+   * into `process.env` so subprocess steps (`ctx.exec`, coding agents, MCP
+   * servers) inherit them. Precedence is `process.env > .env file > config.env`
+   * — values already set in the parent process are never overwritten.
+   *
+   * Use this for non-secret defaults like LLM model names and base URLs.
+   * For secrets, prefer a `secrets.driver` or a `.env` file under
+   * `.gitignore`. The CLI loads `<projectRoot>/.env` automatically before
+   * applying this map.
+   */
+  env?: Readonly<Record<string, string>>
+}
+
+/**
+ * Workflow/project config — authored by workflow developers, project-local.
+ * Use `defineWorkflowConfig` when authoring `skelm.config.ts`.
+ */
+export interface SkelmWorkflowConfig extends SkelmConfigBase {
   /**
    * Workflow file to run when `skelm run <dir>` targets this project's
    * directory. Resolved relative to the config file. When unset, `skelm run`
@@ -133,9 +156,6 @@ export interface SkelmConfig {
    * `index.pipeline.{mts,ts}` file or a single unambiguous workflow file.
    */
   entrypoint?: string
-  /** Default backend id used by infer()/agent() steps that don't specify one. */
-  backend?: string
-  backends?: SkelmConfigBackends
   /**
    * Pre-built backend instances. Use this when the backends map's string-keyed
    * config format is insufficient — e.g. a custom ACP backend with non-standard
@@ -149,6 +169,30 @@ export interface SkelmConfig {
     backend?: string
     permissions?: AgentPermissions
     permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+  }
+  /** Workflow discovery configuration. */
+  pipelines?: {
+    discovery?: 'auto' | 'explicit'
+    glob?: string
+    explicit?: readonly string[]
+  }
+  /** Gateway registries — workflows, skills, MCP servers, agents. */
+  registries?: SkelmConfigRegistries
+  /**
+   * Pre-built trigger sources (e.g. Telegram, Slack, an internal queue
+   * client). Each entry's `id` is the value pipelines reference via
+   * `triggers: [{ kind: 'queue', sourceId: '<id>' }]`. The gateway registers
+   * these with the trigger coordinator at startup.
+   */
+  triggerSources?: readonly SkelmConfigTriggerSourceEntry[]
+}
+
+/**
+ * Gateway/operator config — authored by operators, runtime-local.
+ * Use `defineGatewayConfig` when authoring `skelm.gateway.ts`.
+ */
+export interface SkelmGatewayConfig extends SkelmConfigBase {
+  defaults?: {
     /**
      * Operator grant for the full permission bypass. Workflow / persistent-workflow
      * ids listed here may run `unrestricted` IF they also set
@@ -162,38 +206,11 @@ export interface SkelmConfig {
      */
     unrestrictedGrants?: readonly string[]
   }
-  /** Workflow discovery configuration. */
-  pipelines?: {
-    discovery?: 'auto' | 'explicit'
-    glob?: string
-    explicit?: readonly string[]
-  }
-  /** Gateway registries — workflows, skills, MCP servers, agents. */
-  registries?: SkelmConfigRegistries
   secrets?: SkelmConfigSecrets
   storage?: SkelmConfigStorage
   server?: SkelmConfigServer
   /** Plugin package names loaded at gateway startup. */
   plugins?: readonly string[]
-  /**
-   * Pre-built trigger sources (e.g. Telegram, Slack, an internal queue
-   * client). Each entry's `id` is the value pipelines reference via
-   * `triggers: [{ kind: 'queue', sourceId: '<id>' }]`. The gateway registers
-   * these with the trigger coordinator at startup.
-   */
-  triggerSources?: readonly SkelmConfigTriggerSourceEntry[]
-  /**
-   * Static environment variables applied at CLI / gateway startup. Merged
-   * into `process.env` so subprocess steps (`ctx.exec`, coding agents, MCP
-   * servers) inherit them. Precedence is `process.env > .env file > config.env`
-   * — values already set in the parent process are never overwritten.
-   *
-   * Use this for non-secret defaults like LLM model names and base URLs.
-   * For secrets, prefer a `secrets.driver` or a `.env` file under
-   * `.gitignore`. The CLI loads `<projectRoot>/.env` automatically before
-   * applying this map.
-   */
-  env?: Readonly<Record<string, string>>
   /**
    * Optional agentmemory integration. When enabled, the gateway instantiates
    * an `@skelm/agentmemory` client and exposes a per-step `AgentmemoryHandle`
@@ -202,6 +219,9 @@ export interface SkelmConfig {
    */
   agentmemory?: SkelmConfigAgentmemory
 }
+
+/** Intersection of workflow and gateway config — the catch-all type for internal use and `defineConfig`. */
+export type SkelmConfig = SkelmWorkflowConfig & SkelmGatewayConfig
 
 /** Configuration block for the agentmemory integration. */
 export interface SkelmConfigAgentmemory {
@@ -229,20 +249,20 @@ export function defineConfig(config: SkelmConfig): SkelmConfig {
 }
 
 /**
- * Identity helper for `skelm.config.ts` when used as a workflow-project config.
- * Functionally identical to `defineConfig`; the name signals that the file is
- * owned by the workflow author, not the gateway operator.
+ * Identity helper for `skelm.config.ts` — workflow/project config.
+ * Enforces the project-only field set at the TypeScript level; use this
+ * instead of `defineConfig` when authoring a project config.
  */
-export function defineWorkflowConfig(config: SkelmConfig): SkelmConfig {
+export function defineWorkflowConfig(config: SkelmWorkflowConfig): SkelmWorkflowConfig {
   return Object.freeze({ ...config })
 }
 
 /**
- * Identity helper for `skelm.gateway.ts` — the gateway/operator runtime config.
- * Functionally identical to `defineConfig`; use this name when authoring the
- * gateway config so the intent is clear at a glance.
+ * Identity helper for `skelm.gateway.ts` — gateway/operator runtime config.
+ * Enforces the operator-only field set at the TypeScript level; use this
+ * instead of `defineConfig` when authoring a gateway config.
  */
-export function defineGatewayConfig(config: SkelmConfig): SkelmConfig {
+export function defineGatewayConfig(config: SkelmGatewayConfig): SkelmGatewayConfig {
   return Object.freeze({ ...config })
 }
 
