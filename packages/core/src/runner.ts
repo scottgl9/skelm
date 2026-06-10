@@ -674,13 +674,14 @@ export async function runPipeline<TInput, TOutput>(
             })
           }
           storeWrites.push(
-            store
-              .appendEvent(event)
+            Promise.resolve()
+              .then(() => store.appendEvent(event))
               // Best-effort event writes must never poison the run: an
-              // uncaught rejection here both surfaces as an unhandledRejection
-              // (fatal to the gateway loop) and rejects the finalize-time
-              // Promise.all, skipping the terminal putRun so a completed run is
-              // left 'running'. Match the updateRun writes' .catch.
+              // uncaught rejection or synchronous throw here both surface as an
+              // unhandledRejection/fatal event-loop error and reject the
+              // finalize-time Promise.all, skipping the terminal putRun so a
+              // completed run is left 'running'. Match the updateRun writes'
+              // .catch and normalize sync throws into the same handled path.
               .catch((err) => logStoreFailure('append-event', runId, err))
               .finally(() => {
                 appendInflight -= 1
