@@ -359,8 +359,16 @@ export class Scheduler {
       typeof triggerOrId === 'string' ? this.triggers.get(triggerOrId)?.trigger : triggerOrId
     if (trigger === undefined) return
     const previous = this.lastRun.get(trigger.id)
-    const isRunning = (this.runningCount.get(trigger.id) ?? 0) > 0
+    const running = this.runningCount.get(trigger.id) ?? 0
+    const isRunning = running > 0
     const policy = trigger.overlap ?? 'wait'
+    const maxConcurrent = trigger.maxConcurrent ?? Number.POSITIVE_INFINITY
+
+    if (running >= maxConcurrent) {
+      const registration = this.triggers.get(trigger.id)
+      if (registration) registration.lastOutcome = 'skipped'
+      return
+    }
 
     if (isRunning && policy === 'fail-fast') {
       const registration = this.triggers.get(trigger.id)
