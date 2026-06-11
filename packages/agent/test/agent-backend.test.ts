@@ -695,6 +695,31 @@ describe('SkelmAgentBackend — exec tool (mocked)', () => {
     expect(toolMsg?.content).toMatch(/Permission denied: not-in-allowlist/)
   })
 
+  it('honors deniedTools for built-in tools', async () => {
+    const fetchSpy = stubFetch([
+      {
+        toolCalls: [{ name: 'exec', arguments: { command: 'echo', args: ['DENIED_BUILTIN'] } }],
+      },
+      { content: 'tool was denied' },
+    ])
+
+    const response = await backend.run?.(
+      { prompt: 'exec echo DENIED_BUILTIN', maxTurns: 3 },
+      {
+        signal: new AbortController().signal,
+        permissions: makePolicy({ allowedExecutables: ['echo'], deniedTools: ['exec'] }),
+      },
+    )
+
+    expect(response?.text).toBe('tool was denied')
+    const body2 = JSON.parse((fetchSpy.mock.calls[1]?.[1] as { body: string }).body) as {
+      messages: Array<{ role: string; content: string }>
+    }
+    const toolMsg = body2.messages.find((m) => m.role === 'tool')
+    expect(toolMsg?.content).toMatch(/Permission denied: in-denylist/)
+    expect(toolMsg?.content).not.toMatch(/DENIED_BUILTIN/)
+  })
+
   it('runs exec when binary is in allowedExecutables and returns stdout', async () => {
     const fetchSpy = stubFetch([
       {

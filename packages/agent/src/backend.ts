@@ -479,7 +479,13 @@ async function runAgentLoop(
 
         let result: ToolResult
         if (builtinTool) {
-          result = await builtinTool.handler(parsedArgs, toolCtx)
+          const toolDecision = enforcer.canUseBuiltinTool(tc.function.name)
+          if (!toolDecision.allow) {
+            publishMcpToolDenied(ctx, tc.function.name, toolDecision.reason)
+            result = { content: `Permission denied: ${toolDecision.reason}`, isError: true }
+          } else {
+            result = await builtinTool.handler(parsedArgs, toolCtx)
+          }
         } else if (mcpHost) {
           try {
             const toolDecision = enforcer.canCallTool(tc.function.name)
