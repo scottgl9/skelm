@@ -131,7 +131,7 @@ The script:
 
 1. Syncs versions, installs, builds.
 2. Runs `rewrite-workspace-deps.mjs rewrite`.
-3. Runs `rescope-gh-packages.mjs apply` — renames each package's `name` to its `@scottgl9/*` form **without** touching the `dependencies` keys. Internal deps therefore still target `@skelm/*` and resolve from npmjs.org. `publishConfig.registry` is set to `https://npm.pkg.github.com` so the publish lands on the right registry without a CLI flag.
+3. Runs `rescope-gh-packages.mjs apply` — renames each package's `name` and internal dependency keys to their `@scottgl9/*` forms. `publishConfig.registry` is set to `https://npm.pkg.github.com` so the publish lands on the right registry without a CLI flag.
 4. Publishes each package to `https://npm.pkg.github.com`.
 5. Trapped restore returns the working tree to its committed state — both transformations are reverted regardless of how the publish ends.
 6. Runs `scripts/check-gh-visibility.mjs`. If any package is still `private`, it prints a list of per-package "Change package visibility" URLs (see next section).

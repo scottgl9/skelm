@@ -5,9 +5,8 @@
  *   @skelm/<x>  ->  @scottgl9/<x>
  *   skelm       ->  @scottgl9/skelm
  *
- * Internal `dependencies` keep their `@skelm/*` names — they install
- * anonymously from npmjs.org so consumers only need a GitHub Packages
- * token for the `@scottgl9` scope, not for transitive deps.
+ * Internal dependency keys are rewritten too, so GitHub-only versions install
+ * from the same `@scottgl9` package channel instead of falling back to npmjs.
  *
  * Also points `publishConfig.registry` at https://npm.pkg.github.com so the
  * default `npm publish` lands in the right registry without a CLI flag.
@@ -45,6 +44,8 @@ const RENAME = {
   skelm: '@scottgl9/skelm',
 }
 
+const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
+
 function listPackageDirs() {
   return readdirSync(PACKAGES_DIR)
     .map((name) => join(PACKAGES_DIR, name))
@@ -59,9 +60,22 @@ function apply() {
     if (!RENAME[pkg.name]) continue
     writeFileSync(`${file}.gh-backup`, original)
     pkg.name = RENAME[pkg.name]
+    rewriteDependencyMaps(pkg)
     pkg.publishConfig = { registry: 'https://npm.pkg.github.com', access: 'public' }
     writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`)
     console.log(`  ${dir}: -> ${pkg.name}`)
+  }
+}
+
+function rewriteDependencyMaps(pkg) {
+  for (const field of DEP_FIELDS) {
+    const deps = pkg[field]
+    if (deps === undefined) continue
+    const rewritten = {}
+    for (const [name, range] of Object.entries(deps)) {
+      rewritten[RENAME[name] ?? name] = range
+    }
+    pkg[field] = rewritten
   }
 }
 
@@ -80,6 +94,11 @@ function check() {
   for (const dir of listPackageDirs()) {
     const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
     if (RENAME[pkg.name]) offenders.push(`${dir}: still ${pkg.name}`)
+    for (const field of DEP_FIELDS) {
+      for (const name of Object.keys(pkg[field] ?? {})) {
+        if (RENAME[name]) offenders.push(`${dir}: ${field} still references ${name}`)
+      }
+    }
   }
   if (offenders.length > 0) {
     console.error('rescope incomplete:')
