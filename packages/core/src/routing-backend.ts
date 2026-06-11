@@ -35,9 +35,10 @@ export interface RoutingBackendOptions {
  * in turn until one succeeds. Mirrors the marktoflow routing backend shape:
  * one logical backend id, multiple physical providers behind it.
  *
- * Capabilities are taken from the primary by default. Callers that want a
- * conservative intersection can pass a custom override (rare; usually the
- * primary's capabilities are the contract).
+ * Security-relevant capabilities are the weakest value across every child.
+ * The runner gates once against this wrapper before failover happens, so the
+ * wrapper must never advertise a stronger enforcement surface than a failover
+ * backend can honor.
  */
 export function createRoutingBackend(opts: RoutingBackendOptions): SkelmBackend {
   const all = [opts.primary, ...(opts.failover ?? [])]
@@ -73,15 +74,21 @@ export function createRoutingBackend(opts: RoutingBackendOptions): SkelmBackend 
   }
 
   const primaryCaps = opts.primary.capabilities
+  const allCaps = all.map((b) => b.capabilities)
   const capabilities: BackendCapabilities = {
     prompt: primaryCaps.prompt,
     streaming: primaryCaps.streaming,
     sessionLifecycle: primaryCaps.sessionLifecycle,
-    mcp: primaryCaps.mcp,
-    skills: primaryCaps.skills,
+    mcp: allCaps.every((caps) => caps.mcp),
+    skills: allCaps.every((caps) => caps.skills),
     modelSelection: primaryCaps.modelSelection,
-    toolPermissions: primaryCaps.toolPermissions,
-    ...(primaryCaps.vision !== undefined && { vision: primaryCaps.vision }),
+    toolPermissions: weakestToolPermissions(allCaps.map((caps) => caps.toolPermissions)),
+    ...(allCaps.some((caps) => caps.vision !== undefined) && {
+      vision: allCaps.every((caps) => caps.vision === true),
+    }),
+    ...(allCaps.some((caps) => caps.agentmemory !== undefined) && {
+      agentmemory: allCaps.every((caps) => caps.agentmemory === true),
+    }),
   }
 
   const wrapper: SkelmBackend = {
@@ -107,4 +114,12 @@ export function createRoutingBackend(opts: RoutingBackendOptions): SkelmBackend 
       })
   }
   return wrapper
+}
+
+function weakestToolPermissions(
+  values: readonly BackendCapabilities['toolPermissions'][],
+): BackendCapabilities['toolPermissions'] {
+  if (values.includes('unsupported')) return 'unsupported'
+  if (values.includes('wrapped')) return 'wrapped'
+  return 'native'
 }
