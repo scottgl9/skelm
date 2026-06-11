@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import {
   getMsGraphValidationToken,
+  verifyGitHubSignature,
   verifyMsGraphClientState,
   verifySlackSignature,
 } from '@skelm/integrations'
@@ -110,6 +111,14 @@ export function mountControlRoutes(app: App, gateway: GatewayContext): void {
             throw createError({
               statusCode: 401,
               message: 'Slack signature verification failed',
+            })
+          }
+        } else if (reg.spec.provider === 'github') {
+          const signature = event.headers.get('x-hub-signature-256')
+          if (signature === null || !verifyGitHubSignature(rawBody, signature, reg.spec.secret)) {
+            throw createError({
+              statusCode: 401,
+              message: 'GitHub signature verification failed',
             })
           }
         } else if (reg.spec.provider === undefined) {

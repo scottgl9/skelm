@@ -170,6 +170,7 @@ export function pipelineTriggerToSpec(
         path: trigger.path as string,
         method: 'POST',
         ...(trigger.secret !== undefined && { secret: trigger.secret as string }),
+        ...(trigger.secret !== undefined && { provider: 'github' as const }),
         ...(typeof trigger.replayWindowSeconds === 'number' && {
           replayWindowSeconds: trigger.replayWindowSeconds,
         }),

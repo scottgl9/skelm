@@ -128,6 +128,7 @@ describe('interval everyMs validation (tight-loop DoS)', () => {
         kind: 'webhook',
         workflowId: 'wf',
         path: '/hooks/github-pr',
+        provider: 'github',
         maxBodyBytes: 512,
       })
     })

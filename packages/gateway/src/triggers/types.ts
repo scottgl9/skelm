@@ -18,7 +18,7 @@ export type TriggerSpec =
       /** Maximum raw request body size in bytes. Defaults to 1 MiB. */
       maxBodyBytes?: number
       /** Provider hint — see `PipelineTrigger` for protocol semantics. */
-      provider?: 'slack' | 'ms-graph'
+      provider?: 'slack' | 'ms-graph' | 'github'
       /**
        * For `provider: 'ms-graph'`: the shared `clientState` value the Graph
        * subscription was created with. Every notification carries this back;
