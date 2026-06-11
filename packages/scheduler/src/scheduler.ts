@@ -368,20 +368,38 @@ export class Scheduler {
 
     const start = isRunning && policy === 'wait' && previous ? previous : Promise.resolve()
 
-    const promise = start.then(() => this.executeTrigger(trigger))
+    this.reserveExecution(trigger.id)
+    const promise = start
+      .then(() => this.executeTrigger(trigger))
+      .finally(() => this.releaseExecution(trigger.id))
     this.lastRun.set(trigger.id, promise)
     const registration = this.triggers.get(trigger.id)
     if (registration) registration.lastOutcome = 'dispatched'
     this.track(promise)
   }
 
+  private reserveExecution(triggerId: string): void {
+    const n = (this.runningCount.get(triggerId) ?? 0) + 1
+    this.runningCount.set(triggerId, n)
+    const registration = this.triggers.get(triggerId)
+    if (registration) registration.runningCount = n
+  }
+
+  private releaseExecution(triggerId: string): void {
+    const n = (this.runningCount.get(triggerId) ?? 1) - 1
+    if (n <= 0) {
+      this.runningCount.delete(triggerId)
+    } else {
+      this.runningCount.set(triggerId, n)
+    }
+    const registration = this.triggers.get(triggerId)
+    if (registration) registration.runningCount = this.runningCount.get(triggerId) ?? 0
+  }
+
   private async executeTrigger(trigger: Trigger): Promise<void> {
     const registration = this.triggers.get(trigger.id)
     if (!registration) return
 
-    const currentRunning = (this.runningCount.get(trigger.id) ?? 0) + 1
-    this.runningCount.set(trigger.id, currentRunning)
-    registration.runningCount = currentRunning
     try {
       const ctx: TriggerContext = {
         triggerId: trigger.id,
@@ -433,14 +451,6 @@ export class Scheduler {
       registration.lastErrorAt = Date.now()
       registration.lastOutcome = 'failed'
       console.error(`Trigger ${trigger.id} error:`, err)
-    } finally {
-      const n = (this.runningCount.get(trigger.id) ?? 1) - 1
-      if (n <= 0) {
-        this.runningCount.delete(trigger.id)
-      } else {
-        this.runningCount.set(trigger.id, n)
-      }
-      registration.runningCount = this.runningCount.get(trigger.id) ?? 0
     }
   }
 }
