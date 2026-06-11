@@ -91,4 +91,27 @@ describe('TriggerCoordinator far-future arming (overflow-clamp DoS)', () => {
     expect(fires).toContain('soon')
     await c.stop()
   })
+
+  it('does NOT fire a far-future restored interval immediately', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-11T00:00:00Z'))
+    try {
+      const fires: string[] = []
+      const c = new TriggerCoordinator({ onFire: async (ctx) => void fires.push(ctx.workflowId) })
+      c.register(
+        { kind: 'interval', id: 'interval-restored', workflowId: 'interval', everyMs: 1000 },
+        undefined,
+        {
+          restoredNextFireAt: new Date(Date.now() + MAX_INTERVAL_MS + 60_000).toISOString(),
+        },
+      )
+
+      await vi.advanceTimersByTimeAsync(2)
+
+      expect(fires).toHaveLength(0)
+      await c.stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

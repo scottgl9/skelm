@@ -26,8 +26,44 @@ export interface CronTriggerConfig extends TriggerConfig {
  * Cron job entry
  */
 interface CronJob {
-  timeoutId: NodeJS.Timeout | null
+  timeoutId: ChunkedTimeout | null
   nextRun: Date | null
+}
+
+const MAX_TIMEOUT_MS = 2_147_483_647
+
+class ChunkedTimeout {
+  private timer: NodeJS.Timeout | null = null
+  private remaining: number
+
+  constructor(
+    delayMs: number,
+    private readonly fn: () => void,
+  ) {
+    this.remaining = Number.isFinite(delayMs) ? Math.max(0, delayMs) : 0
+    this.arm()
+  }
+
+  clear(): void {
+    if (this.timer !== null) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+  }
+
+  private arm(): void {
+    const delay = Math.min(this.remaining, MAX_TIMEOUT_MS)
+    this.remaining -= delay
+    this.timer = setTimeout(() => {
+      this.timer = null
+      if (this.remaining > 0) {
+        this.arm()
+        return
+      }
+      this.fn()
+    }, delay)
+    this.timer.unref?.()
+  }
 }
 
 function getNextRunTime(schedule: string, timezone?: string, from: Date = new Date()): Date {
@@ -80,7 +116,7 @@ export class CronTrigger extends TriggerPluginBase {
 
   override async doStop(): Promise<void> {
     if (this.job.timeoutId) {
-      clearTimeout(this.job.timeoutId)
+      this.job.timeoutId.clear()
       this.job.timeoutId = null
     }
 
@@ -120,14 +156,14 @@ export class CronTrigger extends TriggerPluginBase {
 
     // Clear existing timeout
     if (this.job.timeoutId) {
-      clearTimeout(this.job.timeoutId)
+      this.job.timeoutId.clear()
     }
 
     // Schedule new timeout
-    this.job.timeoutId = setTimeout(async () => {
+    this.job.timeoutId = new ChunkedTimeout(delay, async () => {
       await this.run()
       await this.scheduleNextRun()
-    }, delay)
+    })
   }
 
   /**
