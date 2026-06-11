@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
@@ -7,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 // re-export or a bin-shim regression shipped silently to users.
 
 const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
+const PACKAGE_JSON = fileURLToPath(new URL('../package.json', import.meta.url))
 
 describe('skelm meta-package', () => {
   it('public re-exports include core symbols (pipeline, code, runPipeline, EventBus)', async () => {
@@ -17,6 +19,20 @@ describe('skelm meta-package', () => {
     expect(typeof mod.code).toBe('function')
     expect(typeof mod.runPipeline).toBe('function')
     expect(typeof mod.EventBus).toBe('function')
+  })
+
+  it('exports the documented skelm/plugin authoring surface', async () => {
+    const pkg = JSON.parse(readFileSync(PACKAGE_JSON, 'utf8')) as {
+      exports?: Record<string, unknown>
+    }
+    expect(pkg.exports?.['./plugin']).toEqual({
+      types: './dist/plugin.d.ts',
+      default: './dist/plugin.js',
+    })
+
+    const plugin = await import('../src/plugin.js')
+    const defined = plugin.definePlugin({ id: 'test-plugin', version: '0.1.0' })
+    expect(defined).toEqual({ id: 'test-plugin', version: '0.1.0' })
   })
 
   it('the skelm bin exits 0 on --help and prints usage', () => {
