@@ -22,10 +22,11 @@ const baseCaps: BackendCapabilities = {
 
 function stubBackend(opts: {
   id: string
+  capabilities?: Partial<BackendCapabilities>
   inferImpl?: (req: InferenceRequest, ctx: BackendContext) => Promise<InferenceResponse>
   runImpl?: (req: AgentRequest, ctx: BackendContext) => Promise<AgentResponse>
 }): SkelmBackend {
-  const b: SkelmBackend = { id: opts.id, capabilities: baseCaps }
+  const b: SkelmBackend = { id: opts.id, capabilities: { ...baseCaps, ...opts.capabilities } }
   if (opts.inferImpl) b.inference = opts.inferImpl
   if (opts.runImpl) b.run = opts.runImpl
   return b
@@ -137,6 +138,58 @@ describe('createRoutingBackend', () => {
     const primary = stubBackend({ id: 'p', inferImpl: async () => ({ text: '' }) })
     const router = createRoutingBackend({ id: 'r', primary })
     expect(router.capabilities).toEqual(baseCaps)
+  })
+
+  it('advertises weakest security capabilities across failover backends', () => {
+    const primary = stubBackend({
+      id: 'p',
+      capabilities: {
+        mcp: true,
+        skills: true,
+        toolPermissions: 'native',
+        vision: true,
+        agentmemory: true,
+      },
+      inferImpl: async () => ({ text: '' }),
+    })
+    const fallback = stubBackend({
+      id: 'f',
+      capabilities: {
+        mcp: false,
+        skills: false,
+        toolPermissions: 'unsupported',
+        vision: false,
+        agentmemory: false,
+      },
+      inferImpl: async () => ({ text: '' }),
+    })
+
+    const router = createRoutingBackend({ id: 'r', primary, failover: [fallback] })
+
+    expect(router.capabilities).toMatchObject({
+      mcp: false,
+      skills: false,
+      toolPermissions: 'unsupported',
+      vision: false,
+      agentmemory: false,
+    })
+  })
+
+  it('preserves agentmemory support only when every child supports it', () => {
+    const primary = stubBackend({
+      id: 'p',
+      capabilities: { agentmemory: true },
+      runImpl: async () => ({ text: 'p' }),
+    })
+    const fallback = stubBackend({
+      id: 'f',
+      capabilities: { agentmemory: true },
+      runImpl: async () => ({ text: 'f' }),
+    })
+
+    const router = createRoutingBackend({ id: 'r', primary, failover: [fallback] })
+
+    expect(router.capabilities.agentmemory).toBe(true)
   })
 
   it('dispose tears down every child backend', async () => {
