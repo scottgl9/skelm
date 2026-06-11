@@ -81,6 +81,35 @@ describeMaybe('PostgresRunStore contract', () => {
     }
   })
 
+  it('orders same-timestamp events by per-run sequence', async () => {
+    const { store, cleanup } = await withSchemaStore()
+    try {
+      const run = sampleRun('r-event-seq')
+      await store.putRun(run)
+      await store.appendEvent({
+        type: 'step.complete',
+        runId: run.runId,
+        stepId: 'b',
+        at: 1,
+        seq: 2,
+      })
+      await store.appendEvent({
+        type: 'step.start',
+        runId: run.runId,
+        stepId: 'a',
+        at: 1,
+        seq: 1,
+      })
+
+      expect(await collect(store.listEvents(run.runId))).toEqual([
+        { type: 'step.start', runId: run.runId, stepId: 'a', at: 1, seq: 1 },
+        { type: 'step.complete', runId: run.runId, stepId: 'b', at: 1, seq: 2 },
+      ])
+    } finally {
+      await cleanup()
+    }
+  })
+
   it('stores and reads state entries, streams, and CAS updates', async () => {
     const { store, cleanup } = await withSchemaStore()
     try {

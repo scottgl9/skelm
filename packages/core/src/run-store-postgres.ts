@@ -848,7 +848,7 @@ export class PostgresRunStore implements RunStore {
       SELECT payload_json
       FROM ${this.table('events')}
       WHERE ${clauses.join(' AND ')}
-      ORDER BY at ASC, id ASC ${limit === undefined ? '' : `LIMIT $${idx}`}
+      ORDER BY at ASC, COALESCE((payload_json::jsonb->'value'->>'seq')::BIGINT, id) ASC, id ASC ${limit === undefined ? '' : `LIMIT $${idx}`}
     `
     if (limit !== undefined) {
       params.push(limit)

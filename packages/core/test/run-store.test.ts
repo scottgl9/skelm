@@ -96,6 +96,30 @@ describe('SqliteRunStore', () => {
     }
   })
 
+  it('orders same-timestamp sqlite events by per-run sequence', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-event-seq-'))
+    const store = new SqliteRunStore({ path: join(dir, 'runs.db') })
+    try {
+      const run = sampleRun('run-seq')
+      await store.putRun(run)
+      await store.appendEvent({
+        type: 'step.complete',
+        runId: run.runId,
+        stepId: 'b',
+        at: 1,
+        seq: 2,
+      })
+      await store.appendEvent({ type: 'step.start', runId: run.runId, stepId: 'a', at: 1, seq: 1 })
+
+      await expect(collect(store.listEvents(run.runId))).resolves.toEqual([
+        { type: 'step.start', runId: run.runId, stepId: 'a', at: 1, seq: 1 },
+        { type: 'step.complete', runId: run.runId, stepId: 'b', at: 1, seq: 2 },
+      ])
+    } finally {
+      store.close()
+    }
+  })
+
   it('persists workflow state and journals to sqlite', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'skelm-state-'))
     const store = new SqliteRunStore({ path: join(dir, 'runs.db') })
