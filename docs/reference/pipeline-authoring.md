@@ -262,7 +262,7 @@ See [agent-step.md](agent-step.md) for the full reference.
 parallel({
   id: string
   steps: Step[]                       // must have unique ids within this block
-  waitFor?: 'all' | 'any' | { atLeast: number }   // default: 'all'
+  waitFor?: 'all'                     // default: 'all'; other modes are not implemented
   onError?: 'fail' | 'continue' | 'partial'        // default: 'fail'
 })
 ```
