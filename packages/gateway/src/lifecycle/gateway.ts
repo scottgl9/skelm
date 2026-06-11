@@ -959,6 +959,9 @@ export class Gateway implements GatewayContext {
       onNextFireAtUpdated: (registration) => {
         void this.dynamicScheduleStoreInternal?.upsert(registration)
       },
+      onOneShotCompleted: (registration) => {
+        void this.dynamicScheduleStoreInternal?.delete(registration.spec.id)
+      },
     })
     await mcp.startAll(this.config.registries?.mcpServers ?? [])
     await codingAgents.startAll(this.config.registries?.agents ?? [])
@@ -974,10 +977,16 @@ export class Gateway implements GatewayContext {
       // Skip one-shot triggers during replay: immediate fires instantly and
       // past-due at triggers also fire on registration. These are not
       // durable schedules and should not re-fire on every restart.
-      if (record.spec.kind === 'immediate') continue
+      if (record.spec.kind === 'immediate') {
+        await store.delete(record.spec.id)
+        continue
+      }
       if (record.spec.kind === 'at') {
         const ts = Date.parse(record.spec.when)
-        if (!Number.isNaN(ts) && ts <= Date.now()) continue
+        if (!Number.isNaN(ts) && ts <= Date.now()) {
+          await store.delete(record.spec.id)
+          continue
+        }
       }
       const reg = this.managersInternal.triggers.register(record.spec, record.overlap, {
         ...(record.input !== undefined && { input: record.input }),

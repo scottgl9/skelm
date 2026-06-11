@@ -242,19 +242,26 @@ describe('TriggerCoordinator', () => {
 
   it("'immediate' kind fires once on register", async () => {
     const fires: string[] = []
-    const c = new TriggerCoordinator({ onFire: async (ctx) => void fires.push(ctx.workflowId) })
+    const completed: string[] = []
+    const c = new TriggerCoordinator({
+      onFire: async (ctx) => void fires.push(ctx.workflowId),
+      onOneShotCompleted: (reg) => completed.push(reg.spec.id),
+    })
     c.register({ kind: 'immediate', id: 't-imm', workflowId: 'wf' })
     await new Promise((r) => setImmediate(r))
     await new Promise((r) => setImmediate(r))
     expect(fires).toEqual(['wf'])
+    expect(completed).toEqual(['t-imm'])
     expect(c.get('t-imm')?.fired).toBe(1)
     await c.stop()
   })
 
   it("'at' kind fires at the given time (or immediately when in the past)", async () => {
     const fires: number[] = []
+    const completed: string[] = []
     const c = new TriggerCoordinator({
       onFire: async () => void fires.push(Date.now()),
+      onOneShotCompleted: (reg) => completed.push(reg.spec.id),
     })
     // Past timestamp — should fire on next tick.
     c.register({
@@ -268,6 +275,7 @@ describe('TriggerCoordinator', () => {
     c.register({ kind: 'at', id: 't-fut', workflowId: 'wf', when: future })
     await new Promise((r) => setTimeout(r, 120))
     expect(fires).toHaveLength(2)
+    expect(completed.sort()).toEqual(['t-fut', 't-past'])
     expect(c.get('t-past')?.fired).toBe(1)
     expect(c.get('t-fut')?.fired).toBe(1)
     await c.stop()
@@ -438,6 +446,35 @@ describe('TriggerCoordinator', () => {
     c.register({ kind: 'interval', id: 'iv', workflowId: 'wf', everyMs: 30 })
     // Wait for at least two interval ticks.
     await new Promise((r) => setTimeout(r, 100))
+    await c.stop()
+    expect(updated.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('cron: onNextFireAtUpdated called when the next fire is scheduled', async () => {
+    const updated: string[] = []
+    const c = new TriggerCoordinator({
+      onFire: async () => {},
+      onNextFireAtUpdated: (reg) => {
+        if (reg.nextFireAt !== undefined) updated.push(reg.nextFireAt)
+      },
+    })
+    c.register({ kind: 'cron', id: 'cron', workflowId: 'wf', cron: '* * * * *' })
+    await c.stop()
+    expect(updated).toHaveLength(1)
+    expect(Date.parse(updated[0] ?? '')).not.toBeNaN()
+  })
+
+  it('poll: onNextFireAtUpdated called when cadence advances', async () => {
+    const updated: string[] = []
+    const c = new TriggerCoordinator({
+      onFire: async () => {},
+      onNextFireAtUpdated: (reg) => {
+        if (reg.nextFireAt !== undefined) updated.push(reg.nextFireAt)
+      },
+    })
+    c.registerPollSource('source', () => ({ ok: true }))
+    c.register({ kind: 'poll', id: 'poll', workflowId: 'wf', everyMs: 30, sourceFnId: 'source' })
+    await new Promise((r) => setTimeout(r, 75))
     await c.stop()
     expect(updated.length).toBeGreaterThanOrEqual(2)
   })
