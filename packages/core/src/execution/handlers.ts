@@ -82,6 +82,13 @@ import type { ExecutionRuntime } from './runtime.js'
 
 const defaultStateStore = new MemoryRunStore()
 const auditedPermissionDenials = new WeakSet<PermissionDeniedError>()
+const IDEMPOTENT_PENDING_POLL_MS = 10
+
+type IdempotentCacheEntry = { value: unknown } | { status: 'pending'; owner: string }
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 function markPermissionDeniedAudited(error: PermissionDeniedError): PermissionDeniedError {
   auditedPermissionDenials.add(error)
@@ -1328,10 +1335,21 @@ async function runIdempotent(
     ...(step.state !== undefined && { config: step.state }),
   })
   const key = idempotentStateKey(resolveIdempotentKey(step.key, ctx))
-  const cached = await state.get<{ value: unknown }>(key)
-  if (cached !== undefined) {
-    return cached.value
+  const owner = `${ctx.run.runId}:${step.id}`
+  const pending: IdempotentCacheEntry = { status: 'pending', owner }
+  while (true) {
+    const cached = await state.get<IdempotentCacheEntry>(key)
+    if (cached !== undefined && 'value' in cached) {
+      return cached.value
+    }
+    if (cached === undefined) {
+      const claimed = await state.cas<IdempotentCacheEntry>(key, undefined, pending)
+      if (claimed) break
+      continue
+    }
+    await sleep(IDEMPOTENT_PENDING_POLL_MS)
   }
+
   const value = await runStepWithRetry(
     step.step,
     ctx,
@@ -1355,8 +1373,16 @@ async function runIdempotent(
       setCurrentWorkspace: (workspace) => runtime?.setCurrentWorkspace(workspace),
       deferRunWorkspaceFinalizer: (finalizer) => runtime?.deferRunWorkspaceFinalizer(finalizer),
     },
+  ).catch(async (err) => {
+    const released = await state.cas<IdempotentCacheEntry>(key, pending, { value: undefined })
+    if (released) await state.delete(key)
+    throw err
+  })
+  await state.set<IdempotentCacheEntry>(
+    key,
+    { value },
+    { ...(step.ttlMs !== undefined && { ttlMs: step.ttlMs }) },
   )
-  await state.set(key, { value }, { ...(step.ttlMs !== undefined && { ttlMs: step.ttlMs }) })
   return value
 }
 

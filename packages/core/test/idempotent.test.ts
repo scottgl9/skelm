@@ -63,6 +63,45 @@ describe('idempotent()', () => {
     expect(executions).toBe(1)
   })
 
+  it('does not double-execute the wrapped step under concurrent runs', async () => {
+    const store = new MemoryRunStore()
+    let executions = 0
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+
+    const wf = pipeline<{ messageId: string }, string>({
+      id: 'idempotent-concurrent',
+      steps: [
+        idempotent<string>({
+          key: (ctx) => ctx.input.messageId,
+          step: code({
+            id: 'process',
+            run: async () => {
+              executions += 1
+              await gate
+              return `run-${executions}`
+            },
+          }),
+        }),
+      ],
+    })
+
+    const first = runPipeline(wf, { messageId: 'msg-1' }, { store })
+    await waitFor(() => executions === 1)
+    const second = runPipeline(wf, { messageId: 'msg-1' }, { store })
+    await sleep(25)
+    expect(executions).toBe(1)
+
+    release()
+    const [firstRun, secondRun] = await Promise.all([first, second])
+
+    expect(firstRun.output).toBe('run-1')
+    expect(secondRun.output).toBe('run-1')
+    expect(executions).toBe(1)
+  })
+
   it('explicit id: outer id used for ctx.steps access', async () => {
     const wf = pipeline<{ x: number }, { result: number }>({
       id: 'idempotent-explicit-id',
@@ -105,3 +144,15 @@ describe('idempotent()', () => {
     expect(result.output).toBe(42)
   })
 })
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (predicate()) return
+    await sleep(1)
+  }
+  throw new Error('condition was not met')
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
