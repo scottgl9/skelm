@@ -522,7 +522,7 @@ export async function runPipeline<TInput, TOutput>(
   // a queue driver's onEvent hook receives step.partial / lifecycle events as
   // the turn streams — see RunOptions.onEvent.
   const unsubscribeOnEvent =
-    options.onEvent === undefined ? undefined : events.subscribe(options.onEvent)
+    options.onEvent === undefined ? undefined : events.forRun(runId, options.onEvent)
   const store = options.store
   const stateStore = options.stateStore ?? options.store ?? defaultStateStore
   const threadHost = createThreadHost(stateStore)
@@ -661,7 +661,7 @@ export async function runPipeline<TInput, TOutput>(
   const unsubscribeStore =
     store === undefined
       ? undefined
-      : events.subscribe((event) => {
+      : events.forRun(runId, (event) => {
           appendInflight += 1
           if (appendInflight >= APPEND_BACKPRESSURE_CAP && !appendSaturated) {
             appendSaturated = true
@@ -706,7 +706,7 @@ export async function runPipeline<TInput, TOutput>(
   const unsubscribeRunState =
     store === undefined
       ? undefined
-      : events.subscribe((event) => {
+      : events.forRun(runId, (event) => {
           if (event.type === 'run.waiting') {
             // Persist BOTH the waiting snapshot AND the 'waiting' status. Without
             // the status flip, a wait-paused run looks like 'running' to the
@@ -746,7 +746,7 @@ export async function runPipeline<TInput, TOutput>(
   const unsubscribeAudit =
     auditWriter === undefined
       ? undefined
-      : events.subscribe((event) => {
+      : events.forRun(runId, (event) => {
           const queue = (entry: { action: string; details: Record<string, unknown> }) => {
             auditWrites.push(
               writeAudit(auditWriter, {

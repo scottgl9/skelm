@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { BackendRegistry, type SkelmBackend } from '../src/backend.js'
 import { agent, code, pipeline } from '../src/builders.js'
 import { EventBus, type RunEvent } from '../src/events.js'
+import { MemoryRunStore } from '../src/run-store/memory.js'
 import { runPipeline } from '../src/runner.js'
 import type { Skill } from '../src/skills.js'
 
@@ -112,6 +113,42 @@ describe('runPipeline — sequential code steps', () => {
     expect(run.runId).toMatch(/^[0-9a-f-]{36}$/)
     expect(run.startedAt).toBeGreaterThan(0)
     expect(run.completedAt).toBeGreaterThanOrEqual(run.startedAt)
+  })
+
+  it('scopes shared-bus store subscriptions to the current run', async () => {
+    const events = new EventBus()
+    const store = new MemoryRunStore()
+    let releaseA!: () => void
+    const holdA = new Promise<void>((resolve) => {
+      releaseA = resolve
+    })
+    const aStarted = new Promise<void>((resolve) => {
+      events.forRun('run-a', (event) => {
+        if (event.type === 'step.start') resolve()
+      })
+    })
+
+    const slow = pipeline({
+      id: 'slow',
+      steps: [code({ id: 'hold', run: async () => holdA.then(() => ({ ok: 'a' })) })],
+    })
+    const fast = pipeline({
+      id: 'fast',
+      steps: [code({ id: 'done', run: () => ({ ok: 'b' }) })],
+    })
+
+    const runA = runPipeline(slow, undefined, { events, store, runId: 'run-a' })
+    await aStarted
+    const runB = await runPipeline(fast, undefined, { events, store, runId: 'run-b' })
+    releaseA()
+    await runA
+
+    const bEvents = []
+    for await (const event of store.listEvents(runB.runId)) bEvents.push(event)
+    const seqs = bEvents.map((event) => event.seq)
+
+    expect(runB.status).toBe('completed')
+    expect(seqs).toEqual([...new Set(seqs)])
   })
 })
 
