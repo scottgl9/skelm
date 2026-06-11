@@ -31,7 +31,7 @@ reconcile (on gateway start) → expires sessions older than expireAfterMs
 
 `expireAfterMs` defaults to undefined (sessions never expire automatically). When set, `reconcile()` flips stale sessions to `expired` and `resume()` returns `undefined` for them — the agent has to be re-seeded with a fresh session.
 
-## CLI (Phase 11)
+## CLI
 
 ```bash
 skelm sessions list
@@ -40,7 +40,7 @@ skelm sessions resume <id>
 skelm sessions stop <id>
 ```
 
-The CLI talks to the running gateway over HTTP. The Phase 11 control surface adds:
+The CLI talks to the running gateway over HTTP:
 
 ```
 POST /agents/:id/sessions
@@ -62,4 +62,4 @@ Every lifecycle event is appended to the audit chain:
 
 ## Status
 
-Phase 9 lands the manager + persistence + reconcile semantics. Phase 11 wires the HTTP surface and CLI.
+The manager, persistence, reconcile semantics, HTTP surface, and CLI are wired.

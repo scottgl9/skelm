@@ -8,7 +8,7 @@ The gateway writes a single, append-only, hash-chained audit log. One process pe
 ~/.skelm/audit.jsonl     # one line per entry, JSON
 ```
 
-Override the directory via the `--state-dir` flag (Phase 11) or `SKELM_STATE_DIR` env var.
+Override the directory via the `--state-dir` flag or `SKELM_STATE_DIR` env var.
 
 ## Entry shape
 
@@ -27,13 +27,13 @@ Every entry is a JSON object with these fields:
 
 ## What gets audited
 
-Phase 5 wires the writer; Phases 5–11 add producers. Coverage at v1:
+Coverage at v1:
 
 - Gateway lifecycle: `gateway.start`, `gateway.stop`, `gateway.reload`, `gateway.plugin.load`.
-- Permission decisions: `permission.deny` (Phase 4 enforcer hooks).
+- Permission decisions: `permission.deny`.
 - Secret access: `secret.resolve` — name only, never value.
-- Approvals: `approval.request`, `approval.approve`, `approval.deny` (Phase 6).
-- Agent + session lifecycle: `agent.spawn`, `agent.exit`, `acp.session.create` (Phases 8–9).
+- Approvals: `approval.request`, `approval.approve`, `approval.deny`.
+- Agent + session lifecycle: `agent.spawn`, `agent.exit`, `acp.session.create`.
 - CLI overrides: `cli.allow.override`.
 
 Retention is intentional — default is forever. Configuring shorter retention is itself an audited operation.

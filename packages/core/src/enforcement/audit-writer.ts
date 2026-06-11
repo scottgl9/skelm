@@ -1,9 +1,8 @@
 /**
  * Audit writer interface owned by the gateway.
  *
- * Phase 4 introduces the seam; the in-process default is a no-op. Phase 5
- * supplies the file-backed append-only chain and exposes it via
- * `skelm audit query`.
+ * The in-process default is a no-op. The gateway supplies the file-backed
+ * append-only chain and exposes it via `skelm audit query`.
  *
  * Audit writers MUST NOT log secret values — only the *fact* of access.
  */

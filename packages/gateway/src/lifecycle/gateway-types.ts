@@ -37,7 +37,7 @@ export interface GatewayOptions {
   projectRoot?: string
   /** Loaded config (with defaults applied). Defaults to DEFAULT_CONFIG. */
   config?: SkelmConfig
-  /** Bound URL advertised in the discovery file. Phase 2 placeholder until HTTP is wired in. */
+  /** Bound URL advertised in the discovery file. */
   url?: string
   /** Optional bearer token written into the discovery file. */
   token?: string
@@ -50,11 +50,11 @@ export interface GatewayOptions {
    *  registry. Without it, runs that reference a config-defined backend
    *  (e.g. `agent({ backend: 'pi' })`) fail with BackendNotFoundError. */
   backends?: BackendRegistry
-  /** Override the canonical audit writer; defaults to NoopAuditWriter (Phase 5 wires the chain). */
+  /** Override the canonical audit writer; defaults to NoopAuditWriter. */
   auditWriter?: AuditWriter
-  /** Override the canonical secret resolver; defaults to env-backed (Phase 5 wires the file driver). */
+  /** Override the canonical secret resolver; defaults to env-backed. */
   secretResolver?: SecretResolver
-  /** Override the canonical approval gate; defaults to auto-approve (Phase 6 wires the suspend gate). */
+  /** Override the canonical approval gate; defaults to auto-approve. */
   approvalGate?: ApprovalGate
   /**
    * When true, start the HTTP control surface alongside the rest of the

@@ -1,6 +1,3 @@
-import { constants } from 'node:fs'
-import { mkdir, open, realpath, stat } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { createAssetHost } from './assets.js'
 import {
   type AgentRequest,
@@ -11,7 +8,6 @@ import {
 } from './backend.js'
 import {
   type ApprovalGate,
-  type AuditEvent,
   type AuditWriter,
   AutoApproveGate,
   EnvSecretResolver,
@@ -40,21 +36,8 @@ import type {
   PermissionDimension,
   ResolvedPolicy,
 } from './permissions.js'
-import {
-  ALL_PERMISSION_DIMENSIONS,
-  TrustEnforcer,
-  createPolicyFetch,
-  resolvePermissions,
-} from './permissions.js'
-import {
-  ArtifactMaterializationError,
-  type ArtifactStore,
-  type ArtifactStoreHandle,
-  ArtifactValidationError,
-  MemoryRunStore,
-  type RunStore,
-  type StateStore,
-} from './run-store.js'
+import { TrustEnforcer, createPolicyFetch, resolvePermissions } from './permissions.js'
+import { type ArtifactStore, MemoryRunStore, type RunStore, type StateStore } from './run-store.js'
 import {
   adoptLastStepOutput,
   applyWorkspacePermissions,
@@ -67,6 +50,14 @@ import {
   sleep,
   uniqueStrings,
 } from './runner-utils.js'
+import { createArtifactsHandle } from './runner/artifacts.js'
+import { bindAbortSignal, finalizeStoredRun } from './runner/finalization.js'
+import {
+  logStoreFailure,
+  subscribeAuditEvents,
+  subscribeRunStateMirror,
+  subscribeStoreEvents,
+} from './runner/subscriptions.js'
 import { SchemaValidationError, validate } from './schema.js'
 import { createStateHandle } from './state.js'
 import { createThreadHost } from './threads.js'
@@ -296,37 +287,6 @@ export interface RunnerEnforcement {
   approvalGate?: ApprovalGate
 }
 
-/**
- * Write an audit entry, surfacing (not swallowing) a writer failure. The audit
- * log is the durable record of every privileged decision, so a silent write
- * failure would let a denial / bypass / tool call vanish from the record with no
- * operator signal. We still must not poison the run — a failing AuditWriter
- * cannot abort execution — so the returned promise always resolves, but the
- * failure is logged to stderr. Returns the (resolved) promise so callers that
- * track audit writes (and await them before exit) keep working.
- */
-function writeAudit(writer: AuditWriter, entry: AuditEvent): Promise<void> {
-  return writer.write(entry).catch((err) => {
-    const detail = err instanceof Error ? err.message : String(err)
-    process.stderr.write(
-      `[skelm audit] write failed (action=${entry.action} run=${entry.runId ?? '-'}): ${detail}\n`,
-    )
-  })
-}
-
-/**
- * Surface a swallowed run-store write failure to stderr. The wait/resume status
- * writes are load-bearing: if the `waiting` flip is lost, the gateway's
- * recoverInterruptedRuns() sees a parked run as `running` and finalizes it as
- * crashed on the next restart. Swallowing the failure made that divergence
- * invisible. We still don't poison the run (the write is best-effort tracked in
- * storeWrites), but the operator now sees the failure.
- */
-function logStoreFailure(label: string, runId: string, err: unknown): void {
-  const detail = err instanceof Error ? err.message : String(err)
-  process.stderr.write(`[skelm run-store] ${label} write failed for run ${runId}: ${detail}\n`)
-}
-
 export class Runner {
   readonly events: EventBus
   /** Trust-boundary instances. The gateway supplies canonical writers in production; */
@@ -531,317 +491,23 @@ export async function runPipeline<TInput, TOutput>(
   // in-memory store so ctx.artifacts is always available even when the caller
   // didn't wire a durable store.
   const artifactStore: ArtifactStore = options.store ?? defaultStateStore
-  const makeArtifactsHandle = (
-    stepId: StepId,
-    materializationRoot?: string,
-  ): ArtifactStoreHandle & { withWorkspacePath(path: string): ArtifactStoreHandle } => ({
-    put: async (opts) => {
-      const startedAt = Date.now()
-      const descriptor = await artifactStore.putArtifact({
-        runId,
-        stepId,
-        name: opts.name,
-        mimeType: opts.mimeType,
-        data: opts.data,
-      })
-      events.publish({
-        type: 'tool.result',
-        runId,
-        stepId,
-        tool: 'artifacts.put',
-        result: {
-          artifactId: descriptor.artifactId,
-          name: descriptor.name,
-          mimeType: descriptor.mimeType,
-          size: descriptor.size,
-        },
-        durationMs: Date.now() - startedAt,
-        at: Date.now(),
-      })
-      return descriptor
-    },
-    get: (ref) => artifactStore.getArtifact(ref),
-    list: (opts) => artifactStore.listArtifacts(runId, opts),
-    materialize: async (ref, opts = {}) => {
-      const workspacePath = materializationRoot
-      if (workspacePath === undefined) {
-        throw new ArtifactMaterializationError(
-          'ctx.artifacts.materialize requires the current step to declare a workspace',
-        )
-      }
-      const startedAt = Date.now()
-      if (ref.runId !== runId) {
-        throw new ArtifactMaterializationError(
-          `artifact ${ref.artifactId} belongs to run ${ref.runId}, not current run ${runId}`,
-        )
-      }
-      const found = await artifactStore.getArtifact(ref)
-      if (found === null) {
-        throw new ArtifactMaterializationError(
-          `artifact ${ref.artifactId} was not found for run ${ref.runId}`,
-        )
-      }
-      if (opts.maxBytes !== undefined && found.data.byteLength > opts.maxBytes) {
-        throw new ArtifactMaterializationError(
-          `artifact ${ref.artifactId} is ${found.data.byteLength} bytes, exceeding maxBytes ${opts.maxBytes}`,
-        )
-      }
-      const relativePath = opts.path ?? found.descriptor.name
-      const path = await resolveArtifactMaterializationPath(workspacePath, relativePath)
-      await assertMaterializationTargetAllowed(workspacePath, path)
-      await mkdir(dirname(path), { recursive: true })
-      await assertMaterializationTargetAllowed(workspacePath, path)
-      if (opts.overwrite === true) {
-        const file = await open(
-          path,
-          constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
-          0o644,
-        )
-        try {
-          await file.writeFile(found.data)
-        } finally {
-          await file.close()
-        }
-      } else {
-        try {
-          const file = await open(path, 'wx')
-          try {
-            await file.writeFile(found.data)
-          } finally {
-            await file.close()
-          }
-        } catch (err) {
-          if (
-            typeof err === 'object' &&
-            err !== null &&
-            'code' in err &&
-            (err as NodeJS.ErrnoException).code === 'EEXIST'
-          ) {
-            throw new ArtifactMaterializationError(
-              `artifact target already exists (use overwrite: true to replace): ${relativePath}`,
-            )
-          }
-          throw err
-        }
-      }
-      events.publish({
-        type: 'tool.result',
-        runId,
-        stepId,
-        tool: 'artifacts.materialize',
-        result: {
-          artifactId: found.descriptor.artifactId,
-          name: found.descriptor.name,
-          mimeType: found.descriptor.mimeType,
-          size: found.descriptor.size,
-          path: relativePath,
-          bytesWritten: found.data.byteLength,
-        },
-        durationMs: Date.now() - startedAt,
-        at: Date.now(),
-      })
-      return {
-        descriptor: found.descriptor,
-        path,
-        bytesWritten: found.data.byteLength,
-      }
-    },
-    withWorkspacePath: (path) => makeArtifactsHandle(stepId, path),
-  })
+  const makeArtifactsHandle = (stepId: StepId) =>
+    createArtifactsHandle({ artifactStore, events, runId, stepId })
   const storeWrites: Promise<void>[] = []
   const workspaceManager = options.workspaceManager ?? new WorkspaceManager()
   const deferredWorkspaceFinalizers: Array<(status: RunStatus) => Promise<void>> = []
   let currentWorkspace: Context['workspace']
-  // Bounded backpressure on store.appendEvent: cap concurrent fs writes and
-  // emit a single run.warning when the queue depth crosses the saturation
-  // threshold so operators can see a slow store before runs silently stall.
-  const APPEND_BACKPRESSURE_CAP = 256
-  let appendInflight = 0
-  let appendSaturated = false
-  const unsubscribeStore =
-    store === undefined
-      ? undefined
-      : events.forRun(runId, (event) => {
-          appendInflight += 1
-          if (appendInflight >= APPEND_BACKPRESSURE_CAP && !appendSaturated) {
-            appendSaturated = true
-            events.publish({
-              type: 'run.warning',
-              runId,
-              code: 'store.saturated',
-              message: `appendEvent queue depth reached ${appendInflight} (cap ${APPEND_BACKPRESSURE_CAP})`,
-              at: Date.now(),
-            })
-          }
-          storeWrites.push(
-            Promise.resolve()
-              .then(() => store.appendEvent(event))
-              // Best-effort event writes must never poison the run: an
-              // uncaught rejection or synchronous throw here both surface as an
-              // unhandledRejection/fatal event-loop error and reject the
-              // finalize-time Promise.all, skipping the terminal putRun so a
-              // completed run is left 'running'. Match the updateRun writes'
-              // .catch and normalize sync throws into the same handled path.
-              .catch((err) => logStoreFailure('append-event', runId, err))
-              .finally(() => {
-                appendInflight -= 1
-                if (appendSaturated && appendInflight === 0) {
-                  appendSaturated = false
-                  events.publish({
-                    type: 'run.warning',
-                    runId,
-                    code: 'store.recovered',
-                    message: 'appendEvent queue drained',
-                    at: Date.now(),
-                  })
-                }
-              }),
-          )
-        })
-  // Mirror wait/resume into the persisted Run record so HTTP clients can
-  // detect pause from a single GET /runs/:id, without a second event-log
-  // fetch. The runner publishes run.waiting / run.resumed; the in-process
-  // ExecutionStore (if any) tracks the snapshot on the Run row. The Run
-  // object captured at finalize-time will reflect a final cleared state.
-  const unsubscribeRunState =
-    store === undefined
-      ? undefined
-      : events.forRun(runId, (event) => {
-          if (event.type === 'run.waiting') {
-            // Persist BOTH the waiting snapshot AND the 'waiting' status. Without
-            // the status flip, a wait-paused run looks like 'running' to the
-            // gateway's recoverInterruptedRuns() at restart and gets finalized as
-            // failed (RunCrashedError) — silently killing parked runs on every
-            // gateway bounce. The status is restored to 'running' on resume so
-            // the rest of the run executes as before.
-            storeWrites.push(
-              store
-                .updateRun(event.runId, {
-                  status: 'waiting',
-                  waiting: {
-                    stepId: event.stepId,
-                    ...(event.message !== undefined && { message: event.message }),
-                    ...(event.timeoutMs !== undefined && { timeoutMs: event.timeoutMs }),
-                    since: event.at,
-                  },
-                })
-                .catch((err) => logStoreFailure('waiting-status', event.runId, err)),
-            )
-          } else if (event.type === 'run.resumed') {
-            storeWrites.push(
-              store
-                .updateRun(event.runId, { status: 'running', waiting: undefined })
-                .catch((err) => logStoreFailure('resume-status', event.runId, err)),
-            )
-          }
-        })
-
-  // Bridge permission denials and MCP tool dispatch into the audit log.
-  // This is the single audit subscription for one run. It is unsubscribed at
-  // finalization so shared gateway buses do not accumulate duplicate writers.
-  // Writes are tracked alongside storeWrites so the run waits for fsync before
-  // returning — otherwise a fast-failing CLI exit could drop the entry.
-  const auditWriter = options.auditWriter
   const auditWrites: Promise<void>[] = []
-  const unsubscribeAudit =
-    auditWriter === undefined
-      ? undefined
-      : events.forRun(runId, (event) => {
-          const queue = (entry: { action: string; details: Record<string, unknown> }) => {
-            auditWrites.push(
-              writeAudit(auditWriter, {
-                ...(event.runId !== undefined && { runId: event.runId }),
-                actor: 'runtime',
-                action: entry.action,
-                details: entry.details,
-              }),
-            )
-          }
-          if (event.type === 'permission.denied') {
-            queue({
-              action: 'permission.denied',
-              details: {
-                stepId: event.stepId,
-                dimension: event.dimension,
-                detail: event.detail,
-                at: event.at,
-              },
-            })
-          } else if (event.type === 'permission.bypassed') {
-            // Per-dimension fan-out so `skelm audit query` can enumerate
-            // exactly what an operator-granted bypass enabled.
-            auditWrites.push(
-              writeAudit(auditWriter, {
-                ...(event.runId !== undefined && { runId: event.runId }),
-                actor: 'step-author',
-                action: 'permission.bypassed',
-                details: {
-                  stepId: event.stepId,
-                  detail: event.detail,
-                  at: event.at,
-                  dimensions: [...ALL_PERMISSION_DIMENSIONS],
-                },
-              }),
-            )
-            for (const dimension of ALL_PERMISSION_DIMENSIONS) {
-              auditWrites.push(
-                writeAudit(auditWriter, {
-                  ...(event.runId !== undefined && { runId: event.runId }),
-                  actor: 'step-author',
-                  action: `permission.bypass.${dimension}`,
-                  details: { stepId: event.stepId, dimension, at: event.at },
-                }),
-              )
-            }
-          } else if (event.type === 'secret.not_found') {
-            queue({
-              action: 'secret.not_found',
-              details: { stepId: event.stepId, name: event.name, at: event.at },
-            })
-          } else if (event.type === 'backend.failover') {
-            queue({
-              action: 'backend.failover',
-              details: {
-                stepId: event.stepId,
-                kind: event.kind,
-                from: event.from,
-                to: event.to,
-                error: event.error,
-                at: event.at,
-              },
-            })
-          } else if (event.type === 'tool.call') {
-            queue({
-              action: 'tool.call',
-              details: { stepId: event.stepId, tool: event.tool, at: event.at },
-            })
-          } else if (event.type === 'tool.result') {
-            queue({
-              action: 'tool.result',
-              details: {
-                stepId: event.stepId,
-                tool: event.tool,
-                durationMs: event.durationMs,
-                at: event.at,
-              },
-            })
-          }
-        })
+  const unsubscribeStore = subscribeStoreEvents({ events, runId, store, storeWrites })
+  const unsubscribeRunState = subscribeRunStateMirror({ events, runId, store, storeWrites })
+  const unsubscribeAudit = subscribeAuditEvents({
+    events,
+    runId,
+    auditWriter: options.auditWriter,
+    auditWrites,
+  })
   const controller = new AbortController()
-  // Capture the abort handler so finalizeStoredRun can detach it before
-  // returning. Without removeEventListener, a long-lived caller signal
-  // (test harness, embedded host) accumulates one listener per run.
-  let unsubscribeAbort: (() => void) | undefined
-  if (options.signal) {
-    if (options.signal.aborted) {
-      controller.abort(options.signal.reason)
-    } else {
-      const callerSignal = options.signal
-      const abortHandler = () => controller.abort(callerSignal.reason)
-      callerSignal.addEventListener('abort', abortHandler, { once: true })
-      unsubscribeAbort = () => callerSignal.removeEventListener('abort', abortHandler)
-    }
-  }
+  const unsubscribeAbort = bindAbortSignal(options.signal, controller)
 
   if (resumeFromWaiting === undefined) {
     events.publish({
@@ -928,6 +594,9 @@ export async function runPipeline<TInput, TOutput>(
         unsubscribeStore,
         auditWrites,
         unsubscribeAbort,
+        unsubscribeRunState,
+        unsubscribeAudit,
+        unsubscribeOnEvent,
       )
     }
   }
@@ -1242,91 +911,3 @@ export async function runPipeline<TInput, TOutput>(
 }
 
 export { SchemaValidationError }
-
-async function resolveArtifactMaterializationPath(
-  root: string,
-  requested: string,
-): Promise<string> {
-  if (requested.length === 0 || requested.includes('\0')) {
-    throw new ArtifactValidationError('artifact materialization path must be a non-empty path')
-  }
-  if (isAbsolute(requested)) {
-    throw new ArtifactValidationError('artifact materialization path must be relative')
-  }
-  for (const segment of requested.split(/[\\/]+/)) {
-    if (segment === '' || segment === '.' || segment === '..') {
-      throw new ArtifactValidationError(
-        'artifact materialization path must not contain empty, dot, or parent segments',
-      )
-    }
-  }
-  const path = resolve(root, requested)
-  assertInsideRoot(root, path, 'artifact materialization path must stay inside the workspace')
-  return path
-}
-
-async function assertMaterializationTargetAllowed(root: string, path: string): Promise<void> {
-  const rootReal = await realpath(root)
-  const parentReal = await realpathNearestExistingParent(path)
-  assertInsideRoot(rootReal, parentReal, 'artifact materialization parent escapes the workspace')
-  try {
-    const info = await stat(path)
-    if (!info.isFile()) {
-      throw new ArtifactValidationError('artifact materialization target must be a file')
-    }
-    const targetReal = await realpath(path)
-    assertInsideRoot(rootReal, targetReal, 'artifact materialization target escapes the workspace')
-  } catch (error) {
-    if (isMissingPath(error)) return
-    throw error
-  }
-}
-
-async function realpathNearestExistingParent(path: string): Promise<string> {
-  let current = dirname(path)
-  while (true) {
-    try {
-      return await realpath(current)
-    } catch (error) {
-      if (!isMissingPath(error)) throw error
-      const parent = dirname(current)
-      if (parent === current) throw error
-      current = parent
-    }
-  }
-}
-
-function assertInsideRoot(root: string, path: string, message: string): void {
-  const rel = relative(resolve(root), resolve(path))
-  if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) return
-  throw new ArtifactValidationError(message)
-}
-
-function isMissingPath(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
-}
-
-async function finalizeStoredRun<TRun extends Run>(
-  run: TRun,
-  store: RunStore | undefined,
-  storeWrites: Promise<void>[],
-  unsubscribeStore: (() => void) | undefined,
-  auditWrites: Promise<void>[] = [],
-  unsubscribeAbort?: () => void,
-  unsubscribeRunState?: () => void,
-  unsubscribeAudit?: () => void,
-  unsubscribeOnEvent?: () => void,
-): Promise<TRun> {
-  try {
-    await Promise.all(storeWrites)
-    await Promise.all(auditWrites)
-    await store?.putRun(run)
-    return run
-  } finally {
-    unsubscribeStore?.()
-    unsubscribeRunState?.()
-    unsubscribeAudit?.()
-    unsubscribeOnEvent?.()
-    unsubscribeAbort?.()
-  }
-}

@@ -81,4 +81,4 @@ For ephemeral agents, custom backends can call `gateway.managers.codingAgents.sp
 
 ## Status
 
-Phase 8 lands the supervisor. Existing backend factories continue to read static URLs until Phase 11 wires them through the gateway.
+The gateway owns the coding-agent supervisor. Existing backend factories can still read static URLs, and gateway-managed backends can consume resident agent URLs through the manager.

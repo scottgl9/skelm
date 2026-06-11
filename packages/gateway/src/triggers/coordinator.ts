@@ -73,11 +73,6 @@ export type FireStatus = 'dispatched' | 'queued' | 'skipped' | 'cancelled' | 'un
 
 /**
  * Drives the configured triggers and routes fires through `onFire`.
- *
- * Intentionally narrow in Phase 10: cron + interval + manual. The richer
- * trigger surface (matrix, slack, github webhooks) lives in
- * @skelm/core/triggers and plugs into the same coordinator via the
- * `manual` kind plus an external pump.
  */
 export class TriggerCoordinator {
   private registrations: Map<string, TriggerRegistration> = new Map()
@@ -709,7 +704,7 @@ export class TriggerCoordinator {
           return 'queued'
         }
         case 'cancel':
-          // No real cancellation channel in Phase 10; treat as skip.
+          // No real cancellation channel; treat as skip.
           reg.lastOverlapDecision = 'cancelled'
           reg.lastOutcome = 'cancelled'
           return 'cancelled'

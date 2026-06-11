@@ -4,10 +4,9 @@ import { FsWatcher } from './fs-watch.js'
 import { walkGlob } from './glob.js'
 
 /**
- * Registry of workflow source files discovered on disk. Phase 3 records
- * paths only; workflow modules are imported lazily by the runner the first
- * time they are referenced. The registry id is the path relative to the
- * project root.
+ * Registry of workflow source files discovered on disk. Stores paths only;
+ * workflow modules are imported lazily by the runner the first time they are
+ * referenced. The registry id is the path relative to the project root.
  */
 export interface WorkflowEntry {
   id: string

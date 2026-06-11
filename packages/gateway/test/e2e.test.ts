@@ -166,8 +166,7 @@ describe('Gateway end-to-end', () => {
   })
 
   it('audit chain records gateway lifecycle via callers (sample writer + verify)', async () => {
-    // The Phase 13 wiring leaves audit-producer hookpoints for later phases;
-    // this test exercises the chain writer directly to prove the gateway-
+    // This test exercises the chain writer directly to prove the gateway-
     // resolved writer is functional and verify() walks a chain it produced.
     const gw = new Gateway({ stateDir, watchRegistries: false })
     await gw.start()

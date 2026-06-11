@@ -6,8 +6,8 @@
  * declaring the skill's id, description, permissions hints, and
  * optionally the workflow steps that may invoke it.
  *
- * Phase 3 ships the parser + types only. Wiring to agent steps lands in
- * Phase 8 alongside the coding-agent supervisor.
+ * The gateway discovers these through the skill registry, and agent steps can
+ * request them through `skills: [...]` plus the `allowedSkills` permission.
  */
 
 import { parseDocument } from 'yaml'

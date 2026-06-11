@@ -54,7 +54,7 @@ describe('Gateway lifecycle', () => {
     await gw.stop()
   })
 
-  it('reload is a no-op in Phase 2 but rejects from stopped', async () => {
+  it('reload is a no-op while running but rejects from stopped', async () => {
     const gw = new Gateway({ stateDir })
     await expect(gw.reload()).rejects.toThrow(/cannot reload/)
     await gw.start()

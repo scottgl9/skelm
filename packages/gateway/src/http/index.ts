@@ -1,9 +1,7 @@
 /**
  * @skelm/gateway — HTTP + SSE surface for skelm pipelines
  *
- * Thin transport layer on top of @skelm/core. Formerly published as
- * @skelm/server; absorbed into the gateway in Phase 1 of the
- * gateway-centric refactor. Exposes:
+ * Thin transport layer on top of @skelm/core. Exposes:
  * - Pipeline discovery (GET /pipelines)
  * - Sync/async execution (POST /pipelines/:id/run, /start)
  * - Run control (GET /runs/:id, POST /runs/:id/resume, DELETE /runs/:id)

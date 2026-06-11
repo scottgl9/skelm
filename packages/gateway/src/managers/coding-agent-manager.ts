@@ -54,9 +54,8 @@ const DEFAULT_BACKOFF = [200, 500, 1_000, 2_500, 5_000] as const
  *   supervisor records the in-flight set so callers can introspect /
  *   enforce concurrency caps. The process exits when the step does.
  *
- * Existing backends (@skelm/opencode, @skelm/pi) consume the resident URL
- * via the gateway in Phase 11; until then this manager is callable
- * directly from custom embeddings.
+ * Existing backends (@skelm/opencode, @skelm/pi) can consume resident URLs
+ * via the gateway, and custom embeddings may call this manager directly.
  */
 export class CodingAgentManager {
   private resident: Map<string, ResidentHandle> = new Map()

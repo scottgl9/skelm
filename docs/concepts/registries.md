@@ -7,7 +7,7 @@ The gateway holds four registries that together describe everything it can run, 
 | `workflows` | FS scan of `registries.workflows.glob` | yes | Tracks `*.workflow.{mts,ts}` paths; modules import lazily on first use. |
 | `skills` | FS scan of `registries.skills.glob` | yes | Parses `SKILL.md` frontmatter into `Skill` objects. Malformed files are skipped (visible via `getErrors()`). |
 | `agents` | `registries.agents` in config | reload-only | Coding agents and ACP agents. Each entry declares `lifecycle: 'resident' \| 'ephemeral'` (see `docs/concepts/coding-agents.md`). |
-| `mcpServers` | `registries.mcpServers` in config | reload-only | Static MCP server declarations consumed by the MCP supervisor (Phase 7). |
+| `mcpServers` | `registries.mcpServers` in config | reload-only | Static MCP server declarations consumed by the MCP supervisor. |
 
 Every registry exposes the same shape:
 
@@ -83,4 +83,4 @@ Workflow and skill registries use Node's built-in `fs.watch` with the `recursive
 
 ## Status
 
-Phase 3 of the gateway-centric refactor. Registries land before any code starts consuming them so subsequent phases (audit, MCP supervisor, coding-agent supervisor, scheduler) can attach to a stable surface.
+Registries are part of the gateway startup and reload surface. Workflow and skill registries support filesystem refresh; agent and MCP server registries are static config snapshots refreshed with the rest of gateway state.

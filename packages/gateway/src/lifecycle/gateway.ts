@@ -66,10 +66,9 @@ export type {
 } from './gateway-types.js'
 
 /**
- * Long-running gateway lifecycle. Phase 2 wired the lockfile, discovery
- * file, and signal handlers; Phase 3 adds config-driven registries with
- * FS watching for workflows and skills. Subsequent phases inject
- * enforcement, audit, HTTP listener, supervisors, and the scheduler.
+ * Long-running gateway lifecycle. Owns the lockfile, discovery file, signal
+ * handlers, config-driven registries, enforcement, audit writer, HTTP listener,
+ * supervisors, run store, and scheduler coordination.
  */
 export class Gateway implements GatewayContext {
   readonly stateDir: string
