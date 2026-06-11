@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -43,11 +43,44 @@ describe('classifyRunTarget', () => {
     expect(target).toEqual({ mode: 'activate', dir })
   })
 
-  it('activates a directory whose entrypoint is a persistent workflow (no triggerSources)', async () => {
+  it('activates a directory whose entrypoint is a persistent workflow object (no triggerSources)', async () => {
     await writeFile(join(dir, 'skelm.config.mts'), 'export default {}', 'utf8')
     await writeFile(
       join(dir, 'index.workflow.mts'),
       'export default { kind: "persistent-workflow", id: "p", agent: {} }',
+      'utf8',
+    )
+    const target = await classifyRunTarget(dir)
+    expect(target).toEqual({ mode: 'activate', dir })
+  })
+
+  it('activates a directory with a persistentWorkflow() default export without executing it', async () => {
+    await writeFile(join(dir, 'skelm.config.mts'), 'export default {}', 'utf8')
+    const marker = join(dir, 'side-effect.txt')
+    await writeFile(
+      join(dir, 'index.workflow.mts'),
+      `import { writeFileSync } from 'node:fs'
+import { persistentWorkflow } from '@skelm/core'
+writeFileSync(${JSON.stringify(marker)}, 'ran')
+export default persistentWorkflow({
+  id: 'bot',
+  sessionKey: () => 's',
+  agent: { id: 'agent', backend: 'native', prompt: 'hi' },
+})`,
+      'utf8',
+    )
+    const target = await classifyRunTarget(dir)
+    expect(target).toEqual({ mode: 'activate', dir })
+    await expect(access(marker)).rejects.toThrow()
+  })
+
+  it('activates a directory with a named persistentWorkflow() default export', async () => {
+    await writeFile(join(dir, 'skelm.config.mts'), 'export default {}', 'utf8')
+    await writeFile(
+      join(dir, 'index.workflow.mts'),
+      `import { persistentWorkflow } from '@skelm/core'
+const bot = persistentWorkflow({ id: 'bot', sessionKey: () => 's', agent: {} })
+export default bot`,
       'utf8',
     )
     const target = await classifyRunTarget(dir)

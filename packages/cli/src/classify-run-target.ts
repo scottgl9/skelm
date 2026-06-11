@@ -1,6 +1,7 @@
 import { existsSync, statSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { CONFIG_FILENAMES, isPersistentWorkflow, loadTsModule, pickExport } from '@skelm/core'
+import { CONFIG_FILENAMES } from '@skelm/core'
 import { loadSkelmConfig } from './load-config.js'
 import { resolveWorkflowPath } from './resolve-entrypoint.js'
 
@@ -73,26 +74,44 @@ export async function classifyRunTarget(
       }
     }
     if ((config.triggerSources?.length ?? 0) > 0) return { mode: 'activate', dir: abs }
-    // No trigger sources, but the entrypoint may still be a persistent workflow
-    // driven by a cron/webhook trigger. Deciding that requires the module's
-    // exported shape, so we import it here, in the CLI process.
-    //
-    // CAVEAT: this runs the entrypoint module's TOP-LEVEL side effects (network
-    // calls, file writes, etc.) client-side, before the gateway sees anything.
-    // The Telegram/TUI examples never reach here (they take the triggerSources
-    // path above); a project that pairs a side-effecting entrypoint with a
-    // persistentWorkflow and no triggerSources should keep those effects inside
-    // the workflow body, not at module scope. (A static shape check that avoids
-    // executing the module would remove this caveat but needs a parser.)
     const entry = await resolveWorkflowPath(workflowPath, cwd)
-    try {
-      const mod = await loadTsModule(entry)
-      if (isPersistentWorkflow(pickExport(mod, 'default'))) return { mode: 'activate', dir: abs }
-    } catch {
-      // Couldn't load it client-side — let the one-shot path surface the error.
-    }
+    if (await staticallyExportsPersistentWorkflow(entry)) return { mode: 'activate', dir: abs }
     return { mode: 'one-shot', file: entry }
   }
 
   return { mode: 'one-shot', file: await resolveWorkflowPath(workflowPath, cwd) }
+}
+
+async function staticallyExportsPersistentWorkflow(entry: string): Promise<boolean> {
+  let source: string
+  try {
+    source = await readFile(entry, 'utf8')
+  } catch {
+    return false
+  }
+  const text = stripComments(source)
+  if (/export\s+default\s+persistentWorkflow\s*(?:<[^>]+>)?\s*\(/.test(text)) return true
+  if (
+    /export\s+default\s+\{[\s\S]*?\bkind\s*:\s*['"]persistent-workflow['"][\s\S]*?\}/.test(text)
+  ) {
+    return true
+  }
+  const persistentNames = new Set<string>()
+  const declaration =
+    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*persistentWorkflow\s*(?:<[^>]+>)?\s*\(/g
+  for (let match = declaration.exec(text); match !== null; match = declaration.exec(text)) {
+    if (match[1] !== undefined) persistentNames.add(match[1])
+  }
+  for (const name of persistentNames) {
+    if (new RegExp(`export\\s+default\\s+${escapeRegExp(name)}\\b`).test(text)) return true
+  }
+  return false
+}
+
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n\r]*/g, '')
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
