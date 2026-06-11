@@ -15,6 +15,7 @@ import type { ThreadEvent, ThreadOptions } from '@openai/codex-sdk'
 import {
   type AgentPermissions,
   type AgentRequest,
+  BackendCapabilityError,
   type BackendContext,
   BackendUnavailableError,
   resolvePermissions,
@@ -113,6 +114,20 @@ describe('createCodexBackend.run', () => {
         makeContext(),
       ),
     ).rejects.toBeInstanceOf(BackendUnavailableError)
+  })
+
+  it('refuses author-declared exact executable allowlists', async () => {
+    const backend = createCodexBackend({ id: 'codex-local' })
+    await expect(
+      backend.run?.(
+        {
+          prompt: 'say ok',
+          permissions: policy({ allowedExecutables: ['git'] }),
+        } as AgentRequest,
+        makeContext({ declaredPermissions: { allowedExecutables: ['git'] } }),
+      ),
+    ).rejects.toBeInstanceOf(BackendCapabilityError)
+    expect(startThread).not.toHaveBeenCalled()
   })
 
   it('streams agent_message text to context.onPartial', async () => {

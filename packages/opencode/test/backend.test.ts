@@ -1,4 +1,4 @@
-import { resolvePermissions } from '@skelm/core'
+import { BackendCapabilityError, resolvePermissions } from '@skelm/core'
 import { describe, expect, it } from 'vitest'
 import { createOpencodeBackend } from '../src/backend.js'
 
@@ -53,6 +53,22 @@ describe('OpencodeBackend', () => {
 
     it('reports skills: true', () => {
       expect(createOpencodeBackend({}).capabilities.skills).toBe(true)
+    })
+  })
+
+  describe('executable permissions', () => {
+    it('refuses author-declared exact executable allowlists', async () => {
+      const backend = createOpencodeBackend({})
+      await expect(
+        backend.run?.(
+          { prompt: 'run git status' },
+          {
+            signal: new AbortController().signal,
+            permissions: resolvePermissions(undefined, { allowedExecutables: ['git'] }),
+            declaredPermissions: { allowedExecutables: ['git'] },
+          },
+        ),
+      ).rejects.toBeInstanceOf(BackendCapabilityError)
     })
   })
 

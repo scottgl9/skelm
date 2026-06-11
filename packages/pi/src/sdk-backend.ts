@@ -1,8 +1,9 @@
 /**
  * Pi coding agent SDK backend for skelm.
  *
- * This backend uses the pi SDK directly, allowing skelm to pass a hard tool
- * allowlist that pi enforces natively.
+ * This backend uses the pi SDK directly, allowing skelm to pass pi's coarse
+ * tool allowlist. Exact executable allowlists are refused when workflow-authored
+ * because pi exposes one all-or-nothing bash tool.
  *
  * System prompt strategy:
  *   By default pi's coding-agent system prompt is kept active. req.system
@@ -10,13 +11,14 @@
  *   Set options.systemPrompt to replace pi's base prompt entirely.
  *
  * Permission → tool mapping:
- *   allowedExecutables contains 'bash' or 'sh'  → 'bash'
+ *   operator/default allowedExecutables has 'bash'/'sh' → 'bash'
  *   fsRead.size > 0                              → 'read', 'grep', 'find', 'ls'
  *   fsWrite.size > 0                             → 'write', 'edit'
  *   undefined policy                             → no override (pi defaults)
  */
 
 import {
+  BackendCapabilityError,
   BackendUnavailableError,
   assertEgressEnforceable as assertEgressEnforceableCore,
   createConcurrencySemaphore,
@@ -284,6 +286,7 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
       // Fail-closed before acquiring the concurrency slot — see comment on
       // assertEgressEnforceable.
       assertEgressEnforceable(policy)
+      assertExecutableAllowlistEnforceable(context, options.id ?? 'pi')
       assertProviderConfigured(providerOverride, 'agent execution')
       await acquire()
 
@@ -335,6 +338,15 @@ export function createPiSdkBackend(options: PiSdkBackendOptions = {}): SkelmBack
       }
     },
   }
+}
+
+function assertExecutableAllowlistEnforceable(ctx: BackendContext, backendId: string): void {
+  if ((ctx.declaredPermissions?.allowedExecutables?.length ?? 0) === 0) return
+  throw new BackendCapabilityError(
+    `backend ${backendId} cannot enforce exact allowedExecutables entries; use a wrapped backend or remove the executable allowlist`,
+    backendId,
+    'toolPermissions',
+  )
 }
 
 function classifyPiSdkError(

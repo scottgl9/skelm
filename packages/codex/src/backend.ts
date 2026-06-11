@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runWithMemoryTurns } from '@skelm/agentmemory'
 import {
+  BackendCapabilityError,
   BackendConfigError,
   BackendUnavailableError,
   buildSystemPromptFromRequest,
@@ -91,6 +92,7 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
       // strictest sandbox/approval/network settings.
       const policy: ResolvedPolicy =
         request.permissions ?? context.permissions ?? resolvePermissions(undefined, undefined)
+      assertExecutableAllowlistEnforceable(context, options.id ?? 'codex')
 
       // Boundary check + sandbox/approval translation. Throws on refusal.
       const mapped = mapPermissionsToCodex({
@@ -211,6 +213,15 @@ export function createCodexBackend(options: CodexBackendOptions = {}): SkelmBack
   }
 
   return backend
+}
+
+function assertExecutableAllowlistEnforceable(ctx: BackendContext, backendId: string): void {
+  if ((ctx.declaredPermissions?.allowedExecutables?.length ?? 0) === 0) return
+  throw new BackendCapabilityError(
+    `backend ${backendId} cannot enforce exact allowedExecutables entries; use a wrapped backend or remove the executable allowlist`,
+    backendId,
+    'toolPermissions',
+  )
 }
 
 function classifyCodexUnavailableError(err: unknown, backendId: string): unknown {

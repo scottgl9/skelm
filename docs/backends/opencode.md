@@ -46,14 +46,15 @@ The opencode SDK also exposes `createOpencode()` / `createOpencodeServer()` to s
 
 | Skelm permission                       | What it allows in opencode                                  |
 |----------------------------------------|-------------------------------------------------------------|
-| `allowedExecutables` contains `'bash'` | The opencode `bash` tool                                    |
+| `allowedExecutables: []`               | Denies the opencode `bash` tool                             |
+| non-empty author-declared `allowedExecutables` | **refused** — opencode has no exact per-binary allowlist |
 | `fsRead` non-empty                     | `read`, `glob`, `grep`, `list`                              |
 | `fsWrite` non-empty                    | `write`, `edit` (read tools also enabled)                   |
 | `allowedTools`                         | Exact-match or prefix-match against opencode tool names     |
 | `allowedMcpServers`                    | Forwarded to opencode for MCP authorization                 |
 | `networkEgress: 'deny'`                | Drops `webfetch` and bash-spawned network                   |
 
-Anything not granted is denied. Skelm validates the request **before** forwarding to opencode and audits any denial.
+Anything not granted is denied. Skelm validates the request **before** forwarding to opencode and audits any denial. Use a wrapped backend such as `@skelm/agent` when a workflow needs exact per-binary `allowedExecutables` enforcement.
 
 ## Usage
 
@@ -112,7 +113,7 @@ The opencode backend declares:
 - `streaming: true`
 - `mcp: true`
 - `skills: true`
-- `toolPermissions: 'native'` — opencode itself enforces the allowlist; skelm pre-validates and audits.
+- `toolPermissions: 'native'` — opencode itself enforces the mapped tool allowlist; skelm pre-validates, audits, and refuses exact executable allowlists that opencode cannot represent.
 
 Capability gaps fail the step at start; nothing degrades silently.
 
