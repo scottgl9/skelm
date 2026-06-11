@@ -87,6 +87,18 @@ describe('createPolicyFetch', () => {
     expect(base).not.toHaveBeenCalled()
   })
 
+  it('blocks a hostname that resolves to cloud metadata', async () => {
+    const enforcer = new TrustEnforcer(resolvePermissions({ networkEgress: 'allow' }, undefined))
+    const base = vi.fn()
+    const pf = createPolicyFetch(enforcer, undefined, base as unknown as typeof fetch, {
+      lookup: async () => [{ address: '169.254.169.254' }],
+    })
+    await expect(pf('http://metadata.internal/latest')).rejects.toBeInstanceOf(
+      PermissionDeniedError,
+    )
+    expect(base).not.toHaveBeenCalled()
+  })
+
   it('blocks a cloud-metadata IP even when it is in the allowlist', async () => {
     const enforcer = new TrustEnforcer(
       resolvePermissions({ networkEgress: { allowHosts: ['169.254.169.254'] } }, undefined),

@@ -111,8 +111,8 @@ export class EgressProxy {
    * target — a literal IP or a hostname that resolves to one — in a cloud
    * metadata range (unless `allowMetadataEgress`). Returns the validated IP so
    * the caller can pin the dial to it (defeating DNS rebinding between this
-   * check and the connect). On resolution failure, falls through to dialing by
-   * name so an offline/unresolvable host fails at connect as before.
+   * check and the connect). On resolution failure, fail closed: dialing an
+   * unchecked hostname would skip the metadata classification.
    */
   private async validateDestination(rawHost: string): Promise<{ ip?: string; blocked: boolean }> {
     // CONNECT/Host targets carry IPv6 literals in brackets (`[::1]`); strip them
@@ -130,9 +130,7 @@ export class EgressProxy {
       const ip = addrs[0]?.address
       return ip !== undefined ? { ip, blocked: false } : { blocked: false }
     } catch {
-      // Resolution failed or timed out — fall through to dialing by name so an
-      // unresolvable/slow host fails at connect rather than hanging here. The
-      // literal-IP metadata block above already ran synchronously.
+      if (!this.allowMetadataEgress) return { blocked: true }
       return { blocked: false }
     }
   }
