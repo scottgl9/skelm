@@ -413,6 +413,35 @@ describe('persistent-workflow dispatch', () => {
     await gw.stop()
   })
 
+  it('keys unrestricted grants for gateway-run pipelines on the declared pipeline id', async () => {
+    const seen: SeenTurn[] = []
+    const audit: AuditEntry[] = []
+    const wf = pipeline({
+      id: 'declared-pipeline-id',
+      steps: [
+        agent({
+          id: 'a',
+          backend: 'echo',
+          prompt: 'hi',
+          permissions: { requestUnrestricted: true },
+        }),
+      ],
+    })
+    const gw = await bootGateway({
+      seen,
+      audit,
+      workflowModule: { default: wf },
+      unrestrictedGrants: ['declared-pipeline-id'],
+    })
+    const driver = wireQueue(gw)
+    driver.push({ chatId: 'c1', text: 'hi' })
+    await new Promise((r) => setTimeout(r, 80))
+
+    expect(seen[0]?.unrestricted).toBe(true)
+    expect(audit.some((e) => e.action === 'permission.bypassed')).toBe(true)
+    await gw.stop()
+  })
+
   it('loads agent.agentDef (AGENTS.md/SOUL.md) relative to the workflow file and threads it to the turn', async () => {
     const seen: SeenTurn[] = []
     const audit: AuditEntry[] = []

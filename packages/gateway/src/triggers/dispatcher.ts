@@ -152,26 +152,22 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
           ctx.payload !== undefined
             ? ctx.payload
             : { triggerId: ctx.triggerId, firedAt: ctx.firedAt }
+        const loadedWorkflowId =
+          typeof (pipeline as { id?: unknown }).id === 'string'
+            ? (pipeline as { id: string }).id
+            : ctx.workflowId
         const handle = runner.start(pipeline as Parameters<Runner['start']>[0], pipelineInput, {
           runId,
           signal: controller.signal,
           workflowPath,
           triggerId: ctx.triggerId,
-          unrestrictedGrant: opts.gateway.isUnrestrictedGranted(ctx.workflowId),
+          unrestrictedGrant: opts.gateway.isUnrestrictedGranted(loadedWorkflowId),
           // Use the LOADED workflow's declared id, not the trigger spec's
           // workflowId (which can be the registry id / file path). The
           // per-workflow ceiling registered on activation keys on the
           // declared id; persistent-workflow-turn does the same.
-          ...opts.gateway.defaultPermissionRunOptions(
-            typeof (pipeline as { id?: unknown }).id === 'string'
-              ? (pipeline as { id: string }).id
-              : ctx.workflowId,
-          ),
-          ...opts.gateway.defaultBackendRunOptions(
-            typeof (pipeline as { id?: unknown }).id === 'string'
-              ? (pipeline as { id: string }).id
-              : ctx.workflowId,
-          ),
+          ...opts.gateway.defaultPermissionRunOptions(loadedWorkflowId),
+          ...opts.gateway.defaultBackendRunOptions(loadedWorkflowId),
           ...opts.gateway.egressRunOptions(),
           ...opts.gateway.agentmemoryRunOptions(),
           ...(onEvent !== undefined && { onEvent }),
