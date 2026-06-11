@@ -454,6 +454,14 @@ export class TrustEnforcer {
     return { allow: true }
   }
 
+  canUseBuiltinTool(toolId: string): EnforceDecision {
+    if (this.policy.unrestricted === true) return { allow: true }
+    if (matches(this.policy.deniedTools, toolId)) {
+      return { allow: false, reason: 'in-denylist', dimension: 'tool' }
+    }
+    return { allow: true }
+  }
+
   canDelegate(agentId: string): EnforceDecision {
     if (this.policy.unrestricted === true) return { allow: true }
     if (!matches(this.policy.allowedAgents, agentId)) {
