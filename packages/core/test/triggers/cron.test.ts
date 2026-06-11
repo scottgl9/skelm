@@ -79,6 +79,28 @@ describe('CronTrigger', () => {
 
       await trigger.stop().catch(() => {})
     })
+
+    it('does not fire a sparse cron immediately when the delay exceeds setTimeout limits', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-06-11T00:00:00Z'))
+      try {
+        const handler = vi.fn()
+        const trigger = createCronTrigger('cron-annual', 'Annual Cron')
+        await trigger.initialize({
+          id: 'cron-annual',
+          schedule: '0 0 1 1 *',
+        })
+        trigger.onEvent(handler)
+
+        await trigger.start()
+        await vi.advanceTimersByTimeAsync(2)
+
+        expect(handler).not.toHaveBeenCalled()
+        await trigger.stop()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 
   describe('health check', () => {

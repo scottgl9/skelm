@@ -76,7 +76,7 @@ export type FireStatus = 'dispatched' | 'queued' | 'skipped' | 'cancelled' | 'un
  */
 export class TriggerCoordinator {
   private registrations: Map<string, TriggerRegistration> = new Map()
-  private intervalTimers: Map<string, NodeJS.Timeout> = new Map()
+  private intervalTimers: Map<string, NodeJS.Timeout | LongTimer> = new Map()
   private cronTimers: Map<string, LongTimer> = new Map()
   private fileWatchers: Map<string, FileWatchTrigger> = new Map()
   private eventSourceManagers: Map<string, EventSourceManager> = new Map()
@@ -323,7 +323,7 @@ export class TriggerCoordinator {
           this.intervalTimers.set(spec.id, t)
         } else {
           // Wait until the cadence-aligned nextFireAt, then resume on a regular interval.
-          const t = setTimeout(() => {
+          const t = new LongTimer(firstDelay, () => {
             reg.nextFireAt = new Date(Date.now() + spec.everyMs).toISOString()
             notifyPersist(reg)
             this.fireDetached(spec.id)
@@ -334,8 +334,7 @@ export class TriggerCoordinator {
             }, spec.everyMs)
             interval.unref?.()
             this.intervalTimers.set(spec.id, interval)
-          }, firstDelay)
-          t.unref?.()
+          })
           this.intervalTimers.set(spec.id, t)
         }
         break
@@ -538,7 +537,7 @@ export class TriggerCoordinator {
     const watcher = this.fileWatchers.get(id)
     const eventSource = this.eventSourceManagers.get(id)
     if (t1 !== undefined) {
-      clearInterval(t1)
+      clearIntervalTimer(t1)
       this.intervalTimers.delete(id)
     }
     if (t2 !== undefined) {
@@ -754,7 +753,7 @@ export class TriggerCoordinator {
 
   async stop(): Promise<void> {
     this.stopping = true
-    for (const t of this.intervalTimers.values()) clearInterval(t)
+    for (const t of this.intervalTimers.values()) clearIntervalTimer(t)
     for (const t of this.cronTimers.values()) t.clear()
     for (const t of this.atTimers.values()) t.clear()
     for (const t of this.pollTimers.values()) clearInterval(t)
@@ -776,6 +775,14 @@ export class TriggerCoordinator {
     this.webhookRoutes.clear()
     this.queueDriverBindings.clear()
   }
+}
+
+function clearIntervalTimer(timer: NodeJS.Timeout | LongTimer): void {
+  if (timer instanceof LongTimer) {
+    timer.clear()
+    return
+  }
+  clearInterval(timer)
 }
 
 function defaultDedupeKey(value: unknown): string {
