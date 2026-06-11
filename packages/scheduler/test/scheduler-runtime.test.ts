@@ -88,6 +88,39 @@ describe('Scheduler — runtime', () => {
     await scheduler.stop()
   })
 
+  it('overlap=fail-fast skips two synchronous fire() calls in the same tick', async () => {
+    let called = 0
+    let release!: () => void
+    const running = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const runStore = { putRun: async () => {} }
+    const pipelineLoader = async () => ({ id: 'p' })
+    const pipelineExecutor = async (pipeline: { id: string }) => {
+      called += 1
+      await running
+      return makeRun(pipeline.id)
+    }
+    const scheduler = new Scheduler({}, { runStore, pipelineLoader, pipelineExecutor })
+    await scheduler.register({
+      id: 'ff-sync',
+      type: 'interval',
+      pipelineId: 'p',
+      intervalMs: 60_000,
+      enabled: true,
+      overlap: 'fail-fast',
+    })
+
+    scheduler.fire('ff-sync')
+    scheduler.fire('ff-sync')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(called).toBe(1)
+    expect(scheduler.getTrigger('ff-sync')?.lastOutcome).toBe('skipped')
+    release()
+    await scheduler.stop()
+  })
+
   it('overlap=wait chains firings serially', async () => {
     const starts: number[] = []
     const runStore = { putRun: async () => {} }
