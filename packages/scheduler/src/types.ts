@@ -1,8 +1,10 @@
 /**
  * @skelm/scheduler - Long-running trigger management for pipelines
  *
- * Supports: cron, interval, webhook, poll, queue triggers
- * with dedupe and overlap policies.
+ * Supports cron, interval, and webhook trigger registration with overlap
+ * policies and per-trigger maxConcurrent limits. The dedupe field is reserved
+ * for event-keyed trigger sources and is not enforced by this standalone
+ * scheduler runtime.
  */
 
 import type { RunId } from '@skelm/core'
@@ -23,6 +25,7 @@ export interface TriggerBase {
   pipelineId: string
   description?: string
   enabled: boolean
+  /** Reserved for event-keyed trigger sources; not enforced by Scheduler. */
   dedupe?: DedupePolicy
   overlap?: OverlapPolicy
   maxConcurrent?: number

@@ -121,6 +121,42 @@ describe('Scheduler — runtime', () => {
     await scheduler.stop()
   })
 
+  it('maxConcurrent skips fires once the trigger limit is reached', async () => {
+    let called = 0
+    let release!: () => void
+    const block = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const runStore = { putRun: async () => {} }
+    const pipelineLoader = async () => ({ id: 'p' })
+    const pipelineExecutor = async (pipeline: { id: string }) => {
+      called += 1
+      await block
+      return makeRun(pipeline.id)
+    }
+    const scheduler = new Scheduler({}, { runStore, pipelineLoader, pipelineExecutor })
+    await scheduler.register({
+      id: 'limited',
+      type: 'interval',
+      pipelineId: 'p',
+      intervalMs: 10,
+      enabled: true,
+      overlap: 'run-concurrent',
+      maxConcurrent: 1,
+    })
+
+    scheduler.fire('limited')
+    await new Promise((r) => setTimeout(r, 5))
+    scheduler.fire('limited')
+    await new Promise((r) => setTimeout(r, 5))
+
+    expect(called).toBe(1)
+    expect(scheduler.getTrigger('limited')?.lastOutcome).toBe('skipped')
+
+    release()
+    await scheduler.stop()
+  })
+
   it('start() does not arm a second timer for an already registered interval', async () => {
     vi.useFakeTimers()
     try {
