@@ -100,6 +100,9 @@ export class Scheduler {
   /** Register a new trigger */
   async register(trigger: Trigger | LegacyTrigger): Promise<TriggerRegistration> {
     const normalized = normalizeTrigger(trigger)
+    if (normalized.maxConcurrent !== undefined && normalized.maxConcurrent < 1) {
+      throw new RangeError(`maxConcurrent must be >= 1, got ${normalized.maxConcurrent}`)
+    }
     const registration: TriggerRegistration = {
       trigger: normalized,
       createdAt: Date.now(),

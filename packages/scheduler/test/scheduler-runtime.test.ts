@@ -157,6 +157,56 @@ describe('Scheduler — runtime', () => {
     await scheduler.stop()
   })
 
+  it('register() rejects maxConcurrent < 1', async () => {
+    const deps = makeDeps()
+    const scheduler = new Scheduler({}, deps)
+    await expect(
+      scheduler.register({
+        id: 'bad',
+        type: 'interval',
+        pipelineId: 'p',
+        intervalMs: 1_000,
+        enabled: true,
+        maxConcurrent: 0,
+      }),
+    ).rejects.toThrow(RangeError)
+  })
+
+  it('maxConcurrent=2 allows two concurrent fires and skips the third', async () => {
+    let called = 0
+    let release!: () => void
+    const block = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const runStore = { putRun: async () => {} }
+    const pipelineLoader = async () => ({ id: 'p' })
+    const pipelineExecutor = async (pipeline: { id: string }) => {
+      called += 1
+      await block
+      return makeRun(pipeline.id)
+    }
+    const scheduler = new Scheduler({}, { runStore, pipelineLoader, pipelineExecutor })
+    await scheduler.register({
+      id: 'cap2',
+      type: 'interval',
+      pipelineId: 'p',
+      intervalMs: 60_000,
+      enabled: true,
+      overlap: 'run-concurrent',
+      maxConcurrent: 2,
+    })
+
+    scheduler.fire('cap2')
+    scheduler.fire('cap2')
+    scheduler.fire('cap2')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(called).toBe(2)
+    expect(scheduler.getTrigger('cap2')?.lastOutcome).toBe('skipped')
+    release()
+    await scheduler.stop()
+  })
+
   it('start() does not arm a second timer for an already registered interval', async () => {
     vi.useFakeTimers()
     try {

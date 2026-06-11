@@ -28,6 +28,7 @@ export interface TriggerBase {
   /** Reserved for event-keyed trigger sources; not enforced by Scheduler. */
   dedupe?: DedupePolicy
   overlap?: OverlapPolicy
+  /** Maximum simultaneous in-flight executions for this trigger. Must be >= 1. */
   maxConcurrent?: number
   inputTemplate?: unknown
   metadata?: Record<string, unknown>
