@@ -5,8 +5,8 @@
  * — the secret value never appears in pipeline source. The fact of access
  * is audited; the value is not.
  *
- * Phase 4 ships the env-backed default; Phase 5 adds the file driver and
- * `skelm secrets get|set|list` CLI verbs.
+ * The env-backed default supports in-process runs. The gateway file driver
+ * supports `skelm secrets get|set|list` CLI verbs.
  */
 export interface SecretResolver {
   /** Resolve a secret by name. Returns undefined when the secret is unknown. */

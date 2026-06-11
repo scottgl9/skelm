@@ -9,7 +9,7 @@ PermissionResolver  →  resolves the effective policy from defaults + step + pr
 TrustEnforcer       →  evaluates each privileged action against a resolved policy (canCallTool, ...)
 SecretResolver      →  fetches secrets by name; logs the fact of access, never the value
 ApprovalGate        →  suspends runs that hit `permissions.approval` until a human responds
-AuditWriter         →  single-writer append-only chain (Phase 5) recording every decision
+AuditWriter         →  single-writer append-only chain recording every decision
 ```
 
 These types live in `@skelm/core/enforcement/*` and are exported from the package root. The `Runner` constructor accepts each as an injection point with safe in-process defaults so unit tests stay self-contained:
@@ -24,7 +24,7 @@ const runner = new Runner({
 runner.enforcement // canonical instances actually in use
 ```
 
-In production the **gateway** owns the canonical instances and hands them to every Runner it constructs (Phase 11). `gateway.enforcement` exposes them after `start()` and throws after `stop()`. Rebuilding via `gateway.reload({ defaults: { permissions: ... } })` is allowed and atomic.
+In production the **gateway** owns the canonical instances and hands them to every Runner it constructs. `gateway.enforcement` exposes them after `start()` and throws after `stop()`. Rebuilding via `gateway.reload({ defaults: { permissions: ... } })` is allowed and atomic.
 
 ### Per-workflow project ceilings
 
@@ -75,11 +75,11 @@ The bypass is **never silent**: when a step or turn resolves to `unrestricted`, 
 
 ## Where each piece lives today
 
-| Concern | Phase | Status |
-|---------|-------|--------|
-| `PermissionResolver`, `TrustEnforcer` | 4 | Wired; in-process defaults match production behavior. |
-| `AuditWriter` | 5 | Seam in place; default no-op; chain writer next. |
-| `SecretResolver` (env) | 4 | Wired. |
-| `SecretResolver` (file driver) | 5 | Pending. |
-| `ApprovalGate` (auto-approve / auto-deny) | 4 | Wired (test-friendly). |
-| `ApprovalGate` (suspend + resume) | 6 | Wired. The runtime calls `runtime.approvalGate.request(...)` at the start of every agent step whose resolved policy declares `permissions.approval`. A denial fails the step with `ApprovalDeniedError`. |
+| Concern | Status |
+|---------|--------|
+| `PermissionResolver`, `TrustEnforcer` | Wired; in-process defaults match production behavior. |
+| `AuditWriter` | Seam in place; gateway uses the chain writer. |
+| `SecretResolver` (env) | Wired. |
+| `SecretResolver` (file driver) | Wired for gateway-managed file secrets. |
+| `ApprovalGate` (auto-approve / auto-deny) | Wired (test-friendly). |
+| `ApprovalGate` (suspend + resume) | Wired. The runtime calls `runtime.approvalGate.request(...)` at the start of every agent step whose resolved policy declares `permissions.approval`. A denial fails the step with `ApprovalDeniedError`. |

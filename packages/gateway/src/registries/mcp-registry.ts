@@ -9,9 +9,9 @@ export interface McpServerRegistryOptions {
 
 /**
  * Registry of MCP servers declared in skelm.config.ts. The McpServerManager
- * (Phase 7) reads from this registry to spawn shared stdio servers and
- * expose per-run handles. Static config; reloaded with the rest of the
- * gateway state on SIGHUP.
+ * reads from this registry to spawn shared stdio servers and expose per-run
+ * handles. Static config; reloaded with the rest of the gateway state on
+ * SIGHUP.
  */
 export class McpServerRegistry extends BaseRegistry<McpServerEntry> {
   constructor(private servers: readonly SkelmConfigMcpServerEntry[]) {

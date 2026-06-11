@@ -24,17 +24,17 @@ When the agent attempts a matching action, the runtime calls `gateway.enforcemen
 | `AutoDenyGate` | adversarial tests | Always denies. |
 | `SuspendApprovalGate` | gateway production default | Suspends until `approve()`/`deny()` is called externally. |
 
-The suspend gate is owned by the gateway and exposed via `gateway.enforcement.approvalGate` (after the gate is wired into the gateway constructor in Phase 11). Persistence across gateway restarts is RunStore-backed and lands alongside the HTTP control surface.
+The suspend gate is owned by the gateway and exposed via `gateway.enforcement.approvalGate`. Persistence across gateway restarts is RunStore-backed and available through the HTTP control surface.
 
 ## CLI
 
 ```bash
 skelm approvals list                # pending approvals queued by the running gateway
-skelm approvals approve <id>        # (Phase 11 — needs HTTP control surface)
+skelm approvals approve <id>
 skelm approvals deny    <id> --reason "too risky"
 ```
 
-`<id>` is `<runId>:<stepId>`; the `list` output reads the gateway's queue snapshot from `~/.skelm/approvals.json`. `approve` and `deny` reach the gateway over HTTP once Phase 11 lands the control surface.
+`<id>` is `<runId>:<stepId>`; the `list` output reads the gateway's queue snapshot from `~/.skelm/approvals.json`. `approve` and `deny` reach the gateway over HTTP.
 
 ## Audit trail
 
@@ -51,4 +51,4 @@ A single `approval.resolved` entry covers both approve and deny — `approved: t
 
 ## Status
 
-Phase 6 lands the `SuspendApprovalGate` and CLI shell. Phase 11 wires the HTTP `POST /runs/:runId/approve` and `POST /runs/:runId/deny` endpoints, plus the JSON queue snapshot the CLI consumes today.
+`SuspendApprovalGate`, the approval CLI, the HTTP `POST /runs/:runId/approve` and `POST /runs/:runId/deny` endpoints, and the JSON queue snapshot are wired.

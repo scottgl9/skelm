@@ -22,8 +22,8 @@ export interface RecoveryResult {
  *
  * Idempotent: re-running on a clean store is a no-op.
  *
- * Phase 2.1 persists a `running` Run record up-front; this consumer
- * relies on that contract.
+ * The runner persists a `running` Run record up-front; this consumer relies on
+ * that contract.
  */
 export async function recoverInterruptedRuns(store: RunStore): Promise<RecoveryResult> {
   const recovered: string[] = []

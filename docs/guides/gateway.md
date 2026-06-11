@@ -118,10 +118,10 @@ By default the gateway writes its lockfile and discovery file under `~/.skelm`:
 
 | File | Purpose |
 |------|---------|
-| `~/.skelm/gateway.lock` | Single-writer lockfile. A second gateway refuses to start if a live process holds it. Doubles as the audit-writer claim (Phase 5). |
+| `~/.skelm/gateway.lock` | Single-writer lockfile. A second gateway refuses to start if a live process holds it. Doubles as the audit-writer claim. |
 | `~/.skelm/gateway.json` | Discovery: `{ pid, url, token, startedAt }`. Read by `skelm gateway status` and `skelm run --remote`. |
 
-In a project, you can point the state dir at `.skelm/` instead by passing `--state-dir` (Phase 11).
+In a project, you can point the state dir at `.skelm/` instead by passing `--state-dir`.
 
 ## Lifecycle states
 
@@ -204,6 +204,6 @@ The gateway hosts a `TriggerCoordinator` that fires workflows on schedules, webh
 | `<stateDir>/acp-sessions.json` | ACP session manager | All resident-agent sessions; `reconcile()` re-reads at start. |
 | `<stateDir>/runs.sqlite` | RunStore | SqliteRunStore by default; configurable via `storage.runs`. |
 
-## Phase status
+## Status
 
-Phases 0–13 of the gateway-centric refactor are landed. Phase 13 closes the loop by binding the HTTP control surface to `skelm gateway start`, persisting the approval queue, and wiring the gateway-managed `RunStore` into trigger-dispatched runs.
+The gateway binds the HTTP control surface to `skelm gateway start`, persists the approval queue, and wires the gateway-managed `RunStore` into trigger-dispatched runs.

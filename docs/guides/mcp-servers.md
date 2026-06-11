@@ -45,4 +45,4 @@ The runtime asks the gateway for the active `McpServerHandle` for each id when t
 
 ## Status
 
-Phase 7 ships the `McpServerManager`. The runtime wiring that resolves `mcpServers: [...]` step config against `gateway.managers.mcp` lands alongside Phase 11 (CLI + remote control). For now, you can drive the manager directly from a custom embedding.
+The `McpServerManager` is part of the gateway manager set. Agent steps resolve `mcpServers: [...]` against `gateway.managers.mcp`, and custom embeddings can also drive the manager directly.

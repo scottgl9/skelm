@@ -6,8 +6,8 @@
  * synchronously (auto-approve / auto-deny in tests) or suspend the run
  * indefinitely until a human responds.
  *
- * Phase 4 ships the synchronous defaults; Phase 6 adds the suspend +
- * resume implementation backed by RunStore + the HTTP control surface.
+ * Synchronous defaults support tests and in-process runs. The gateway suspend
+ * implementation is backed by RunStore and the HTTP control surface.
  */
 export interface ApprovalRequest {
   runId: string
