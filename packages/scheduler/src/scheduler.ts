@@ -252,6 +252,7 @@ export class Scheduler {
   }
 
   private startCronTrigger(trigger: CronTrigger): void {
+    this.stopCronTrigger(trigger.id)
     this.scheduleNextCron(trigger)
   }
 
@@ -295,6 +296,7 @@ export class Scheduler {
   }
 
   private startIntervalTrigger(trigger: IntervalTrigger): void {
+    this.stopIntervalTrigger(trigger.id)
     const registration = this.triggers.get(trigger.id)
     if (
       !Number.isFinite(trigger.intervalMs) ||
