@@ -51,6 +51,7 @@ describe('pipelineTriggerToSpec', () => {
       path: '/hooks/gh',
       method: 'POST',
       secret: 'gh-secret',
+      provider: 'github',
       dedupe: { header: 'X-GitHub-Delivery', ttlMs: 24 * 60 * 60 * 1000 },
     })
   })

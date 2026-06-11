@@ -41,6 +41,10 @@ function webhookSig(secret: string, timestamp: number | string, body: string): s
   return `sha256=${createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex')}`
 }
 
+function githubSig(secret: string, body: string): string {
+  return `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`
+}
+
 async function postChunked(base: string, path: string, chunks: string[]): Promise<number> {
   const url = new URL(path, base)
   return await new Promise<number>((resolve, reject) => {
@@ -333,6 +337,53 @@ describe('Gateway HTTP webhook trigger dispatch', () => {
       // Unknown path → falls through (no webhook handler matches).
       const missing = await fetch(`${base}/hooks/unknown`, { method: 'POST' })
       expect(missing.status).toBe(404)
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('verifies GitHub webhook provider signatures with x-hub-signature-256', async () => {
+    const { gw, base } = await bootGatewayWithRetry(async (port) => ({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    }))
+    try {
+      const fired: string[] = []
+      gw.managers.triggers.setOnFire(async (ctx) => {
+        fired.push(ctx.triggerId)
+      })
+      gw.managers.triggers.register({
+        kind: 'webhook',
+        id: 'gh-pr',
+        workflowId: 'wf',
+        path: '/hooks/github-pr',
+        method: 'POST',
+        secret: 'shh',
+        provider: 'github',
+      })
+
+      const body = '{"action":"opened"}'
+      const generic = await fetch(`${base}/hooks/github-pr`, {
+        method: 'POST',
+        headers: {
+          'x-webhook-signature': webhookSig('shh', Math.floor(Date.now() / 1000), body),
+          'x-webhook-timestamp': String(Math.floor(Date.now() / 1000)),
+        },
+        body,
+      })
+      expect(generic.status).toBe(401)
+      expect(fired).toEqual([])
+
+      const ok = await fetch(`${base}/hooks/github-pr`, {
+        method: 'POST',
+        headers: { 'x-hub-signature-256': githubSig('shh', body) },
+        body,
+      })
+      expect(ok.status).toBe(200)
+      expect(fired).toEqual(['gh-pr'])
     } finally {
       await gw.stop()
     }
