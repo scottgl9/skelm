@@ -95,6 +95,24 @@ describe('parallel()', () => {
       }),
     ).toThrow(/duplicate child step id/)
   })
+
+  it('rejects unsupported waitFor modes instead of silently ignoring them', () => {
+    expect(() =>
+      parallel({
+        id: 'race',
+        waitFor: 'any',
+        steps: [code({ id: 'fast', run: () => ({}) }), code({ id: 'slow', run: () => ({}) })],
+      }),
+    ).toThrow(/waitFor="any" is not supported yet/)
+
+    expect(() =>
+      parallel({
+        id: 'quorum',
+        waitFor: { atLeast: 1 },
+        steps: [code({ id: 'one', run: () => ({}) }), code({ id: 'two', run: () => ({}) })],
+      }),
+    ).toThrow(/waitFor=\{"atLeast":1\} is not supported yet/)
+  })
 })
 
 describe('forEach()', () => {

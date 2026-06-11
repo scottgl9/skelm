@@ -367,6 +367,7 @@ export function parallel(def: {
     throw new Error(`parallel(${def.id}): steps must contain at least one step`)
   }
   assertValidRetryPolicy('parallel', def.id, def.retry)
+  assertSupportedParallelWaitFor(def.id, def.waitFor)
   // Sibling ids must be unique within a parallel block (they become the keys
   // of the parallel output object). We do not require global uniqueness across
   // the whole pipeline tree — that is the runtime's job to track per-scope.
@@ -389,6 +390,13 @@ export function parallel(def: {
     ...(def.when !== undefined && { when: def.when }),
     ...(def.continueOnError !== undefined && { continueOnError: def.continueOnError }),
   })
+}
+
+function assertSupportedParallelWaitFor(id: StepId, waitFor: ParallelWaitFor | undefined): void {
+  if (waitFor === undefined || waitFor === 'all') return
+  throw new Error(
+    `parallel(${id}): waitFor=${JSON.stringify(waitFor)} is not supported yet; omit waitFor or use "all"`,
+  )
 }
 
 /** Map a step factory over a collection; outputs collected as an array. */
