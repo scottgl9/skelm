@@ -378,7 +378,10 @@ export class MatrixIntegration extends IntegrationBase {
     let abortCtl: AbortController | null = null
     const seen = new Set<string>()
     // Per-inbound-message streaming state, keyed by the originating event id.
-    const streams = new Map<string, { messageEventId?: string; text: string; lastEditAt: number }>()
+    const streams = new Map<
+      string,
+      { messageEventId?: string; text: string; lastEditAt: number; opening: boolean }
+    >()
     let since: string | undefined
     let loopPromise: Promise<void> | null = null
     const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -457,14 +460,21 @@ export class MatrixIntegration extends IntegrationBase {
           }
           let st = streams.get(input.eventId)
           if (st === undefined) {
-            st = { text: '', lastEditAt: 0 }
+            st = { text: '', lastEditAt: 0, opening: false }
             streams.set(input.eventId, st)
           }
           st.text += ev.delta
           if (st.text === '') return
           try {
             if (st.messageEventId === undefined) {
-              // First delta: open the placeholder reply into the thread.
+              // First delta opens the placeholder. Claim it synchronously
+              // before the await: onEvent is dispatched with no back-pressure
+              // (gateway fires `void onEvent(...)`), so deltas arriving during
+              // this send would otherwise each post their own placeholder.
+              // Racing deltas still accumulate into st.text and are flushed by
+              // a later edit / the final commit, so nothing is lost.
+              if (st.opening) return
+              st.opening = true
               const sent = await integration.sendMessage({
                 roomId: input.roomId,
                 body: st.text,
@@ -472,6 +482,7 @@ export class MatrixIntegration extends IntegrationBase {
               })
               st.messageEventId = sent.eventId
               st.lastEditAt = Date.now()
+              st.opening = false
             } else {
               const now = Date.now()
               if (now - st.lastEditAt >= streamThrottleMs) {
@@ -485,6 +496,9 @@ export class MatrixIntegration extends IntegrationBase {
             }
           } catch {
             // Best-effort streaming; onResult still commits the final reply.
+            // Release the open-claim so a later delta can retry the placeholder
+            // if the first send failed.
+            st.opening = false
           }
         },
       }),

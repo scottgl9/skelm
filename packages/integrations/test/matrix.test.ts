@@ -178,6 +178,43 @@ describe('MatrixIntegration', () => {
     expect(fetchMock.mock.calls).toHaveLength(3)
   })
 
+  it('streamReplies: concurrent deltas during the first send post only one placeholder', async () => {
+    // The gateway dispatches run events as `void onEvent(...)` with no
+    // back-pressure (gateway/src/triggers/dispatcher.ts), so deltas can arrive
+    // while the first placeholder send is still in flight. Hold that first send
+    // open, fire a second delta, and assert only ONE reply-threaded placeholder
+    // is posted — not one per racing delta.
+    let releaseFirst: (r: Response) => void = () => {}
+    const firstSend = new Promise<Response>((res) => {
+      releaseFirst = res
+    })
+    fetchMock
+      .mockReturnValueOnce(firstSend)
+      .mockResolvedValue(jsonResponse({ event_id: '$stream:example.org' }))
+    const mx = new MatrixIntegration(makeConfig(), { fetch: fetchMock as unknown as typeof fetch })
+    await mx.init()
+    const src = mx.createTriggerSource({ streamReplies: true, streamThrottleMs: 0 })
+    const input = {
+      eventId: '$inbound:example.org',
+      roomId: '!r:example.org',
+      sender: '@u:example.org',
+      body: 'hi',
+      date: 1,
+    }
+
+    // Fire two deltas WITHOUT awaiting the first — both run before the
+    // placeholder send resolves, mirroring the unbuffered gateway dispatch.
+    const p1 = src.onEvent?.(input, { type: 'step.partial', delta: 'Hel' })
+    const p2 = src.onEvent?.(input, { type: 'step.partial', delta: 'lo' })
+    releaseFirst(jsonResponse({ event_id: '$stream:example.org' }))
+    await Promise.all([p1, p2])
+
+    const placeholderSends = fetchMock.mock.calls
+      .map((c) => JSON.parse(String(c[1]?.body)))
+      .filter((b) => b['m.relates_to']?.['m.in_reply_to'] !== undefined)
+    expect(placeholderSends).toHaveLength(1)
+  })
+
   it('without streamReplies, posts a single final reply and has no onEvent hook', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ event_id: '$x:example.org' }))
     const mx = new MatrixIntegration(makeConfig(), { fetch: fetchMock as unknown as typeof fetch })
