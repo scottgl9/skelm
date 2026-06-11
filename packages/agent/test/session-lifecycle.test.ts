@@ -119,4 +119,44 @@ describe('SkelmAgentBackend — session lifecycle (Milestone A)', () => {
     expect(r?.text).toBe('fine')
     expect(backend.capabilities.sessionLifecycle).toBe(false)
   })
+
+  it('falls back to stateless and warns when sessionStore.load() throws', async () => {
+    const store = new InMemorySessionStore()
+    vi.spyOn(store, 'load').mockRejectedValue(new Error('store unavailable'))
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const backend = createSkelmAgentBackend({
+      baseUrl: 'http://example.invalid',
+      model: 'mock-model',
+      sessionStore: store,
+    })
+    stubFetch([{ content: 'answer despite load failure' }])
+
+    const r = await backend.run?.({ prompt: 'hello', sessionId: 'sErr' }, ctx())
+    expect(r?.text).toBe('answer despite load failure')
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('session load failed'),
+      expect.any(Error),
+    )
+  })
+
+  it('still returns the LLM response and warns when sessionStore.save() throws', async () => {
+    const store = new InMemorySessionStore()
+    vi.spyOn(store, 'save').mockRejectedValue(new Error('disk full'))
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const backend = createSkelmAgentBackend({
+      baseUrl: 'http://example.invalid',
+      model: 'mock-model',
+      sessionStore: store,
+    })
+    stubFetch([{ content: 'answer despite save failure' }])
+
+    const r = await backend.run?.({ prompt: 'hello', sessionId: 'sSave' }, ctx())
+    expect(r?.text).toBe('answer despite save failure')
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('session save failed'),
+      expect.any(Error),
+    )
+  })
 })

@@ -488,8 +488,15 @@ async function runAgentLoop(
     // rebuilt fresh below, so persisted system turns are dropped on restore.
     let priorMessages: OpenAIMessage[] = []
     if (opts.sessionStore !== undefined && opts.persistSessionId !== undefined) {
-      const saved = await opts.sessionStore.load(opts.persistSessionId)
-      if (saved !== undefined) priorMessages = sessionMessagesToOpenAI(saved.messages)
+      try {
+        const saved = await opts.sessionStore.load(opts.persistSessionId)
+        if (saved !== undefined) priorMessages = sessionMessagesToOpenAI(saved.messages)
+      } catch (err) {
+        console.warn(
+          `[skelm/agent] session load failed for "${opts.persistSessionId}" — continuing stateless:`,
+          err,
+        )
+      }
     }
 
     const messages: OpenAIMessage[] = [
@@ -563,7 +570,14 @@ async function runAgentLoop(
             version: 1,
             messages: openAIToSessionMessages(finalMessages),
           }
-          await opts.sessionStore.save(opts.persistSessionId, serialized)
+          try {
+            await opts.sessionStore.save(opts.persistSessionId, serialized)
+          } catch (err) {
+            console.warn(
+              `[skelm/agent] session save failed for "${opts.persistSessionId}" — response preserved:`,
+              err,
+            )
+          }
         }
         return {
           text,
