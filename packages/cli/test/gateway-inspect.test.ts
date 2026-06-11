@@ -123,3 +123,63 @@ describe('gatewayInspectCommand', () => {
     expect(f.out).toContain('- infer')
   })
 })
+
+describe('redactConfig — secret-leak regressions', () => {
+  it('redacts a bare string under a credential key (the `config get <secret>` path)', () => {
+    // `config get server.auth.token` resolves to a BARE string; with no key
+    // context the redactor used to pass it through verbatim — a direct leak.
+    expect(redactConfig('supersecret', 'token')).toBe('<redacted>')
+    expect(redactConfig('sk-abc', 'apiKey')).toBe('<redacted>')
+    // Non-credential keys (and no key at all) still pass through untouched.
+    expect(redactConfig('http://x', 'baseUrl')).toBe('http://x')
+    expect(redactConfig('plain')).toBe('plain')
+  })
+
+  it('redacts inline secrets under compound credential keys (signingSecret, refreshToken, …)', () => {
+    // Anchored exact-match missed every compound key. signingSecret is a real
+    // Slack-trigger field (packages/core/src/triggers/slack.ts).
+    expect(redactConfig({ signingSecret: 'shh', port: 1 })).toEqual({
+      signingSecret: '<redacted>',
+      port: 1,
+    })
+    expect(redactConfig({ refreshToken: 'rt', clientSecret: 'cs', privateKey: 'pk' })).toEqual({
+      refreshToken: '<redacted>',
+      clientSecret: '<redacted>',
+      privateKey: '<redacted>',
+    })
+  })
+
+  it('propagates key context through arrays of inline secrets', () => {
+    expect(redactConfig(['a', 'b'], 'tokens')).toEqual(['<redacted>', '<redacted>'])
+  })
+})
+
+describe('gatewayInspectCommand — secret-leak regressions', () => {
+  it('config get of an inline secret redacts rather than printing it', async () => {
+    const path = writeGatewayConfig(
+      'export default { server: { auth: { mode: "token", token: "supersecret" } } }',
+    )
+    const f = fakeIo()
+    const r = await gatewayInspectCommand(
+      { subcommand: 'config', action: 'get', path: 'server.auth.token', gatewayConfig: path },
+      f.io,
+    )
+    expect(r.exitCode).toBe(0)
+    expect(f.out).not.toContain('supersecret')
+    expect(f.out.trim()).toBe('<redacted>')
+  })
+
+  it('config list redacts an inline signingSecret (compound credential key)', async () => {
+    const path = writeGatewayConfig(
+      'export default { triggers: { slack: { signingSecret: "shhh-do-not-leak" } } }',
+    )
+    const f = fakeIo()
+    const r = await gatewayInspectCommand(
+      { subcommand: 'config', action: 'list', gatewayConfig: path },
+      f.io,
+    )
+    expect(r.exitCode).toBe(0)
+    expect(f.out).not.toContain('shhh-do-not-leak')
+    expect(f.out).toContain('<redacted>')
+  })
+})
