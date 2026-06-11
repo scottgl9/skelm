@@ -631,8 +631,10 @@ async function runAgentStep(
     // step.mcp functions receive ctx.secrets, matching the contract that
     // runCodeStep and runInferStep already implement. Without this ordering
     // agent steps see no secrets in their user-supplied callbacks.
-    const declaredPolicy =
+    const hasDeclaredPolicy =
       step.permissions !== undefined || step.mcp !== undefined || preparedWorkspace !== undefined
+    const declaredPolicy =
+      hasDeclaredPolicy || runtime?.defaultPermissions !== undefined
         ? resolvePermissions(
             runtime?.defaultPermissions,
             applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
@@ -748,15 +750,14 @@ async function runAgentStep(
     // warned their constraint can't be honoured). The full merged `policy` is
     // still handed to the TrustEnforcer below, so every dimension the backend CAN
     // enforce is still enforced.
-    const authorPolicy =
-      step.permissions !== undefined || step.mcp !== undefined || preparedWorkspace !== undefined
-        ? resolvePermissions(
-            undefined,
-            applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
-            runtime?.permissionProfiles,
-            { grantUnrestricted: runtime?.unrestrictedGrant === true },
-          )
-        : undefined
+    const authorPolicy = hasDeclaredPolicy
+      ? resolvePermissions(
+          undefined,
+          applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
+          runtime?.permissionProfiles,
+          { grantUnrestricted: runtime?.unrestrictedGrant === true },
+        )
+      : undefined
     const declaredPermissionDimensions = collectResolvedPermissionDimensions(
       authorPolicy,
       mcpServers,

@@ -4,6 +4,7 @@ import {
   BackendRegistry,
   EventBus,
   PermissionDeniedError,
+  type ResolvedPolicy,
   type RunEvent,
   type SkelmBackend,
   agent,
@@ -134,6 +135,53 @@ describe('permission enforcement — adversarial', () => {
         }),
       ]),
     )
+  })
+
+  it('applies operator default permissions to a bare agent step', async () => {
+    const registry = new BackendRegistry()
+    let seenPolicy: ResolvedPolicy | undefined
+    const backend: SkelmBackend = {
+      id: 'capture',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'wrapped',
+      },
+      async run(req) {
+        seenPolicy = req.permissions
+        return { text: 'ok' }
+      },
+    }
+    registry.register(backend)
+
+    const run = await runPipeline(
+      pipeline({
+        id: 'bare-agent-defaults',
+        steps: [agent({ id: 'step', backend: 'capture', prompt: 'go' })],
+      }),
+      undefined,
+      {
+        backends: registry,
+        defaultPermissions: {
+          allowedTools: [],
+          fsRead: [],
+          fsWrite: [],
+          networkEgress: 'deny',
+        },
+      },
+    )
+
+    expect(run.status).toBe('completed')
+    expect(seenPolicy).toBeDefined()
+    expect(seenPolicy?.allowedTools.star).toBe(false)
+    expect(seenPolicy?.allowedTools.exact.size).toBe(0)
+    expect(seenPolicy?.fsRead.size).toBe(0)
+    expect(seenPolicy?.fsWrite.size).toBe(0)
+    expect(seenPolicy?.networkEgress).toBe('deny')
   })
 
   it('names the tool-class dimensions when a toolPermissions:unsupported backend is asked to enforce them', async () => {
