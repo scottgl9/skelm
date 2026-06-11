@@ -201,7 +201,7 @@ describe('egress-proxy', () => {
       const port = await startProxyWithPolicy('allow')
 
       // Make a CONNECT request and verify tunnel works
-      const result = await makeConnectRequest(port, `127.0.0.1:${testHttpPort}:443`, 'run1:step1')
+      const result = await makeConnectRequest(port, `127.0.0.1:${testHttpPort}`, 'run1:step1')
       expect(result.allowed).toBe(true)
     })
 

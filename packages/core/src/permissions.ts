@@ -3,6 +3,8 @@
 // + step-level + workspace into a final policy and enforces it through one
 // helper (TrustEnforcer) — backends and tools never branch on policy themselves.
 
+import { lookup as dnsLookup } from 'node:dns/promises'
+import { isIP } from 'node:net'
 import { isAbsolute, resolve as resolvePath } from 'node:path'
 import { PermissionDeniedError } from './errors.js'
 import { isMetadataAddress } from './net-classify.js'
@@ -761,6 +763,9 @@ export function createPolicyFetch(
     stepId: string
   },
   base: typeof globalThis.fetch = globalThis.fetch,
+  options: {
+    lookup?: (hostname: string) => Promise<ReadonlyArray<{ address: string }>>
+  } = {},
 ): typeof globalThis.fetch {
   return async function policyFetch(input, init) {
     if (enforcer.policy.unrestricted === true) return base(input, init)
@@ -804,6 +809,43 @@ export function createPolicyFetch(
         })
       }
       throw new PermissionDeniedError(detail)
+    }
+    const lookupHost = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
+    const shouldResolve =
+      isIP(lookupHost) === 0 && (options.lookup !== undefined || base === globalThis.fetch)
+    if (shouldResolve) {
+      const lookup = options.lookup ?? ((hostname: string) => dnsLookup(hostname, { all: true }))
+      let addresses: ReadonlyArray<{ address: string }>
+      try {
+        addresses = await lookup(lookupHost)
+      } catch {
+        const detail = `network request to "${host}" denied (dns-resolution-failed)`
+        if (events !== undefined) {
+          events.publish({
+            type: 'permission.denied',
+            runId: events.runId,
+            stepId: events.stepId,
+            dimension: 'network',
+            detail,
+            at: Date.now(),
+          })
+        }
+        throw new PermissionDeniedError(detail)
+      }
+      if (addresses.some((a) => isMetadataAddress(a.address))) {
+        const detail = `network request to cloud-metadata address resolved from "${host}" denied`
+        if (events !== undefined) {
+          events.publish({
+            type: 'permission.denied',
+            runId: events.runId,
+            stepId: events.stepId,
+            dimension: 'network',
+            detail,
+            at: Date.now(),
+          })
+        }
+        throw new PermissionDeniedError(detail)
+      }
     }
     return base(input, init)
   }

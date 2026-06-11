@@ -77,6 +77,20 @@ describe('egress-proxy metadata block (SSRF)', () => {
     expect(deny?.details?.reason).toBe('blocked-address')
   })
 
+  test('blocks hostname dialing when DNS validation fails before connect', async () => {
+    const { port, audit } = await start({
+      policy: 'allow',
+      lookup: async () => {
+        throw new Error('lookup timed out')
+      },
+    })
+    const result = await makeConnectRequest(port, 'slow.internal:443', 'run1:step1')
+    expect(result.allowed).toBe(false)
+    expect(result.statusCode).toBe(403)
+    const deny = audit.events.find((e) => e.action === 'network.egress:deny')
+    expect(deny?.details?.reason).toBe('blocked-address')
+  })
+
   test('allows a hostname that resolves to a public address', async () => {
     const { port, audit } = await start({
       policy: 'allow',

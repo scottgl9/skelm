@@ -4,8 +4,8 @@ import { afterEach, describe, expect, test } from 'vitest'
 import { EgressProxy, InMemoryTokenPolicyStore } from '../../src/proxy/index.js'
 
 // DoS limits on the egress proxy: a destination DNS lookup must not hang the
-// connection (it falls back to dialing by name), and a client streaming a
-// headless blob must be rejected rather than buffered unbounded.
+// connection, and a client streaming a headless blob must be rejected rather
+// than buffered unbounded.
 
 class FakeAuditWriter implements AuditWriter {
   async write(): Promise<void> {}
@@ -38,15 +38,14 @@ describe('egress-proxy DoS limits', () => {
     return proxy.getPort()
   }
 
-  test('a failing destination DNS lookup falls back to dial-by-name (no hang)', async () => {
+  test('a failing destination DNS lookup fails closed without hanging', async () => {
     const port = await start({
       lookup: async () => {
         throw new Error('resolver down')
       },
     })
-    // validateDestination catches the failure → dials by name → still writes 200.
     const result = await makeConnect(port, 'good.example:443', 'run1:step1')
-    expect(result.statusCode).toBe(200)
+    expect(result.statusCode).toBe(403)
   })
 
   test('rejects a headless blob that exceeds the request-head cap with 431', async () => {
