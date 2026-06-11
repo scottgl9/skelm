@@ -1,5 +1,5 @@
 import type { BackendContext, ResolvedPolicy, Skill } from '@skelm/core'
-import { BackendUnavailableError, PermissionDeniedError } from '@skelm/core'
+import { BackendCapabilityError, BackendUnavailableError, PermissionDeniedError } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock PiSdkClient so no real pi process is required. Pass through the
@@ -244,6 +244,20 @@ describe('createPiSdkBackend', () => {
   })
 
   // --- tool allowlist ---
+
+  it('refuses author-declared exact executable allowlists before SDK dispatch', async () => {
+    const policy = makePolicy({
+      allowedExecutables: new Set(['git']),
+      networkEgress: 'allow',
+    })
+    await expect(
+      createPiSdkBackend().run?.(
+        { prompt: 'go', permissions: policy },
+        makeCtx({ declaredPermissions: { allowedExecutables: ['git'] } }),
+      ),
+    ).rejects.toBeInstanceOf(BackendCapabilityError)
+    expect(PiSdkClient).not.toHaveBeenCalled()
+  })
 
   it('passes tool allowlist when policy is provided', async () => {
     const policy = makePolicy({

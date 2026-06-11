@@ -1,6 +1,7 @@
 import { runWithMemoryTurns } from '@skelm/agentmemory'
 import {
   BackendAuthenticationError,
+  BackendCapabilityError,
   BackendRateLimitError,
   BackendTimeoutError,
   PermissionDeniedError,
@@ -68,6 +69,7 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
       // Validate permissions at skelm layer BEFORE forwarding to opencode
       const policy =
         context.permissions ?? request.permissions ?? resolvePermissions(undefined, undefined)
+      assertExecutableAllowlistEnforceable(context, options.id ?? 'opencode')
 
       const permissionResult = validatePermissions(policy, {
         // We don't have direct access to requested tools in AgentRequest
@@ -168,6 +170,15 @@ export function createOpencodeBackend(options: OpencodeBackendOptions): SkelmBac
   }
 
   return backend
+}
+
+function assertExecutableAllowlistEnforceable(ctx: BackendContext, backendId: string): void {
+  if ((ctx.declaredPermissions?.allowedExecutables?.length ?? 0) === 0) return
+  throw new BackendCapabilityError(
+    `backend ${backendId} cannot enforce exact allowedExecutables entries; use a wrapped backend or remove the executable allowlist`,
+    backendId,
+    'toolPermissions',
+  )
 }
 
 function deniedFilesystemMcpRoots(

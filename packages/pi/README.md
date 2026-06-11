@@ -128,7 +128,8 @@ createPiSdkBackend({
 
 | skelm permission | pi tools enabled |
 |---|---|
-| `allowedExecutables` has `bash` or `sh` | `bash` |
+| author-declared non-empty `allowedExecutables` | **refused** — pi has no exact per-binary allowlist |
+| operator/default policy includes `bash` or `sh` | `bash` |
 | `fsRead.size > 0` | `read`, `grep`, `find`, `ls` |
 | `fsWrite.size > 0` | `write`, `edit` (+ read tools) |
 | policy `undefined` | no override; pi uses its defaults |
@@ -138,10 +139,10 @@ createPiSdkBackend({
 
 Pi enforces a process-level tool allowlist. Two consequences worth knowing:
 
-- **`bash` is all-or-nothing.** Pi has a single `bash` tool, not per-binary tools. If `allowedExecutables` contains `bash` or `sh`, the agent can run any binary.
+- **`bash` is all-or-nothing.** Pi has a single `bash` tool, not per-binary tools. A workflow-authored non-empty `allowedExecutables` list is refused because Pi cannot enforce it exactly; operator defaults may still enable the coarse bash tool for isolated deployments.
 - **Filesystem paths are advisory.** `fsRead`/`fsWrite` paths unlock the category of filesystem tools, but pi's `read`/`write`/`grep`/`find`/`ls` tools can access anywhere the pi process has filesystem permission.
 
-If you need per-binary or per-path enforcement, use an MCP-host backend such as opencode and route privileged operations through MCP servers skelm can intercept. Use the Pi backend when Pi runs inside an isolated workspace, OS sandbox, or container that already bounds filesystem and shell access.
+If you need per-binary or per-path enforcement, use a wrapped backend such as `@skelm/agent` and route privileged operations through helpers skelm can intercept. Use the Pi backend when Pi runs inside an isolated workspace, OS sandbox, or container that already bounds filesystem and shell access.
 
 ## Skills
 

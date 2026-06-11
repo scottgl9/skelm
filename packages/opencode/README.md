@@ -1,12 +1,12 @@
 # @skelm/opencode
 
-> [Opencode.ai](https://opencode.ai) coding-agent backend for [skelm](https://github.com/scottgl9/skelm) — full granular permission enforcement, multi-agent support.
+> [Opencode.ai](https://opencode.ai) coding-agent backend for [skelm](https://github.com/scottgl9/skelm) — supervised coding-agent execution, multi-agent support.
 
 [![npm](https://img.shields.io/npm/v/@skelm/opencode)](https://www.npmjs.com/package/@skelm/opencode)
 
 Part of [skelm](https://github.com/scottgl9/skelm).
 
-Drives Opencode through its official SDK, mapping skelm's `AgentPermissions` model onto Opencode's permission primitives so a denied tool, exec, host, or filesystem write fails at step start instead of leaking past the trust boundary.
+Drives Opencode through its official SDK, mapping skelm's `AgentPermissions` model onto Opencode's permission primitives so denied tool, host, or filesystem access fails at step start instead of leaking past the trust boundary. Exact per-binary `allowedExecutables` cannot be represented by opencode's single bash permission and is refused when declared.
 
 ## Install
 
@@ -57,7 +57,7 @@ export default pipeline({
       prompt: (ctx) => `Fix the following bug and return a JSON summary {summary}:\n${ctx.input.description}`,
       permissions: {
         allowedTools:       [],
-        allowedExecutables: ['npm', 'pnpm', 'tsc'],
+        allowedExecutables: [],
         allowedMcpServers:  [],
         allowedSkills:      [],
         fsRead:             ['./src'],
@@ -99,7 +99,7 @@ export type {
 
 ## Permission mapping
 
-Permissions declared on the skelm `agent()` step are translated into Opencode's permission types before each turn. A denial — wrong tool, wrong host, wrong filesystem path, wrong exec — surfaces as a `permission-denied` event on the bus and a non-zero exit code on the run.
+Permissions declared on the skelm `agent()` step are translated into Opencode's permission types before each turn. A denial — wrong tool, wrong host, or wrong filesystem path — surfaces as a `permission-denied` event on the bus and a non-zero exit code on the run. A non-empty author-declared `allowedExecutables` list is refused because opencode exposes bash as one coarse permission, not an exact executable allowlist.
 
 See [`docs/backends/opencode.md`](https://github.com/scottgl9/skelm/blob/main/docs/backends/opencode.md) for the full mapping table.
 

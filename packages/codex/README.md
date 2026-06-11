@@ -98,6 +98,7 @@ The boundary-time mapper translates a resolved skelm policy into Codex SDK optio
 | `request.cwd` set                           | overrides `workingDirectory`                                  |
 | `fsWrite: ['*']` AND no approval policy     | `sandboxMode: 'danger-full-access'`                           |
 | `fsWrite: ['*']` AND approval policy set    | **refused** — never silently escalate                         |
+| author-declared non-empty `allowedExecutables` | **refused** — Codex has no exact per-binary shell allowlist |
 | `networkEgress: 'deny'`                     | `networkAccessEnabled: false`                                 |
 | `networkEgress: 'allow'` or `{ allowHosts }` | `networkAccessEnabled: true` (gateway proxy enforces hosts)  |
 | `approval.on` covers `tool` / `executable`  | `approvalPolicy: 'untrusted'`                                 |
