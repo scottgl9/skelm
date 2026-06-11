@@ -515,8 +515,9 @@ async function readMetadata(path: string): Promise<WorkspaceMetadata | null> {
   } catch (error) {
     // ENOENT: <path> exists but has no .skelm/workspace.json (not a skelm dir).
     // ENOTDIR: <path> itself isn't a directory (raw file in the scanned base).
-    // Both mean "this isn't one of ours" — never propagate.
-    if (isMissing(error) || isNotADirectory(error)) return null
+    // EACCES: dir is owned by another user (e.g. /tmp/pulse-* on Linux desktops).
+    // All mean "this isn't one of ours" — never propagate.
+    if (isMissing(error) || isNotADirectory(error) || isPermissionDenied(error)) return null
     throw error
   }
 }
@@ -596,6 +597,10 @@ function isMissing(error: unknown): boolean {
 
 function isNotADirectory(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOTDIR'
+}
+
+function isPermissionDenied(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'EACCES'
 }
 
 function sleep(ms: number): Promise<void> {
