@@ -121,6 +121,23 @@ describe('Scheduler — runtime', () => {
     await scheduler.stop()
   })
 
+  it('start() does not arm a second timer for an already registered interval', async () => {
+    vi.useFakeTimers()
+    try {
+      const deps = makeDeps()
+      const scheduler = new Scheduler({}, deps)
+      await scheduler.register(createIntervalTrigger('once', 'p', 1_000))
+
+      await scheduler.start()
+      await vi.advanceTimersByTimeAsync(1_000)
+      await scheduler.stop()
+
+      expect(deps.pipelineExecutor).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('overlap=wait chains firings serially', async () => {
     const starts: number[] = []
     const runStore = { putRun: async () => {} }
