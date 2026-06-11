@@ -6,6 +6,7 @@ import {
   branch,
   code,
   forEach,
+  idempotent,
   loop,
   parallel,
   pipeline,
@@ -474,7 +475,7 @@ describe('wait()', () => {
           pipelineStep({ id: 'slow', pipeline: inner }),
         ],
       }),
-    ).toThrow(/wait\(gate\) is not allowed inside parallel/)
+    ).toThrow(/wait\(gate\) is not allowed inside pipelineStep/)
   })
 
   it('rejects wait() nested transitively (via branch) inside parallel()', () => {
@@ -490,7 +491,65 @@ describe('wait()', () => {
           }),
         ],
       }),
-    ).toThrow(/wait\(pause\) is not allowed inside parallel/)
+    ).toThrow(/wait\(pause\) is not allowed inside branch/)
+  })
+
+  it('rejects wait() nested directly inside branch() at build time', () => {
+    expect(() =>
+      branch({
+        id: 'route',
+        on: () => 'risky',
+        cases: { risky: wait({ id: 'human-approval' }) },
+      }),
+    ).toThrow(/wait\(human-approval\) is not allowed inside branch/)
+  })
+
+  it('rejects wait() nested directly inside loop() at build time', () => {
+    expect(() =>
+      loop({
+        id: 'retry',
+        while: () => true,
+        maxIterations: 1,
+        step: wait({ id: 'pause' }),
+      }),
+    ).toThrow(/wait\(pause\) is not allowed inside loop/)
+  })
+
+  it('rejects wait() nested inside idempotent() at build time', () => {
+    expect(() =>
+      idempotent({
+        id: 'once',
+        key: 'approval',
+        step: wait({ id: 'pause' }),
+      }),
+    ).toThrow(/wait\(pause\) is not allowed inside idempotent/)
+  })
+
+  it('rejects wait() nested inside pipelineStep() at build time', () => {
+    const inner = pipeline({
+      id: 'inner-approval',
+      steps: [wait({ id: 'gate' })],
+    })
+    expect(() => pipelineStep({ id: 'nested', pipeline: inner })).toThrow(
+      /wait\(gate\) is not allowed inside pipelineStep/,
+    )
+  })
+
+  it('rejects wait() returned from forEach() step factories before executing it', async () => {
+    const wf = pipeline({
+      id: 'foreach-wait',
+      steps: [
+        forEach({
+          id: 'each',
+          items: () => [1],
+          step: () => wait({ id: 'pause' }),
+        }),
+      ],
+    })
+
+    const run = await runPipeline(wf, undefined)
+    expect(run.status).toBe('failed')
+    expect(run.error?.message).toMatch(/wait\(pause\) is not allowed inside forEach/)
   })
 })
 

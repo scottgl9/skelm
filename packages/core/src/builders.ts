@@ -417,7 +417,11 @@ export function forEach(def: {
     kind: 'forEach',
     id: def.id,
     items: def.items,
-    step: def.step,
+    step: (item: unknown, index: number) => {
+      const child = def.step(item, index)
+      assertNoWaitInside('forEach', def.id, child)
+      return child
+    },
     ...(def.concurrency !== undefined && { concurrency: def.concurrency }),
     ...(def.state !== undefined && { state: def.state }),
     ...(def.retry !== undefined && { retry: def.retry }),
@@ -445,6 +449,12 @@ export function branch(def: {
     throw new Error(`branch(${def.id}): cases must have at least one entry`)
   }
   assertValidRetryPolicy('branch', def.id, def.retry)
+  for (const child of Object.values(def.cases)) {
+    assertNoWaitInside('branch', def.id, child)
+  }
+  if (def.default !== undefined) {
+    assertNoWaitInside('branch', def.id, def.default)
+  }
   return Object.freeze({
     kind: 'branch',
     id: def.id,
@@ -486,6 +496,7 @@ export function loop(def: {
     throw new Error(`loop(${def.id}): maxIterations must be >= 1`)
   }
   assertValidRetryPolicy('loop', def.id, def.retry)
+  assertNoWaitInside('loop', def.id, def.step)
   return Object.freeze({
     kind: 'loop',
     id: def.id,
@@ -543,6 +554,9 @@ export function pipelineStep<TInput, TOutput>(def: {
     throw new Error(`pipelineStep(${def.id}): pipeline is required`)
   }
   assertValidRetryPolicy('pipelineStep', def.id, def.retry)
+  for (const child of def.pipeline.steps) {
+    assertNoWaitInside('pipelineStep', def.id, child)
+  }
   return Object.freeze({
     kind: 'pipelineStep',
     id: def.id,
@@ -602,6 +616,7 @@ export function idempotent<TOutput>(def: {
   }
   const id = def.id ?? def.step.id
   if (!id) throw new Error('idempotent(): id is required (or provide a step with an id)')
+  assertNoWaitInside('idempotent', id, def.step)
   return Object.freeze({
     kind: 'idempotent',
     id,
@@ -636,7 +651,7 @@ function assertValidRetryPolicy(kind: string, id: StepId, retry: RetryPolicy | u
 function assertNoWaitInside(containerKind: string, containerId: StepId, step: Step): void {
   if (step.kind === 'wait') {
     throw new Error(
-      `${containerKind}(${containerId}): wait(${step.id}) is not allowed inside ${containerKind}() — concurrent waits share a single resume slot and would hang. Move the wait() outside ${containerKind}() or use sequential steps.`,
+      `${containerKind}(${containerId}): wait(${step.id}) is not allowed inside ${containerKind}() because nested waits cannot be resumed durably after restart. Move the wait() to a top-level pipeline step.`,
     )
   }
   switch (step.kind) {
