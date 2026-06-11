@@ -39,12 +39,17 @@ export interface TriggerCoordinatorOptions {
    */
   onFireError?: (triggerId: string, err: unknown) => void
   /**
-   * Invoked after each interval tick updates `registration.nextFireAt` so
+   * Invoked after a recurring trigger updates `registration.nextFireAt` so
    * callers can persist the new timestamp. Without this hook any restart
-   * after the first successful interval fire replays the original
+   * after the first successful recurring fire replays the original
    * create-time snapshot, causing drift.
    */
   onNextFireAtUpdated?: (registration: TriggerRegistration) => void
+  /**
+   * Invoked after a one-shot dynamic trigger fires so callers can remove its
+   * durable schedule record instead of replaying dead schedules forever.
+   */
+  onOneShotCompleted?: (registration: TriggerRegistration) => void
 }
 
 const DEFAULT_MAX_QUEUE_DEPTH = 1000
@@ -140,7 +145,10 @@ export class TriggerCoordinator {
     }
     const reg = this.registrations.get(triggerId)
     if (next === null) {
-      if (reg !== undefined) reg.nextFireAt = undefined
+      if (reg !== undefined) {
+        reg.nextFireAt = undefined
+        this.opts.onNextFireAtUpdated?.(reg)
+      }
       // No fire within nextFireTime's lookahead window. This does NOT mean the
       // cron never fires — a valid but sparse expression (e.g. `0 0 29 2 *`,
       // whose next Feb 29 can be years out across a non-leap century) also
@@ -156,7 +164,10 @@ export class TriggerCoordinator {
       this.cronTimers.set(triggerId, recheck)
       return
     }
-    if (reg !== undefined) reg.nextFireAt = next.toISOString()
+    if (reg !== undefined) {
+      reg.nextFireAt = next.toISOString()
+      this.opts.onNextFireAtUpdated?.(reg)
+    }
     const delay = Math.max(0, next.getTime() - Date.now())
     // A sparse cron (e.g. annual `0 0 1 1 *`) can be months out — a delay
     // well beyond setTimeout's 2^31-1 ms ceiling, where Node would clamp it
@@ -353,6 +364,7 @@ export class TriggerCoordinator {
         // Fire on the next tick so register() can return before dispatch.
         setImmediate(() => {
           this.fireDetached(spec.id)
+          this.opts.onOneShotCompleted?.(reg)
         }).unref?.()
         break
       case 'at': {
@@ -367,6 +379,7 @@ export class TriggerCoordinator {
           setImmediate(() => {
             reg.nextFireAt = undefined
             this.fireDetached(spec.id)
+            this.opts.onOneShotCompleted?.(reg)
           }).unref?.()
         } else {
           reg.nextFireAt = new Date(ts).toISOString()
@@ -377,6 +390,7 @@ export class TriggerCoordinator {
           const t = new LongTimer(delay, () => {
             reg.nextFireAt = undefined
             this.fireDetached(spec.id)
+            this.opts.onOneShotCompleted?.(reg)
           })
           this.atTimers.set(spec.id, t)
         }
@@ -441,8 +455,10 @@ export class TriggerCoordinator {
         // First tick records baseline; subsequent ticks fire on change.
         void tick()
         reg.nextFireAt = new Date(Date.now() + spec.everyMs).toISOString()
+        this.opts.onNextFireAtUpdated?.(reg)
         const t = setInterval(() => {
           reg.nextFireAt = new Date(Date.now() + spec.everyMs).toISOString()
+          this.opts.onNextFireAtUpdated?.(reg)
           void tick()
         }, spec.everyMs)
         t.unref?.()
