@@ -286,7 +286,7 @@ export class SqliteRunStore implements RunStore {
         `SELECT payload_json
          FROM events
          WHERE ${clauses.join(' AND ')}
-         ORDER BY at ASC, id ASC ${limit}`,
+         ORDER BY at ASC, COALESCE(json_extract(payload_json, '$.value.seq'), id) ASC, id ASC ${limit}`,
       )
       .all(...params) as Array<{ payload_json: string }>
     for (const row of rows) {
