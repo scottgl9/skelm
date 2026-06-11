@@ -59,14 +59,42 @@ async function main(): Promise<void> {
     const importMatches = [...src.matchAll(/^(?:import|export).*?from\s+['"]([^'"]+)['"]/gm)]
     for (const m of importMatches) {
       const importStmt = m[0]
+      const specifier = m[1] ?? ''
+      const line = lineOf(src, m.index ?? 0)
+      if (isDeepRuntimeSpecifier(specifier)) {
+        violations.push({ file: rel, symbol: specifier, line })
+      }
       for (const sym of FORBIDDEN) {
         // Match the symbol as a whole word inside the import braces.
         const re = new RegExp(`[{,\\s]${sym}[\\s,}]`)
         if (re.test(importStmt)) {
-          const idx = m.index ?? 0
-          const line = src.slice(0, idx).split('\n').length
           violations.push({ file: rel, symbol: sym, line })
         }
+      }
+    }
+    const dynamicMatches = [
+      ...src.matchAll(/const\s*{([^}]+)}\s*=\s*await\s*import\(\s*['"]([^'"]+)['"]\s*\)/gms),
+    ]
+    for (const m of dynamicMatches) {
+      const bindings = m[1] ?? ''
+      const specifier = m[2] ?? ''
+      if (!isRuntimePackage(specifier)) continue
+      const line = lineOf(src, m.index ?? 0)
+      if (isDeepRuntimeSpecifier(specifier)) {
+        violations.push({ file: rel, symbol: specifier, line })
+      }
+      for (const sym of FORBIDDEN) {
+        const re = new RegExp(`(?:^|[,\\s])${sym}(?:\\s|,|:|$)`)
+        if (re.test(bindings)) violations.push({ file: rel, symbol: sym, line })
+      }
+    }
+    const dynamicSpecifierMatches = [
+      ...src.matchAll(/(?<!type\s+)import\(\s*['"]([^'"]+)['"]\s*\)/gm),
+    ]
+    for (const m of dynamicSpecifierMatches) {
+      const specifier = m[1] ?? ''
+      if (isDeepRuntimeSpecifier(specifier)) {
+        violations.push({ file: rel, symbol: specifier, line: lineOf(src, m.index ?? 0) })
       }
     }
   }
@@ -83,6 +111,18 @@ async function main(): Promise<void> {
     '\nThe CLI is meant to dispatch to the gateway. Move runtime work\n  into the gateway and have the CLI call it over HTTP.\n  If a new exemption is genuinely warranted, add the file to ALLOWLIST\n  in scripts/guards/cli-no-core-runtime.ts with a one-line justification.\n',
   )
   process.exit(1)
+}
+
+function lineOf(src: string, index: number): number {
+  return src.slice(0, index).split('\n').length
+}
+
+function isRuntimePackage(specifier: string): boolean {
+  return specifier === '@skelm/core' || specifier === '@skelm/gateway'
+}
+
+function isDeepRuntimeSpecifier(specifier: string): boolean {
+  return specifier.startsWith('@skelm/core/') || specifier.startsWith('@skelm/gateway/')
 }
 
 void main().catch((err) => {
