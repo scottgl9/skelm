@@ -39,6 +39,7 @@ import {
   WorkflowRegistry,
 } from '../registries/index.js'
 import { FileSecretResolver } from '../secrets/file-driver.js'
+import { TaskService } from '../tasks/task-service.js'
 import { TriggerCoordinator } from '../triggers/coordinator.js'
 import { createTriggerDispatcher } from '../triggers/dispatcher.js'
 import { DynamicScheduleStore } from '../triggers/dynamic-schedule-store.js'
@@ -99,6 +100,7 @@ export class Gateway implements GatewayContext {
    *  first reader or writer creates it. */
   private eventsBusInternal: import('@skelm/core').EventBus | null = null
   private readonly breakpointsInternal: import('../debug/breakpoint-registry.js').BreakpointRegistry
+  private tasksInternal: TaskService | null = null
   private workflowRegistrationInternal: WorkflowRegistrationService | null = null
   private workflowArchiveInternal: WorkflowArchiveService | null = null
   private dynamicScheduleStoreInternal: DynamicScheduleStore | null = null
@@ -354,6 +356,18 @@ export class Gateway implements GatewayContext {
     return this.observability.collector
   }
 
+  /**
+   * Detached-task lifecycle service. Lazily constructed so it binds to the
+   * fully-initialized gateway context. `start()` is called during the lifecycle
+   * `start()` once the run store and event bus exist.
+   */
+  get tasks(): TaskService {
+    if (this.tasksInternal === null) {
+      this.tasksInternal = new TaskService(this)
+    }
+    return this.tasksInternal
+  }
+
   /** Subscribe an EventBus into the metrics collector. No-op when disabled. */
   attachMetricsBus(bus: import('@skelm/core').EventBus): void {
     this.observability.attachMetricsBus(bus)
@@ -368,8 +382,12 @@ export class Gateway implements GatewayContext {
     this.observability.attachOtelBus(bus)
   }
 
-  async startPipelineAsync(pipelineId: string, input: unknown): Promise<{ runId: string }> {
-    return this.runtimeInternal.startPipelineAsync(pipelineId, input)
+  async startPipelineAsync(
+    pipelineId: string,
+    input: unknown,
+    lineage?: import('../execution/gateway-runtime.js').RunLineage,
+  ): Promise<{ runId: string }> {
+    return this.runtimeInternal.startPipelineAsync(pipelineId, input, lineage)
   }
 
   async startAdhocRunByFile(
@@ -587,6 +605,12 @@ export class Gateway implements GatewayContext {
       // must be marked failed before new runs start so listRuns reflects
       // ground truth and operators can see what was lost.
       await recoverInterruptedRuns(this.runStoreInternal)
+      // Reconcile detached tasks whose child run was finalized (including by
+      // the recovery pass above) while the gateway was down, then subscribe
+      // for live child-run completion. Runs after run recovery so a crashed
+      // 'running' task whose child is now 'failed' transitions correctly.
+      await this.tasks.reconcile()
+      this.tasks.start()
       // Reap orphan ephemeral workspaces left by interrupted runs (plan §4.4).
       // Conservative: only deletes directories that carry a skelm
       // `.skelm/workspace.json` metadata file with mode:'ephemeral' AND
@@ -808,6 +832,8 @@ export class Gateway implements GatewayContext {
         }),
       ])
     } finally {
+      this.tasksInternal?.stop()
+      this.tasksInternal = null
       this.observability.dispose()
       this.state = 'stopped'
       this.lockfile = null

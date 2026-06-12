@@ -149,6 +149,48 @@ Webhook credentials such as `secret` and MS Graph `clientState` are redacted.
 | POST   | `/sessions/prune`             | Prune expired/old sessions           |
 | DELETE | `/sessions/:id`               | Drop a session                       |
 
+## Tasks & lineage (`/v1/tasks`, `/v1/lineage`)
+
+Detached tasks let a caller (an operator, or a running pipeline) spawn a
+workflow as a tracked, fire-and-forget child run. The task record is the
+durable handle: it links the parent run to the child run, carries the task's
+status, and is what `skelm tasks` and the lineage view read. The control
+surface uses the same bearer auth as every other endpoint, and every write is
+recorded through the single gateway audit writer (`task.create`, `task.cancel`,
+`task.retry`).
+
+| Method | Path                          | Description                                                                 |
+| ------ | ----------------------------- | --------------------------------------------------------------------------- |
+| GET    | `/v1/tasks`                   | List tasks. Query: `status`, `parentRunId`, `workflowId`, `limit`           |
+| GET    | `/v1/tasks/:id`               | Get one task record                                                         |
+| POST   | `/v1/tasks`                   | Create + dispatch a task; body `{ workflowId, input?, parentRunId?, parentStepId?, deliveryTarget? }` |
+| POST   | `/v1/tasks/:id/cancel`        | Cancel a task and its child run; `409` if already terminal                  |
+| POST   | `/v1/tasks/:id/retry`         | Re-dispatch a `failed`/`cancelled` task as a new task; `409` otherwise       |
+| GET    | `/v1/tasks/:id/events`        | Return the child run's persisted events (`{ taskId, runId, events }`); accepts `?since` and `?limit`, same shape as `/runs/:runId/events` |
+| GET    | `/v1/lineage/:runId`          | Reconstruct a run's lineage: `{ runId, ancestors, descendants }`            |
+
+`POST /v1/tasks` validates that `workflowId` is a registered workflow (`404`
+otherwise), writes a `pending` task, dispatches the child run through the same
+registered-workflow start path as `/pipelines/:id/start` — there is no separate
+execution path — then links `childRunId` and flips the task to `running`. The
+child run carries `parentRunId`, `parentStepId`, and `taskId` lineage stamps so
+`/v1/lineage` can walk it later. The task transitions to `completed` / `failed`
+/ `cancelled` when its child run reaches a terminal event; `task.*` run events
+ride the parent run's event bus (or the child run's, when there is no parent) so
+existing subscribers see them. On gateway boot, tasks left `running` whose child
+run already finished are reconciled to their terminal status after run recovery.
+
+`/v1/lineage/:runId` returns the chain of `ancestors` (nearest first) and a
+tree of `descendants`; both directions are capped at a fixed depth so a corrupt
+parent cycle or a very deep tree cannot run the query unbounded.
+
+**Permission posture (this phase).** Task creation is a control-plane action:
+it is gated by bearer auth and audited, nothing more. The child run executes
+under **its own declared permissions** — there is no permission inheritance or
+ceiling from the parent run or the task in this phase. `deliveryTarget` is an
+**experimental** field recorded on the task for a future delivery mechanism; it
+is stored and echoed back but not yet acted on.
+
 ## Debug
 
 | Method | Path                                | Description                       |

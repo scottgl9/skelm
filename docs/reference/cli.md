@@ -240,6 +240,33 @@ skelm schedule stop <id> [--json]
 skelm schedule fire <id> [--json]
 ```
 
+### `skelm tasks <list|get|cancel|retry>`
+
+Inspect and manage detached tasks — workflows spawned as tracked, detached
+child runs (see [Tasks & lineage](./http.md#tasks-lineage-v1-tasks-v1-lineage)).
+Thin client over `/v1/tasks`.
+
+```
+skelm tasks list [--status <s>] [--parent <run-id>] [--json]
+  --status <s>            pending|running|completed|failed|cancelled
+  --parent <run-id>       Filter by parent run id
+skelm tasks get <task-id> [--json]      Show one task record
+skelm tasks cancel <task-id> [--json]   Cancel a task and its child run
+skelm tasks retry <task-id> [--json]    Re-dispatch a failed/cancelled task
+```
+
+`cancel` on an already-terminal task and `retry` on a non-terminal task both
+exit non-zero (the gateway returns `409`).
+
+### `skelm lineage <run-id>`
+
+Show a run's ancestors and descendants, reconstructed from task links. Thin
+client over `/v1/lineage/:runId`.
+
+```
+skelm lineage <run-id> [--json]
+```
+
 ### `skelm init [<dir>]`
 
 Scaffold a new skelm project under `<dir>` (defaults to `.`). Creates

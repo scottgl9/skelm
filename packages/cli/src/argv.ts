@@ -20,6 +20,8 @@ const COMMANDS = [
   'builder',
   'dashboard',
   'package',
+  'tasks',
+  'lineage',
 ] as const
 
 type Subcommand = (typeof COMMANDS)[number]
@@ -49,9 +51,11 @@ const VALUE_FLAGS = [
   'lines',
   'older-than-ms',
   'overlap',
+  'parent',
   'reason',
   'run',
   'since',
+  'status',
   'gateway-url',
   'host',
   'port',

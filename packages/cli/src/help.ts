@@ -13,6 +13,8 @@ Usage:
   skelm debug <breakpoints|add|remove|runs|release> [args]
   skelm sessions <list|prune> [--expired] [--older-than-ms <ms>] [--json]
   skelm schedule <add|list|stop|fire> [args]
+  skelm tasks <list|get|cancel|retry> [args]
+  skelm lineage <run-id> [--json]
   skelm validate <pipeline.ts> [--json]
   skelm logs [--lines <n>] [--since <iso>] [--level <lvl>] [--filter <s>] [--json]
   skelm init [<dir>] [--force]
@@ -299,6 +301,24 @@ Schedule flags:
     --overlap skip|queue|cancel  Overlap policy (default: skip)
   skelm schedule stop <id> [--json]             Unregister a schedule
   skelm schedule fire <id> [--json]             Manually fire a schedule now
+`,
+  tasks: `Usage:
+  skelm tasks <list|get|cancel|retry> [args]
+
+Tasks flags:
+  skelm tasks list [--status <s>] [--parent <run-id>] [--json]
+    --status <s>            Filter by status: pending|running|completed|failed|cancelled
+    --parent <run-id>       Filter by parent run id
+  skelm tasks get <task-id> [--json]            Show one task record
+  skelm tasks cancel <task-id> [--json]         Cancel a task and its child run
+  skelm tasks retry <task-id> [--json]          Re-dispatch a failed/cancelled task
+`,
+  lineage: `Usage:
+  skelm lineage <run-id> [--json]
+
+Lineage flags:
+  skelm lineage <run-id>                        Show a run's ancestors + descendants
+    --json                                       Emit the lineage tree as JSON
 `,
   validate: `Usage:
   skelm validate <pipeline.ts> [--json]
