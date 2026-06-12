@@ -70,7 +70,8 @@ Approvals config flags:
 
 Audit flags:
   skelm audit query [--run <runId>] [--actor <name>] [--action <type>]
-                      [--since <ISO8601>] [--until <ISO8601>] [--limit <n>] [--json]
+                      [--since <ISO8601>] [--until <ISO8601>] [--limit <n>]
+                      [--before <seq>] [--json]
 
 Secrets flags:
   skelm secrets list [--json]
@@ -248,7 +249,8 @@ Approvals config flags:
 
 Audit flags:
   skelm audit query [--run <runId>] [--actor <name>] [--action <type>]
-                    [--since <ISO8601>] [--until <ISO8601>] [--limit <n>] [--json]
+                    [--since <ISO8601>] [--until <ISO8601>] [--limit <n>]
+                    [--before <seq>] [--json]
 `,
   secrets: `Usage:
   skelm secrets <get|set|list> [args]

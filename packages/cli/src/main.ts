@@ -317,6 +317,7 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
         const sinceFlag = parsed.flags.since
         const untilFlag = parsed.flags.until
         const limit = integerFlag(parsed.flags.limit, 'limit')
+        const before = integerFlag(parsed.flags.before, 'before')
         const result = await auditCommand(
           {
             runId: typeof parsed.flags.run === 'string' ? parsed.flags.run : undefined,
@@ -325,6 +326,7 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
             since: typeof sinceFlag === 'string' ? sinceFlag : undefined,
             until: typeof untilFlag === 'string' ? untilFlag : undefined,
             ...(limit !== undefined && { limit }),
+            ...(before !== undefined && { before }),
             json: parsed.flags.json === true,
           },
           io,

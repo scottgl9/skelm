@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
-import { promises as fs } from 'node:fs'
+import { promises as fs, createReadStream } from 'node:fs'
 import { dirname } from 'node:path'
+import { createInterface } from 'node:readline'
 import type { AuditEvent, AuditFilter, AuditWriter } from '@skelm/core'
 
 /**
@@ -69,46 +70,72 @@ export class ChainAuditWriter implements AuditWriter {
     }
   }
 
-  async readAll(): Promise<ChainEntry[]> {
+  /**
+   * Stream the log line-by-line, parsing each entry, without ever holding the
+   * whole file in memory. The backing file is append-only JSON-Lines, so a
+   * line cursor over a read stream is O(1) memory regardless of file size — a
+   * 1.5M-line log would overflow V8's max-string limit if read whole.
+   */
+  private async *streamEntries(): AsyncGenerator<ChainEntry> {
+    // createReadStream defers ENOENT to an async 'error' event, which the
+    // for-await loop surfaces as a rejection — caught below, not at open.
+    const stream = createReadStream(this.path, { encoding: 'utf8' })
     try {
-      const raw = await fs.readFile(this.path, 'utf8')
-      return raw
-        .split(/\r?\n/)
-        .filter((l) => l.length > 0)
-        .map((l) => JSON.parse(l) as ChainEntry)
+      const rl = createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY })
+      for await (const line of rl) {
+        if (line.length === 0) continue
+        yield JSON.parse(line) as ChainEntry
+      }
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
       throw err
+    } finally {
+      stream.destroy()
     }
   }
 
+  async readAll(): Promise<ChainEntry[]> {
+    const entries: ChainEntry[] = []
+    for await (const entry of this.streamEntries()) entries.push(entry)
+    return entries
+  }
+
+  /**
+   * Filtered, bounded read. Returns at most `limit` (default 500, max 5000)
+   * entries, defaulting to the most recent (tail). Memory stays O(limit): a
+   * ring buffer keeps only the trailing window as entries stream past.
+   */
   async list(filter: AuditFilter = {}): Promise<readonly ChainEntry[]> {
     const sinceTs = filter.since !== undefined ? Date.parse(filter.since) : null
     const untilTs = filter.until !== undefined ? Date.parse(filter.until) : null
-    const entries = (await this.readAll()).filter((entry) => {
-      if (filter.runId !== undefined && entry.runId !== filter.runId) return false
-      if (filter.actor !== undefined && entry.actor !== filter.actor) return false
-      if (filter.action !== undefined && entry.action !== filter.action) return false
+    const limit = Math.max(1, Math.min(5000, filter.limit ?? 500))
+    const window: ChainEntry[] = []
+    for await (const entry of this.streamEntries()) {
+      if (filter.before !== undefined && entry.seq >= filter.before) continue
+      if (filter.runId !== undefined && entry.runId !== filter.runId) continue
+      if (filter.actor !== undefined && entry.actor !== filter.actor) continue
+      if (filter.action !== undefined && entry.action !== filter.action) continue
       const ts = Date.parse(entry.timestamp)
-      if (sinceTs !== null && ts < sinceTs) return false
-      if (untilTs !== null && ts > untilTs) return false
-      return true
-    })
-    return filter.limit === undefined ? entries : entries.slice(-filter.limit)
+      if (sinceTs !== null && ts < sinceTs) continue
+      if (untilTs !== null && ts > untilTs) continue
+      window.push(entry)
+      if (window.length > limit) window.shift()
+    }
+    return window
   }
 
   /** Walk the chain, verifying every prevHash + entryHash. Returns null on success. */
   async verify(): Promise<{ seq: number; reason: string } | null> {
-    const entries = await this.readAll()
     let prev = '0'.repeat(64)
-    for (let i = 0; i < entries.length; i++) {
-      const e = entries[i] as ChainEntry
+    let i = 0
+    for await (const e of this.streamEntries()) {
       if (e.seq !== i + 1) return { seq: e.seq, reason: 'out-of-order seq' }
       if (e.prevHash !== prev) return { seq: e.seq, reason: 'broken chain' }
       const { entryHash, ...rest } = e
       const recomputed = hashCanonical(rest)
       if (recomputed !== entryHash) return { seq: e.seq, reason: 'tampered entry' }
       prev = entryHash
+      i++
     }
     return null
   }

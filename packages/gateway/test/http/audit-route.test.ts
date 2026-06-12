@@ -75,6 +75,27 @@ describe('GET /audit', () => {
     const res = await fetch(`${base}/audit?since=not-a-date`)
     expect(res.status).toBe(400)
   })
+
+  it('rejects an invalid before cursor with 400', async () => {
+    const res = await fetch(`${base}/audit?before=0`)
+    expect(res.status).toBe(400)
+  })
+
+  it('returns a nextBefore cursor for backwards paging', async () => {
+    const page1 = await fetch(`${base}/audit?limit=1`)
+    expect(page1.status).toBe(200)
+    const { entries: e1, nextBefore } = await page1.json()
+    expect(e1).toHaveLength(1)
+    expect(e1[0]).toMatchObject({ runId: 'run-2' })
+    expect(nextBefore).toBe(e1[0].seq)
+
+    const page2 = await fetch(`${base}/audit?limit=1&before=${nextBefore}`)
+    expect(page2.status).toBe(200)
+    const { entries: e2 } = await page2.json()
+    expect(e2).toHaveLength(1)
+    expect(e2[0]).toMatchObject({ runId: 'run-1' })
+    expect(e2[0].seq).toBeLessThan(nextBefore)
+  })
 })
 
 describe('GET /audit/verify', () => {

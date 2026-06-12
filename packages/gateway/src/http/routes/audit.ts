@@ -8,8 +8,12 @@ import type { GatewayContext } from '../../lifecycle/gateway-types.js'
  * <stateDir>/audit.jsonl. Returns the same shape the CLI used to read in-
  * process, so the only difference for callers is the transport.
  *
- * GET /audit         — filtered list of chain entries
- *   query: runId?, actor?, action?, since?, until?, limit?
+ * GET /audit         — filtered, bounded list of chain entries (tail by default)
+ *   query: runId?, actor?, action?, since?, until?, limit?, before?
+ *   `limit` defaults to 500, hard-capped at 5000, so a single GET never
+ *   materialises an unbounded audit log. `before` is a seq cursor for
+ *   backwards paging: pass the lowest seq from a page to fetch the next-older
+ *   page.
  * GET /audit/verify  — walk the chain and report the first integrity break
  */
 export function registerAuditRoutes(router: Router, gateway: GatewayContext): void {
@@ -35,6 +39,11 @@ export function registerAuditRoutes(router: Router, gateway: GatewayContext): vo
       if (limitRaw !== undefined && Number.isNaN(Number(limitRaw))) {
         throw createError({ statusCode: 400, message: 'limit: invalid integer' })
       }
+      const beforeRaw = stringOf(q.before)
+      const before = beforeRaw === undefined ? undefined : Number(beforeRaw)
+      if (before !== undefined && (Number.isNaN(before) || before < 1)) {
+        throw createError({ statusCode: 400, message: 'before: invalid seq cursor' })
+      }
       const sinceTs = since !== undefined ? Date.parse(since) : null
       const untilTs = until !== undefined ? Date.parse(until) : null
       if (since !== undefined && Number.isNaN(sinceTs)) {
@@ -50,8 +59,12 @@ export function registerAuditRoutes(router: Router, gateway: GatewayContext): vo
         ...(since !== undefined && { since }),
         ...(until !== undefined && { until }),
         ...(limit !== undefined && { limit }),
+        ...(before !== undefined && { before }),
       })
-      return { entries }
+      // nextBefore is the cursor for the next-older page: the lowest seq in
+      // this page. null when the page is empty (nothing older to fetch).
+      const nextBefore = entries.length > 0 ? (entries[0]?.seq ?? null) : null
+      return { entries, nextBefore }
     }),
   )
 

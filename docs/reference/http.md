@@ -56,6 +56,23 @@ The `:id` path segment is the workflow-registry id — by default this is the fi
 | POST   | `/runs/:runId/approve`        | Approve a paused approval gate; body `{ stepId, approver?, reason? }` |
 | POST   | `/runs/:runId/deny`           | Deny a paused approval gate; body `{ stepId, approver?, reason? }` |
 
+## Audit
+
+| Method | Path            | Description |
+| ------ | --------------- | ----------- |
+| GET    | `/audit`        | Filtered, bounded list of hash-chained audit entries. Returns `{ entries, nextBefore }` |
+| GET    | `/audit/verify` | Walk the chain and report the first integrity break; returns `{ ok, breach? }` |
+
+`GET /audit` streams the append-only `audit.jsonl` log line-by-line and never
+loads the whole file, so memory stays bounded regardless of log size. It
+returns the most recent entries (tail) by default.
+
+Query parameters: `runId`, `actor`, `action`, `since` (ISO-8601), `until`
+(ISO-8601), `limit` (default 500, max 5000), and `before` — a sequence-number
+cursor for backwards paging. The response `nextBefore` is the lowest `seq` in
+the page (or `null` when empty); pass it as `before` to fetch the next-older
+page.
+
 ## Triggers
 
 | Method | Path                       | Description                          |
