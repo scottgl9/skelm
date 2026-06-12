@@ -44,9 +44,28 @@ beforeEach(async () => {
 afterEach(async () => {
   await gw?.stop()
   gw = undefined
-  await rm(stateDir, { recursive: true, force: true })
-  await rm(projectRoot, { recursive: true, force: true })
+  await removeTreeWithRetry(stateDir)
+  await removeTreeWithRetry(projectRoot)
 })
+
+async function removeTreeWithRetry(path: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (
+        attempt >= 4 ||
+        !(error instanceof Error) ||
+        !('code' in error) ||
+        error.code !== 'ENOTEMPTY'
+      ) {
+        throw error
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)))
+    }
+  }
+}
 
 describe('POST /pipelines/run-file', () => {
   it('runs an ad-hoc workflow file to completion', async () => {

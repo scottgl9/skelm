@@ -116,7 +116,8 @@ async function overview(): Promise<void> {
     api<{ runs: RunRow[] }>('/v1/dashboard/runs?limit=8').catch(() => ({ runs: [] })),
   ])
   const advisory = runtimeInfo?.advisoryBackends ?? []
-  if (advisory.length > 0) setNotice(`Advisory permission mode is active for: ${advisory.join(', ')}`)
+  if (advisory.length > 0)
+    setNotice(`Advisory permission mode is active for: ${advisory.join(', ')}`)
   el.content.innerHTML = `
     <div class="grid">
       ${metric('Runs', summary.runs?.total ?? 0, 'all recorded runs')}
@@ -132,12 +133,18 @@ async function overview(): Promise<void> {
       <section class="panel">
         <h2>Gateway Summary</h2>
         <p><span class="pill ok">${escapeHtml(summary.gateway?.status ?? 'unknown')}</span></p>
-        <pre>${escapeHtml(JSON.stringify({
-          version: summary.gateway?.version,
-          uptimeMs: summary.gateway?.uptimeMs,
-          auth: runtimeInfo?.gateway?.auth,
-          metricsEnabled: runtimeInfo?.gateway?.metricsEnabled,
-        }, null, 2))}</pre>
+        <pre>${escapeHtml(
+          JSON.stringify(
+            {
+              version: summary.gateway?.version,
+              uptimeMs: summary.gateway?.uptimeMs,
+              auth: runtimeInfo?.gateway?.auth,
+              metricsEnabled: runtimeInfo?.gateway?.metricsEnabled,
+            },
+            null,
+            2,
+          ),
+        )}</pre>
       </section>
     </div>
   `
@@ -146,26 +153,69 @@ async function overview(): Promise<void> {
 async function workflows(): Promise<void> {
   const pipelines = await api<Array<Record<string, any>>>('/pipelines').catch(() => [])
   el.content.innerHTML = `
-    <section class="panel">
-      <h2>Execute Workflow</h2>
-      <div class="form">
-        <input id="workflow-id" placeholder="workflow id" />
-        <textarea id="workflow-input">{}</textarea>
-        <button id="run-workflow" class="primary" type="button">Run Workflow</button>
-      </div>
-    </section>
+    <div class="split even">
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Execute Workflow</h2>
+            <p class="muted">Run a registered workflow with JSON input.</p>
+          </div>
+        </div>
+        <div class="form">
+          <label>Workflow ID<input id="workflow-id" placeholder="workflow id" /></label>
+          <label>Input JSON<textarea id="workflow-input">{}</textarea></label>
+          <button id="run-workflow" class="primary" type="button">Run Workflow</button>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Import Workflow</h2>
+            <p class="muted">Upload .zip, .mts, or .ts files into the gateway registry.</p>
+          </div>
+        </div>
+        <form id="workflow-upload" class="form">
+          <label>Workflow ID<input id="upload-id" placeholder="optional id" /></label>
+          <label>Entry file<input id="upload-entry" placeholder="optional zip entry" /></label>
+          <label class="file-drop">
+            <input id="upload-file" type="file" accept=".zip,.mts,.ts" />
+            <span>Choose workflow file</span>
+            <strong id="upload-name">No file selected</strong>
+          </label>
+          <button class="primary" type="submit">Upload Workflow</button>
+        </form>
+      </section>
+    </div>
     <div class="table-wrap"><table>
       <thead><tr><th>Workflow</th><th>File</th><th>Description</th><th></th></tr></thead>
-      <tbody>${pipelines.map((wf) => `
+      <tbody>${
+        pipelines
+          .map(
+            (wf) => `
         <tr>
           <td><strong>${escapeHtml(wf.id ?? '-')}</strong><div class="muted">${escapeHtml(wf.pipelineId ?? '')}</div></td>
           <td>${escapeHtml(wf.file ?? '-')}</td>
           <td>${escapeHtml(wf.description ?? '')}</td>
           <td class="row-actions"><button class="primary" data-run="${escapeAttr(wf.id ?? '')}">Run</button></td>
-        </tr>`).join('') || emptyRow(4, 'No workflows discovered')}</tbody>
+        </tr>`,
+          )
+          .join('') || emptyRow(4, 'No workflows discovered')
+      }</tbody>
     </table></div>
   `
-  required<HTMLButtonElement>('#run-workflow', el.content).addEventListener('click', () => void runWorkflow())
+  required<HTMLButtonElement>('#run-workflow', el.content).addEventListener(
+    'click',
+    () => void runWorkflow(),
+  )
+  const uploadFile = required<HTMLInputElement>('#upload-file', el.content)
+  uploadFile.addEventListener('change', () => {
+    required<HTMLElement>('#upload-name', el.content).textContent =
+      uploadFile.files?.[0]?.name ?? 'No file selected'
+  })
+  required<HTMLFormElement>('#workflow-upload', el.content).addEventListener('submit', (event) => {
+    event.preventDefault()
+    void uploadWorkflow()
+  })
   for (const btn of el.content.querySelectorAll<HTMLButtonElement>('[data-run]')) {
     btn.addEventListener('click', () => {
       required<HTMLInputElement>('#workflow-id', el.content).value = btn.dataset.run ?? ''
@@ -193,6 +243,30 @@ async function runWorkflow(): Promise<void> {
   await render()
 }
 
+async function uploadWorkflow(): Promise<void> {
+  const input = required<HTMLInputElement>('#upload-file', el.content)
+  const file = input.files?.[0]
+  if (file === undefined) return setNotice('Choose a .zip, .mts, or .ts workflow file')
+  const id = required<HTMLInputElement>('#upload-id', el.content).value.trim()
+  const entry = required<HTMLInputElement>('#upload-entry', el.content).value.trim()
+  const archive = file.name.endsWith('.zip')
+    ? new Uint8Array(await file.arrayBuffer())
+    : await zipSingleFile(file)
+  const form = new FormData()
+  if (id !== '') form.set('id', id)
+  if (entry !== '') form.set('entry', entry)
+  form.set(
+    'archive',
+    new Blob([archive], { type: 'application/zip' }),
+    file.name.endsWith('.zip') ? file.name : `${file.name}.zip`,
+  )
+  const res = await fetch('/api/v1/workflows/register', { method: 'POST', body: form })
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+  const body = (await res.json()) as { workflow?: { id?: string } }
+  setNotice(`Workflow uploaded: ${(body.workflow?.id ?? id) || file.name}`)
+  await workflows()
+}
+
 async function runs(): Promise<void> {
   const data = await api<{ runs: RunRow[] }>('/v1/dashboard/runs?limit=50')
   const selected = state.selectedRun ?? data.runs?.[0]?.runId
@@ -213,8 +287,12 @@ async function loadRunDetail(runId: string): Promise<void> {
   closeStream()
   const [run, events, artifacts] = await Promise.all([
     api<Record<string, any>>(`/runs/${encodeURIComponent(runId)}`),
-    api<{ events: unknown[] }>(`/runs/${encodeURIComponent(runId)}/events`).catch(() => ({ events: [] })),
-    api<{ artifacts: Array<Record<string, any>> }>(`/runs/${encodeURIComponent(runId)}/artifacts`).catch(() => ({ artifacts: [] })),
+    api<{ events: unknown[] }>(`/runs/${encodeURIComponent(runId)}/events`).catch(() => ({
+      events: [],
+    })),
+    api<{ artifacts: Array<Record<string, any>> }>(
+      `/runs/${encodeURIComponent(runId)}/artifacts`,
+    ).catch(() => ({ artifacts: [] })),
   ])
   const detail = required<HTMLElement>('#run-detail', el.content)
   detail.innerHTML = `
@@ -231,7 +309,9 @@ async function loadRunDetail(runId: string): Promise<void> {
     <h3>Run State</h3>
     <pre>${escapeHtml(JSON.stringify(run, null, 2))}</pre>
   `
-  required<HTMLButtonElement>('#stream-run', detail).addEventListener('click', () => streamRun(runId))
+  required<HTMLButtonElement>('#stream-run', detail).addEventListener('click', () =>
+    streamRun(runId),
+  )
   required<HTMLButtonElement>('#cancel-run', detail).addEventListener('click', async () => {
     await api(`/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' })
     await render()
@@ -239,11 +319,16 @@ async function loadRunDetail(runId: string): Promise<void> {
 }
 
 async function approvals(): Promise<void> {
-  const data = await api<Record<string, any>>('/v1/dashboard/approvals').catch(() => ({ pending: [] }))
+  const data = await api<Record<string, any>>('/v1/dashboard/approvals').catch(() => ({
+    pending: [],
+  }))
   const pending: Array<Record<string, any>> = data.pending ?? data.items ?? []
   el.content.innerHTML = `<div class="table-wrap"><table>
     <thead><tr><th>Approval</th><th>Request</th><th>Created</th><th></th></tr></thead>
-    <tbody>${pending.map((item) => `
+    <tbody>${
+      pending
+        .map(
+          (item) => `
       <tr>
         <td><strong>${escapeHtml(item.id)}</strong></td>
         <td><pre>${escapeHtml(JSON.stringify(item.request ?? item, null, 2))}</pre></td>
@@ -252,7 +337,10 @@ async function approvals(): Promise<void> {
           <button class="primary" data-approve="${escapeAttr(item.id)}">Approve</button>
           <button class="danger" data-deny="${escapeAttr(item.id)}">Reject</button>
         </td>
-      </tr>`).join('') || emptyRow(4, 'No pending approvals')}</tbody>
+      </tr>`,
+        )
+        .join('') || emptyRow(4, 'No pending approvals')
+    }</tbody>
   </table></div>`
   for (const btn of el.content.querySelectorAll<HTMLButtonElement>('[data-approve], [data-deny]')) {
     btn.addEventListener('click', async () => {
@@ -268,17 +356,25 @@ async function approvals(): Promise<void> {
 }
 
 async function schedules(): Promise<void> {
-  const data = await api<{ schedules: Array<Record<string, any>> }>('/v1/dashboard/schedules').catch(() => ({ schedules: [] }))
+  const data = await api<{ schedules: Array<Record<string, any>> }>(
+    '/v1/dashboard/schedules',
+  ).catch(() => ({ schedules: [] }))
   el.content.innerHTML = `<div class="table-wrap"><table>
     <thead><tr><th>Schedule</th><th>Workflow</th><th>Trigger</th><th>State</th><th></th></tr></thead>
-    <tbody>${(data.schedules ?? []).map((s) => `
+    <tbody>${
+      (data.schedules ?? [])
+        .map(
+          (s) => `
       <tr>
         <td><strong>${escapeHtml(s.id ?? s.spec?.id)}</strong></td>
         <td>${escapeHtml(s.workflowId ?? s.spec?.workflowId ?? '-')}</td>
         <td>${escapeHtml(s.kind ?? s.spec?.kind ?? '-')}</td>
         <td><span class="pill">${escapeHtml(s.status ?? s.state ?? 'registered')}</span></td>
         <td class="row-actions"><button data-fire="${escapeAttr(s.id ?? s.spec?.id)}">Fire</button></td>
-      </tr>`).join('') || emptyRow(5, 'No schedules registered')}</tbody>
+      </tr>`,
+        )
+        .join('') || emptyRow(5, 'No schedules registered')
+    }</tbody>
   </table></div>`
   for (const btn of el.content.querySelectorAll<HTMLButtonElement>('[data-fire]')) {
     btn.addEventListener('click', async () => {
@@ -291,7 +387,10 @@ async function schedules(): Promise<void> {
 async function sessions(): Promise<void> {
   const [acp, agentmemory] = await Promise.all([
     api<unknown[]>('/sessions').catch(() => []),
-    api<Record<string, any>>('/v1/agentmemory/sessions').catch(() => ({ enabled: false, sessions: [] })),
+    api<Record<string, any>>('/v1/agentmemory/sessions').catch(() => ({
+      enabled: false,
+      sessions: [],
+    })),
   ])
   el.content.innerHTML = `
     <section class="panel"><h2>ACP Sessions</h2><pre>${escapeHtml(JSON.stringify(acp, null, 2))}</pre></section>
@@ -319,8 +418,14 @@ async function audit(): Promise<void> {
     <section class="panel"><h2>Audit Chain</h2><p><span class="pill ${verify?.ok ? 'ok' : 'warn'}">${verify?.ok ? 'verified' : 'unverified'}</span></p></section>
     <div class="table-wrap"><table>
       <thead><tr><th>Seq</th><th>Action</th><th>Actor</th><th>Run</th><th>Details</th></tr></thead>
-      <tbody>${(data.entries ?? []).map((entry) => `
-        <tr><td>${entry.seq ?? ''}</td><td>${escapeHtml(entry.action)}</td><td>${escapeHtml(entry.actor)}</td><td>${escapeHtml(entry.runId ?? '')}</td><td><pre>${escapeHtml(JSON.stringify(entry.details ?? {}, null, 2))}</pre></td></tr>`).join('') || emptyRow(5, 'No audit entries')}</tbody>
+      <tbody>${
+        (data.entries ?? [])
+          .map(
+            (entry) => `
+        <tr><td>${entry.seq ?? ''}</td><td>${escapeHtml(entry.action)}</td><td>${escapeHtml(entry.actor)}</td><td>${escapeHtml(entry.runId ?? '')}</td><td><pre>${escapeHtml(JSON.stringify(entry.details ?? {}, null, 2))}</pre></td></tr>`,
+          )
+          .join('') || emptyRow(5, 'No audit entries')
+      }</tbody>
     </table></div>
   `
 }
@@ -335,7 +440,17 @@ function streamRun(runId: string): void {
   const log = required<HTMLElement>('#event-log')
   state.stream = new EventSource(`/api/runs/${encodeURIComponent(runId)}/stream`)
   state.stream.onmessage = (event) => appendEvent(log, 'message', event.data)
-  for (const type of ['run.state', 'step.start', 'step.complete', 'step.error', 'step.partial', 'run.completed', 'run.failed', 'run.cancelled', 'permission.advisory']) {
+  for (const type of [
+    'run.state',
+    'step.start',
+    'step.complete',
+    'step.error',
+    'step.partial',
+    'run.completed',
+    'run.failed',
+    'run.cancelled',
+    'permission.advisory',
+  ]) {
     state.stream.addEventListener(type, (event) => appendEvent(log, type, event.data))
   }
   state.stream.onerror = () => appendEvent(log, 'stream.error', '{}')
@@ -344,21 +459,124 @@ function streamRun(runId: string): void {
 function runsTable(runs: readonly RunRow[], clickable = false): string {
   return `<div class="table-wrap"><table>
     <thead><tr><th>Run</th><th>Workflow</th><th>Status</th><th>Started</th></tr></thead>
-    <tbody>${runs.map((run) => `
+    <tbody>${
+      runs
+        .map(
+          (run) => `
       <tr ${clickable ? `data-run-id="${escapeAttr(run.runId)}"` : ''}>
         <td><strong>${escapeHtml(run.runId)}</strong></td>
         <td>${escapeHtml(run.pipelineId ?? run.workflowId ?? '-')}</td>
         <td><span class="pill ${statusClass(run.status)}">${escapeHtml(run.status)}</span></td>
         <td>${formatTime(run.startedAt)}</td>
-      </tr>`).join('') || emptyRow(4, 'No runs recorded')}</tbody>
+      </tr>`,
+        )
+        .join('') || emptyRow(4, 'No runs recorded')
+    }</tbody>
   </table></div>`
 }
 
 function artifactsList(runId: string, artifacts: Array<Record<string, any>>): string {
   if (artifacts.length === 0) return '<p class="muted">No artifacts</p>'
-  return `<div class="table-wrap"><table><tbody>${artifacts.map((a) => `
-    <tr><td>${escapeHtml(a.name)}</td><td>${escapeHtml(a.mimeType)}</td><td>${Number(a.sizeBytes ?? 0).toLocaleString()} bytes</td><td><a href="/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(a.artifactId)}">Download</a></td></tr>`).join('')}</tbody></table></div>`
+  return `<div class="table-wrap"><table><tbody>${artifacts
+    .map(
+      (a) => `
+    <tr><td>${escapeHtml(a.name)}</td><td>${escapeHtml(a.mimeType)}</td><td>${Number(a.sizeBytes ?? 0).toLocaleString()} bytes</td><td><a href="/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(a.artifactId)}">Download</a></td></tr>`,
+    )
+    .join('')}</tbody></table></div>`
 }
+
+async function zipSingleFile(file: File): Promise<Uint8Array> {
+  const nameBytes = new TextEncoder().encode(file.name)
+  const data = new Uint8Array(await file.arrayBuffer())
+  const crc = crc32(data)
+  const now = new Date()
+  const time =
+    ((now.getHours() & 0x1f) << 11) |
+    ((now.getMinutes() & 0x3f) << 5) |
+    ((now.getSeconds() / 2) & 0x1f)
+  const date =
+    (((now.getFullYear() - 1980) & 0x7f) << 9) |
+    (((now.getMonth() + 1) & 0xf) << 5) |
+    (now.getDate() & 0x1f)
+  const localSize = 30 + nameBytes.length + data.length
+  const centralSize = 46 + nameBytes.length
+  const out = new Uint8Array(localSize + centralSize + 22)
+  const view = new DataView(out.buffer)
+  let offset = 0
+  const writeU16 = (value: number): void => {
+    view.setUint16(offset, value, true)
+    offset += 2
+  }
+  const writeU32 = (value: number): void => {
+    view.setUint32(offset, value >>> 0, true)
+    offset += 4
+  }
+  const writeBytes = (bytes: Uint8Array): void => {
+    out.set(bytes, offset)
+    offset += bytes.length
+  }
+
+  writeU32(0x04034b50)
+  writeU16(20)
+  writeU16(0)
+  writeU16(0)
+  writeU16(time)
+  writeU16(date)
+  writeU32(crc)
+  writeU32(data.length)
+  writeU32(data.length)
+  writeU16(nameBytes.length)
+  writeU16(0)
+  writeBytes(nameBytes)
+  writeBytes(data)
+
+  const centralOffset = offset
+  writeU32(0x02014b50)
+  writeU16(20)
+  writeU16(20)
+  writeU16(0)
+  writeU16(0)
+  writeU16(time)
+  writeU16(date)
+  writeU32(crc)
+  writeU32(data.length)
+  writeU32(data.length)
+  writeU16(nameBytes.length)
+  writeU16(0)
+  writeU16(0)
+  writeU16(0)
+  writeU16(0)
+  writeU32(0)
+  writeU32(0)
+  writeBytes(nameBytes)
+
+  const centralLength = offset - centralOffset
+  writeU32(0x06054b50)
+  writeU16(0)
+  writeU16(0)
+  writeU16(1)
+  writeU16(1)
+  writeU32(centralLength)
+  writeU32(centralOffset)
+  writeU16(0)
+  return out
+}
+
+function crc32(data: Uint8Array): number {
+  let crc = 0xffffffff
+  for (const byte of data) {
+    crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ byte) & 0xff]
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+const CRC32_TABLE = Array.from({ length: 256 }, (_, index) => {
+  let value = index
+  for (let bit = 0; bit < 8; bit += 1) {
+    value = (value & 1) === 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1
+  }
+  return value >>> 0
+})
 
 async function api<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -430,13 +648,17 @@ function messageOf(err: unknown): string {
 }
 
 function escapeHtml(value: unknown): string {
-  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  })[char] ?? char)
+  return String(value ?? '').replace(
+    /[&<>"']/g,
+    (char) =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[char] ?? char,
+  )
 }
 
 function escapeAttr(value: unknown): string {

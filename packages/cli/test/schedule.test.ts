@@ -29,8 +29,27 @@ afterEach(async () => {
   else process.env.SKELM_STATE_DIR = priorStateDir
   if (priorNoAutostart === undefined) process.env.SKELM_NO_AUTOSTART = undefined
   else process.env.SKELM_NO_AUTOSTART = priorNoAutostart
-  await rm(stateDir, { recursive: true, force: true })
+  await removeTreeWithRetry(stateDir)
 })
+
+async function removeTreeWithRetry(path: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (
+        attempt >= 4 ||
+        !(error instanceof Error) ||
+        !('code' in error) ||
+        error.code !== 'ENOTEMPTY'
+      ) {
+        throw error
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)))
+    }
+  }
+}
 
 describe('skelm schedule — CLI smoke', () => {
   it('errors out with usage when invoked without a subcommand', async () => {

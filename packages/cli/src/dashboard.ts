@@ -33,6 +33,7 @@ const TEMPLATE_FILES: ReadonlyArray<readonly [string, string]> = [
   ['src/public/index.html.tmpl', 'src/public/index.html'],
   ['src/public/app.mts.tmpl', 'src/public/app.mts'],
   ['src/public/styles.css.tmpl', 'src/public/styles.css'],
+  ['src/public/logo-icon.svg.tmpl', 'src/public/logo-icon.svg'],
 ]
 
 export async function dashboardCommand(

@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { type IncomingMessage, type ServerResponse, createServer } from 'node:http'
 import { stripTypeScriptTypes } from 'node:module'
 import { extname, isAbsolute, normalize, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,7 +30,7 @@ export async function startDashboardServer(
   options: DashboardServerOptions = {},
 ): Promise<DashboardServerHandle> {
   const host = options.host ?? config.host ?? '127.0.0.1'
-  const port = Number(options.port ?? config.port ?? 14739)
+  const port = Number(options.port ?? config.port ?? 14740)
   const token = options.token ?? config.token ?? process.env.SKELM_TOKEN
   const runtime: RuntimeConfig = {
     gatewayUrl: String(options.gatewayUrl ?? config.gatewayUrl ?? 'http://127.0.0.1:14738'),
@@ -125,7 +125,7 @@ async function serveStatic(pathname: string, res: ServerResponse): Promise<void>
     res.end('forbidden')
     return
   }
-  let info
+  let info: Awaited<ReturnType<typeof stat>>
   try {
     info = await stat(file)
   } catch {
@@ -157,6 +157,8 @@ function contentType(file: string): string {
       return 'text/javascript; charset=utf-8'
     case '.json':
       return 'application/json; charset=utf-8'
+    case '.svg':
+      return 'image/svg+xml; charset=utf-8'
     default:
       return 'application/octet-stream'
   }
