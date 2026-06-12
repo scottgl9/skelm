@@ -12,6 +12,7 @@ interface AgentPermissions {
   allowedTools?: ToolMatcher                  // tools agent may call
   deniedTools?: ToolMatcher                   // tools explicitly blocked
   allowedExecutables?: readonly string[]      // binaries for exec/bash
+  executableProfiles?: readonly string[]      // named executable sets from skelm config
   allowedMcpServers?: readonly string[]       // MCP server ids from config
   allowedSkills?: readonly string[]           // skill ids agent may load
   allowedSecrets?: readonly string[]          // secret names the step may resolve
@@ -112,6 +113,48 @@ agent({
   },
 })
 ```
+
+## Executable profiles
+
+Executable profiles are operator-defined, named sets of executables that permissions reference by name instead of repeating `allowedExecutables` lists across workflows. Definitions live in config (`defaults.executableProfiles`); workflows can only *reference* a profile — they can never define or alter one.
+
+```ts
+// skelm.config.ts (or skelm.gateway.ts)
+defaults: {
+  executableProfiles: {
+    linuxReadOnly: {
+      description: 'read-only shell utilities',
+      executables: ['ls', 'cat', 'rg', 'find', 'head', 'tail'],
+      tags: ['read-only'],
+    },
+    gitReadOnly: { executables: ['git'] },
+    nodeBuild: { executables: ['node', 'pnpm'] },
+  },
+}
+```
+
+These three are *documented examples*, not built-ins: no profile exists or is granted unless your config defines it **and** a permission layer references it by name. Default-deny holds — a step with no `executableProfiles` and no `allowedExecutables` has no executables at all.
+
+Reference profiles from any permission layer:
+
+```ts
+agent({
+  id: 'implement',
+  permissions: {
+    executableProfiles: ['gitReadOnly', 'nodeBuild'],
+    allowedExecutables: ['git', 'node'],   // optional; narrows the expansion
+  },
+})
+```
+
+Resolution semantics:
+
+- Within a layer, the referenced profiles expand to the **union** of their executables. An explicit `allowedExecutables` on the same layer then **intersects** with the expansion — it can only narrow, never widen. Above, `pnpm` is dropped because the explicit list excludes it.
+- Across layers (project defaults → named permission profile → step-level), the usual intersection-only composition applies: a step-level profile reference can never widen past the project-default ceiling.
+- Referencing a profile name the config does not define throws the typed `UnknownExecutableProfileError` **before the run starts** — `skelm validate` flags it statically (`unknown-executable-profile`), and every gateway run path rejects it at workflow load.
+- The resolved policy records the applied names as `executableProfileNames` metadata for inspect/audit surfaces; enforcement reads only the expanded `allowedExecutables` set.
+
+> **Caveat:** executable allowlists — profiles included — gate at the **binary** level only. Allowing `git` allows *every* git subcommand (`git push`, `git config`, …); a "read-only" profile name is documentation of intent, not a subcommand restriction.
 
 ## TrustEnforcer
 

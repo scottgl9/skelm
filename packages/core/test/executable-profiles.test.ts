@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
+import { code, pipeline } from '../src/builders.js'
 import { PermissionResolver } from '../src/enforcement/permission-resolver.js'
 import { UnknownExecutableProfileError } from '../src/errors.js'
+import { EventBus } from '../src/events.js'
+import type { ExecFn } from '../src/index.js'
 import {
   type ExecutableProfileDefinition,
   intersectResolvedPolicies,
   resolvePermissions,
 } from '../src/permissions.js'
+import { Runner, runPipeline } from '../src/runner.js'
 
 const DEFINITIONS: Readonly<Record<string, ExecutableProfileDefinition>> = {
   linuxReadOnly: {
@@ -165,5 +169,95 @@ describe('PermissionResolver — executable profile definitions', () => {
     expect(() => resolver.resolve({ executableProfiles: ['nope'] })).toThrow(
       UnknownExecutableProfileError,
     )
+  })
+})
+
+describe('run-start validation of executable profile references', () => {
+  const unknownRefPipeline = () =>
+    pipeline({
+      id: 'wf-unknown-profile',
+      steps: [
+        code({
+          id: 'x',
+          permissions: { executableProfiles: ['notDefined'] },
+          run: () => 'never',
+        }),
+      ],
+    })
+
+  it('runPipeline rejects before publishing any run event', async () => {
+    const events = new EventBus()
+    const seen: string[] = []
+    events.subscribe((e) => seen.push(e.type))
+    await expect(
+      runPipeline(unknownRefPipeline(), undefined, { events, executableProfiles: {} }),
+    ).rejects.toBeInstanceOf(UnknownExecutableProfileError)
+    expect(seen).toEqual([])
+  })
+
+  it('Runner.start throws synchronously on an unknown reference', () => {
+    const runner = new Runner({ executableProfiles: DEFINITIONS })
+    expect(() => runner.start(unknownRefPipeline(), undefined)).toThrow(
+      UnknownExecutableProfileError,
+    )
+  })
+
+  it('rejects unknown references in the defaults layer', async () => {
+    const wf = pipeline({ id: 'wf-defaults', steps: [code({ id: 'noop', run: () => 1 })] })
+    await expect(
+      runPipeline(wf, undefined, {
+        defaultPermissions: { executableProfiles: ['notDefined'] },
+        executableProfiles: DEFINITIONS,
+      }),
+    ).rejects.toBeInstanceOf(UnknownExecutableProfileError)
+  })
+
+  it('rejects unknown references in the named permission profile a step selects', async () => {
+    const wf = pipeline({
+      id: 'wf-named-profile',
+      steps: [code({ id: 'x', permissions: { profile: 'analyst' }, run: () => 1 })],
+    })
+    await expect(
+      runPipeline(wf, undefined, {
+        permissionProfiles: { analyst: { executableProfiles: ['notDefined'] } },
+        executableProfiles: DEFINITIONS,
+      }),
+    ).rejects.toBeInstanceOf(UnknownExecutableProfileError)
+  })
+
+  it('runs end-to-end with a profile-expanded exec grant', async () => {
+    const wf = pipeline({
+      id: 'wf-profile-exec',
+      steps: [
+        code({
+          id: 'echo',
+          permissions: { executableProfiles: ['nodeBuild'] },
+          run: async (ctx) =>
+            await (ctx.exec as ExecFn)({
+              command: 'node',
+              args: ['-e', 'process.stdout.write("hi")'],
+            }),
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, undefined, { executableProfiles: DEFINITIONS })
+    expect(run.status).toBe('completed')
+    expect((run.steps[0]?.output as { stdout: string }).stdout).toBe('hi')
+  })
+
+  it('denies exec outside the referenced profile at runtime', async () => {
+    const wf = pipeline({
+      id: 'wf-profile-deny',
+      steps: [
+        code({
+          id: 'git',
+          permissions: { executableProfiles: ['gitReadOnly'] },
+          run: async (ctx) => await (ctx.exec as ExecFn)({ command: 'node', args: ['-v'] }),
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, undefined, { executableProfiles: DEFINITIONS })
+    expect(run.status).toBe('failed')
+    expect(run.error?.message).toMatch(/exec denied/)
   })
 })

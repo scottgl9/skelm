@@ -309,7 +309,12 @@ async function runCodeStep(
       runtime?.defaultPermissions,
       applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
       runtime?.permissionProfiles ?? {},
-      { grantUnrestricted: runtime?.unrestrictedGrant === true },
+      {
+        grantUnrestricted: runtime?.unrestrictedGrant === true,
+        ...(runtime?.executableProfiles !== undefined && {
+          executableProfiles: runtime.executableProfiles,
+        }),
+      },
     )
     // Bound a delegated child step to the delegating agent's grant.
     const policy =
@@ -647,7 +652,12 @@ async function runAgentStep(
             runtime?.defaultPermissions,
             applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
             runtime?.permissionProfiles,
-            { grantUnrestricted: runtime?.unrestrictedGrant === true },
+            {
+              grantUnrestricted: runtime?.unrestrictedGrant === true,
+              ...(runtime?.executableProfiles !== undefined && {
+                executableProfiles: runtime.executableProfiles,
+              }),
+            },
           )
         : undefined
     // Bound a delegated child agent step to the delegating agent's grant. A
@@ -763,7 +773,12 @@ async function runAgentStep(
           undefined,
           applyWorkspacePermissions(step.permissions, preparedWorkspace?.handle.path),
           runtime?.permissionProfiles,
-          { grantUnrestricted: runtime?.unrestrictedGrant === true },
+          {
+            grantUnrestricted: runtime?.unrestrictedGrant === true,
+            ...(runtime?.executableProfiles !== undefined && {
+              executableProfiles: runtime.executableProfiles,
+            }),
+          },
         )
       : undefined
     const declaredPermissionDimensions = collectResolvedPermissionDimensions(
@@ -1424,6 +1439,9 @@ async function runIdempotent(
       ...(runtime?.permissionProfiles !== undefined && {
         permissionProfiles: runtime.permissionProfiles,
       }),
+      ...(runtime?.executableProfiles !== undefined && {
+        executableProfiles: runtime.executableProfiles,
+      }),
       ...(runtime?.unrestrictedGrant !== undefined && {
         unrestrictedGrant: runtime.unrestrictedGrant,
       }),
@@ -1616,6 +1634,9 @@ async function runInvokeStep(
     ...(runtime?.permissionProfiles !== undefined && {
       permissionProfiles: runtime.permissionProfiles,
     }),
+    ...(runtime?.executableProfiles !== undefined && {
+      executableProfiles: runtime.executableProfiles,
+    }),
     ...(runtime?.unrestrictedGrant !== undefined && {
       unrestrictedGrant: runtime.unrestrictedGrant,
     }),
@@ -1667,6 +1688,9 @@ async function runPipelineStep(
     }),
     ...(runtime?.permissionProfiles !== undefined && {
       permissionProfiles: runtime.permissionProfiles,
+    }),
+    ...(runtime?.executableProfiles !== undefined && {
+      executableProfiles: runtime.executableProfiles,
     }),
     ...(runtime?.unrestrictedGrant !== undefined && {
       unrestrictedGrant: runtime.unrestrictedGrant,
@@ -1772,6 +1796,9 @@ export async function runDelegation(
     }),
     ...(runtime.permissionProfiles !== undefined && {
       permissionProfiles: runtime.permissionProfiles,
+    }),
+    ...(runtime.executableProfiles !== undefined && {
+      executableProfiles: runtime.executableProfiles,
     }),
     ...(runtime.unrestrictedGrant !== undefined && {
       unrestrictedGrant: runtime.unrestrictedGrant,

@@ -8,6 +8,7 @@ import {
   type AgentPermissions,
   type BackendRegistry,
   type EventBus,
+  type ExecutableProfileDefinition,
   type NetworkPolicy,
   type Pipeline,
   type RunStore,
@@ -26,6 +27,7 @@ const AGENTMEMORY_OPS = ALL_AGENTMEMORY_OPS
 interface WorkflowProjectPermissions {
   defaultPermissions?: AgentPermissions
   permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+  executableProfiles?: Readonly<Record<string, ExecutableProfileDefinition>>
 }
 
 interface WorkflowProjectBackends {
@@ -329,6 +331,9 @@ export class GatewayRuntime {
           ...(project.permissionProfiles !== undefined && {
             permissionProfiles: project.permissionProfiles,
           }),
+          ...(project.executableProfiles !== undefined && {
+            executableProfiles: project.executableProfiles,
+          }),
         }
       }
     }
@@ -338,14 +343,18 @@ export class GatewayRuntime {
       ...(defaults?.permissionProfiles !== undefined && {
         permissionProfiles: defaults.permissionProfiles,
       }),
+      ...(defaults?.executableProfiles !== undefined && {
+        executableProfiles: defaults.executableProfiles,
+      }),
     }
   }
 
   /**
    * Register a project's `defaults.permissions` + `defaults.permissionProfiles`
-   * for a specific workflow id, so subsequent runs of that workflow use the
-   * project's ceiling instead of the operator-wide one. Called by
-   * `ProjectActivationService` once per workflow per activation.
+   * + `defaults.executableProfiles` for a specific workflow id, so subsequent
+   * runs of that workflow use the project's ceiling instead of the
+   * operator-wide one. Called by `ProjectActivationService` once per workflow
+   * per activation.
    *
    * Per-workflow keying is intentional: it isolates each project's policy to
    * its own workflows so `skelm run a/` followed by `skelm run b/` doesn't
@@ -357,7 +366,8 @@ export class GatewayRuntime {
   ): void {
     if (
       permissions.defaultPermissions === undefined &&
-      permissions.permissionProfiles === undefined
+      permissions.permissionProfiles === undefined &&
+      permissions.executableProfiles === undefined
     ) {
       this.#workflowProjectPermissions.delete(workflowId)
       return

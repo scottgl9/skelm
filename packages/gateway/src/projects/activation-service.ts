@@ -205,6 +205,9 @@ export class ProjectActivationService {
         ...(dirConfig.defaults?.permissionProfiles !== undefined && {
           permissionProfiles: dirConfig.defaults.permissionProfiles,
         }),
+        ...(dirConfig.defaults?.executableProfiles !== undefined && {
+          executableProfiles: dirConfig.defaults.executableProfiles,
+        }),
       })
       // Mirror the same per-workflow scoping for backend defaults: each
       // workflow resolves agent()/infer() steps with no explicit `backend:`

@@ -10,6 +10,7 @@ import {
   DEFAULT_CONFIG,
   EnvSecretResolver,
   EventBus,
+  type ExecutableProfileDefinition,
   MemoryRunStore,
   type NetworkPolicy,
   NoopAuditWriter,
@@ -475,6 +476,7 @@ export class Gateway implements GatewayContext {
   defaultPermissionRunOptions(workflowId?: string): {
     defaultPermissions?: AgentPermissions
     permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+    executableProfiles?: Readonly<Record<string, ExecutableProfileDefinition>>
   } {
     return this.runtimeInternal.defaultPermissionRunOptions(workflowId)
   }
@@ -484,6 +486,7 @@ export class Gateway implements GatewayContext {
     permissions: {
       defaultPermissions?: AgentPermissions
       permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+      executableProfiles?: Readonly<Record<string, ExecutableProfileDefinition>>
     },
   ): void {
     this.runtimeInternal.registerWorkflowProjectPermissions(workflowId, permissions)

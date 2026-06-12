@@ -21,6 +21,7 @@ import {
   PermissionDeniedError,
   RunCancelledError,
   RunStateError,
+  UnknownExecutableProfileError,
   WaitTimeoutError,
   serializeError,
 } from './errors.js'
@@ -32,6 +33,7 @@ import { extractJsonFromText, tryParseJson } from './json-utils.js'
 import { createMcpHost } from './mcp/host.js'
 import type {
   AgentPermissions,
+  ExecutableProfileDefinition,
   NetworkPolicy,
   PermissionDimension,
   ResolvedPolicy,
@@ -101,6 +103,13 @@ export interface RunOptions {
   defaultPermissions?: AgentPermissions
   /** Optional named permission profiles referenced by permissions.profile. */
   permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+  /**
+   * Optional operator-defined executable profile definitions referenced by
+   * `permissions.executableProfiles`. Supplied by the trust boundary (gateway
+   * config), never by workflow authors; an unknown reference fails the run
+   * before any step starts.
+   */
+  executableProfiles?: Readonly<Record<string, ExecutableProfileDefinition>>
   /**
    * Optional default backend id for agent() steps whose own `backend` is
    * undefined — supplied by the gateway from the activated project's
@@ -310,6 +319,7 @@ export class Runner {
       | 'stateStore'
       | 'defaultPermissions'
       | 'permissionProfiles'
+      | 'executableProfiles'
       | 'unrestrictedGrant'
       | 'workspaceManager'
     > & { events?: EventBus } & RunnerEnforcement = {},
@@ -329,6 +339,15 @@ export class Runner {
   ): RunHandle<TInput, TOutput> {
     const runId = options.runId ?? crypto.randomUUID()
     const resumeFromWaiting = options.resumeFromWaiting
+    // Synchronous preflight so gateway start paths reject an unknown
+    // executable profile reference at load time instead of surfacing it as an
+    // async rejection on a runId the caller already received.
+    assertExecutableProfileRefs(
+      pipeline.steps,
+      this.options.defaultPermissions ?? options.defaultPermissions,
+      this.options.permissionProfiles ?? options.permissionProfiles,
+      this.options.executableProfiles ?? options.executableProfiles,
+    )
     const promise = runPipeline(pipeline, input, {
       ...options,
       runId,
@@ -341,6 +360,9 @@ export class Runner {
       }),
       ...(this.options.permissionProfiles !== undefined && {
         permissionProfiles: this.options.permissionProfiles,
+      }),
+      ...(this.options.executableProfiles !== undefined && {
+        executableProfiles: this.options.executableProfiles,
       }),
       ...(this.options.unrestrictedGrant !== undefined && {
         unrestrictedGrant: this.options.unrestrictedGrant,
@@ -476,6 +498,14 @@ export async function runPipeline<TInput, TOutput>(
       throw new RunStateError(runId, `waiting step ${waitingStepId} no longer exists`)
     }
   }
+  // Unknown executable profile references fail here, before run.created is
+  // published or a run record is stored — validation-first, no partial run.
+  assertExecutableProfileRefs(
+    pipeline.steps,
+    options.defaultPermissions,
+    options.permissionProfiles,
+    options.executableProfiles,
+  )
   const startedAt = resumeFromWaiting?.run.startedAt ?? Date.now()
   const events = options.events ?? new EventBus()
   // Subscribe the caller's live listener (if any) to the run's bus. This is how
@@ -728,6 +758,9 @@ export async function runPipeline<TInput, TOutput>(
           ...(options.permissionProfiles !== undefined && {
             permissionProfiles: options.permissionProfiles,
           }),
+          ...(options.executableProfiles !== undefined && {
+            executableProfiles: options.executableProfiles,
+          }),
           ...(options.defaultAgentBackend !== undefined && {
             defaultAgentBackend: options.defaultAgentBackend,
           }),
@@ -908,6 +941,52 @@ export async function runPipeline<TInput, TOutput>(
     unsubscribeAudit,
     unsubscribeOnEvent,
   )
+}
+
+// Validates every statically-declared executableProfiles reference — project
+// defaults, the named permission profile a step selects, and step-level
+// permissions — against the trust-boundary-supplied definitions. forEach
+// children are factories and cannot be walked here; they stay covered by the
+// per-step resolvePermissions backstop.
+function assertExecutableProfileRefs(
+  steps: readonly Step[],
+  defaults: AgentPermissions | undefined,
+  profiles: Readonly<Record<string, AgentPermissions>> | undefined,
+  definitions: Readonly<Record<string, ExecutableProfileDefinition>> | undefined,
+): void {
+  const checkPermissions = (permissions: AgentPermissions | undefined): void => {
+    if (permissions === undefined) return
+    for (const name of permissions.executableProfiles ?? []) {
+      if (definitions?.[name] === undefined) throw new UnknownExecutableProfileError(name)
+    }
+    const named = permissions.profile === undefined ? undefined : profiles?.[permissions.profile]
+    for (const name of named?.executableProfiles ?? []) {
+      if (definitions?.[name] === undefined) throw new UnknownExecutableProfileError(name)
+    }
+  }
+  checkPermissions(defaults)
+  const visit = (step: Step): void => {
+    checkPermissions((step as { permissions?: AgentPermissions }).permissions)
+    switch (step.kind) {
+      case 'parallel':
+        for (const child of step.steps) visit(child)
+        return
+      case 'branch':
+        for (const child of Object.values(step.cases)) visit(child as Step)
+        if (step.default !== undefined) visit(step.default)
+        return
+      case 'loop':
+      case 'idempotent':
+        visit(step.step)
+        return
+      case 'pipelineStep':
+        for (const child of step.pipeline.steps) visit(child)
+        return
+      default:
+        return
+    }
+  }
+  for (const step of steps) visit(step)
 }
 
 export { SchemaValidationError }
