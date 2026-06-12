@@ -96,6 +96,7 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
           'human',
           'json',
           'mermaid',
+          'graph-json',
         ] as const)
         const result = await describeCommand(
           {

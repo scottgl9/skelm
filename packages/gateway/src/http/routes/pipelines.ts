@@ -1,5 +1,11 @@
 import { pathToFileURL } from 'node:url'
-import { Runner, type SkelmConfig, describePipeline, pickExport } from '@skelm/core'
+import {
+  Runner,
+  type SkelmConfig,
+  deriveWorkflowGraph,
+  describePipeline,
+  pickExport,
+} from '@skelm/core'
 import { type Router, createError, eventHandler, readBody } from 'h3'
 import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { createSkillSource } from '../../registries/skill-source.js'
@@ -98,6 +104,7 @@ export function registerPipelineRoutes(router: Router, gateway: GatewayContext):
         ...(desc.description !== undefined && { description: desc.description }),
         ...(desc.version !== undefined && { version: desc.version }),
         graph: { steps: desc.steps },
+        workflowGraph: deriveWorkflowGraph(pipeline),
         input: inputSchema,
         output: outputSchema,
       }
@@ -397,6 +404,7 @@ export function registerPipelineRoutes(router: Router, gateway: GatewayContext):
         ...(desc.description !== undefined && { description: desc.description }),
         ...(desc.version !== undefined && { version: desc.version }),
         graph: { steps: desc.steps },
+        workflowGraph: deriveWorkflowGraph(pipeline),
         input: inputSchema,
         output: outputSchema,
       }

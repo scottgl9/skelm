@@ -852,6 +852,36 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /v1/workflows/{id}/graph:
+    get:
+      summary: Derived read-only WorkflowGraph for a workflow
+      description: >
+        Returns the WorkflowGraph AST — a pure, deterministic projection of the
+        authored workflow consumed by the dashboard graph viewer and the visual
+        block editor. The TypeScript source stays the single source of truth; the
+        graph is always re-derived from it. Author code that cannot be safely
+        round-tripped to source (inline run/predicate functions, forEach
+        factories) is flagged codeOwned and must not be rewritten by an editor.
+        Permission summaries are redacted — they carry which dimensions are
+        present plus profile names only, never secret values, hosts, or paths.
+        Read-only; not audited. Accepts either the registry id or the authored
+        workflow id; URL-encode ids containing `/`.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The derived workflow graph
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowGraph' }
+        '400': { description: Workflow id is required }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '501': { description: Gateway has no workflow loader }
+
   /v1/tasks:
     get:
       summary: List detached tasks
@@ -1270,6 +1300,86 @@ components:
               ageMs: { type: integer }
               request: {}
 
+    WorkflowGraph:
+      type: object
+      description: >
+        Read-only AST derived from a pipeline or persistent workflow. Pure and
+        deterministic; never carries author functions or secret values.
+      required: [id, kind, nodes, edges]
+      properties:
+        id: { type: string }
+        version: { type: string }
+        kind: { type: string, enum: [pipeline, persistent-workflow] }
+        nodes:
+          type: array
+          items: { $ref: '#/components/schemas/GraphNode' }
+        edges:
+          type: array
+          items: { $ref: '#/components/schemas/GraphEdge' }
+        meta:
+          type: object
+          additionalProperties: true
+    GraphNode:
+      type: object
+      required: [id, kind]
+      properties:
+        id: { type: string }
+        kind:
+          type: string
+          description: A StepKind, or one of the synthetic boundary kinds (trigger, finalize).
+          enum:
+            - code
+            - infer
+            - agent
+            - idempotent
+            - parallel
+            - forEach
+            - branch
+            - loop
+            - wait
+            - pipelineStep
+            - invoke
+            - trigger
+            - finalize
+        label: { type: string }
+        summary: { type: string }
+        codeOwned:
+          type: boolean
+          description: >
+            True when the node wraps arbitrary author code that cannot be safely
+            round-tripped to source (inline run/predicate functions, forEach
+            factories). A visual editor must never rewrite these regions.
+        permissions: { $ref: '#/components/schemas/AgentPermissionsSummary' }
+        children:
+          type: array
+          description: Nested sub-steps for control-flow containers.
+          items: { $ref: '#/components/schemas/GraphNode' }
+        data:
+          type: object
+          description: Small, kind-specific, JSON-serializable detail. Never functions or secrets.
+          additionalProperties: true
+    GraphEdge:
+      type: object
+      required: [from, to, kind]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        kind: { type: string, enum: [control, data] }
+        label: { type: string }
+    AgentPermissionsSummary:
+      type: object
+      description: >
+        Redacted permission summary — present dimensions plus profile names only.
+        Never contains secret values, hosts, paths, or executable binary names.
+      required: [dimensions]
+      properties:
+        dimensions:
+          type: array
+          items: { type: string }
+        profile: { type: string }
+        executableProfiles:
+          type: array
+          items: { type: string }
     WorkflowHealth:
       type: object
       properties:

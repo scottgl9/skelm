@@ -1,4 +1,4 @@
-import type { DescribedStep, PipelineDescription } from '@skelm/core'
+import type { DescribedStep, PipelineDescription, WorkflowGraph } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { fetchHttp, httpError, requireGateway } from './internal/gateway-client.js'
 import type { MainIO } from './internal/io.js'
@@ -7,7 +7,7 @@ import { writeJsonOutput } from './internal/output.js'
 export interface DescribeCommandArgs {
   workflow: string
   json?: boolean
-  format?: 'human' | 'json' | 'mermaid'
+  format?: 'human' | 'json' | 'mermaid' | 'graph-json'
   fromDir?: string
 }
 
@@ -31,6 +31,7 @@ interface RemotePipelineDescription {
   description?: string
   version?: string
   graph: { steps: DescribedStep[] } | null
+  workflowGraph?: WorkflowGraph
   input: unknown
   output: unknown
 }
@@ -76,6 +77,16 @@ export async function describeCommand(
   if (!res.ok) return (await httpError(res, io as MainIO)) as { exitCode: ExitCode }
   const remote = (await res.json()) as RemotePipelineDescription
 
+  const format = args.json ? 'json' : (args.format ?? 'human')
+  if (format === 'graph-json') {
+    if (remote.workflowGraph === undefined) {
+      io.stderr.write('error: gateway did not return a workflow graph\n')
+      return { exitCode: EXIT.CLI_ERROR }
+    }
+    writeJsonOutput(io as MainIO, remote.workflowGraph)
+    return { exitCode: EXIT.OK }
+  }
+
   const described: CliWorkflowDescription = {
     id: remote.id,
     file: remote.file,
@@ -84,7 +95,6 @@ export async function describeCommand(
     ...(remote.version !== undefined && { version: remote.version }),
   }
 
-  const format = args.json ? 'json' : (args.format ?? 'human')
   if (format === 'json') {
     writeJsonOutput(io as MainIO, described)
     return { exitCode: EXIT.OK }

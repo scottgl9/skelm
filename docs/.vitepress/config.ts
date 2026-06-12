@@ -141,6 +141,7 @@ export default defineConfig({
             { text: 'API (generated)', link: '/reference/api' },
             { text: 'CLI', link: '/reference/cli' },
             { text: 'HTTP', link: '/reference/http' },
+            { text: 'WorkflowGraph', link: '/reference/workflow-graph' },
             { text: 'Config', link: '/reference/config' },
             { text: 'Environment Variables', link: '/reference/environment-variables' },
             { text: 'Permissions', link: '/reference/permissions' },

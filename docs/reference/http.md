@@ -251,6 +251,7 @@ surface.
 | ------ | ---------------------------- | ----------- |
 | GET    | `/v1/workflows/health`       | Health for all workflows. Query: `recentFailuresLimit=0..100` |
 | GET    | `/v1/workflows/:id/health`   | Health for one workflow id; URL-encode ids containing `/` |
+| GET    | `/v1/workflows/:id/graph`    | Derived read-only [WorkflowGraph](./workflow-graph) for a workflow |
 
 The collection route is failure-isolating: a workflow that fails to import is
 reported with `readiness.status: "broken"` while other workflows remain in the

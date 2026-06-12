@@ -110,10 +110,13 @@ turns. Exits `1` if the workflow has no live triggers.
 This is **not** `skelm gateway stop` (which stops the whole gateway process) nor
 `skelm schedule stop <trigger-id>` (which removes a single trigger).
 
-### `skelm describe <pipeline> [--json | --format mermaid]`
+### `skelm describe <pipeline> [--json | --format mermaid | --format graph-json]`
 
 Print a structural description of a pipeline (steps, edges, permissions).
-`--format mermaid` emits a graph diagram.
+`--format mermaid` emits a graph diagram. `--format graph-json` emits the
+[WorkflowGraph](./workflow-graph) — a derived, read-only AST consumed by the
+dashboard graph viewer and the visual block editor. The gateway derives the
+graph; the CLI is a thin client that prints what the gateway returns.
 
 ### `skelm history`
 

@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { isAbsolute, normalize } from 'node:path'
-import type { Pipeline } from '@skelm/core'
+import type { PersistentWorkflow, Pipeline } from '@skelm/core'
+import { isPersistentWorkflow } from '@skelm/core'
 import { createError } from 'h3'
 import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 
@@ -97,6 +98,52 @@ export async function loadPipelineFromPath(
     })
   }
   return pipeline
+}
+
+/**
+ * Import a workflow module and return its default export as either a Pipeline
+ * or a PersistentWorkflow — whichever the file declares. Unlike
+ * `loadPipelineFromPath`, this does not reject persistent workflows, so graph
+ * derivation works for both workflow shapes. Throws the same h3 status codes
+ * (500 on import failure, 422 on missing/invalid default export).
+ */
+export async function loadWorkflowForGraph(
+  loader: (registryId: string, absolutePath: string) => Promise<unknown>,
+  registryId: string,
+  absolutePath: string,
+): Promise<Pipeline | PersistentWorkflow> {
+  let mod: unknown
+  try {
+    mod = await loader(registryId, absolutePath)
+  } catch (err) {
+    throw createError({
+      statusCode: 500,
+      message: `failed to load workflow: ${(err as Error).message}`,
+    })
+  }
+  const persistent = extractPersistentWorkflow(mod)
+  if (persistent !== undefined) return persistent
+  const pipeline = extractPipeline(mod)
+  if (pipeline === undefined) {
+    throw createError({
+      statusCode: 422,
+      message: 'workflow module did not export a default pipeline or persistent workflow',
+    })
+  }
+  return pipeline
+}
+
+function extractPersistentWorkflow(mod: unknown): PersistentWorkflow | undefined {
+  if (isPersistentWorkflow(mod)) return mod
+  if (typeof mod === 'object' && mod !== null) {
+    const m = mod as Record<string, unknown>
+    if (isPersistentWorkflow(m.default)) return m.default
+    if (typeof m.default === 'object' && m.default !== null) {
+      const inner = (m.default as Record<string, unknown>).default
+      if (isPersistentWorkflow(inner)) return inner
+    }
+  }
+  return undefined
 }
 
 /**
