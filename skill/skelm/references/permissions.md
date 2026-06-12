@@ -82,7 +82,7 @@ type AgentmemoryPolicy =
     }
 ```
 
-The integration is **disabled by default at two layers**: the gateway config (`agentmemory.enabled`, default `false`) and these permissions. The automatic backend loop uses `observe`/`search`/`session`; the rest are for custom backend/step code via `ctx.agentmemory`. A step that grants no op receives no handle, so its memory hooks are a silent no-op. See [the agentmemory guide](../../../docs/guides/agentmemory.md).
+The integration is **disabled by default at two layers**: the gateway config (`agentmemory.enabled`, default `false`) and these permissions. The automatic backend loop uses `observe`/`search`/`session`; the rest are for custom backend/step code via `ctx.agentmemory`. A step that grants no op receives no handle, so its memory hooks are a silent no-op. See [the agentmemory guide](../guides/agentmemory.md).
 
 ## Composition: intersection-only
 
@@ -135,6 +135,48 @@ agent({
 })
 ```
 
+## Executable profiles
+
+Executable profiles are operator-defined, named sets of executables that permissions reference by name instead of repeating `allowedExecutables` lists across workflows. Definitions live in config (`defaults.executableProfiles`); workflows can only *reference* a profile — they can never define or alter one.
+
+```ts
+// skelm.config.ts (or skelm.gateway.ts)
+defaults: {
+  executableProfiles: {
+    linuxReadOnly: {
+      description: 'read-only shell utilities',
+      executables: ['ls', 'cat', 'rg', 'find', 'head', 'tail'],
+      tags: ['read-only'],
+    },
+    gitReadOnly: { executables: ['git'] },
+    nodeBuild: { executables: ['node', 'pnpm'] },
+  },
+}
+```
+
+These three are *documented examples*, not built-ins: no profile exists or is granted unless your config defines it **and** a permission layer references it by name. Default-deny holds — a step with no `executableProfiles` and no `allowedExecutables` has no executables at all.
+
+Reference profiles from any permission layer:
+
+```ts
+agent({
+  id: 'implement',
+  permissions: {
+    executableProfiles: ['gitReadOnly', 'nodeBuild'],
+    allowedExecutables: ['git', 'node'],   // optional; narrows the expansion
+  },
+})
+```
+
+Resolution semantics:
+
+- Within a layer, the referenced profiles expand to the **union** of their executables. An explicit `allowedExecutables` on the same layer then **intersects** with the expansion — it can only narrow, never widen. Above, `pnpm` is dropped because the explicit list excludes it.
+- Across layers (project defaults → named permission profile → step-level), the usual intersection-only composition applies: a step-level profile reference can never widen past the project-default ceiling.
+- Referencing a profile name the config does not define throws the typed `UnknownExecutableProfileError` **before the run starts** — `skelm validate` flags it statically (`unknown-executable-profile`), and every gateway run path rejects it at workflow load.
+- The resolved policy records the applied names as `executableProfileNames` metadata for inspect/audit surfaces; enforcement reads only the expanded `allowedExecutables` set.
+
+> **Caveat:** executable allowlists — profiles included — gate at the **binary** level only. Allowing `git` allows *every* git subcommand (`git push`, `git config`, …); a "read-only" profile name is documentation of intent, not a subcommand restriction.
+
 ## TrustEnforcer
 
 `TrustEnforcer` is the single enforcement point. Every `canX` method returns a structured decision:
@@ -155,6 +197,20 @@ const decision = enforcer.canCallTool('gh.list_issues')
 // { allow: true } or { allow: false, reason: 'not-in-allowlist', dimension: 'tool' }
 ```
 
+## Code-step permissions
+
+`code()` steps accept the same `permissions` shape as `agent()` steps, but only `allowedExecutables` is enforced today. The runner builds a `TrustEnforcer` for every `code()` step from `defaultPermissions` ∩ step-level `permissions` and uses it to gate `ctx.exec(...)`:
+
+```ts
+code({
+  id: 'render',
+  permissions: { allowedExecutables: ['python3'] },
+  run: async (ctx) => ctx.exec!({ python: './render.py' }),
+})
+```
+
+Default-deny applies: omitting `permissions` (or omitting `allowedExecutables`) denies every `ctx.exec` call with `PermissionDeniedError` and `dimension: 'executable'`. The check uses the basename of the resolved binary (`python3` / `bash` for the `python:` / `bash:` shortcuts), not the user's input string.
+
 ## Denial reasons
 
 | Reason | Meaning |
@@ -163,7 +219,7 @@ const decision = enforcer.canCallTool('gh.list_issues')
 | `'not-in-allowlist'` | Target not in the allow set |
 | `'in-denylist'` | Target matched `deniedTools` |
 | `'host-not-allowed'` | Hostname not in `allowHosts` |
-| `'path-not-in-allowlist'` | File path not under any allowed root |
+| `'path-not-in-allowlist'` | File path not under any allowed root (paths are normalized with `path.resolve` before the boundary check, so `..` segments cannot escape an allowed root) |
 | `'star-disallowed-in-prod'` | `*` wildcard blocked in production mode |
 
 ## Testing permissions

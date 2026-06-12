@@ -6,9 +6,11 @@
 agent({
   id: string                                          // required
   backend?: string | readonly string[]                // backend id(s) — first match wins
-  agentDef?: string                                   // path to a directory holding AGENTS.md / SOUL.md
+  agentDef?: string                                   // dir with AGENTS.md (+ optional SOUL.md), resolved vs. the workflow file
   prompt: string | ((ctx: Context) => string)         // required
   system?: string | ((ctx: Context) => string)
+  systemPromptMode?: 'extend' | 'replace'             // 'extend' (default) keeps the built-in sections
+  systemPromptIncludeAgentDef?: boolean               // with 'replace', still inject AGENTS.md/SOUL.md (default true)
   mcp?: McpServerConfig[] | ((ctx: Context) => McpServerConfig[])
   skills?: readonly string[]                          // skill ids the agent should load
   secrets?: readonly string[]                         // secret names resolved before the run
@@ -38,7 +40,7 @@ Two ways to register a backend:
      },
    })
    ```
-2. **`instances:` array** — pre-built `SkelmBackend` values. Use this for the pi SDK backend or any custom backend.
+2. **`instances:` array** — pre-built `SkelmBackend` values. Use this for custom backend instances or when you want to construct a built-in backend yourself.
    ```ts
    import { defineConfig } from 'skelm'
    import { createPiSdkBackend } from '@skelm/pi'
@@ -54,6 +56,18 @@ Reference by id at the step level:
 ```ts
 agent({ id: 'implement', backend: 'pi', prompt: '...' })
 ```
+
+Use an ordered list when a step can run on multiple equivalent backends and
+should continue past a locally unavailable backend:
+
+```ts
+agent({ id: 'implement', backend: ['codex', 'opencode', 'pi', 'vercel-ai'], prompt: '...' })
+```
+
+Fallback is intentionally narrow: the runtime tries the next id only when the
+previous backend throws `BackendUnavailableError` (for example, a missing
+`codex`, `opencode`, or `pi` local install). Authentication, provider/model,
+permission, timeout, schema, and capability failures stop the step.
 
 If `backend` is omitted on the step, the runtime resolves it from (in order): `config.backends.agent`, `config.backends.default`, `config.backend`, `config.defaults.backend`. If none of those is set the step fails at start.
 
@@ -84,6 +98,29 @@ Permission → pi tool mapping:
 - `networkEgress: 'deny'` or host allowlists → refused before dispatch because Pi SDK runs in-process
 
 ⚠ **Permission semantics with Pi differ from MCP-host backends.** Pi has one `bash` tool (not per-binary) — granting `bash` lets the agent run any executable. Filesystem paths are advisory: `fsRead`/`fsWrite` unlock the tool *category* but don't constrain paths. Use Pi inside an already-bounded workspace (ephemeral cwd, OS sandbox, container); use MCP-host backends (opencode) when you need per-call binary/path enforcement.
+
+## Agent definition (`agentDef`)
+
+`agentDef` points at a directory holding an `AGENTS.md` (required, the agent's
+instructions) and an optional `SOUL.md` (its persona/voice). The path resolves
+relative to the **workflow file's directory**, and the loaded content extends the
+system prompt — `SOUL.md` then `AGENTS.md`, after the built-in default sections and
+before any inline `system`. See [system prompt construction](../../../docs/concepts/system-prompt.md)
+for the full ordering.
+
+```ts
+agent({
+  id: 'support',
+  agentDef: './agents/support',   // ./agents/support/AGENTS.md (+ optional SOUL.md)
+  prompt: (ctx) => (ctx.input as { question: string }).question,
+})
+```
+
+Use `agentDef` (files) for a durable persona, and inline `system` for a per-run
+extension on top of it. `systemPromptMode: 'replace'` drops the built-in default
+sections; pair it with `systemPromptIncludeAgentDef: false` to drop AGENTS.md/SOUL.md
+too. A relative `agentDef` on a pipeline with no source file (constructed in-process)
+fails the step explicitly — use an absolute path there.
 
 ## MCP servers
 
@@ -151,6 +188,30 @@ workspace: {
 
 The workspace path becomes the agent's cwd; coding agents read/write source files there.
 
+### `git-repo` — clone-or-fetch a remote repo at a specific ref
+
+```ts
+workspace: {
+  mode: 'git-repo',
+  repo: 'owner/name' | 'https://…',     // `owner/name` resolves to https://github.com/owner/name.git
+  ref: string,                          // branch, tag, or commit SHA
+  baseRef?: string,                     // optional second ref to fetch (e.g. PR base)
+  cacheDir?: string,                    // defaults to ~/.skelm/repos/<owner>__<name>
+  auth?: { env: string },               // env var holding a bearer token (e.g. 'GITHUB_TOKEN')
+  seed?: { copy: readonly string[] },
+}
+```
+
+First use clones with `--filter=blob:none`; subsequent runs reuse the same
+cache directory and `git fetch` the requested ref instead of cloning again.
+The repo is left in a detached-HEAD checkout at `FETCH_HEAD`. When `auth` is
+set the token is injected per-invocation via `http.extraheader` so it is not
+persisted in `git remote -v`.
+
+This mode replaces hand-rolled clone-or-fetch logic in PR-review pipelines —
+authors no longer maintain a `code()` step that calls `git clone`/`git fetch`/
+`git checkout` against a manually-managed cache dir.
+
 ## Seed files
 
 ```ts
@@ -161,6 +222,14 @@ workspace: {
 ```
 
 Paths are resolved relative to `process.cwd()` when the step executes.
+
+Each workspace mode also accepts `writeRoot?: string` and
+`exportRoot?: string`. `ctx.workspace.writeFile()` writes under `writeRoot`
+(default: the workspace root), and `ctx.workspace.exportFile()` writes under
+`exportRoot` (default: `exports/`). Both helpers require relative target
+paths and deny traversal or symlink escapes. Agent backend filesystem access
+still uses the resolved `fsRead` / `fsWrite` policy and the workspace-scoped
+gateway enforcement described above.
 
 ## Full example
 
