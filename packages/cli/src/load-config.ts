@@ -99,6 +99,7 @@ export async function loadSkelmConfig(opts?: {
  */
 export async function loadGatewayConfig(opts?: {
   fromPath?: string
+  fromDir?: string
 }): Promise<ResolvedConfig> {
   // 1. Explicit path
   if (opts?.fromPath !== undefined) {
@@ -106,7 +107,7 @@ export async function loadGatewayConfig(opts?: {
     if (!existsSync(absolute)) {
       throw new Error(`gateway config file not found: ${absolute}`)
     }
-    return loadGatewayFromPath(absolute)
+    return loadGatewayFromPath(absolute, opts?.fromDir)
   }
 
   // 2. SKELM_GATEWAY_CONFIG env var
@@ -116,7 +117,7 @@ export async function loadGatewayConfig(opts?: {
     if (!existsSync(absolute)) {
       throw new Error(`SKELM_GATEWAY_CONFIG path not found: ${absolute}`)
     }
-    return loadGatewayFromPath(absolute)
+    return loadGatewayFromPath(absolute, opts?.fromDir)
   }
 
   // 3. ~/.skelm/skelm.gateway.*
@@ -126,9 +127,9 @@ export async function loadGatewayConfig(opts?: {
   }
 
   // 4. Cwd walkup: skelm.gateway.* then skelm.config.*
-  const found = walkUpForGatewayConfig(process.cwd())
+  const found = walkUpForGatewayConfig(opts?.fromDir ?? process.cwd())
   if (found !== null) {
-    return loadGatewayFromPath(found)
+    return loadGatewayFromPath(found, opts?.fromDir)
   }
 
   // 5. Framework defaults (no-config path)
@@ -148,7 +149,7 @@ export async function loadGatewayConfig(opts?: {
  * fields so pre-built backend `instances` and workflow registries are
  * available at gateway startup.
  */
-async function loadGatewayFromPath(absolute: string): Promise<ResolvedConfig> {
+async function loadGatewayFromPath(absolute: string, fromDir?: string): Promise<ResolvedConfig> {
   const gatewayResult = await loadFromPath(absolute)
 
   // Legacy path: the loaded file is skelm.config.* (pre-split fallback).
@@ -160,7 +161,7 @@ async function loadGatewayFromPath(absolute: string): Promise<ResolvedConfig> {
 
   // Split-config path: find and load the nearest skelm.config.* alongside
   // the gateway file, then merge workflow-specific fields.
-  const workflowConfigPath = findColocatedWorkflowConfig(gatewayResult.projectRoot)
+  const workflowConfigPath = findColocatedWorkflowConfig(gatewayResult.projectRoot, fromDir)
   if (workflowConfigPath === null) return gatewayResult
 
   const workflowResult = await loadFromPath(workflowConfigPath)
@@ -177,14 +178,14 @@ function isGatewayFile(filePath: string): boolean {
  * For home-dir gateways (`~/.skelm/`) that have no sibling project config,
  * falls back to walking up from `process.cwd()`.
  */
-function findColocatedWorkflowConfig(projectRoot: string): string | null {
+function findColocatedWorkflowConfig(projectRoot: string, fromDir?: string): string | null {
   for (const name of CONFIG_FILENAMES) {
     const candidate = join(projectRoot, name)
     if (existsSync(candidate)) return candidate
   }
   // Home-dir gateway: the project config lives wherever the user ran the CLI.
   if (projectRoot === join(homedir(), '.skelm')) {
-    return walkUpForConfig(process.cwd())
+    return walkUpForConfig(fromDir ?? process.cwd())
   }
   return null
 }
