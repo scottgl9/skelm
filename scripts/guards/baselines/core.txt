@@ -83,6 +83,7 @@ value:RegistryError
 value:RunCancelledError
 value:RunStateError
 value:Runner
+value:SKELM_LOCKFILE_NAME
 value:SchemaValidationError
 value:ScriptTrigger
 value:SkillParseError
@@ -104,6 +105,7 @@ value:VERSION
 value:WaitTimeoutError
 value:WebhookTrigger
 value:WorkflowLifecycleError
+value:WorkflowPackageStore
 value:WorkspaceManager
 value:acquireSession
 value:agent
@@ -115,6 +117,7 @@ value:check
 value:clearTsModuleCache
 value:code
 value:combineSignals
+value:computePackageIntegrity
 value:createAcpBackend
 value:createAnthropicBackend
 value:createConcurrencySemaphore
@@ -139,6 +142,7 @@ value:defineGatewayConfig
 value:defineWorkflowConfig
 value:describePipeline
 value:describeStep
+value:encodePackageDirName
 value:executeAgentStep
 value:executeInferStep
 value:extractJsonFromText
@@ -171,7 +175,9 @@ value:persistentWorkflow
 value:pickExport
 value:pipeline
 value:pipelineStep
+value:readLockfile
 value:releaseSession
+value:removeLockfileEntry
 value:resolvePermissions
 value:runPipeline
 value:saveSession
@@ -183,9 +189,11 @@ value:textPart
 value:timeoutSignal
 value:timingSafeStringEqual
 value:toErrorMessage
+value:updateLockfileEntry
 value:validate
 value:validatePackageManifest
 value:wait
+value:writeLockfile
 type:AcpBackendOptions
 type:AcpPromptResult
 type:AcpSpawnOptions
@@ -271,6 +279,7 @@ type:InferenceRequest
 type:InferenceResponse
 type:InitializeRequest
 type:InitializeResponse
+type:InstalledWorkflowPackage
 type:InvokeStep
 type:JsonRpcNotification
 type:JsonRpcRequest
@@ -360,6 +369,8 @@ type:SkelmConfigServer
 type:SkelmConfigStorage
 type:SkelmConfigTriggerSourceEntry
 type:SkelmGatewayConfig
+type:SkelmLockfile
+type:SkelmLockfileEntry
 type:SkelmPlugin
 type:SkelmSchema
 type:SkelmTriggerSource
@@ -377,6 +388,7 @@ type:StepKind
 type:StepResult
 type:StepStatus
 type:StopReason
+type:StoredWorkflowPackage
 type:SystemPromptInput
 type:TaskRequirements
 type:TestResult

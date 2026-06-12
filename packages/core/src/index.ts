@@ -247,10 +247,22 @@ export {
 } from './errors.js'
 export {
   PACKAGE_MANIFEST_FILENAME,
+  SKELM_LOCKFILE_NAME,
+  WorkflowPackageStore,
+  computePackageIntegrity,
+  encodePackageDirName,
   parsePackageManifest,
+  readLockfile,
+  removeLockfileEntry,
+  updateLockfileEntry,
   validatePackageManifest,
+  writeLockfile,
 } from './packages/index.js'
 export type {
+  InstalledWorkflowPackage,
+  SkelmLockfile,
+  SkelmLockfileEntry,
+  StoredWorkflowPackage,
   WorkflowPackageManifest,
   WorkflowPackageSecretRef,
   WorkflowPackageSelfTest,
