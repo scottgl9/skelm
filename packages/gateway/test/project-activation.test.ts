@@ -112,7 +112,11 @@ describe('POST /v1/projects/activate', () => {
       expect(body.trusted).toBe(true)
       expect(body.refresh).toBe(false)
       expect(body.workflows).toEqual([
-        expect.objectContaining({ id: 'echo-assistant', kind: 'persistent-workflow' }),
+        expect.objectContaining({
+          id: 'echo-assistant',
+          kind: 'persistent-workflow',
+          path: expect.stringContaining('/managed-workflows/'),
+        }),
       ])
       expect(body.triggers).toEqual([
         expect.objectContaining({ kind: 'queue', driver: 'mem', armed: true }),

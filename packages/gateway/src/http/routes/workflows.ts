@@ -13,6 +13,7 @@ import {
   readMultipartFormData,
 } from 'h3'
 import type { GatewayContext } from '../../lifecycle/gateway-types.js'
+import { materializePathWorkflow } from '../../workflows/path-materialization.js'
 import type { WorkflowArchiveService } from '../../workflows/workflow-archive-service.js'
 import {
   WorkflowRegistrationError,
@@ -188,21 +189,43 @@ export function registerWorkflowRoutes(router: Router, gateway: GatewayContext):
       }
       const body = (await readBody(event).catch(() => ({}))) as RegisterBody
       const id = takeId(service, body.id)
+      const existing = await service.getRecord(id)
       const description = takeOptionalString(body.description, 'description')
       const version = takeOptionalString(body.version, 'version')
       const loader = requireLoader(gateway)
-      const real =
+      const record =
         body.source === undefined
-          ? await materializeInlineJsonWorkflow(gateway, id, body, 'register')
-          : await resolveOrThrow(service, extractSourcePath(body.source))
-      await loadPipelineFromPath(loader, id, real)
-      const record = await service.upsert({
-        id,
-        sourcePath: real,
-        sourceKind: body.source === undefined ? 'archive' : 'path',
-        ...(description !== undefined && { description }),
-        ...(version !== undefined && { version }),
-      })
+          ? await (async () => {
+              const real = await materializeInlineJsonWorkflow(gateway, id, body, 'register')
+              await loadPipelineFromPath(loader, id, real)
+              return service.upsert({
+                id,
+                sourcePath: real,
+                sourceKind: 'archive',
+                ...(description !== undefined && { description }),
+                ...(version !== undefined && { version }),
+              })
+            })()
+          : await (async () => {
+              const materialized = await materializePathWorkflow(gateway, {
+                id,
+                path: extractSourcePath(body.source),
+                registrationService: service,
+              })
+              await loadPipelineFromPath(loader, id, materialized.entryPath)
+              return service.upsert({
+                id,
+                sourcePath: materialized.entryPath,
+                sourceKind: 'managed',
+                originPath: materialized.originPath,
+                originKind: 'path',
+                ...(description !== undefined && { description }),
+                ...(version !== undefined && { version }),
+              })
+            })()
+      if (existing?.sourceKind === 'archive' && body.source !== undefined) {
+        await gateway.getWorkflowArchiveService().remove(id)
+      }
       return { registered: true, workflow: record }
     }),
   )
@@ -211,24 +234,38 @@ export function registerWorkflowRoutes(router: Router, gateway: GatewayContext):
     '/v1/workflows/:id',
     eventHandler(async (event) => {
       const id = takeId(service, decodeMaybe(event.context.params?.id))
+      const existing = await service.getRecord(id)
       if (isMultipart(event)) {
         const archive = gateway.getWorkflowArchiveService()
-        return await registerFromArchive(event, gateway, service, archive, 'replace', id)
+        const result = await registerFromArchive(event, gateway, service, archive, 'replace', id)
+        if (existing?.sourceKind === 'managed') {
+          await gateway.getWorkflowArtifactService().remove(id)
+        }
+        return result
       }
       const body = (await readBody(event).catch(() => ({}))) as RegisterBody
       const path = extractSourcePath(body.source)
       const description = takeOptionalString(body.description, 'description')
       const version = takeOptionalString(body.version, 'version')
       const loader = requireLoader(gateway)
-      const real = await resolveOrThrow(service, path)
-      await loadPipelineFromPath(loader, id, real)
+      const materialized = await materializePathWorkflow(gateway, {
+        id,
+        path,
+        registrationService: service,
+      })
+      await loadPipelineFromPath(loader, id, materialized.entryPath)
       const record = await service.upsert({
         id,
-        sourcePath: real,
-        sourceKind: 'path',
+        sourcePath: materialized.entryPath,
+        sourceKind: 'managed',
+        originPath: materialized.originPath,
+        originKind: 'path',
         ...(description !== undefined && { description }),
         ...(version !== undefined && { version }),
       })
+      if (existing?.sourceKind === 'archive') {
+        await gateway.getWorkflowArchiveService().remove(id)
+      }
       return { updated: true, workflow: record }
     }),
   )
@@ -247,6 +284,8 @@ export function registerWorkflowRoutes(router: Router, gateway: GatewayContext):
       }
       if (existing?.sourceKind === 'archive') {
         await gateway.getWorkflowArchiveService().remove(id)
+      } else if (existing?.sourceKind === 'managed') {
+        await gateway.getWorkflowArtifactService().remove(id)
       }
       // A workflow can be both explicitly registered AND surfaced by the FS
       // glob; unregistering only drops the explicit entry, so the glob copy

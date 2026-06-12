@@ -9,8 +9,11 @@ import type { WorkflowEntry, WorkflowRegistry } from '../registries/workflow-reg
 export interface RegisteredWorkflowRecord {
   id: string
   sourcePath: string
-  /** Where the source came from: a host filesystem path or an extracted archive. */
-  sourceKind?: 'path' | 'archive'
+  /** Where the executable source lives: legacy host path, managed copy, or archive extraction. */
+  sourceKind?: 'path' | 'managed' | 'archive'
+  /** Original author path for managed copies. Metadata only; never executed from registration. */
+  originPath?: string
+  originKind?: 'path'
   description?: string
   version?: string
   registeredAt: string
@@ -29,6 +32,8 @@ export interface WorkflowRegistrationServiceOptions {
    * allowed source root since the gateway itself controls the contents.
    */
   archiveRoot?: string
+  /** Gateway-owned root for path-origin managed workflow artifacts. */
+  artifactRoot?: string
 }
 
 export class WorkflowRegistrationError extends Error {
@@ -120,6 +125,7 @@ export class WorkflowRegistrationService {
       this.options.projectRoot,
       ...this.options.allowedDirs,
       ...(this.options.archiveRoot !== undefined ? [this.options.archiveRoot] : []),
+      ...(this.options.artifactRoot !== undefined ? [this.options.artifactRoot] : []),
     ]
     const resolvedRoots = await Promise.all(
       roots.map(async (r) => {
@@ -157,7 +163,9 @@ export class WorkflowRegistrationService {
   async upsert(input: {
     id: string
     sourcePath: string
-    sourceKind?: 'path' | 'archive'
+    sourceKind?: 'path' | 'managed' | 'archive'
+    originPath?: string
+    originKind?: 'path'
     description?: string
     version?: string
   }): Promise<RegisteredWorkflowRecord> {
@@ -166,6 +174,8 @@ export class WorkflowRegistrationService {
       id: input.id,
       sourcePath: input.sourcePath,
       sourceKind: input.sourceKind ?? 'path',
+      ...(input.originPath !== undefined && { originPath: input.originPath }),
+      ...(input.originKind !== undefined && { originKind: input.originKind }),
       ...(input.description !== undefined && { description: input.description }),
       ...(input.version !== undefined && { version: input.version }),
       registeredAt: new Date().toISOString(),

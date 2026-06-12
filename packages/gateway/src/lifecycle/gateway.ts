@@ -45,6 +45,7 @@ import { createTriggerDispatcher } from '../triggers/dispatcher.js'
 import { DynamicScheduleStore } from '../triggers/dynamic-schedule-store.js'
 import type { TriggerRegistration } from '../triggers/types.js'
 import type { WorkflowArchiveService } from '../workflows/workflow-archive-service.js'
+import type { WorkflowArtifactService } from '../workflows/workflow-artifact-service.js'
 import type { WorkflowRegistrationService } from '../workflows/workflow-registration-service.js'
 import { type DiscoveryRecord, removeDiscovery, writeDiscovery } from './discovery.js'
 import type {
@@ -103,6 +104,7 @@ export class Gateway implements GatewayContext {
   private tasksInternal: TaskService | null = null
   private workflowRegistrationInternal: WorkflowRegistrationService | null = null
   private workflowArchiveInternal: WorkflowArchiveService | null = null
+  private workflowArtifactInternal: WorkflowArtifactService | null = null
   private dynamicScheduleStoreInternal: DynamicScheduleStore | null = null
   /** Backend registry, seeded from GatewayOptions; mutable so a runtime-
    *  activated project can absorb additional backends (see absorbBackends). */
@@ -335,6 +337,14 @@ export class Gateway implements GatewayContext {
   /** The archive-extraction service backing multipart .zip uploads. */
   getWorkflowArchiveService(): WorkflowArchiveService {
     return requireStarted(this.workflowArchiveInternal, 'workflow archive service is not available')
+  }
+
+  /** The managed-copy service for path-origin workflow artifacts. */
+  getWorkflowArtifactService(): WorkflowArtifactService {
+    return requireStarted(
+      this.workflowArtifactInternal,
+      'workflow artifact service is not available',
+    )
   }
 
   /**
@@ -636,6 +646,7 @@ export class Gateway implements GatewayContext {
       this.managersInternal = await this.buildManagers()
       this.dynamicScheduleStoreInternal = new DynamicScheduleStore(this.stateDir)
       this.workflowArchiveInternal = await this.buildWorkflowArchiveService()
+      this.workflowArtifactInternal = await this.buildWorkflowArtifactService()
       this.workflowRegistrationInternal = await this.buildWorkflowRegistrationService()
       // Wire the trigger dispatcher now that managers + registries exist.
       // Without a loadWorkflow option the coordinator keeps its no-op
@@ -1113,6 +1124,9 @@ export class Gateway implements GatewayContext {
       ...(this.workflowArchiveInternal !== null && {
         archiveRoot: this.workflowArchiveInternal.uploadRoot,
       }),
+      ...(this.workflowArtifactInternal !== null && {
+        artifactRoot: this.workflowArtifactInternal.artifactRoot,
+      }),
     })
     await service.loadFromDisk()
     return service
@@ -1124,6 +1138,16 @@ export class Gateway implements GatewayContext {
     )
     return new Ctor({
       uploadRoot: join(this.stateDir, 'uploaded-workflows'),
+      maxBytes: this.getWorkflowMaxArchiveBytes(),
+    })
+  }
+
+  private async buildWorkflowArtifactService(): Promise<WorkflowArtifactService> {
+    const { WorkflowArtifactService: Ctor } = await import(
+      '../workflows/workflow-artifact-service.js'
+    )
+    return new Ctor({
+      artifactRoot: join(this.stateDir, 'managed-workflows'),
       maxBytes: this.getWorkflowMaxArchiveBytes(),
     })
   }
