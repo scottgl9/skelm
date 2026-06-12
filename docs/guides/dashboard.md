@@ -24,6 +24,45 @@ The generated project has no local dependencies. `skelm dashboard start`
 imports `src/server.mts` directly and serves `src/public/app.mts` as `/app.js`
 after stripping TypeScript types with Node's built-in loader.
 
+## App shell and modules
+
+The browser app is a small, dependency-free module shell:
+
+- a left nav lists modules grouped under **Operate** and **Inspect**, a content
+  area renders the active module, and the current module refreshes on a short
+  interval (paused while a tab is hidden or an event stream is open, so the view
+  does not churn);
+- a single typed `gateway` proxy client wraps `fetch` against the same-origin
+  `/api/*` proxy — every module reads through it and never touches a token.
+
+| Module | Reads | Notes |
+| ------ | ----- | ----- |
+| Overview | `/v1/dashboard/overview`, `/v1/dashboard/runtime`, `/v1/dashboard/runs` | Health cards + recent runs |
+| Workflows | `/pipelines`, `/pipelines/:id` | List + detail with a permissions summary; can execute or upload a workflow through the proxied gateway routes |
+| Graph Viewer | `/v1/workflows/:id/graph` | Renders the [WorkflowGraph](../reference/workflow-graph.md) as a nested box diagram; control-flow containers nest their `children` and `codeOwned` nodes are marked |
+| Runs | `/v1/dashboard/runs`, `/runs/:id`, `/runs/:id/events`, `/runs/:id/artifacts`, `/runs/:id/stream` | Run list + inspector with an event timeline and live streaming |
+| Lineage & Tasks | `/v1/tasks`, `/v1/lineage/:runId` | Task list and a parent/child lineage tree |
+| Packages | `/v1/packages`, `/v1/packages/:name` | Installed packages with manifest, integrity, and permissions summary |
+| Integrations | `/v1/dashboard/runtime` | Read-only inventory of backends, MCP servers, and agents |
+| Approvals | `/v1/dashboard/approvals` | Pending approvals |
+| Schedules | `/v1/dashboard/schedules` | Trigger status |
+| ACP Sessions | `/sessions`, `/v1/agentmemory/sessions` | Session summaries |
+| Runtime | `/v1/dashboard/runtime` | Gateway runtime metadata |
+| Audit | `/audit`, `/audit/verify` | Audit chain + entries |
+| Metrics | `/metrics` | Prometheus metrics |
+
+The graph viewer, run inspector timeline, lineage/tasks, package manager, and
+integration admin modules are **read-only in this release**. Screenshots are
+tracked separately. Mutation flows (a visual workflow builder/editor, package
+install/remove, and an integration admin write surface) land in follow-up
+slices. The only writes the current shell performs are workflow execution and
+workflow upload from the Workflows module, both through the existing proxied
+gateway routes.
+
+Secret values are never rendered: the gateway payloads are already redacted and
+the dashboard only surfaces permission dimension labels and profile names, never
+hosts, paths, tool ids, or secret values.
+
 By default the dashboard listens on `127.0.0.1:14740` and proxies to the
 gateway at `127.0.0.1:14738`. The dashboard intentionally avoids `14739`,
 which is the gateway egress proxy default.
