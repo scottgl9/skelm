@@ -35,6 +35,13 @@ interface WorkflowProjectBackends {
   defaultInferBackend?: string
 }
 
+/** Lineage to stamp onto a dispatched child run. */
+export interface RunLineage {
+  parentRunId?: string
+  parentStepId?: string
+  taskId?: string
+}
+
 export interface GatewayRuntimeContext {
   readonly projectRoot: string
   readonly registries: GatewayRegistries
@@ -98,7 +105,11 @@ export class GatewayRuntime {
    * raised by `loadPipelineFromPath` (load failure, missing default export)
    * propagate through unchanged.
    */
-  async startPipelineAsync(pipelineId: string, input: unknown): Promise<{ runId: string }> {
+  async startPipelineAsync(
+    pipelineId: string,
+    input: unknown,
+    lineage?: RunLineage,
+  ): Promise<{ runId: string }> {
     const entry = this.ctx.registries.workflows.get(pipelineId)
     if (entry === undefined) {
       throw startPipelineError(404, 'pipeline not found')
@@ -108,7 +119,7 @@ export class GatewayRuntime {
       throw startPipelineError(501, 'gateway has no workflow loader')
     }
     const pipeline = await loadPipelineFromPath(loader, pipelineId, entry.path)
-    const { runId } = this.#startRunnerAsync(pipeline, input, entry.path)
+    const { runId } = this.#startRunnerAsync(pipeline, input, entry.path, lineage)
     return { runId }
   }
 
@@ -429,7 +440,12 @@ export class GatewayRuntime {
     this.#workflowProjectBackends.delete(workflowId)
   }
 
-  #startRunnerAsync(pipeline: Pipeline, input: unknown, workflowPath: string): { runId: string } {
+  #startRunnerAsync(
+    pipeline: Pipeline,
+    input: unknown,
+    workflowPath: string,
+    lineage?: RunLineage,
+  ): { runId: string } {
     const enforcement = this.ctx.enforcement
     const runner = new Runner({
       approvalGate: enforcement.approvalGate,
@@ -460,6 +476,9 @@ export class GatewayRuntime {
         ...this.defaultBackendRunOptions(pipeline.id),
         ...this.egressRunOptions(),
         ...this.agentmemoryRunOptions(),
+        ...(lineage?.parentRunId !== undefined && { parentRunId: lineage.parentRunId }),
+        ...(lineage?.parentStepId !== undefined && { parentStepId: lineage.parentStepId }),
+        ...(lineage?.taskId !== undefined && { taskId: lineage.taskId }),
       })
     } catch (err) {
       this.unregisterRun(runId)

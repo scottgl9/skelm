@@ -852,6 +852,143 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /v1/tasks:
+    get:
+      summary: List detached tasks
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, running, completed, failed, cancelled]
+        - in: query
+          name: parentRunId
+          schema: { type: string }
+        - in: query
+          name: workflowId
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 1000 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items: { $ref: '#/components/schemas/TaskRecord' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Create and dispatch a detached task
+      description: >
+        Validates the workflow, writes a pending task, dispatches the child run
+        through the registered-workflow start path, then links the child run and
+        flips the task to running. Audited as task.create. The child run executes
+        with its own declared permissions — no inheritance from the parent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTaskRequest' }
+      responses:
+        '200':
+          description: Task created and dispatched
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskRecord' }
+        '400': { description: Missing or invalid workflowId / deliveryTarget }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Workflow not registered }
+
+  /v1/tasks/{id}:
+    get:
+      summary: Get one task record
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskRecord' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/tasks/{id}/cancel:
+    post:
+      summary: Cancel a task and its child run
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskRecord' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Task is already terminal }
+
+  /v1/tasks/{id}/retry:
+    post:
+      summary: Re-dispatch a failed or cancelled task
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: New task dispatched
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskRecord' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Only failed or cancelled tasks can retry }
+
+  /v1/tasks/{id}/events:
+    get:
+      summary: Return the child run's persisted events
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - in: query
+          name: since
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 5000, default: 1000 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taskId: { type: string }
+                  runId: { type: string, nullable: true }
+                  events:
+                    type: array
+                    items: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/lineage/{runId}:
+    get:
+      summary: Reconstruct a run's lineage
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Lineage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -868,6 +1005,11 @@ components:
     RunId:
       in: path
       name: runId
+      required: true
+      schema: { type: string }
+    TaskId:
+      in: path
+      name: id
       required: true
       schema: { type: string }
 
@@ -911,6 +1053,76 @@ components:
         stepId: { type: string }
         message: { type: string }
         createdAt: { type: string, format: date-time }
+
+    DeliveryTarget:
+      type: object
+      description: >
+        Experimental. Recorded on the task for a future delivery mechanism;
+        stored and echoed back but not yet acted on.
+      required: [kind, target]
+      properties:
+        kind: { type: string }
+        target: { type: string }
+        metadata: { type: object, additionalProperties: true }
+    TaskRecord:
+      type: object
+      properties:
+        taskId: { type: string }
+        workflowId: { type: string }
+        status:
+          type: string
+          enum: [pending, running, completed, failed, cancelled]
+        input: {}
+        childRunId: { type: string }
+        parentRunId: { type: string }
+        parentStepId: { type: string }
+        parentSessionId: { type: string }
+        retryOfTaskId: { type: string }
+        deliveryTarget: { $ref: '#/components/schemas/DeliveryTarget' }
+        summary: { type: string }
+        error:
+          type: object
+          properties:
+            message: { type: string }
+            code: { type: string }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+    CreateTaskRequest:
+      type: object
+      required: [workflowId]
+      properties:
+        workflowId: { type: string }
+        input: {}
+        parentRunId: { type: string }
+        parentStepId: { type: string }
+        parentSessionId: { type: string }
+        deliveryTarget: { $ref: '#/components/schemas/DeliveryTarget' }
+    RunRef:
+      type: object
+      properties:
+        runId: { type: string }
+        pipelineId: { type: string }
+        status: { type: string }
+        taskId: { type: string }
+    LineageNode:
+      allOf:
+        - $ref: '#/components/schemas/RunRef'
+        - type: object
+          properties:
+            children:
+              type: array
+              items: { $ref: '#/components/schemas/LineageNode' }
+    Lineage:
+      type: object
+      properties:
+        runId: { type: string }
+        ancestors:
+          type: array
+          items: { $ref: '#/components/schemas/RunRef' }
+        descendants:
+          type: array
+          items: { $ref: '#/components/schemas/LineageNode' }
 
     DashboardOverview:
       type: object

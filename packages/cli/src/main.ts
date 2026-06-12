@@ -23,6 +23,7 @@ import { runCommand } from './run.js'
 import { scheduleCommand } from './schedule.js'
 import { sessionsCommand } from './sessions.js'
 import { stopCommand } from './stop.js'
+import { lineageCommand, tasksCommand } from './tasks.js'
 import { validateCommand } from './validate.js'
 import { workspaceCommand } from './workspace.js'
 
@@ -476,6 +477,36 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
             ...(typeof parsed.flags.version === 'string' && { version: parsed.flags.version }),
             ...(parsed.flags.json === true && { json: true }),
           },
+          io,
+        )
+        return { exitCode: result.exitCode }
+      }
+      case 'tasks': {
+        const sub = parsed.positional[0]
+        if (sub !== 'list' && sub !== 'get' && sub !== 'cancel' && sub !== 'retry') {
+          io.stderr.write('error: tasks requires list | get | cancel | retry\n')
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        const result = await tasksCommand(
+          {
+            subcommand: sub,
+            ...(typeof parsed.positional[1] === 'string' && { id: parsed.positional[1] }),
+            ...(typeof parsed.flags.status === 'string' && { status: parsed.flags.status }),
+            ...(typeof parsed.flags.parent === 'string' && { parent: parsed.flags.parent }),
+            ...(parsed.flags.json === true && { json: true }),
+          },
+          io,
+        )
+        return { exitCode: result.exitCode }
+      }
+      case 'lineage': {
+        const runId = parsed.positional[0]
+        if (!runId) {
+          io.stderr.write('error: skelm lineage requires a run id\n')
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        const result = await lineageCommand(
+          { runId, ...(parsed.flags.json === true && { json: true }) },
           io,
         )
         return { exitCode: result.exitCode }

@@ -171,6 +171,7 @@ export interface GatewayContext {
   readonly workspaceManager: WorkspaceManager
   readonly breakpoints: BreakpointRegistry
   readonly metrics: import('@skelm/metrics').MetricsCollector | null
+  readonly tasks: import('../tasks/task-service.js').TaskService
 
   // ── run lifecycle ────────────────────────────────────────────────────────
   cancel(runId: string, reason?: string): boolean
@@ -183,7 +184,11 @@ export interface GatewayContext {
     registryId: string,
     input: unknown,
   ): Promise<{ runId: string; pipelineId: string }>
-  startPipelineAsync(pipelineId: string, input: unknown): Promise<{ runId: string }>
+  startPipelineAsync(
+    pipelineId: string,
+    input: unknown,
+    lineage?: import('../execution/gateway-runtime.js').RunLineage,
+  ): Promise<{ runId: string }>
 
   // ── pipeline / workflow loading ──────────────────────────────────────────
   getWorkflowLoader(): ((registryId: string, absolutePath: string) => Promise<unknown>) | undefined
