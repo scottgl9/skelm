@@ -276,6 +276,49 @@ describeMaybe('PostgresRunStore contract', () => {
       await cleanup()
     }
   })
+
+  it('stores, updates, and lists tasks; roundtrips run lineage', async () => {
+    const { store, cleanup } = await withSchemaStore()
+    try {
+      await store.putTask({
+        taskId: 'pg-t1',
+        workflowId: 'wf-pg',
+        status: 'pending',
+        input: { hello: 'pg' },
+        deliveryTarget: { kind: 'webhook', target: 'https://x.test/hook' },
+        createdAt: '2026-01-01T00:00:00.000Z',
+      })
+      await store.updateTask('pg-t1', { status: 'running', childRunId: 'pg-run-c' })
+      await expect(store.getTask('pg-t1')).resolves.toMatchObject({
+        taskId: 'pg-t1',
+        status: 'running',
+        childRunId: 'pg-run-c',
+        deliveryTarget: { kind: 'webhook', target: 'https://x.test/hook' },
+      })
+
+      await store.putTask({
+        taskId: 'pg-t2',
+        workflowId: 'wf-other',
+        status: 'completed',
+        createdAt: '2026-01-01T00:00:01.000Z',
+      })
+      const running = await store.listTasks({ status: 'running' })
+      expect(running.map((t) => t.taskId)).toEqual(['pg-t1'])
+
+      await store.putRun({
+        ...sampleRun('pg-child'),
+        parentRunId: 'pg-parent',
+        parentStepId: 'pg-step',
+        taskId: 'pg-t1',
+      })
+      const child = await store.getRun('pg-child')
+      expect(child?.parentRunId).toBe('pg-parent')
+      expect(child?.parentStepId).toBe('pg-step')
+      expect(child?.taskId).toBe('pg-t1')
+    } finally {
+      await cleanup()
+    }
+  })
 })
 
 async function withSchemaStore(

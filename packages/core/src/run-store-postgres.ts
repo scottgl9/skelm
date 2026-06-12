@@ -10,12 +10,17 @@ import {
   type ArtifactRef,
   type AuditEntry,
   DEFAULT_ARTIFACT_QUOTA_BYTES,
+  type DeliveryTarget,
   type RunFilter,
   type RunPatch,
   type RunStore,
   type RunSummary,
+  type TaskFilter,
+  type TaskPatch,
+  type TaskRecord,
+  applyTaskPatch,
 } from './run-store.js'
-import type { RunStatus } from './types-base.js'
+import type { RunStatus, SerializedError } from './types-base.js'
 import type { Run, RunId, StateEntry, StateReadOptions, StateSetOptions } from './types.js'
 
 export interface PostgresRunStoreOptions {
@@ -73,6 +78,9 @@ export class PostgresRunStore implements RunStore {
           pipeline_id,
           workflow_path,
           trigger_id,
+          parent_run_id,
+          parent_step_id,
+          task_id,
           status,
           input_json,
           steps_json,
@@ -82,12 +90,15 @@ export class PostgresRunStore implements RunStore {
           completed_at,
           waiting_json
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         ON CONFLICT (run_id)
         DO UPDATE SET
           pipeline_id = EXCLUDED.pipeline_id,
           workflow_path = EXCLUDED.workflow_path,
           trigger_id = EXCLUDED.trigger_id,
+          parent_run_id = EXCLUDED.parent_run_id,
+          parent_step_id = EXCLUDED.parent_step_id,
+          task_id = EXCLUDED.task_id,
           status = EXCLUDED.status,
           input_json = EXCLUDED.input_json,
           steps_json = EXCLUDED.steps_json,
@@ -101,6 +112,9 @@ export class PostgresRunStore implements RunStore {
           run.pipelineId,
           run.workflowPath ?? null,
           run.triggerId ?? null,
+          run.parentRunId ?? null,
+          run.parentStepId ?? null,
+          run.taskId ?? null,
           run.status,
           encodeValue(run.input),
           encodeValue(run.steps),
@@ -127,6 +141,9 @@ export class PostgresRunStore implements RunStore {
           pipeline_id,
           workflow_path,
           trigger_id,
+          parent_run_id,
+          parent_step_id,
+          task_id,
           status,
           input_json,
           steps_json,
@@ -136,12 +153,15 @@ export class PostgresRunStore implements RunStore {
           completed_at,
           waiting_json
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         ON CONFLICT (run_id)
         DO UPDATE SET
           pipeline_id = EXCLUDED.pipeline_id,
           workflow_path = EXCLUDED.workflow_path,
           trigger_id = EXCLUDED.trigger_id,
+          parent_run_id = EXCLUDED.parent_run_id,
+          parent_step_id = EXCLUDED.parent_step_id,
+          task_id = EXCLUDED.task_id,
           status = EXCLUDED.status,
           input_json = EXCLUDED.input_json,
           steps_json = EXCLUDED.steps_json,
@@ -155,6 +175,9 @@ export class PostgresRunStore implements RunStore {
           next.pipelineId,
           next.workflowPath ?? null,
           next.triggerId ?? null,
+          next.parentRunId ?? null,
+          next.parentStepId ?? null,
+          next.taskId ?? null,
           next.status,
           encodeValue(next.input),
           encodeValue(next.steps),
@@ -391,6 +414,85 @@ export class PostgresRunStore implements RunStore {
         [entry.runId ?? null, entry.actor, entry.action, encodeValue(entry.data), entry.at],
       ),
     )
+  }
+
+  async putTask(task: TaskRecord): Promise<void> {
+    await this.withClient((client) => client.query(this.upsertTaskSql(), taskRowParams(task)))
+  }
+
+  async updateTask(taskId: string, patch: TaskPatch): Promise<void> {
+    await this.withTransaction(async (client) => {
+      const row = await client.query<TaskRow>(
+        `SELECT * FROM ${this.table('tasks')} WHERE task_id = $1 FOR UPDATE`,
+        [taskId],
+      )
+      const record = row.rows[0]
+      if (row.rowCount === 0 || record === undefined) return
+      const next = applyTaskPatch(inflateTaskRow(record), patch)
+      await client.query(this.upsertTaskSql(), taskRowParams(next))
+    })
+  }
+
+  async getTask(taskId: string): Promise<TaskRecord | null> {
+    const row = await this.withClient((client) =>
+      client.query<TaskRow>(`SELECT * FROM ${this.table('tasks')} WHERE task_id = $1`, [taskId]),
+    )
+    const record = row.rows[0]
+    return row.rowCount === 0 || record === undefined ? null : inflateTaskRow(record)
+  }
+
+  async listTasks(filter: TaskFilter = {}): Promise<readonly TaskRecord[]> {
+    const clauses: string[] = []
+    const params: unknown[] = []
+    let idx = 1
+    if (filter.status !== undefined) {
+      clauses.push(`status = $${idx}`)
+      params.push(filter.status)
+      idx += 1
+    }
+    if (filter.parentRunId !== undefined) {
+      clauses.push(`parent_run_id = $${idx}`)
+      params.push(filter.parentRunId)
+      idx += 1
+    }
+    if (filter.workflowId !== undefined) {
+      clauses.push(`workflow_id = $${idx}`)
+      params.push(filter.workflowId)
+      idx += 1
+    }
+    if (filter.limit !== undefined) params.push(filter.limit)
+    const where = clauses.length === 0 ? '' : `WHERE ${clauses.join(' AND ')}`
+    const rows = await this.withClient((client) =>
+      client.query<TaskRow>(
+        `SELECT * FROM ${this.table('tasks')} ${where}
+         ORDER BY created_at DESC ${filter.limit === undefined ? '' : `LIMIT $${idx}`}`,
+        params,
+      ),
+    )
+    return rows.rows.map(inflateTaskRow)
+  }
+
+  private upsertTaskSql(): string {
+    return `INSERT INTO ${this.table('tasks')} (
+      task_id, workflow_id, child_run_id, parent_run_id, parent_step_id, parent_session_id,
+      status, input_json, summary, delivery_target_json, retry_of_task_id,
+      created_at, started_at, completed_at, error_json
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    ON CONFLICT (task_id) DO UPDATE SET
+      workflow_id = EXCLUDED.workflow_id,
+      child_run_id = EXCLUDED.child_run_id,
+      parent_run_id = EXCLUDED.parent_run_id,
+      parent_step_id = EXCLUDED.parent_step_id,
+      parent_session_id = EXCLUDED.parent_session_id,
+      status = EXCLUDED.status,
+      input_json = EXCLUDED.input_json,
+      summary = EXCLUDED.summary,
+      delivery_target_json = EXCLUDED.delivery_target_json,
+      retry_of_task_id = EXCLUDED.retry_of_task_id,
+      created_at = EXCLUDED.created_at,
+      started_at = EXCLUDED.started_at,
+      completed_at = EXCLUDED.completed_at,
+      error_json = EXCLUDED.error_json`
   }
 
   async putArtifact(opts: {
@@ -669,6 +771,37 @@ export class PostgresRunStore implements RunStore {
         CREATE INDEX IF NOT EXISTS runs_status_idx
           ON ${this.table('runs')} (status, started_at)
       `)
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS ${this.table('tasks')} (
+          task_id TEXT PRIMARY KEY,
+          workflow_id TEXT NOT NULL,
+          child_run_id TEXT,
+          parent_run_id TEXT,
+          parent_step_id TEXT,
+          parent_session_id TEXT,
+          status TEXT NOT NULL,
+          input_json TEXT,
+          summary TEXT,
+          delivery_target_json TEXT,
+          retry_of_task_id TEXT,
+          created_at TEXT NOT NULL,
+          started_at TEXT,
+          completed_at TEXT,
+          error_json TEXT
+        )
+      `)
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS tasks_status_idx
+          ON ${this.table('tasks')} (status, created_at)
+      `)
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS tasks_parent_idx
+          ON ${this.table('tasks')} (parent_run_id, created_at)
+      `)
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS tasks_workflow_idx
+          ON ${this.table('tasks')} (workflow_id, created_at)
+      `)
 
       const cols = await client.query<{ column_name: string }>(
         `SELECT column_name
@@ -688,6 +821,15 @@ export class PostgresRunStore implements RunStore {
       }
       if (!hasColumn.has('waiting_json')) {
         alterStatements.push(`ALTER TABLE ${this.table('runs')} ADD COLUMN waiting_json TEXT`)
+      }
+      if (!hasColumn.has('parent_run_id')) {
+        alterStatements.push(`ALTER TABLE ${this.table('runs')} ADD COLUMN parent_run_id TEXT`)
+      }
+      if (!hasColumn.has('parent_step_id')) {
+        alterStatements.push(`ALTER TABLE ${this.table('runs')} ADD COLUMN parent_step_id TEXT`)
+      }
+      if (!hasColumn.has('task_id')) {
+        alterStatements.push(`ALTER TABLE ${this.table('runs')} ADD COLUMN task_id TEXT`)
       }
 
       for (const statement of alterStatements) {
@@ -710,6 +852,9 @@ export class PostgresRunStore implements RunStore {
         pipeline_id: string
         workflow_path: string | null
         trigger_id: string | null
+        parent_run_id: string | null
+        parent_step_id: string | null
+        task_id: string | null
         status: RunStatus
         input_json: string
         steps_json: string
@@ -722,11 +867,11 @@ export class PostgresRunStore implements RunStore {
     | undefined
   > {
     const where = forUpdate
-      ? `SELECT run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
+      ? `SELECT run_id, pipeline_id, workflow_path, trigger_id, parent_run_id, parent_step_id, task_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
          FROM ${this.table('runs')}
          WHERE run_id = $1
          FOR UPDATE`
-      : `SELECT run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
+      : `SELECT run_id, pipeline_id, workflow_path, trigger_id, parent_run_id, parent_step_id, task_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
          FROM ${this.table('runs')}
          WHERE run_id = $1`
     const row = await client.query<{
@@ -734,6 +879,9 @@ export class PostgresRunStore implements RunStore {
       pipeline_id: string
       workflow_path: string | null
       trigger_id: string | null
+      parent_run_id: string | null
+      parent_step_id: string | null
+      task_id: string | null
       status: RunStatus
       input_json: string
       steps_json: string
@@ -961,6 +1109,9 @@ function inflateRunRow(row: {
   pipeline_id: string
   workflow_path: string | null
   trigger_id: string | null
+  parent_run_id: string | null
+  parent_step_id: string | null
+  task_id: string | null
   status: RunStatus
   input_json: string
   steps_json: string
@@ -975,6 +1126,9 @@ function inflateRunRow(row: {
     pipelineId: row.pipeline_id,
     ...(row.workflow_path !== null && { workflowPath: row.workflow_path }),
     ...(row.trigger_id !== null && { triggerId: row.trigger_id }),
+    ...(row.parent_run_id !== null && { parentRunId: row.parent_run_id }),
+    ...(row.parent_step_id !== null && { parentStepId: row.parent_step_id }),
+    ...(row.task_id !== null && { taskId: row.task_id }),
     status: row.status,
     input: decodeValue(row.input_json),
     steps: decodeValue(row.steps_json),
@@ -988,6 +1142,66 @@ function inflateRunRow(row: {
 
 function expiresAt(opts: StateSetOptions, now: number): number | null {
   return opts.ttlMs === undefined ? null : now + opts.ttlMs
+}
+
+interface TaskRow {
+  task_id: string
+  workflow_id: string
+  child_run_id: string | null
+  parent_run_id: string | null
+  parent_step_id: string | null
+  parent_session_id: string | null
+  status: string
+  input_json: string | null
+  summary: string | null
+  delivery_target_json: string | null
+  retry_of_task_id: string | null
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+  error_json: string | null
+}
+
+function taskRowParams(task: TaskRecord): unknown[] {
+  return [
+    task.taskId,
+    task.workflowId,
+    task.childRunId ?? null,
+    task.parentRunId ?? null,
+    task.parentStepId ?? null,
+    task.parentSessionId ?? null,
+    task.status,
+    task.input === undefined ? null : JSON.stringify(task.input),
+    task.summary ?? null,
+    task.deliveryTarget === undefined ? null : JSON.stringify(task.deliveryTarget),
+    task.retryOfTaskId ?? null,
+    task.createdAt,
+    task.startedAt ?? null,
+    task.completedAt ?? null,
+    task.error === undefined ? null : JSON.stringify(task.error),
+  ]
+}
+
+function inflateTaskRow(row: TaskRow): TaskRecord {
+  return {
+    taskId: row.task_id,
+    workflowId: row.workflow_id,
+    ...(row.child_run_id !== null && { childRunId: row.child_run_id }),
+    ...(row.parent_run_id !== null && { parentRunId: row.parent_run_id }),
+    ...(row.parent_step_id !== null && { parentStepId: row.parent_step_id }),
+    ...(row.parent_session_id !== null && { parentSessionId: row.parent_session_id }),
+    status: row.status as TaskRecord['status'],
+    ...(row.input_json !== null && { input: JSON.parse(row.input_json) as unknown }),
+    ...(row.summary !== null && { summary: row.summary }),
+    ...(row.delivery_target_json !== null && {
+      deliveryTarget: JSON.parse(row.delivery_target_json) as DeliveryTarget,
+    }),
+    ...(row.retry_of_task_id !== null && { retryOfTaskId: row.retry_of_task_id }),
+    createdAt: row.created_at,
+    ...(row.started_at !== null && { startedAt: row.started_at }),
+    ...(row.completed_at !== null && { completedAt: row.completed_at }),
+    ...(row.error_json !== null && { error: JSON.parse(row.error_json) as SerializedError }),
+  }
 }
 
 function escapeLike(value: string): string {

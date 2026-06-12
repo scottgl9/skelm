@@ -10,9 +10,19 @@ import {
   DEFAULT_MAX_EVENTS_PER_RUN_IN_MEMORY,
   DEFAULT_MAX_RUNS_IN_MEMORY,
   applyRunPatch,
+  applyTaskPatch,
   listRunsCompat,
 } from './types.js'
-import type { AuditEntry, RunFilter, RunPatch, RunStore, RunSummary } from './types.js'
+import type {
+  AuditEntry,
+  RunFilter,
+  RunPatch,
+  RunStore,
+  RunSummary,
+  TaskFilter,
+  TaskPatch,
+  TaskRecord,
+} from './types.js'
 
 function valuesEqual(left: unknown, right: unknown): boolean {
   if (left === undefined && right === undefined) return true
@@ -30,6 +40,7 @@ export class MemoryRunStore implements RunStore {
   >()
   private readonly journals = new Map<string, Map<string, Array<{ entry: unknown; at: number }>>>()
   private readonly artifacts = new Map<RunId, Array<ArtifactDescriptor & { data: Uint8Array }>>()
+  private readonly tasks = new Map<string, TaskRecord>()
   private artifactCounter = 0
   private readonly artifactQuotaBytes: number
   private readonly maxRuns: number
@@ -237,6 +248,32 @@ export class MemoryRunStore implements RunStore {
         bucket.delete(entryKey)
       }
     }
+  }
+
+  async putTask(task: TaskRecord): Promise<void> {
+    this.tasks.set(task.taskId, task)
+  }
+
+  async updateTask(taskId: string, patch: TaskPatch): Promise<void> {
+    const existing = this.tasks.get(taskId)
+    if (existing === undefined) return
+    this.tasks.set(taskId, applyTaskPatch(existing, patch))
+  }
+
+  async getTask(taskId: string): Promise<TaskRecord | null> {
+    return this.tasks.get(taskId) ?? null
+  }
+
+  async listTasks(filter: TaskFilter = {}): Promise<readonly TaskRecord[]> {
+    const matches: TaskRecord[] = []
+    for (const task of this.tasks.values()) {
+      if (filter.status !== undefined && task.status !== filter.status) continue
+      if (filter.parentRunId !== undefined && task.parentRunId !== filter.parentRunId) continue
+      if (filter.workflowId !== undefined && task.workflowId !== filter.workflowId) continue
+      matches.push(task)
+    }
+    matches.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    return filter.limit === undefined ? matches : matches.slice(0, filter.limit)
   }
 
   async putArtifact(opts: {

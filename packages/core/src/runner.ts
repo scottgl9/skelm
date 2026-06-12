@@ -67,6 +67,7 @@ import type {
   Context,
   Pipeline,
   Run,
+  RunId,
   RunMetadata,
   RunStatus,
   Step,
@@ -180,6 +181,19 @@ export interface RunOptions {
    * `runPipeline()` or HTTP `POST /pipelines/<id>/run`.
    */
   triggerId?: string
+  /**
+   * Optional parent run id, stored on the Run record when this run was
+   * dispatched as a child of another run (e.g. a detached task). Lets
+   * lineage queries reconstruct ancestry without a side table.
+   */
+  parentRunId?: RunId
+  /** Optional id of the parent step that spawned this run, stored on the Run record. */
+  parentStepId?: StepId
+  /**
+   * Optional detached-task id, stored on the Run record so a Run can be
+   * correlated back to its TaskRecord. Set by the gateway tasks dispatch.
+   */
+  taskId?: string
   /**
    * Optional skill source consulted when an agent step's resolved policy
    * declares allowedSkills. The runner wraps this with canLoadSkill checks
@@ -562,6 +576,9 @@ export async function runPipeline<TInput, TOutput>(
           pipelineId: pipeline.id,
           ...(options.workflowPath !== undefined && { workflowPath: options.workflowPath }),
           ...(options.triggerId !== undefined && { triggerId: options.triggerId }),
+          ...(options.parentRunId !== undefined && { parentRunId: options.parentRunId }),
+          ...(options.parentStepId !== undefined && { parentStepId: options.parentStepId }),
+          ...(options.taskId !== undefined && { taskId: options.taskId }),
           status: 'running',
           input,
           steps: Object.freeze([]),
@@ -611,6 +628,9 @@ export async function runPipeline<TInput, TOutput>(
           pipelineId: pipeline.id,
           ...(options.workflowPath !== undefined && { workflowPath: options.workflowPath }),
           ...(options.triggerId !== undefined && { triggerId: options.triggerId }),
+          ...(options.parentRunId !== undefined && { parentRunId: options.parentRunId }),
+          ...(options.parentStepId !== undefined && { parentStepId: options.parentStepId }),
+          ...(options.taskId !== undefined && { taskId: options.taskId }),
           status: runStatus,
           input,
           steps: Object.freeze(stepResults),
@@ -924,6 +944,9 @@ export async function runPipeline<TInput, TOutput>(
       pipelineId: pipeline.id,
       ...(options.workflowPath !== undefined && { workflowPath: options.workflowPath }),
       ...(options.triggerId !== undefined && { triggerId: options.triggerId }),
+      ...(options.parentRunId !== undefined && { parentRunId: options.parentRunId }),
+      ...(options.parentStepId !== undefined && { parentStepId: options.parentStepId }),
+      ...(options.taskId !== undefined && { taskId: options.taskId }),
       status: runStatus,
       input: resolvedInput,
       steps: Object.freeze(stepResults),

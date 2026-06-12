@@ -17,6 +17,7 @@ export type {
   StepStatus,
   StepKind,
   SerializedError,
+  TaskStatus,
 } from './types-base.js'
 import type {
   RunId,
@@ -856,6 +857,23 @@ export interface Run<TInput = unknown, TOutput = unknown> {
    * Used by `/runs?triggerId=…` filters and dashboard groupings.
    */
   readonly triggerId?: string
+  /**
+   * Run id of the parent run when this run was dispatched as a child of
+   * another run (e.g. a detached task). Absent for top-level runs. Persisted
+   * so `GET /v1/lineage/:runId` can reconstruct ancestry without a side table.
+   */
+  readonly parentRunId?: RunId
+  /**
+   * Step id within the parent run that spawned this run, when known. Absent
+   * for runs not spawned from a specific step.
+   */
+  readonly parentStepId?: StepId
+  /**
+   * Id of the detached task this run executes, when the run was started via
+   * the tasks API. Absent for runs started directly. Links a Run back to its
+   * TaskRecord.
+   */
+  readonly taskId?: string
   readonly status: RunStatus
   readonly input: TInput
   readonly steps: readonly StepResult[]

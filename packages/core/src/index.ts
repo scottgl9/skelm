@@ -335,6 +335,7 @@ export type {
   AuditEntry,
   AuditFilter,
   AuditLogReader,
+  DeliveryTarget,
   DurableAgentMemory,
   ExecutionStore,
   AgentMemoryRecord,
@@ -344,6 +345,10 @@ export type {
   RunSummary,
   SqliteRunStoreOptions,
   StateStore,
+  TaskFilter,
+  TaskPatch,
+  TaskRecord,
+  TaskStore,
   WorkflowStateStore,
 } from './run-store.js'
 export { NotImplementedError, PostgresRunStore } from './run-store-postgres.js'
@@ -451,6 +456,7 @@ export type {
   StepKind,
   StepResult,
   StepStatus,
+  TaskStatus,
   WaitStep,
   WhenPredicate,
   ExecFn,
