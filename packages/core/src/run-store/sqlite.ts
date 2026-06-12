@@ -4,10 +4,25 @@ import Database from 'better-sqlite3'
 import { validateArtifactMetadata } from '../artifact-types.js'
 import type { ArtifactDescriptor, ArtifactRef } from '../artifact-types.js'
 import type { RunEvent } from '../events.js'
-import type { RunId, RunStatus } from '../types-base.js'
+import type { RunId, RunStatus, SerializedError } from '../types-base.js'
 import type { Run, StateEntry, StateReadOptions, StateSetOptions } from '../types.js'
-import { ArtifactQuotaExceededError, DEFAULT_ARTIFACT_QUOTA_BYTES, applyRunPatch } from './types.js'
-import type { AuditEntry, RunFilter, RunPatch, RunStore, RunSummary } from './types.js'
+import {
+  ArtifactQuotaExceededError,
+  DEFAULT_ARTIFACT_QUOTA_BYTES,
+  applyRunPatch,
+  applyTaskPatch,
+} from './types.js'
+import type {
+  AuditEntry,
+  DeliveryTarget,
+  RunFilter,
+  RunPatch,
+  RunStore,
+  RunSummary,
+  TaskFilter,
+  TaskPatch,
+  TaskRecord,
+} from './types.js'
 
 // ── Codec helpers ─────────────────────────────────────────────────────────────
 // Wrap values in a discriminated envelope so that `undefined` round-trips
@@ -33,6 +48,70 @@ function expiresAt(opts: StateSetOptions): number | null {
 
 function valuesEqual(left: unknown, right: unknown): boolean {
   return encodeValue(left) === encodeValue(right)
+}
+
+// ── Task row codec ────────────────────────────────────────────────────────────
+
+interface TaskRow {
+  task_id: string
+  workflow_id: string
+  child_run_id: string | null
+  parent_run_id: string | null
+  parent_step_id: string | null
+  parent_session_id: string | null
+  status: string
+  input_json: string | null
+  summary: string | null
+  delivery_target_json: string | null
+  retry_of_task_id: string | null
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+  error_json: string | null
+}
+
+function taskRowParams(task: TaskRecord): unknown[] {
+  return [
+    task.taskId,
+    task.workflowId,
+    task.childRunId ?? null,
+    task.parentRunId ?? null,
+    task.parentStepId ?? null,
+    task.parentSessionId ?? null,
+    task.status,
+    task.input === undefined ? null : JSON.stringify(task.input),
+    task.summary ?? null,
+    task.deliveryTarget === undefined ? null : JSON.stringify(task.deliveryTarget),
+    task.retryOfTaskId ?? null,
+    task.createdAt,
+    task.startedAt ?? null,
+    task.completedAt ?? null,
+    task.error === undefined ? null : JSON.stringify(task.error),
+  ]
+}
+
+function inflateTaskRow(row: TaskRow): TaskRecord {
+  return {
+    taskId: row.task_id,
+    workflowId: row.workflow_id,
+    ...(row.child_run_id !== null && { childRunId: row.child_run_id }),
+    ...(row.parent_run_id !== null && { parentRunId: row.parent_run_id }),
+    ...(row.parent_step_id !== null && { parentStepId: row.parent_step_id }),
+    ...(row.parent_session_id !== null && { parentSessionId: row.parent_session_id }),
+    status: row.status as TaskRecord['status'],
+    ...(row.input_json !== null && { input: JSON.parse(row.input_json) as unknown }),
+    ...(row.summary !== null && { summary: row.summary }),
+    ...(row.delivery_target_json !== null && {
+      deliveryTarget: JSON.parse(row.delivery_target_json) as DeliveryTarget,
+    }),
+    ...(row.retry_of_task_id !== null && { retryOfTaskId: row.retry_of_task_id }),
+    createdAt: row.created_at,
+    ...(row.started_at !== null && { startedAt: row.started_at }),
+    ...(row.completed_at !== null && { completedAt: row.completed_at }),
+    ...(row.error_json !== null && {
+      error: JSON.parse(row.error_json) as SerializedError,
+    }),
+  }
 }
 
 // ── SqliteRunStore ────────────────────────────────────────────────────────────
@@ -62,12 +141,15 @@ export class SqliteRunStore implements RunStore {
     this.db
       .prepare(
         `INSERT INTO runs (
-          run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          run_id, pipeline_id, workflow_path, trigger_id, parent_run_id, parent_step_id, task_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id) DO UPDATE SET
           pipeline_id = excluded.pipeline_id,
           workflow_path = excluded.workflow_path,
           trigger_id = excluded.trigger_id,
+          parent_run_id = excluded.parent_run_id,
+          parent_step_id = excluded.parent_step_id,
+          task_id = excluded.task_id,
           status = excluded.status,
           input_json = excluded.input_json,
           steps_json = excluded.steps_json,
@@ -82,6 +164,9 @@ export class SqliteRunStore implements RunStore {
         run.pipelineId,
         run.workflowPath ?? null,
         run.triggerId ?? null,
+        run.parentRunId ?? null,
+        run.parentStepId ?? null,
+        run.taskId ?? null,
         run.status,
         encodeValue(run.input),
         encodeValue(run.steps),
@@ -103,12 +188,15 @@ export class SqliteRunStore implements RunStore {
       this.db
         .prepare(
           `INSERT INTO runs (
-            run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            run_id, pipeline_id, workflow_path, trigger_id, parent_run_id, parent_step_id, task_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(run_id) DO UPDATE SET
             pipeline_id = excluded.pipeline_id,
             workflow_path = excluded.workflow_path,
             trigger_id = excluded.trigger_id,
+            parent_run_id = excluded.parent_run_id,
+            parent_step_id = excluded.parent_step_id,
+            task_id = excluded.task_id,
             status = excluded.status,
             input_json = excluded.input_json,
             steps_json = excluded.steps_json,
@@ -123,6 +211,9 @@ export class SqliteRunStore implements RunStore {
           next.pipelineId,
           next.workflowPath ?? null,
           next.triggerId ?? null,
+          next.parentRunId ?? null,
+          next.parentStepId ?? null,
+          next.taskId ?? null,
           next.status,
           encodeValue(next.input),
           encodeValue(next.steps),
@@ -148,6 +239,9 @@ export class SqliteRunStore implements RunStore {
         pipeline_id: string
         workflow_path: string | null
         trigger_id: string | null
+        parent_run_id: string | null
+        parent_step_id: string | null
+        task_id: string | null
         status: RunStatus
         input_json: string
         steps_json: string
@@ -160,7 +254,7 @@ export class SqliteRunStore implements RunStore {
     | undefined {
     return this.db
       .prepare(
-        `SELECT run_id, pipeline_id, workflow_path, trigger_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
+        `SELECT run_id, pipeline_id, workflow_path, trigger_id, parent_run_id, parent_step_id, task_id, status, input_json, steps_json, output_json, error_json, started_at, completed_at, waiting_json
          FROM runs WHERE run_id = ?`,
       )
       .get(runId) as
@@ -169,6 +263,9 @@ export class SqliteRunStore implements RunStore {
           pipeline_id: string
           workflow_path: string | null
           trigger_id: string | null
+          parent_run_id: string | null
+          parent_step_id: string | null
+          task_id: string | null
           status: RunStatus
           input_json: string
           steps_json: string
@@ -186,6 +283,9 @@ export class SqliteRunStore implements RunStore {
     pipeline_id: string
     workflow_path: string | null
     trigger_id: string | null
+    parent_run_id: string | null
+    parent_step_id: string | null
+    task_id: string | null
     status: RunStatus
     input_json: string
     steps_json: string
@@ -200,6 +300,9 @@ export class SqliteRunStore implements RunStore {
       pipelineId: row.pipeline_id,
       ...(row.workflow_path !== null && { workflowPath: row.workflow_path }),
       ...(row.trigger_id !== null && { triggerId: row.trigger_id }),
+      ...(row.parent_run_id !== null && { parentRunId: row.parent_run_id }),
+      ...(row.parent_step_id !== null && { parentStepId: row.parent_step_id }),
+      ...(row.task_id !== null && { taskId: row.task_id }),
       status: row.status,
       input: decodeValue(row.input_json),
       steps: decodeValue(row.steps_json),
@@ -420,6 +523,100 @@ export class SqliteRunStore implements RunStore {
     }
   }
 
+  async putTask(task: TaskRecord): Promise<void> {
+    this.db
+      .prepare(
+        `INSERT INTO tasks (
+          task_id, workflow_id, child_run_id, parent_run_id, parent_step_id, parent_session_id,
+          status, input_json, summary, delivery_target_json, retry_of_task_id,
+          created_at, started_at, completed_at, error_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(task_id) DO UPDATE SET
+          workflow_id = excluded.workflow_id,
+          child_run_id = excluded.child_run_id,
+          parent_run_id = excluded.parent_run_id,
+          parent_step_id = excluded.parent_step_id,
+          parent_session_id = excluded.parent_session_id,
+          status = excluded.status,
+          input_json = excluded.input_json,
+          summary = excluded.summary,
+          delivery_target_json = excluded.delivery_target_json,
+          retry_of_task_id = excluded.retry_of_task_id,
+          created_at = excluded.created_at,
+          started_at = excluded.started_at,
+          completed_at = excluded.completed_at,
+          error_json = excluded.error_json`,
+      )
+      .run(...taskRowParams(task))
+  }
+
+  async updateTask(taskId: string, patch: TaskPatch): Promise<void> {
+    const transaction = this.db.transaction(() => {
+      const existing = this.getTaskRow(taskId)
+      if (existing === undefined) return
+      const next = applyTaskPatch(inflateTaskRow(existing), patch)
+      this.db
+        .prepare(
+          `INSERT INTO tasks (
+            task_id, workflow_id, child_run_id, parent_run_id, parent_step_id, parent_session_id,
+            status, input_json, summary, delivery_target_json, retry_of_task_id,
+            created_at, started_at, completed_at, error_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(task_id) DO UPDATE SET
+            workflow_id = excluded.workflow_id,
+            child_run_id = excluded.child_run_id,
+            parent_run_id = excluded.parent_run_id,
+            parent_step_id = excluded.parent_step_id,
+            parent_session_id = excluded.parent_session_id,
+            status = excluded.status,
+            input_json = excluded.input_json,
+            summary = excluded.summary,
+            delivery_target_json = excluded.delivery_target_json,
+            retry_of_task_id = excluded.retry_of_task_id,
+            created_at = excluded.created_at,
+            started_at = excluded.started_at,
+            completed_at = excluded.completed_at,
+            error_json = excluded.error_json`,
+        )
+        .run(...taskRowParams(next))
+    })
+    transaction()
+  }
+
+  async getTask(taskId: string): Promise<TaskRecord | null> {
+    const row = this.getTaskRow(taskId)
+    return row === undefined ? null : inflateTaskRow(row)
+  }
+
+  async listTasks(filter: TaskFilter = {}): Promise<readonly TaskRecord[]> {
+    const clauses: string[] = []
+    const params: unknown[] = []
+    if (filter.status !== undefined) {
+      clauses.push('status = ?')
+      params.push(filter.status)
+    }
+    if (filter.parentRunId !== undefined) {
+      clauses.push('parent_run_id = ?')
+      params.push(filter.parentRunId)
+    }
+    if (filter.workflowId !== undefined) {
+      clauses.push('workflow_id = ?')
+      params.push(filter.workflowId)
+    }
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''
+    const limit = filter.limit !== undefined ? `LIMIT ${filter.limit}` : ''
+    const rows = this.db
+      .prepare(`SELECT * FROM tasks ${where} ORDER BY created_at DESC ${limit}`)
+      .all(...params) as TaskRow[]
+    return rows.map(inflateTaskRow)
+  }
+
+  private getTaskRow(taskId: string): TaskRow | undefined {
+    return this.db.prepare('SELECT * FROM tasks WHERE task_id = ?').get(taskId) as
+      | TaskRow
+      | undefined
+  }
+
   async putArtifact(opts: {
     runId: RunId
     stepId?: string
@@ -606,6 +803,26 @@ export class SqliteRunStore implements RunStore {
         created_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS artifacts_run_idx ON artifacts(run_id, step_id, created_at, artifact_id);
+      CREATE TABLE IF NOT EXISTS tasks (
+        task_id TEXT PRIMARY KEY,
+        workflow_id TEXT NOT NULL,
+        child_run_id TEXT,
+        parent_run_id TEXT,
+        parent_step_id TEXT,
+        parent_session_id TEXT,
+        status TEXT NOT NULL,
+        input_json TEXT,
+        summary TEXT,
+        delivery_target_json TEXT,
+        retry_of_task_id TEXT,
+        created_at TEXT NOT NULL,
+        started_at TEXT,
+        completed_at TEXT,
+        error_json TEXT
+      );
+      CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks(status, created_at);
+      CREATE INDEX IF NOT EXISTS tasks_parent_idx ON tasks(parent_run_id, created_at);
+      CREATE INDEX IF NOT EXISTS tasks_workflow_idx ON tasks(workflow_id, created_at);
       -- The events table is the fastest-growing, most-read table (SSE replay,
       -- GET /runs/:id/events, skelm history, crash recovery). listEvents is
       -- WHERE run_id = ? [AND at >= ?] ORDER BY at, id -- index that exactly.
@@ -626,6 +843,15 @@ export class SqliteRunStore implements RunStore {
     }
     if (!cols.some((c) => c.name === 'waiting_json')) {
       this.db.exec('ALTER TABLE runs ADD COLUMN waiting_json TEXT')
+    }
+    if (!cols.some((c) => c.name === 'parent_run_id')) {
+      this.db.exec('ALTER TABLE runs ADD COLUMN parent_run_id TEXT')
+    }
+    if (!cols.some((c) => c.name === 'parent_step_id')) {
+      this.db.exec('ALTER TABLE runs ADD COLUMN parent_step_id TEXT')
+    }
+    if (!cols.some((c) => c.name === 'task_id')) {
+      this.db.exec('ALTER TABLE runs ADD COLUMN task_id TEXT')
     }
   }
 

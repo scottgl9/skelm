@@ -258,6 +258,7 @@ type:Context
 type:CronTriggerConfig
 type:CustomTriggerConfig
 type:DelegateResult
+type:DeliveryTarget
 type:DescribedStep
 type:DiscordInteraction
 type:DiscordMessage
@@ -392,7 +393,12 @@ type:StepStatus
 type:StopReason
 type:StoredWorkflowPackage
 type:SystemPromptInput
+type:TaskFilter
+type:TaskPatch
+type:TaskRecord
 type:TaskRequirements
+type:TaskStatus
+type:TaskStore
 type:TestResult
 type:Thread
 type:ThreadHost

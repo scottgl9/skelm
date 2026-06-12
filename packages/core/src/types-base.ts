@@ -17,6 +17,9 @@ export type StepId = string
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'waiting'
 
+/** Lifecycle status of a detached task and its child run. */
+export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+
 export type StepStatus = 'completed' | 'failed' | 'skipped' | 'waiting'
 
 /** Discriminator for step kinds; the union grows in later stages. */

@@ -148,6 +148,40 @@ type RunEventBody =
       delta: string
       at: number
     }
+  // Task lifecycle events. `runId` is the PARENT run id when the task was
+  // spawned from a run, else the child run id, so the event always rides on a
+  // bus a subscriber is already watching. Payloads stay small.
+  | {
+      type: 'task.created'
+      runId: RunId
+      taskId: string
+      childRunId?: RunId
+      at: number
+    }
+  | {
+      type: 'task.completed'
+      runId: RunId
+      taskId: string
+      childRunId?: RunId
+      /** Short result summary, when available. */
+      summary?: string
+      at: number
+    }
+  | {
+      type: 'task.failed'
+      runId: RunId
+      taskId: string
+      childRunId?: RunId
+      error: SerializedError
+      at: number
+    }
+  | {
+      type: 'task.cancelled'
+      runId: RunId
+      taskId: string
+      childRunId?: RunId
+      at: number
+    }
 
 /**
  * A run event. `EventBus.publish` stamps a monotonic per-run `seq` before

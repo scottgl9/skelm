@@ -1,7 +1,7 @@
 import type { ArtifactDescriptor, ArtifactRef } from '../artifact-types.js'
 import type { AuditEvent } from '../enforcement/audit-writer.js'
 import type { RunEvent } from '../events.js'
-import type { RunId, RunStatus } from '../types-base.js'
+import type { RunId, RunStatus, SerializedError, StepId, TaskStatus } from '../types-base.js'
 import type { Run, StateEntry, StateReadOptions, StateSetOptions } from '../types.js'
 
 export interface RunSummary {
@@ -160,6 +160,83 @@ export interface ArtifactStore {
   listArtifacts(runId: RunId, opts?: { stepId?: string }): AsyncIterable<ArtifactDescriptor>
 }
 
+/**
+ * Where a completed task's result should be delivered. Minimal opaque contract
+ * for now — `kind` names a channel (e.g. `slack`, `webhook`) and `target` is
+ * the channel-specific address. Recorded only in this phase; no dispatch is
+ * performed against it. Richer conversation-adapter semantics arrive in a later
+ * integration phase.
+ *
+ * @experimental shape may change before delivery dispatch lands.
+ */
+export interface DeliveryTarget {
+  readonly kind: string
+  readonly target: string
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
+/**
+ * A detached task: a request to run a registered workflow whose lifecycle is
+ * tracked independently of the child run it dispatches. Created via the gateway
+ * tasks API; the child run executes through the normal run dispatch path with
+ * its own declared permissions.
+ */
+export interface TaskRecord {
+  readonly taskId: string
+  readonly workflowId: string
+  /** Child run dispatched for this task; absent until dispatch succeeds. */
+  readonly childRunId?: RunId
+  /** Parent run that requested the task, when started from within a run. */
+  readonly parentRunId?: RunId
+  /** Step within the parent run that requested the task, when known. */
+  readonly parentStepId?: StepId
+  /** Session correlation id supplied by the caller, when any. */
+  readonly parentSessionId?: string
+  readonly status: TaskStatus
+  readonly input?: unknown
+  /** Short human summary of the result, set on completion. */
+  readonly summary?: string
+  readonly deliveryTarget?: DeliveryTarget
+  /** When this task is a retry, the id of the task it retries. */
+  readonly retryOfTaskId?: string
+  readonly createdAt: string
+  readonly startedAt?: string
+  readonly completedAt?: string
+  readonly error?: SerializedError
+}
+
+/** Patch shape for `updateTask`; explicit `undefined` clears an optional field. */
+export type TaskPatch = {
+  [K in Exclude<keyof TaskRecord, 'taskId' | 'workflowId' | 'createdAt'>]?:
+    | TaskRecord[K]
+    | undefined
+}
+
+export interface TaskFilter {
+  readonly status?: TaskStatus
+  readonly parentRunId?: RunId
+  readonly workflowId?: string
+  readonly limit?: number
+}
+
+/** Spread-equivalent merge for {@link TaskPatch}; deletes keys set to `undefined`. */
+export function applyTaskPatch(existing: TaskRecord, patch: TaskPatch): TaskRecord {
+  const merged: Record<string, unknown> = { ...existing }
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) delete merged[k]
+    else merged[k] = v
+  }
+  return merged as unknown as TaskRecord
+}
+
+/** Persistence of detached tasks and their lineage to child runs. */
+export interface TaskStore {
+  putTask(task: TaskRecord): Promise<void>
+  updateTask(taskId: string, patch: TaskPatch): Promise<void>
+  getTask(taskId: string): Promise<TaskRecord | null>
+  listTasks(filter?: TaskFilter): Promise<readonly TaskRecord[]>
+}
+
 /** Persistence of run lifecycle: run records, step events, and optional audit rows. */
 export interface ExecutionStore {
   putRun(run: Run): Promise<void>
@@ -175,7 +252,7 @@ export interface ExecutionStore {
 export interface StateStore extends WorkflowStateStore {}
 
 /** Combined store used by implementations that back both APIs with a single driver. */
-export type RunStore = ExecutionStore & StateStore & ArtifactStore
+export type RunStore = ExecutionStore & StateStore & ArtifactStore & TaskStore
 
 /**
  * Default per-run artifact byte quota (256 MiB). Implementations may override
