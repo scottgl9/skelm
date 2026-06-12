@@ -6,6 +6,75 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-06-12
+
+### Added
+
+- **Workflow Package Management**: Added comprehensive support for workflow packages including store validation, manifest types, validator, lockfile helpers, and gateway run-spec routes. Includes new CLI commands for packaging and running by package spec.
+- **Gateway API Expansion**: Expanded gateway APIs to include routes for artifacts, state, agentmemory, and runtime information. Added an advisory `toolPermissions` mode.
+- **Dashboard Redesign**: Redesigned the dashboard scaffold with support for workflow uploads and added a dashboard CLI command.
+- **Agent Session Lifecycle**: Opt-in session lifecycle management for the native agent backend.
+- **Config Split**: Initial phase of config architecture split, separating `SkelmWorkflowConfig` and `SkelmGatewayConfig`.
+- **Gateway Config Inspection**: Read-only gateway config inspection commands for listing/getting configs and backend lists via CLI.
+
+### Fixed
+
+- **Security & Integrity**: 
+  - Verified package resolve integrity.
+  - Blocked metadata hostnames before egress.
+  - Refused exact executable allowlists.
+  - Gated webSearch in OpenCode on networkEgress 'allow' only and dropped allowedTools escape.
+  - Verified github-pr webhooks with GitHub signatures.
+  - Closed two secret-redaction holes in gateway config inspection.
+- **Scheduler & Triggers**:
+  - Validated and enforced `maxConcurrent` settings.
+  - Avoided double-arming started triggers.
+  - Keyed trigger grants on declared workflow id.
+  - Persisted dynamic schedule updates.
+  - Chunked far-future cron timers.
+  - Reserved overlap slots synchronously.
+- **Core Engine & Runner**:
+  - Hardened workflow package store validation.
+  - Allowed `wait()` inside `branch()`, only forbidding it in `parallel` / `forEach`.
+  - Rejected unsupported parallel `waitFor`.
+  - Claimed idempotent keys with CAS.
+  - Applied defaults to bare agent steps.
+  - Scoped runner event subscribers by run.
+  - Rejected nested wait containers.
+  - Isolated appendEvent failures from run finalization and normalized sync appendEvent throws.
+- **Gateway & State**:
+  - Stable per-run event sequence for exact SSE dedup.
+  - Replayed same-timestamp events by sequence in the run store.
+  - Loaded co-located skelm.config.* alongside skelm.gateway.*.
+  - Fixed `SkelmGatewayConfig.defaults` and example misplacements.
+  - Did not lift workflow permissions into gateway defaults.
+- **Agent & Backends**:
+  - Made session store load/save failures non-fatal.
+  - Intersected routing backend capabilities.
+  - Honored deniedTools for built-in tools.
+  - Timed out hung MCP requests.
+- **Misc**:
+  - Preserved file-watch poll fallback events.
+  - Silently skipped EACCES dirs in workspace reaper.
+  - Rescoped internal package dependencies.
+  - Caught CLI dynamic runtime imports.
+  - Declared Node engine requirements.
+
+### Refactored
+
+- Split runner side-effect plumbing.
+
+### Documentation & Tests
+
+- Documented workflow packages, store, and lockfile.
+- Documented dashboard, agentmemory, state, artifact API.
+- Updated CLI reference and OpenAPI spec.
+- Added tests for new state/artifacts/runtime/agentmemory routes and dashboard command.
+
+### Chore
+
+- Ignored `.codegraph`.
+
 ## [0.4.8] - 2026-06-09
 
 ### Added
