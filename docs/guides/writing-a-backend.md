@@ -41,7 +41,7 @@ type Capabilities = {
   mcp: boolean                 // can attach MCP servers per-run
   skills: boolean              // can load skills per-run natively
   modelSelection: boolean      // honors the `model` field on the step
-  toolPermissions: 'native' | 'wrapped' | 'unsupported'
+  toolPermissions: 'native' | 'wrapped' | 'advisory' | 'unsupported'
 }
 ```
 
@@ -49,6 +49,10 @@ type Capabilities = {
 
 - **`'native'`** — your backend enforces `permissions.allowedTools` / `allowedExecutables` / `networkEgress` / `fsRead` / `fsWrite` itself. The framework hands you the resolved policy and trusts you. Choose this only if your backend is deeply integrated with permission enforcement at its tool-dispatch layer.
 - **`'wrapped'`** — your backend surfaces tool calls to skelm; skelm checks against the policy, then forwards. Most backends fit here. The framework wraps every privileged call before the model sees a result.
+- **`'advisory'`** — your backend accepts the resolved policy but cannot fully
+  enforce it. This must be explicit, emits `permission.advisory` diagnostics,
+  and still fails closed for network permissions unless the gateway egress
+  proxy is active.
 - **`'unsupported'`** — your backend cannot enforce permissions and cannot surface tool calls for skelm to wrap. This is acceptable for an LLM-only backend (no tool use); the framework refuses to start an `agent()` step against it if the step declares any tool-bearing permissions.
 
 If you set `'native'` and your backend silently allows a denied tool call, you have a security defect. The framework's contract test will catch it; the security tenet fails-closed.

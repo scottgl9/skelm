@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { stripTypeScriptTypes } from 'node:module'
-import { extname, normalize, resolve } from 'node:path'
+import { extname, isAbsolute, normalize, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import config from '../dashboard.config.mts'
 
@@ -120,7 +120,7 @@ async function serveStatic(pathname: string, res: ServerResponse): Promise<void>
   }
   const requested = pathname === '/' ? '/index.html' : pathname
   const file = resolve(publicDir, `.${normalize(decodeURIComponent(requested))}`)
-  if (!file.startsWith(publicDir)) {
+  if (!isPathInside(publicDir, file)) {
     res.writeHead(403)
     res.end('forbidden')
     return
@@ -140,6 +140,11 @@ async function serveStatic(pathname: string, res: ServerResponse): Promise<void>
   }
   res.writeHead(200, { 'content-type': contentType(file) })
   createReadStream(file).pipe(res)
+}
+
+export function isPathInside(root: string, target: string): boolean {
+  const rel = relative(root, target)
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
 }
 
 function contentType(file: string): string {

@@ -237,7 +237,29 @@ describe('Gateway HTTP memory/dashboard support routes', () => {
       watchRegistries: false,
       enableHttp: true,
       httpPort: port,
-      config: {},
+      config: {
+        registries: {
+          agents: [
+            {
+              id: 'agent-a',
+              runtime: 'acp',
+              lifecycle: 'ephemeral',
+              command: 'agent-binary',
+              args: ['serve'],
+              env: { OPENAI_API_KEY: 'sk-secret' },
+            },
+          ],
+          mcpServers: [
+            {
+              id: 'mcp-a',
+              transport: 'stdio',
+              command: 'mcp-binary',
+              args: ['serve'],
+              env: { GH_TOKEN: 'gh-secret' },
+            },
+          ],
+        },
+      },
     }))
     try {
       await gw.runStore.putRun({
@@ -281,6 +303,26 @@ describe('Gateway HTTP memory/dashboard support routes', () => {
       const runtime = await fetch(`${base}/v1/dashboard/runtime`).then((r) => r.json())
       expect(runtime.gateway.state).toBe('running')
       expect(runtime.agentmemory.enabled).toBe(false)
+      expect(runtime.agents).toEqual([
+        {
+          id: 'agent-a',
+          runtime: 'acp',
+          lifecycle: 'ephemeral',
+          endpoint: 'process',
+          hasPermissions: false,
+        },
+      ])
+      expect(runtime.mcpServers).toEqual([
+        {
+          id: 'mcp-a',
+          transport: 'stdio',
+          endpoint: 'process',
+        },
+      ])
+      expect(JSON.stringify(runtime)).not.toContain('sk-secret')
+      expect(JSON.stringify(runtime)).not.toContain('gh-secret')
+      expect(JSON.stringify(runtime)).not.toContain('agent-binary')
+      expect(JSON.stringify(runtime)).not.toContain('mcp-binary')
 
       const agentmemory = await fetch(`${base}/v1/agentmemory/status`).then((r) => r.json())
       expect(agentmemory).toEqual({ enabled: false })

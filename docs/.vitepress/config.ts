@@ -114,6 +114,8 @@ export default defineConfig({
           text: 'Operating the gateway',
           items: [
             { text: 'Gateway', link: '/guides/gateway' },
+            { text: 'Dashboard', link: '/guides/dashboard' },
+            { text: 'Memory', link: '/guides/memory' },
             { text: 'Triggers', link: '/guides/triggers' },
             { text: 'ACP Sessions', link: '/guides/acp-sessions' },
             { text: 'MCP Servers', link: '/guides/mcp-servers' },

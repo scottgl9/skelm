@@ -445,6 +445,134 @@ paths:
               schema: { $ref: '#/components/schemas/DashboardApprovals' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /v1/dashboard/runtime:
+    get:
+      summary: Dashboard runtime metadata
+      responses:
+        '200':
+          description: Runtime metadata
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /runs/{runId}/artifacts:
+    get:
+      summary: List artifacts for a run
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+        - in: query
+          name: stepId
+          schema: { type: string }
+      responses:
+        '200':
+          description: Artifact descriptors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runId: { type: string }
+                  artifacts:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Run not found }
+
+  /runs/{runId}/artifacts/{artifactId}:
+    get:
+      summary: Download a run artifact
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+        - in: path
+          name: artifactId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Artifact bytes
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Artifact not found }
+
+  /v1/state/{namespace}:
+    get:
+      summary: List workflow KV state
+      parameters:
+        - in: path
+          name: namespace
+          required: true
+          schema: { type: string }
+        - in: query
+          name: prefix
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 100, maximum: 1000 }
+      responses:
+        '200':
+          description: State entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  namespace: { type: string }
+                  truncated: { type: boolean }
+                  entries:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/state/{namespace}/{key}:
+    get:
+      summary: Read one workflow KV state value
+      parameters:
+        - in: path
+          name: namespace
+          required: true
+          schema: { type: string }
+        - in: path
+          name: key
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: State value
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: State key not found }
+
+  /v1/agentmemory/status:
+    get:
+      summary: Agentmemory integration status
+      responses:
+        '200':
+          description: Agentmemory status
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/agentmemory/sessions:
+    get:
+      summary: Agentmemory session summaries
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 500 }
+      responses:
+        '200':
+          description: Agentmemory sessions
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /v1/workflows/health:
     get:
       summary: Workflow health and readiness
