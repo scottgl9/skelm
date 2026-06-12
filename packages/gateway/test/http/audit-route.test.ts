@@ -63,6 +63,14 @@ describe('GET /audit', () => {
     expect(entries[0]).toMatchObject({ runId: 'run-2', action: 'permission.denied' })
   })
 
+  it('applies limit after filtering', async () => {
+    const res = await fetch(`${base}/audit?limit=1`)
+    expect(res.status).toBe(200)
+    const { entries } = await res.json()
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({ runId: 'run-2' })
+  })
+
   it('rejects an invalid since timestamp with 400', async () => {
     const res = await fetch(`${base}/audit?since=not-a-date`)
     expect(res.status).toBe(400)

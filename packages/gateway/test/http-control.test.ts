@@ -230,6 +230,66 @@ describe('Gateway HTTP /runs/:runId/events', () => {
   })
 })
 
+describe('Gateway HTTP memory/dashboard support routes', () => {
+  it('returns state entries, artifacts, runtime metadata, and agentmemory status', async () => {
+    const { gw, base } = await bootGatewayWithRetry(async (port) => ({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+      config: {},
+    }))
+    try {
+      await gw.runStore.putRun({
+        runId: 'r-memory',
+        pipelineId: 'p',
+        status: 'completed',
+        input: {},
+        steps: [],
+        output: undefined,
+        error: undefined,
+        startedAt: 1,
+        completedAt: 2,
+      })
+      await gw.runStore.setState('wf', 'key-a', { ok: true })
+      await gw.runStore.setState('wf', 'key-b', 42)
+      const artifact = await gw.runStore.putArtifact({
+        runId: 'r-memory',
+        stepId: 'step',
+        name: 'note.txt',
+        mimeType: 'text/plain',
+        data: 'hello',
+      })
+
+      const stateList = await fetch(`${base}/v1/state/wf?limit=1`).then((r) => r.json())
+      expect(stateList.namespace).toBe('wf')
+      expect(stateList.entries).toHaveLength(1)
+      expect(stateList.truncated).toBe(true)
+
+      const stateKey = await fetch(`${base}/v1/state/wf/key-a`).then((r) => r.json())
+      expect(stateKey.value).toEqual({ ok: true })
+
+      const artifacts = await fetch(`${base}/runs/r-memory/artifacts`).then((r) => r.json())
+      expect(artifacts.artifacts).toHaveLength(1)
+      expect(artifacts.artifacts[0].name).toBe('note.txt')
+
+      const artifactBody = await fetch(
+        `${base}/runs/r-memory/artifacts/${artifact.artifactId}`,
+      ).then((r) => r.text())
+      expect(artifactBody).toBe('hello')
+
+      const runtime = await fetch(`${base}/v1/dashboard/runtime`).then((r) => r.json())
+      expect(runtime.gateway.state).toBe('running')
+      expect(runtime.agentmemory.enabled).toBe(false)
+
+      const agentmemory = await fetch(`${base}/v1/agentmemory/status`).then((r) => r.json())
+      expect(agentmemory).toEqual({ enabled: false })
+    } finally {
+      await gw.stop()
+    }
+  })
+})
+
 describe('Gateway HTTP DELETE /runs/:runId', () => {
   it('aborts the run AbortController and 404s for unknown / completed runs', async () => {
     const { gw, base } = await bootGatewayWithRetry(async (port) => ({
