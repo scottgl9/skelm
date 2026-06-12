@@ -165,6 +165,8 @@ Anything exported from a package's top-level `index.ts` is public. Anything insi
 - Track multi-step work in your agent's task list when available, and update status as you go.
 - Stay within the scope of the task. Don't expand scope without permission; don't shrink it either.
 - When uncertain, ask. The cost of a one-line clarification is low.
+- Use `codegraph` when structural understanding matters more than raw text search: symbol lookup, callers/callees, impact analysis, affected tests, and architectural relationships. Use `rg`/shell for simple string or file search.
+- When `codegraph` MCP tools are available, prefer them over invoking the `codegraph` CLI directly. Use the CLI only for indexing/setup (`codegraph init -i`, `codegraph sync`) or if MCP access is unavailable. If `.codegraph/` is missing or stale, fix that first; if `codegraph` is unavailable or broken, say so and fall back to normal repo inspection.
 
 ### For Claude Code specifically
 

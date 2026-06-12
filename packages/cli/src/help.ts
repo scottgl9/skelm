@@ -17,6 +17,7 @@ Usage:
   skelm logs [--lines <n>] [--since <iso>] [--level <lvl>] [--filter <s>] [--json]
   skelm init [<dir>] [--force]
   skelm builder [<dir>] [--force]
+  skelm dashboard <init|start> [<dir>] [flags]
   skelm --version
   skelm --help
 
@@ -142,6 +143,12 @@ Run flags:
 
 Init flags:
   --force                 Allow scaffolding into a non-empty directory
+
+Dashboard flags:
+  skelm dashboard init [<dir>] [--force]        Scaffold a maintained operations dashboard
+  skelm dashboard start [<dir>] [--host <h>] [--port <p>]
+    --gateway-url <url>                         Gateway URL (default http://127.0.0.1:14738)
+    --token <token>                             Bearer token for gateway auth
 `,
   builder: `Usage:
   skelm builder [<dir>] [--force]
@@ -154,6 +161,17 @@ backend (override with SKELM_BUILDER_BACKEND=codex|pi).
 
 Builder flags:
   --force                 Allow scaffolding into a non-empty directory
+`,
+  dashboard: `Usage:
+  skelm dashboard init [<dir>] [--force]
+  skelm dashboard start [<dir>] [--host <h>] [--port <p>] [--gateway-url <url>] [--token <token>]
+
+Dashboard flags:
+  --force                 Allow scaffolding into a non-empty directory
+  --host <host>           Bind host for the local dashboard server
+  --port <port>           Bind port for the local dashboard server
+  --gateway-url <url>     Gateway URL (default http://127.0.0.1:14738)
+  --token <token>         Bearer token for gateways using auth.mode='bearer'
 `,
   list: `Usage:
   skelm list [--all] [--json]

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { dirname } from 'node:path'
-import type { AuditEvent, AuditWriter } from '@skelm/core'
+import type { AuditEvent, AuditFilter, AuditWriter } from '@skelm/core'
 
 /**
  * Append-only, hash-chained audit log written as JSON-Lines. Each entry
@@ -80,6 +80,21 @@ export class ChainAuditWriter implements AuditWriter {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
       throw err
     }
+  }
+
+  async list(filter: AuditFilter = {}): Promise<readonly ChainEntry[]> {
+    const sinceTs = filter.since !== undefined ? Date.parse(filter.since) : null
+    const untilTs = filter.until !== undefined ? Date.parse(filter.until) : null
+    const entries = (await this.readAll()).filter((entry) => {
+      if (filter.runId !== undefined && entry.runId !== filter.runId) return false
+      if (filter.actor !== undefined && entry.actor !== filter.actor) return false
+      if (filter.action !== undefined && entry.action !== filter.action) return false
+      const ts = Date.parse(entry.timestamp)
+      if (sinceTs !== null && ts < sinceTs) return false
+      if (untilTs !== null && ts > untilTs) return false
+      return true
+    })
+    return filter.limit === undefined ? entries : entries.slice(-filter.limit)
   }
 
   /** Walk the chain, verifying every prevHash + entryHash. Returns null on success. */

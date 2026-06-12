@@ -120,6 +120,7 @@ function weakestToolPermissions(
   values: readonly BackendCapabilities['toolPermissions'][],
 ): BackendCapabilities['toolPermissions'] {
   if (values.includes('unsupported')) return 'unsupported'
+  if (values.includes('advisory')) return 'advisory'
   if (values.includes('wrapped')) return 'wrapped'
   return 'native'
 }

@@ -36,18 +36,19 @@ export function assertBackendSupportsPermissions(
   declared: ReadonlySet<PermissionDimension>,
   options: { hasEgressProxy?: boolean } = {},
 ): void {
-  const unresolved = new Set(declared)
-  if (backend.capabilities.mcp) {
-    unresolved.delete('mcp')
-  }
-  // When the runtime supplies an egress proxy (gateway-driven runs), the
-  // network dimension is enforced out-of-band by the proxy regardless of
-  // the backend's own capability — so it does not need to be enforceable
-  // by the backend.
-  if (options.hasEgressProxy) {
-    unresolved.delete('network')
-  }
+  const unresolved = unresolvedPermissionDimensions(backend, declared, options)
   if (unresolved.size === 0) return
+
+  if (backend.capabilities.toolPermissions === 'advisory') {
+    if (unresolved.has('network')) {
+      throw new BackendCapabilityError(
+        `backend ${backend.id} is advisory-only and cannot enforce network permissions for step "${stepId}" without the gateway egress proxy`,
+        backend.id,
+        'toolPermissions',
+      )
+    }
+    return
+  }
 
   if (backend.capabilities.toolPermissions === 'unsupported') {
     // Name the capability class so the refusal is actionable instead of
@@ -76,6 +77,36 @@ export function assertBackendSupportsPermissions(
     backend.id,
     'toolPermissions',
   )
+}
+
+export function advisoryPermissionDimensions(
+  backend: SkelmBackend,
+  declared: ReadonlySet<PermissionDimension>,
+  options: { hasEgressProxy?: boolean } = {},
+): readonly PermissionDimension[] {
+  if (backend.capabilities.toolPermissions !== 'advisory') return []
+  const unresolved = unresolvedPermissionDimensions(backend, declared, options)
+  unresolved.delete('network')
+  return [...unresolved]
+}
+
+function unresolvedPermissionDimensions(
+  backend: SkelmBackend,
+  declared: ReadonlySet<PermissionDimension>,
+  options: { hasEgressProxy?: boolean },
+): Set<PermissionDimension> {
+  const unresolved = new Set(declared)
+  if (backend.capabilities.mcp) {
+    unresolved.delete('mcp')
+  }
+  // When the runtime supplies an egress proxy (gateway-driven runs), the
+  // network dimension is enforced out-of-band by the proxy regardless of
+  // the backend's own capability — so it does not need to be enforceable
+  // by the backend.
+  if (options.hasEgressProxy) {
+    unresolved.delete('network')
+  }
+  return unresolved
 }
 
 /**

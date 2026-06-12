@@ -3,11 +3,9 @@
 // Spawns the configured ACP agent process, opens a session per call, sends
 // the prompt, and aggregates the streaming response into an AgentResponse.
 //
-// `toolPermissions: 'native'`: ACP agents (opencode, copilot, claude) enforce
-// permissions themselves at the process level. Skelm passes the resolved policy
-// as advisory metadata in AgentRequest.permissions; the agent is responsible for
-// honouring it. This is the correct model for externally-sandboxed agents that
-// manage their own tool access.
+// Strict ACP mode is fail-closed: skelm does not assume an arbitrary ACP
+// process can enforce skelm permission policies. Advisory mode is explicit
+// opt-in and emits runtime/audit diagnostics before dispatch.
 
 import type {
   AgentRequest,
@@ -41,6 +39,12 @@ export interface AcpBackendOptions {
   /** Optional environment overlay for the agent process. */
   env?: NodeJS.ProcessEnv
   /**
+   * Permission handling mode. `strict` preserves fail-closed behavior for
+   * non-empty policies. `advisory` dispatches anyway and relies on gateway
+   * diagnostics/audit to make the weaker guarantee visible.
+   */
+  permissionMode?: 'strict' | 'advisory'
+  /**
    * Maximum number of concurrent agent processes. Defaults to 4. When the
    * limit is reached, additional calls queue until a slot is available.
    * Set to 0 for unlimited (not recommended for production).
@@ -54,6 +58,7 @@ export interface AcpBackendOptions {
  * stage.
  */
 export function createAcpBackend(opts: AcpBackendOptions): SkelmBackend {
+  const permissionMode = opts.permissionMode ?? 'strict'
   const capabilities: BackendCapabilities = {
     prompt: false,
     streaming: true,
@@ -61,7 +66,7 @@ export function createAcpBackend(opts: AcpBackendOptions): SkelmBackend {
     mcp: true,
     skills: false,
     modelSelection: opts.model !== undefined,
-    toolPermissions: 'native',
+    toolPermissions: permissionMode === 'advisory' ? 'advisory' : 'unsupported',
     // ACP defines image ContentBlock at the protocol layer; we pass image
     // parts through as extra prompt blocks. Sub-agents that cannot actually
     // process them will ignore or error themselves.
@@ -94,7 +99,11 @@ export function createAcpBackend(opts: AcpBackendOptions): SkelmBackend {
     id: opts.id ?? 'acp',
     capabilities,
     async run(req: AgentRequest, ctx: BackendContext): Promise<AgentResponse> {
-      if (ctx.permissions !== undefined && isNontrivialPolicy(ctx.permissions)) {
+      if (
+        permissionMode !== 'advisory' &&
+        ctx.permissions !== undefined &&
+        isNontrivialPolicy(ctx.permissions)
+      ) {
         throw new Error(
           'ACP backend cannot enforce permission policies; declare permissions on a backend with native or runtime enforcement instead',
         )

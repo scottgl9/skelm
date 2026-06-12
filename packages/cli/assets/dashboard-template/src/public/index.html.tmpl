@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>skelm dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside class="side">
+        <div class="brand">
+          <span class="mark">sk</span>
+          <div>
+            <strong>skelm</strong>
+            <span>operations</span>
+          </div>
+        </div>
+        <nav id="nav"></nav>
+        <div id="status-strip" class="status-strip">Connecting</div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Gateway</p>
+            <h1 id="page-title">Overview</h1>
+          </div>
+          <div class="actions">
+            <button id="refresh" type="button">Refresh</button>
+            <button id="open-gateway" type="button">Gateway</button>
+          </div>
+        </header>
+        <section id="notice" class="notice hidden"></section>
+        <section id="content" class="content"></section>
+      </main>
+    </div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

@@ -1,5 +1,5 @@
 import type { RunEvent } from '@skelm/core'
-import { type Router, createError, eventHandler, getQuery, readBody } from 'h3'
+import { type Router, createError, eventHandler, getQuery, readBody, setHeader } from 'h3'
 import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { adhocPipelineId, validateWorkflowFile } from './utils.js'
 
@@ -113,6 +113,45 @@ export function registerRunRoutes(router: Router, gateway: GatewayContext): void
         events.push(e)
       }
       return { runId, events }
+    }),
+  )
+
+  router.get(
+    '/runs/:runId/artifacts',
+    eventHandler(async (event) => {
+      const runId = event.context.params?.runId
+      if (!runId) throw createError({ statusCode: 400, message: 'runId required' })
+      const state = await gateway.runStore.getRun(runId)
+      if (state === null) throw createError({ statusCode: 404, message: 'Run not found' })
+      const query = getQuery(event)
+      const stepId = typeof query.stepId === 'string' ? query.stepId : undefined
+      const artifacts = []
+      for await (const artifact of gateway.runStore.listArtifacts(runId, {
+        ...(stepId !== undefined && { stepId }),
+      })) {
+        artifacts.push(artifact)
+      }
+      return { runId, artifacts }
+    }),
+  )
+
+  router.get(
+    '/runs/:runId/artifacts/:artifactId',
+    eventHandler(async (event) => {
+      const runId = event.context.params?.runId
+      const artifactId = event.context.params?.artifactId
+      if (!runId) throw createError({ statusCode: 400, message: 'runId required' })
+      if (!artifactId) throw createError({ statusCode: 400, message: 'artifactId required' })
+      const artifact = await gateway.runStore.getArtifact({ runId, artifactId })
+      if (artifact === null) throw createError({ statusCode: 404, message: 'Artifact not found' })
+      setHeader(event, 'content-type', artifact.descriptor.mimeType)
+      setHeader(event, 'content-length', artifact.data.byteLength)
+      setHeader(
+        event,
+        'content-disposition',
+        `attachment; filename="${artifact.descriptor.name.replaceAll('"', '\\"')}"`,
+      )
+      return Buffer.from(artifact.data)
     }),
   )
 }

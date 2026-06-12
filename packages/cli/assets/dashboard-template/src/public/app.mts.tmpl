@@ -1,0 +1,450 @@
+type Page =
+  | 'overview'
+  | 'workflows'
+  | 'runs'
+  | 'approvals'
+  | 'schedules'
+  | 'sessions'
+  | 'runtime'
+  | 'audit'
+  | 'metrics'
+
+interface RunRow {
+  runId: string
+  pipelineId?: string
+  workflowId?: string
+  status: string
+  startedAt?: number
+}
+
+interface AppState {
+  page: Page
+  selectedRun: string | null
+  stream: EventSource | null
+}
+
+const navItems: ReadonlyArray<readonly [Page, string]> = [
+  ['overview', 'Overview'],
+  ['workflows', 'Workflows'],
+  ['runs', 'Runs'],
+  ['approvals', 'Approvals'],
+  ['schedules', 'Schedules'],
+  ['sessions', 'ACP Sessions'],
+  ['runtime', 'Runtime'],
+  ['audit', 'Audit'],
+  ['metrics', 'Metrics'],
+]
+
+const state: AppState = {
+  page: pageFromHash(),
+  selectedRun: null,
+  stream: null,
+}
+
+const el = {
+  nav: required<HTMLElement>('#nav'),
+  title: required<HTMLElement>('#page-title'),
+  content: required<HTMLElement>('#content'),
+  notice: required<HTMLElement>('#notice'),
+  status: required<HTMLElement>('#status-strip'),
+  refresh: required<HTMLButtonElement>('#refresh'),
+  openGateway: required<HTMLButtonElement>('#open-gateway'),
+}
+
+for (const [id, label] of navItems) {
+  const btn = document.createElement('button')
+  btn.type = 'button'
+  btn.className = 'nav-btn'
+  btn.textContent = label
+  btn.addEventListener('click', () => {
+    state.page = id
+    history.replaceState(null, '', `#${id}`)
+    void render()
+  })
+  el.nav.append(btn)
+}
+
+el.refresh.addEventListener('click', () => void render())
+el.openGateway.addEventListener('click', () => window.open('/api/health', '_blank', 'noopener'))
+window.addEventListener('hashchange', () => {
+  state.page = pageFromHash()
+  void render()
+})
+
+void render()
+
+async function render(): Promise<void> {
+  closeStream()
+  setNotice('')
+  ;[...el.nav.children].forEach((child, index) => {
+    child.classList.toggle('active', navItems[index]?.[0] === state.page)
+  })
+  el.title.textContent = navItems.find(([id]) => id === state.page)?.[1] ?? 'Overview'
+  el.content.innerHTML = '<div class="panel muted">Loading</div>'
+  try {
+    await updateStatus()
+    const views: Record<Page, () => Promise<void>> = {
+      overview,
+      workflows,
+      runs,
+      approvals,
+      schedules,
+      sessions,
+      runtime,
+      audit,
+      metrics,
+    }
+    await views[state.page]()
+  } catch (err) {
+    el.content.innerHTML = `<div class="panel"><h2>Request failed</h2><p class="muted">${escapeHtml(messageOf(err))}</p></div>`
+  }
+}
+
+async function updateStatus(): Promise<void> {
+  const health = await api<Record<string, unknown>>('/health')
+  const gatewayState = String(health.state ?? health.status ?? 'unknown')
+  el.status.innerHTML = `
+    <span class="pill ${gatewayState === 'running' ? 'ok' : 'warn'}">${escapeHtml(gatewayState)}</span>
+    <div class="muted">gateway ${escapeHtml(String(health.status ?? 'unknown'))}</div>
+  `
+}
+
+async function overview(): Promise<void> {
+  const [summary, runtimeInfo, recent] = await Promise.all([
+    api<Record<string, any>>('/v1/dashboard/overview'),
+    api<Record<string, any>>('/v1/dashboard/runtime').catch(() => null),
+    api<{ runs: RunRow[] }>('/v1/dashboard/runs?limit=8').catch(() => ({ runs: [] })),
+  ])
+  const advisory = runtimeInfo?.advisoryBackends ?? []
+  if (advisory.length > 0) setNotice(`Advisory permission mode is active for: ${advisory.join(', ')}`)
+  el.content.innerHTML = `
+    <div class="grid">
+      ${metric('Runs', summary.runs?.total ?? 0, 'all recorded runs')}
+      ${metric('Running', summary.runs?.byStatus?.running ?? 0, 'currently active')}
+      ${metric('Failed', summary.runs?.byStatus?.failed ?? 0, 'needs attention')}
+      ${metric('Approvals', summary.approvals?.pendingCount ?? 0, 'pending decisions')}
+    </div>
+    <div class="split">
+      <section class="panel">
+        <h2>Recent Runs</h2>
+        ${runsTable(recent.runs ?? [])}
+      </section>
+      <section class="panel">
+        <h2>Gateway Summary</h2>
+        <p><span class="pill ok">${escapeHtml(summary.gateway?.status ?? 'unknown')}</span></p>
+        <pre>${escapeHtml(JSON.stringify({
+          version: summary.gateway?.version,
+          uptimeMs: summary.gateway?.uptimeMs,
+          auth: runtimeInfo?.gateway?.auth,
+          metricsEnabled: runtimeInfo?.gateway?.metricsEnabled,
+        }, null, 2))}</pre>
+      </section>
+    </div>
+  `
+}
+
+async function workflows(): Promise<void> {
+  const pipelines = await api<Array<Record<string, any>>>('/pipelines').catch(() => [])
+  el.content.innerHTML = `
+    <section class="panel">
+      <h2>Execute Workflow</h2>
+      <div class="form">
+        <input id="workflow-id" placeholder="workflow id" />
+        <textarea id="workflow-input">{}</textarea>
+        <button id="run-workflow" class="primary" type="button">Run Workflow</button>
+      </div>
+    </section>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Workflow</th><th>File</th><th>Description</th><th></th></tr></thead>
+      <tbody>${pipelines.map((wf) => `
+        <tr>
+          <td><strong>${escapeHtml(wf.id ?? '-')}</strong><div class="muted">${escapeHtml(wf.pipelineId ?? '')}</div></td>
+          <td>${escapeHtml(wf.file ?? '-')}</td>
+          <td>${escapeHtml(wf.description ?? '')}</td>
+          <td class="row-actions"><button class="primary" data-run="${escapeAttr(wf.id ?? '')}">Run</button></td>
+        </tr>`).join('') || emptyRow(4, 'No workflows discovered')}</tbody>
+    </table></div>
+  `
+  required<HTMLButtonElement>('#run-workflow', el.content).addEventListener('click', () => void runWorkflow())
+  for (const btn of el.content.querySelectorAll<HTMLButtonElement>('[data-run]')) {
+    btn.addEventListener('click', () => {
+      required<HTMLInputElement>('#workflow-id', el.content).value = btn.dataset.run ?? ''
+      void runWorkflow()
+    })
+  }
+}
+
+async function runWorkflow(): Promise<void> {
+  const id = required<HTMLInputElement>('#workflow-id', el.content).value.trim()
+  if (!id) return setNotice('Workflow id is required')
+  let input: unknown
+  try {
+    input = JSON.parse(required<HTMLTextAreaElement>('#workflow-input', el.content).value || '{}')
+  } catch {
+    return setNotice('Workflow input must be JSON')
+  }
+  const result = await api<{ runId: string }>(`/pipelines/${encodeURIComponent(id)}/start`, {
+    method: 'POST',
+    body: JSON.stringify({ input }),
+  })
+  state.selectedRun = result.runId
+  state.page = 'runs'
+  history.replaceState(null, '', '#runs')
+  await render()
+}
+
+async function runs(): Promise<void> {
+  const data = await api<{ runs: RunRow[] }>('/v1/dashboard/runs?limit=50')
+  const selected = state.selectedRun ?? data.runs?.[0]?.runId
+  el.content.innerHTML = `
+    <div class="split">
+      <section>${runsTable(data.runs ?? [], true)}</section>
+      <section id="run-detail" class="panel">${selected ? 'Loading run' : '<p class="muted">Select a run</p>'}</section>
+    </div>
+  `
+  for (const row of el.content.querySelectorAll<HTMLElement>('[data-run-id]')) {
+    row.addEventListener('click', () => void loadRunDetail(row.dataset.runId ?? ''))
+  }
+  if (selected) await loadRunDetail(selected)
+}
+
+async function loadRunDetail(runId: string): Promise<void> {
+  state.selectedRun = runId
+  closeStream()
+  const [run, events, artifacts] = await Promise.all([
+    api<Record<string, any>>(`/runs/${encodeURIComponent(runId)}`),
+    api<{ events: unknown[] }>(`/runs/${encodeURIComponent(runId)}/events`).catch(() => ({ events: [] })),
+    api<{ artifacts: Array<Record<string, any>> }>(`/runs/${encodeURIComponent(runId)}/artifacts`).catch(() => ({ artifacts: [] })),
+  ])
+  const detail = required<HTMLElement>('#run-detail', el.content)
+  detail.innerHTML = `
+    <h2>${escapeHtml(run.runId)}</h2>
+    <p><span class="pill ${statusClass(run.status)}">${escapeHtml(run.status)}</span></p>
+    <div class="row-actions">
+      <button id="stream-run" type="button">Stream Events</button>
+      <button id="cancel-run" class="danger" type="button" ${isTerminal(run.status) ? 'disabled' : ''}>Cancel</button>
+    </div>
+    <h3>Events</h3>
+    <pre id="event-log">${escapeHtml(JSON.stringify(events.events ?? [], null, 2))}</pre>
+    <h3>Artifacts</h3>
+    ${artifactsList(runId, artifacts.artifacts ?? [])}
+    <h3>Run State</h3>
+    <pre>${escapeHtml(JSON.stringify(run, null, 2))}</pre>
+  `
+  required<HTMLButtonElement>('#stream-run', detail).addEventListener('click', () => streamRun(runId))
+  required<HTMLButtonElement>('#cancel-run', detail).addEventListener('click', async () => {
+    await api(`/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' })
+    await render()
+  })
+}
+
+async function approvals(): Promise<void> {
+  const data = await api<Record<string, any>>('/v1/dashboard/approvals').catch(() => ({ pending: [] }))
+  const pending: Array<Record<string, any>> = data.pending ?? data.items ?? []
+  el.content.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Approval</th><th>Request</th><th>Created</th><th></th></tr></thead>
+    <tbody>${pending.map((item) => `
+      <tr>
+        <td><strong>${escapeHtml(item.id)}</strong></td>
+        <td><pre>${escapeHtml(JSON.stringify(item.request ?? item, null, 2))}</pre></td>
+        <td>${formatTime(item.createdAt)}</td>
+        <td class="row-actions">
+          <button class="primary" data-approve="${escapeAttr(item.id)}">Approve</button>
+          <button class="danger" data-deny="${escapeAttr(item.id)}">Reject</button>
+        </td>
+      </tr>`).join('') || emptyRow(4, 'No pending approvals')}</tbody>
+  </table></div>`
+  for (const btn of el.content.querySelectorAll<HTMLButtonElement>('[data-approve], [data-deny]')) {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.approve ?? btn.dataset.deny ?? ''
+      const [runId, stepId] = splitApprovalId(id)
+      await api(`/runs/${encodeURIComponent(runId)}/${btn.dataset.approve ? 'approve' : 'deny'}`, {
+        method: 'POST',
+        body: JSON.stringify({ stepId, approver: 'dashboard' }),
+      })
+      await render()
+    })
+  }
+}
+
+async function schedules(): Promise<void> {
+  const data = await api<{ schedules: Array<Record<string, any>> }>('/v1/dashboard/schedules').catch(() => ({ schedules: [] }))
+  el.content.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Schedule</th><th>Workflow</th><th>Trigger</th><th>State</th><th></th></tr></thead>
+    <tbody>${(data.schedules ?? []).map((s) => `
+      <tr>
+        <td><strong>${escapeHtml(s.id ?? s.spec?.id)}</strong></td>
+        <td>${escapeHtml(s.workflowId ?? s.spec?.workflowId ?? '-')}</td>
+        <td>${escapeHtml(s.kind ?? s.spec?.kind ?? '-')}</td>
+        <td><span class="pill">${escapeHtml(s.status ?? s.state ?? 'registered')}</span></td>
+        <td class="row-actions"><button data-fire="${escapeAttr(s.id ?? s.spec?.id)}">Fire</button></td>
+      </tr>`).join('') || emptyRow(5, 'No schedules registered')}</tbody>
+  </table></div>`
+  for (const btn of el.content.querySelectorAll<HTMLButtonElement>('[data-fire]')) {
+    btn.addEventListener('click', async () => {
+      await api(`/triggers/${encodeURIComponent(btn.dataset.fire ?? '')}/fire`, { method: 'POST' })
+      await render()
+    })
+  }
+}
+
+async function sessions(): Promise<void> {
+  const [acp, agentmemory] = await Promise.all([
+    api<unknown[]>('/sessions').catch(() => []),
+    api<Record<string, any>>('/v1/agentmemory/sessions').catch(() => ({ enabled: false, sessions: [] })),
+  ])
+  el.content.innerHTML = `
+    <section class="panel"><h2>ACP Sessions</h2><pre>${escapeHtml(JSON.stringify(acp, null, 2))}</pre></section>
+    <section class="panel"><h2>Agentmemory Sessions</h2><p><span class="pill ${agentmemory.enabled ? 'ok' : ''}">${agentmemory.enabled ? 'enabled' : 'disabled'}</span></p><pre>${escapeHtml(JSON.stringify(agentmemory.sessions ?? [], null, 2))}</pre></section>
+  `
+}
+
+async function runtime(): Promise<void> {
+  const data = await api<Record<string, any>>('/v1/dashboard/runtime')
+  el.content.innerHTML = `
+    <div class="grid">
+      ${metric('Backends', data.backends?.length ?? 0, 'registered')}
+      ${metric('Agents', data.agents?.length ?? 0, 'configured')}
+      ${metric('MCP', data.mcpServers?.length ?? 0, 'servers')}
+      ${metric('Advisory', data.advisoryBackends?.length ?? 0, 'backends')}
+    </div>
+    <section class="panel"><h2>Runtime Metadata</h2><pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre></section>
+  `
+}
+
+async function audit(): Promise<void> {
+  const data = await api<{ entries: Array<Record<string, any>> }>('/audit?limit=100')
+  const verify = await api<Record<string, any>>('/audit/verify').catch(() => null)
+  el.content.innerHTML = `
+    <section class="panel"><h2>Audit Chain</h2><p><span class="pill ${verify?.ok ? 'ok' : 'warn'}">${verify?.ok ? 'verified' : 'unverified'}</span></p></section>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Seq</th><th>Action</th><th>Actor</th><th>Run</th><th>Details</th></tr></thead>
+      <tbody>${(data.entries ?? []).map((entry) => `
+        <tr><td>${entry.seq ?? ''}</td><td>${escapeHtml(entry.action)}</td><td>${escapeHtml(entry.actor)}</td><td>${escapeHtml(entry.runId ?? '')}</td><td><pre>${escapeHtml(JSON.stringify(entry.details ?? {}, null, 2))}</pre></td></tr>`).join('') || emptyRow(5, 'No audit entries')}</tbody>
+    </table></div>
+  `
+}
+
+async function metrics(): Promise<void> {
+  const text = await apiText('/metrics').catch((err) => messageOf(err))
+  el.content.innerHTML = `<section class="panel"><h2>Prometheus Metrics</h2><pre>${escapeHtml(text)}</pre></section>`
+}
+
+function streamRun(runId: string): void {
+  closeStream()
+  const log = required<HTMLElement>('#event-log')
+  state.stream = new EventSource(`/api/runs/${encodeURIComponent(runId)}/stream`)
+  state.stream.onmessage = (event) => appendEvent(log, 'message', event.data)
+  for (const type of ['run.state', 'step.start', 'step.complete', 'step.error', 'step.partial', 'run.completed', 'run.failed', 'run.cancelled', 'permission.advisory']) {
+    state.stream.addEventListener(type, (event) => appendEvent(log, type, event.data))
+  }
+  state.stream.onerror = () => appendEvent(log, 'stream.error', '{}')
+}
+
+function runsTable(runs: readonly RunRow[], clickable = false): string {
+  return `<div class="table-wrap"><table>
+    <thead><tr><th>Run</th><th>Workflow</th><th>Status</th><th>Started</th></tr></thead>
+    <tbody>${runs.map((run) => `
+      <tr ${clickable ? `data-run-id="${escapeAttr(run.runId)}"` : ''}>
+        <td><strong>${escapeHtml(run.runId)}</strong></td>
+        <td>${escapeHtml(run.pipelineId ?? run.workflowId ?? '-')}</td>
+        <td><span class="pill ${statusClass(run.status)}">${escapeHtml(run.status)}</span></td>
+        <td>${formatTime(run.startedAt)}</td>
+      </tr>`).join('') || emptyRow(4, 'No runs recorded')}</tbody>
+  </table></div>`
+}
+
+function artifactsList(runId: string, artifacts: Array<Record<string, any>>): string {
+  if (artifacts.length === 0) return '<p class="muted">No artifacts</p>'
+  return `<div class="table-wrap"><table><tbody>${artifacts.map((a) => `
+    <tr><td>${escapeHtml(a.name)}</td><td>${escapeHtml(a.mimeType)}</td><td>${Number(a.sizeBytes ?? 0).toLocaleString()} bytes</td><td><a href="/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(a.artifactId)}">Download</a></td></tr>`).join('')}</tbody></table></div>`
+}
+
+async function api<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    ...init,
+    headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
+  })
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+  return (await res.json()) as T
+}
+
+async function apiText(path: string): Promise<string> {
+  const res = await fetch(`/api${path}`)
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+  return res.text()
+}
+
+function metric(label: string, value: unknown, note: string): string {
+  return `<div class="card metric"><span class="muted">${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong><span>${escapeHtml(note)}</span></div>`
+}
+
+function appendEvent(log: HTMLElement, type: string, data: string): void {
+  const current = log.textContent?.trim() ?? ''
+  log.textContent = current ? `${current}\n${type} ${data}` : `${type} ${data}`
+  log.scrollTop = log.scrollHeight
+}
+
+function closeStream(): void {
+  state.stream?.close()
+  state.stream = null
+}
+
+function setNotice(message: string): void {
+  el.notice.textContent = message
+  el.notice.classList.toggle('hidden', message === '')
+}
+
+function emptyRow(cols: number, message: string): string {
+  return `<tr><td colspan="${cols}" class="muted">${escapeHtml(message)}</td></tr>`
+}
+
+function statusClass(status: string): string {
+  if (status === 'completed' || status === 'running') return 'ok'
+  if (status === 'failed' || status === 'cancelled') return 'bad'
+  return 'warn'
+}
+
+function isTerminal(status: string): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled'
+}
+
+function splitApprovalId(id: string): readonly [string, string] {
+  const index = id.indexOf(':')
+  return index === -1 ? [id, ''] : [id.slice(0, index), id.slice(index + 1)]
+}
+
+function formatTime(value: unknown): string {
+  if (value === undefined || value === null || value === '') return '-'
+  const date = typeof value === 'number' ? new Date(value) : new Date(String(value))
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString()
+}
+
+function pageFromHash(): Page {
+  const raw = location.hash.replace('#', '')
+  return navItems.some(([id]) => id === raw) ? (raw as Page) : 'overview'
+}
+
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[char] ?? char)
+}
+
+function escapeAttr(value: unknown): string {
+  return escapeHtml(value)
+}
+
+function required<T extends Element>(selector: string, root: ParentNode = document): T {
+  const found = root.querySelector<T>(selector)
+  if (found === null) throw new Error(`missing element: ${selector}`)
+  return found
+}

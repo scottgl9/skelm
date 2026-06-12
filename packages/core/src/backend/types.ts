@@ -14,7 +14,7 @@ export type { McpServerConfig }
 export type BackendId = string
 
 /** Discriminator describing how the backend handles permissions. */
-export type ToolPermissionEnforcement = 'native' | 'wrapped' | 'unsupported'
+export type ToolPermissionEnforcement = 'native' | 'wrapped' | 'advisory' | 'unsupported'
 
 /** What the backend can do; the runtime checks before delegating. */
 export interface BackendCapabilities {
@@ -162,8 +162,10 @@ export interface AgentRequest {
   /**
    * Resolved permission policy. Backends that report
    * `toolPermissions: 'native'` enforce these themselves; backends with
-   * `'wrapped'` ask the runtime per call; backends with `'unsupported'`
-   * fail at step start when the policy is non-empty.
+   * `'wrapped'` ask the runtime per call; backends with `'advisory'`
+   * receive the policy but do not enforce it, and the runtime emits
+   * operator-visible diagnostics; backends with `'unsupported'` fail at
+   * step start when the policy is non-empty.
    */
   permissions?: ResolvedPolicy
   /** MCP servers to attach for this agent run. */

@@ -1,3 +1,4 @@
+import type { AgentmemoryClient } from '@skelm/agentmemory'
 import type {
   AgentPermissions,
   AgentmemoryHandleFactory,
@@ -198,6 +199,7 @@ export interface GatewayContext {
   getConfig(): import('@skelm/core').SkelmConfig
   getDiscovery(): DiscoveryRecord | null
   getState(): GatewayState
+  getAgentmemoryClient(): AgentmemoryClient | null
 
   // ── gateway control ──────────────────────────────────────────────────────
   reload(nextConfig?: import('@skelm/core').SkelmConfig): Promise<void>

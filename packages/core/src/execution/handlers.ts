@@ -71,6 +71,7 @@ import type {
 } from '../types.js'
 import { WorkspaceManager } from '../workspace.js'
 import {
+  advisoryPermissionDimensions,
   assertBackendSupportsPermissions,
   collectResolvedPermissionDimensions,
   createDetachedWorkspaceRuntime,
@@ -769,10 +770,26 @@ async function runAgentStep(
       authorPolicy,
       mcpServers,
     )
+    const preflightedBackendIds = new Set<string>()
     try {
-      assertBackendSupportsPermissions(step.id, backend, declaredPermissionDimensions, {
+      const capabilityOptions = {
         hasEgressProxy: runtime?.registerEgressToken !== undefined,
-      })
+      }
+      assertBackendSupportsPermissions(
+        step.id,
+        backend,
+        declaredPermissionDimensions,
+        capabilityOptions,
+      )
+      preflightedBackendIds.add(backend.id)
+      emitAdvisoryIfNeeded(
+        backend,
+        declaredPermissionDimensions,
+        capabilityOptions,
+        events,
+        ctx.run.runId,
+        step.id,
+      )
     } catch (err) {
       if (err instanceof BackendCapabilityError) {
         events?.publish({
@@ -1002,6 +1019,26 @@ async function runAgentStep(
             `step "${step.id}"`,
           )
         }
+        const candidateCapabilityOptions = {
+          hasEgressProxy: runtime?.registerEgressToken !== undefined,
+        }
+        if (!preflightedBackendIds.has(candidateBackend.id)) {
+          assertBackendSupportsPermissions(
+            step.id,
+            candidateBackend,
+            declaredPermissionDimensions,
+            candidateCapabilityOptions,
+          )
+          preflightedBackendIds.add(candidateBackend.id)
+          emitAdvisoryIfNeeded(
+            candidateBackend,
+            declaredPermissionDimensions,
+            candidateCapabilityOptions,
+            events,
+            ctx.run.runId,
+            step.id,
+          )
+        }
         if (
           step.skills !== undefined &&
           step.skills.length > 0 &&
@@ -1183,6 +1220,27 @@ async function runAgentStep(
     }
     throw error
   }
+}
+
+function emitAdvisoryIfNeeded(
+  backend: SkelmBackend,
+  declared: ReadonlySet<PermissionDimension>,
+  options: { hasEgressProxy?: boolean },
+  events: EventBus | undefined,
+  runId: string,
+  stepId: string,
+): void {
+  const dimensions = advisoryPermissionDimensions(backend, declared, options)
+  if (dimensions.length === 0) return
+  events?.publish({
+    type: 'permission.advisory',
+    runId,
+    stepId,
+    backendId: backend.id,
+    dimensions,
+    detail: `backend ${backend.id} is running in advisory permission mode for: ${dimensions.join(', ')}`,
+    at: Date.now(),
+  })
 }
 
 function enforceFilesystemMcpRoots(
