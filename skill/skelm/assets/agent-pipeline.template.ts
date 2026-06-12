@@ -35,6 +35,7 @@ export default pipeline({
         // profile: 'my-profile',   // optional: named profile from skelm.config.ts
         // Declare only what the agent actually needs; everything else stays denied.
         allowedTools: [], // e.g. ['gh.*'] or ['bash', 'rg']
+        // allowDefaultSafeExecutables: true, // common Linux userland commands
         allowedExecutables: [], // e.g. ['git', 'node']
         allowedMcpServers: [], // ids from skelm.config.ts registries.mcpServers
         allowedSkills: [], // skill ids the agent may load

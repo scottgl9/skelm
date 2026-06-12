@@ -1,6 +1,6 @@
 # Running external scripts from `code()` steps
 
-A `code()` step can spawn external executables — binaries on `$PATH`, Python scripts, or Bash scripts — via the `ctx.exec(...)` helper. Every call is checked against the step's `permissions.allowedExecutables` allowlist. Omitting the field denies every call (default-deny).
+A `code()` step can spawn external executables — binaries on `$PATH`, Python scripts, or Bash scripts — via the `ctx.exec(...)` helper. Every call is checked against the resolved executable allowlist from `permissions.allowedExecutables` and any config layer that explicitly sets `allowDefaultSafeExecutables`. Omitting both denies every call (default-deny).
 
 ## A Python script
 

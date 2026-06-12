@@ -202,9 +202,10 @@ automatically.
   are *intersected* with the project-default policy — if your config sets
   `networkEgress: 'deny'`, a step requesting `networkEgress: 'allow'`
   resolves to deny. The backend honors the *resolved* policy.
-- **No undeclared exec.** Until you grant `allowedExecutables`, the `exec`
-  tool refuses every binary the model names — even if `allowedTools: ['*']`
-  is set. The same is true for `fs_read` / `fs_write` and `http_fetch`.
+- **No undeclared exec.** Until you grant `allowedExecutables` or explicitly
+  opt into `allowDefaultSafeExecutables`, the `exec` tool refuses every binary
+  the model names — even if `allowedTools: ['*']` is set. The same is true for
+  `fs_read` / `fs_write` and `http_fetch`.
 - **No URL-scheme abuse.** `http_fetch` parses the URL before checking
   permissions; `file://`, `gopher://`, etc. fail at the URL parser.
   Non-allowlisted hostnames (including unintended loopback) fail at

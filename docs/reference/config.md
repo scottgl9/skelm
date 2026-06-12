@@ -55,6 +55,8 @@ export default defineWorkflowConfig({
   defaults?: {
     backend?:            string,             // alias for backends.default
     permissions?:        AgentPermissions,   // project-wide permission baseline
+    // permissions.allowDefaultSafeExecutables opts into skelm's built-in
+    // common Linux executable set and composes with allowedExecutables.
     permissionProfiles?: Record<string, AgentPermissions>,
   },
 
@@ -188,7 +190,8 @@ export default defineWorkflowConfig({
 
   defaults: {
     permissions: {
-      allowedExecutables: [],
+      allowDefaultSafeExecutables: true,
+      allowedExecutables: ['pnpm'],
       allowedTools: [],
       allowedSkills: [],
       allowedMcpServers: [],
@@ -198,7 +201,7 @@ export default defineWorkflowConfig({
     },
     permissionProfiles: {
       'github-write': {
-        allowedExecutables: ['git'],
+        allowedExecutables: ['git', 'pnpm'],
         allowedTools:       ['gh.*'],
         allowedMcpServers:  ['github'],
         fsRead:             ['./'],
@@ -209,6 +212,8 @@ export default defineWorkflowConfig({
   },
 })
 ```
+
+`allowDefaultSafeExecutables: true` is an explicit opt-in for common Linux userland commands such as `git`, `gh`, `curl`, `jq`, `rg`, `grep`, `ls`, `cat`, `stat`, `timeout`, `journalctl`, and `systemctl`. It adds the built-in set to that permission layer before intersection with profiles and step-level permissions. Keep `allowedExecutables` for project-specific additions such as `pnpm`; omit the flag to keep exec fully default-deny.
 
 `skelm.gateway.ts` (operator):
 

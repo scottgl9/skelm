@@ -58,7 +58,7 @@ Imperative loads from inside `run` are also supported — call `loadTsModule` fr
 
 #### Spawning external executables — `ctx.exec(...)`
 
-`code()` steps can invoke binaries, Python scripts, or Bash scripts via `ctx.exec`. The call is gated by `permissions.allowedExecutables` on the step (default-deny — omitting the field denies every call):
+`code()` steps can invoke binaries, Python scripts, or Bash scripts via `ctx.exec`. The call is gated by the resolved executable policy: `permissions.allowedExecutables` plus any config layer that explicitly sets `allowDefaultSafeExecutables` (default-deny — omitting both denies every call):
 
 ```ts
 code({

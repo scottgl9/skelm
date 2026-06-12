@@ -39,7 +39,7 @@ Access prior step outputs: `ctx.steps['step-id']` (cast to the output type). Acc
 
 To run an external `.ts`/`.js` module instead of an inline function: `code({ id, module: './step.ts' })`. Paths resolve relative to the pipeline file's directory.
 
-To spawn external executables from a `code()` step, use `ctx.exec(...)`. The call is gated by `permissions.allowedExecutables` (default-deny):
+To spawn external executables from a `code()` step, use `ctx.exec(...)`. The call is gated by the resolved executable policy: `permissions.allowedExecutables` plus any config layer that explicitly sets `allowDefaultSafeExecutables` (default-deny):
 
 ```ts
 code({

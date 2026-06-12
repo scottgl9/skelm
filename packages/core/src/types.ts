@@ -227,10 +227,10 @@ export interface Context<TInput = unknown> {
   get<T = unknown>(stepId: StepId): T | undefined
   /**
    * Spawn an external executable. Available inside `code()` steps when the
-   * step's `permissions.allowedExecutables` includes the resolved binary name
-   * (basename of the resolved path: e.g. `git`, `python3`, `bash`). Omitted
-   * for steps that have no exec capability wired (e.g. inside a `forEach`
-   * iteration context derived from a non-code step).
+   * resolved executable policy includes the resolved binary name (basename of
+   * the resolved path: e.g. `git`, `python3`, `bash`). Omitted for steps that
+   * have no exec capability wired (e.g. inside a `forEach` iteration context
+   * derived from a non-code step).
    */
   readonly exec?: ExecFn
   /**

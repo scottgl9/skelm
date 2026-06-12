@@ -1,11 +1,11 @@
 // `ctx.exec` implementation for `code()` steps.
 //
 // Spawns external executables under TrustEnforcer.canExec enforcement.
-// Default-deny: a step with no `permissions.allowedExecutables` denies every
-// call. The resolved binary's basename (e.g. `python3`, `git`, `bash`) is
-// the value checked against the policy — interpreters for `python:` / `bash:`
-// shortcuts are resolved against `SKELM_PYTHON` / `SKELM_BASH` env vars
-// before the check, so authors must allowlist the actual interpreter name.
+// Default-deny: a resolved policy with no executable grant denies every call.
+// The resolved binary's basename (e.g. `python3`, `git`, `bash`) is checked
+// against the policy — interpreters for `python:` / `bash:` shortcuts are
+// resolved against `SKELM_PYTHON` / `SKELM_BASH` env vars before the check, so
+// authors must allowlist the actual interpreter name.
 
 // @subprocess-ok: code() exec helper, gated by TrustEnforcer.canExec.
 // Subprocess spawning happens only after a successful permission check; the

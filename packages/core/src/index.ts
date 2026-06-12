@@ -327,6 +327,7 @@ export {
   ALL_AGENTMEMORY_OPS,
   ALL_PERMISSION_DIMENSIONS,
   createPolicyFetch,
+  DEFAULT_SAFE_EXECUTABLES,
   intersectResolvedPolicies,
   resolvePermissions,
   TrustEnforcer,

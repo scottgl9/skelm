@@ -47,6 +47,7 @@ export default pipeline({
         `Greet ${ctx.input.name} in one short sentence. Return JSON of the form {"greeting": "..."} and nothing else.`,
       permissions: {
         allowedTools:       [],          // no tools needed
+        // allowDefaultSafeExecutables: true, // opt into common Linux userland commands
         allowedExecutables: [],
         allowedMcpServers:  [],
         allowedSkills:      [],
@@ -68,6 +69,8 @@ skelm run workflows/hello.workflow.mts --input '{"name":"world"}'
 ```
 
 `permissions` is **explicit and default-deny**. The agent has no tools, no executables, no filesystem access, no network outside the backend's own. If the agent tries to do anything privileged, the run fails with a permission denial — by design.
+
+For projects that commonly need safe diagnostics like `git`, `rg`, `jq`, `stat`, `which`, or `journalctl`, set `allowDefaultSafeExecutables: true` in `skelm.config.ts` under `defaults.permissions`. You can still add project-specific binaries with `allowedExecutables`, and individual steps can narrow the final list.
 
 ## Next
 
