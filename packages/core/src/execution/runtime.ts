@@ -1,6 +1,11 @@
 import type { AgentmemoryHandleFactory } from '../backend.js'
 import type { ApprovalGate, SecretResolver } from '../enforcement/index.js'
-import type { AgentPermissions, NetworkPolicy, ResolvedPolicy } from '../permissions.js'
+import type {
+  AgentPermissions,
+  ExecutableProfileDefinition,
+  NetworkPolicy,
+  ResolvedPolicy,
+} from '../permissions.js'
 import type { RunStore, StateStore } from '../run-store.js'
 import type { Skill } from '../skills.js'
 import type { Context, Pipeline, RunStatus } from '../types.js'
@@ -17,6 +22,12 @@ export interface ExecutionRuntime {
   readonly store?: RunStore
   readonly defaultPermissions?: AgentPermissions
   readonly permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+  /**
+   * Operator-defined executable profile definitions referenced by
+   * `permissions.executableProfiles`. Threaded from the trust boundary;
+   * never derived from author input.
+   */
+  readonly executableProfiles?: Readonly<Record<string, ExecutableProfileDefinition>>
   /**
    * Default backend id for `agent()` steps whose own `backend` is undefined.
    * Threaded by the gateway from the activated project's

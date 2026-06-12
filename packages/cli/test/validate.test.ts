@@ -53,6 +53,19 @@ describe('skelm validate', () => {
     expect(r.exitCode).toBe(EXIT.SCHEMA_VALIDATION)
     expect(r.stderr).toMatch(/load-failed|not found/)
   })
+
+  it('accepts an executable profile reference defined in the project config', async () => {
+    const r = await invoke(['validate', join(FIX, 'exec-profiles/known-profile.workflow.mts')])
+    expect(r.exitCode).toBe(EXIT.OK)
+    expect(r.stdout).toMatch(/ok:/)
+  })
+
+  it('flags an executable profile reference the config does not define', async () => {
+    const r = await invoke(['validate', join(FIX, 'exec-profiles/unknown-profile.workflow.mts')])
+    expect(r.exitCode).toBe(EXIT.SCHEMA_VALIDATION)
+    expect(r.stderr).toMatch(/unknown-executable-profile/)
+    expect(r.stderr).toMatch(/doesNotExist/)
+  })
 })
 
 interface InvocationResult {

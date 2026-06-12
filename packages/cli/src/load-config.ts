@@ -205,6 +205,7 @@ function findColocatedWorkflowConfig(projectRoot: string): string | null {
  * - `defaults.backend`: workflow provides fallback if gateway has none
  * - `defaults.permissions`: gateway only — not lifted from workflow (cross-project contamination risk)
  * - `defaults.permissionProfiles`: gateway only — not lifted from workflow
+ * - `defaults.executableProfiles`: gateway only — not lifted from workflow
  * - `defaults.unrestrictedGrants`: gateway only (operator-only security grant)
  * - `env`: workflow env applied first; gateway env wins on conflict
  * - Operator fields (server, secrets, storage, plugins, agentmemory): gateway only
@@ -440,6 +441,15 @@ function mergeWithDefaults(user: SkelmConfig): SkelmConfig {
             permissionProfiles: {
               ...DEFAULT_CONFIG.defaults?.permissionProfiles,
               ...user.defaults?.permissionProfiles,
+            },
+          }
+        : {}),
+      ...(DEFAULT_CONFIG.defaults?.executableProfiles !== undefined ||
+      user.defaults?.executableProfiles !== undefined
+        ? {
+            executableProfiles: {
+              ...DEFAULT_CONFIG.defaults?.executableProfiles,
+              ...user.defaults?.executableProfiles,
             },
           }
         : {}),

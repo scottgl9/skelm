@@ -1,7 +1,9 @@
-import type { PersistentWorkflow, Pipeline, Step } from '@skelm/core'
+import { dirname, resolve } from 'node:path'
+import type { AgentPermissions, PersistentWorkflow, Pipeline, Step } from '@skelm/core'
 import { isPersistentWorkflow } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { writeJsonOutput } from './internal/output.js'
+import { loadSkelmConfig } from './load-config.js'
 import { CliError, loadWorkflowFromFile } from './load-workflow.js'
 
 /**
@@ -47,6 +49,7 @@ export type ValidationCode =
   | 'branch-no-cases'
   | 'parallel-empty'
   | 'pipeline-step-missing'
+  | 'unknown-executable-profile'
   | 'unknown-step-kind'
 
 export async function validateCommand(
@@ -70,6 +73,18 @@ export async function validateCommand(
     return finish(args, io, issues)
   }
 
+  // Executable profiles are defined operator-side in config; an unknown
+  // reference fails the run before it starts, so surface it here first. A
+  // missing or unloadable config defines nothing — references stay flagged
+  // (fail-closed), matching the runtime behavior.
+  let definedExecutableProfiles: ReadonlySet<string>
+  try {
+    const { config } = await loadSkelmConfig({ fromDir: dirname(resolve(args.path)) })
+    definedExecutableProfiles = new Set(Object.keys(config.defaults?.executableProfiles ?? {}))
+  } catch {
+    definedExecutableProfiles = new Set()
+  }
+
   // A minimal persistent workflow has no `steps` (just the terminal agent), so
   // the pipeline step checks below don't apply — its id is the only static
   // invariant to enforce here.
@@ -81,6 +96,12 @@ export async function validateCommand(
         message: 'workflow.id is required',
       })
     }
+    checkExecutableProfileRefs(
+      workflow.agent?.permissions,
+      'workflow.agent.permissions',
+      definedExecutableProfiles,
+      issues,
+    )
     return finish(args, io, issues)
   }
 
@@ -97,8 +118,25 @@ export async function validateCommand(
     return finish(args, io, issues)
   }
 
-  walkSteps(pipeline.steps, 'pipeline', issues, new Set<string>())
+  walkSteps(pipeline.steps, 'pipeline', issues, new Set<string>(), definedExecutableProfiles)
   return finish(args, io, issues)
+}
+
+function checkExecutableProfileRefs(
+  permissions: AgentPermissions | undefined,
+  at: string,
+  defined: ReadonlySet<string>,
+  issues: ValidationIssue[],
+): void {
+  for (const name of permissions?.executableProfiles ?? []) {
+    if (!defined.has(name)) {
+      issues.push({
+        at: `${at}.executableProfiles`,
+        code: 'unknown-executable-profile',
+        message: `executable profile "${name}" is not defined in config defaults.executableProfiles; the run would fail before it starts`,
+      })
+    }
+  }
 }
 
 function walkSteps(
@@ -106,6 +144,7 @@ function walkSteps(
   scope: string,
   issues: ValidationIssue[],
   seenInScope: Set<string>,
+  definedExecutableProfiles: ReadonlySet<string>,
 ): void {
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i]
@@ -120,11 +159,22 @@ function walkSteps(
     } else if (step.id) {
       seenInScope.add(step.id)
     }
-    inspectStep(step, at, issues)
+    inspectStep(step, at, issues, definedExecutableProfiles)
   }
 }
 
-function inspectStep(step: Step, at: string, issues: ValidationIssue[]): void {
+function inspectStep(
+  step: Step,
+  at: string,
+  issues: ValidationIssue[],
+  definedExecutableProfiles: ReadonlySet<string>,
+): void {
+  checkExecutableProfileRefs(
+    (step as { permissions?: AgentPermissions }).permissions,
+    `${at}.permissions`,
+    definedExecutableProfiles,
+    issues,
+  )
   switch (step.kind) {
     case 'agent': {
       if (!step.permissions) {
@@ -166,7 +216,7 @@ function inspectStep(step: Step, at: string, issues: ValidationIssue[]): void {
         })
         return
       }
-      walkSteps(step.steps, at, issues, new Set<string>())
+      walkSteps(step.steps, at, issues, new Set<string>(), definedExecutableProfiles)
       return
     }
     case 'branch': {
@@ -177,15 +227,16 @@ function inspectStep(step: Step, at: string, issues: ValidationIssue[]): void {
       }
       for (const k of keys) {
         const child = step.cases[k]
-        if (child) inspectStep(child, `${at}.cases.${k}`, issues)
+        if (child) inspectStep(child, `${at}.cases.${k}`, issues, definedExecutableProfiles)
       }
-      if (step.default) inspectStep(step.default, `${at}.default`, issues)
+      if (step.default)
+        inspectStep(step.default, `${at}.default`, issues, definedExecutableProfiles)
       return
     }
     case 'loop': {
       // loop carries a single nested Step value (not a factory) so we
       // recurse through it the same way we handle direct children.
-      if (step.step) inspectStep(step.step, `${at}.step`, issues)
+      if (step.step) inspectStep(step.step, `${at}.step`, issues, definedExecutableProfiles)
       return
     }
     case 'forEach': {
@@ -209,11 +260,17 @@ function inspectStep(step: Step, at: string, issues: ValidationIssue[]): void {
         })
         return
       }
-      walkSteps(step.pipeline.steps, `${at}.pipeline`, issues, new Set<string>())
+      walkSteps(
+        step.pipeline.steps,
+        `${at}.pipeline`,
+        issues,
+        new Set<string>(),
+        definedExecutableProfiles,
+      )
       return
     }
     case 'idempotent': {
-      if (step.step) inspectStep(step.step, `${at}.step`, issues)
+      if (step.step) inspectStep(step.step, `${at}.step`, issues, definedExecutableProfiles)
       return
     }
     case 'code':

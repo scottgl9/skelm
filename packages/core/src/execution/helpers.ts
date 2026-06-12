@@ -20,7 +20,11 @@ export function collectDeclaredPermissionDimensions(
   const declared = new Set<PermissionDimension>()
   if (permissions?.allowedTools !== undefined || permissions?.deniedTools !== undefined)
     declared.add('tool')
-  if (permissions?.allowedExecutables !== undefined) declared.add('executable')
+  if (
+    permissions?.allowedExecutables !== undefined ||
+    permissions?.executableProfiles !== undefined
+  )
+    declared.add('executable')
   if (permissions?.allowedMcpServers !== undefined || (mcpServers?.length ?? 0) > 0)
     declared.add('mcp')
   if (permissions?.allowedSkills !== undefined) declared.add('skill')
@@ -147,6 +151,9 @@ export function createDetachedWorkspaceRuntime(
     }),
     ...(runtime.permissionProfiles !== undefined && {
       permissionProfiles: runtime.permissionProfiles,
+    }),
+    ...(runtime.executableProfiles !== undefined && {
+      executableProfiles: runtime.executableProfiles,
     }),
     ...(runtime.unrestrictedGrant !== undefined && {
       unrestrictedGrant: runtime.unrestrictedGrant,

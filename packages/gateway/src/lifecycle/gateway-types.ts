@@ -6,6 +6,7 @@ import type {
   AuditWriter,
   BackendRegistry,
   EventBus,
+  ExecutableProfileDefinition,
   NetworkPolicy,
   PermissionResolver,
   RunStore,
@@ -225,6 +226,7 @@ export interface GatewayContext {
   defaultPermissionRunOptions(workflowId?: string): {
     defaultPermissions?: AgentPermissions
     permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+    executableProfiles?: Readonly<Record<string, ExecutableProfileDefinition>>
   }
   defaultBackendRunOptions(workflowId?: string): {
     defaultAgentBackend?: string
@@ -241,6 +243,7 @@ export interface GatewayContext {
     permissions: {
       defaultPermissions?: AgentPermissions
       permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+      executableProfiles?: Readonly<Record<string, ExecutableProfileDefinition>>
     },
   ): void
   unregisterWorkflowProjectPermissions(workflowId: string): void

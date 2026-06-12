@@ -1,7 +1,7 @@
 // skelm.config.ts surface. Customers import `defineConfig` from skelm
 // and export a default value; the CLI walks up from cwd to find it.
 
-import type { AgentPermissions } from './permissions.js'
+import type { AgentPermissions, ExecutableProfileDefinition } from './permissions.js'
 
 /**
  * Minimal duck-typed contract for queue-style trigger sources registered in
@@ -175,6 +175,12 @@ export interface SkelmWorkflowConfig extends SkelmConfigBase {
     backend?: string
     permissions?: AgentPermissions
     permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+    /**
+     * Named executable sets referenced by `permissions.executableProfiles`.
+     * Definitions only — no profile is granted unless permissions reference
+     * it by name.
+     */
+    executableProfiles?: Readonly<Record<string, ExecutableProfileDefinition>>
   }
   /** Workflow discovery configuration. */
   pipelines?: {
@@ -205,6 +211,12 @@ export interface SkelmGatewayConfig extends SkelmConfigBase {
     permissions?: AgentPermissions
     /** Named permission profiles available to all projects hosted by this gateway. */
     permissionProfiles?: Readonly<Record<string, AgentPermissions>>
+    /**
+     * Named executable sets referenced by `permissions.executableProfiles`,
+     * available to all projects hosted by this gateway. Definitions only —
+     * no profile is granted unless permissions reference it by name.
+     */
+    executableProfiles?: Readonly<Record<string, ExecutableProfileDefinition>>
     /**
      * Operator grant for the full permission bypass. Workflow / persistent-workflow
      * ids listed here may run `unrestricted` IF they also set

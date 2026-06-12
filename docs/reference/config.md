@@ -56,6 +56,10 @@ export default defineWorkflowConfig({
     backend?:            string,             // alias for backends.default
     permissions?:        AgentPermissions,   // project-wide permission baseline
     permissionProfiles?: Record<string, AgentPermissions>,
+    // Named executable sets referenced by permissions.executableProfiles.
+    // Definitions only — nothing is granted unless a permission layer
+    // references a profile by name. See docs/reference/permissions.md.
+    executableProfiles?: Record<string, ExecutableProfileDefinition>,
   },
 
   // ── Trigger sources ─────────────────────────────────────────────────
@@ -67,6 +71,19 @@ export default defineWorkflowConfig({
 ```
 
 `SkelmConfigBackendEntry` is a free-form record forwarded to the matching factory. Strings allowed for keys like `backends.default` (selectors), record values for backend-specific config (`apiKey`, `model`, `baseUrl`, …).
+
+`ExecutableProfileDefinition` is the value shape of `defaults.executableProfiles`:
+
+```ts
+interface ExecutableProfileDefinition {
+  description?: string            // shown by inspection surfaces
+  executables: readonly string[]  // matched like allowedExecutables (binary-level)
+  notes?: string                  // free-form operator notes
+  tags?: readonly string[]        // grouping labels for inspection
+}
+```
+
+Profiles are referenced by name from `permissions.executableProfiles`; an unknown reference fails `skelm validate` and rejects the run at workflow load. See the executable-profiles section of [docs/reference/permissions.md](./permissions.md) for resolution semantics.
 
 ## Backends
 
@@ -359,6 +376,12 @@ export default defineGatewayConfig({
   // ── Operator grants ──────────────────────────────────────────────────
   defaults?: {
     unrestrictedGrants?: readonly string[],  // workflow ids allowed to run unrestricted
+    permissions?:        AgentPermissions,   // gateway-wide permission baseline
+    permissionProfiles?: Record<string, AgentPermissions>,
+    // Named executable sets referenced by permissions.executableProfiles,
+    // available to all projects on this gateway. Definitions only — no
+    // profile is granted unless permissions reference it by name.
+    executableProfiles?: Record<string, ExecutableProfileDefinition>,
   },
 
   // ── Shared with workflow config ───────────────────────────────────────
