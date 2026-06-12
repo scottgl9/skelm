@@ -282,6 +282,21 @@ export async function resolvePackageSpec(
       message: `package ${pkg.name}@${pkg.version} has no workflow "${parsed.entryId}"; available: ${ids}`,
     })
   }
+  const lock = (await readLockfile(projectRoot)).packages[pkg.name]
+  if (lock === undefined) {
+    throw createError({
+      statusCode: 409,
+      message: `package ${pkg.name}@${pkg.version} has no lockfile integrity record`,
+    })
+  }
+  try {
+    await store.verify(pkg.name, pkg.version, lock.integrity)
+  } catch (err) {
+    if (err instanceof PackageIntegrityError) {
+      throw createError({ statusCode: 409, message: err.message })
+    }
+    throw err
+  }
   return {
     file: join(pkg.dir, workflow.entry),
     name: pkg.name,
