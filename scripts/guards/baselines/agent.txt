@@ -1,5 +1,8 @@
+value:AGENT_METRICS_WARNING_CODE
+value:AgentBudgetExceededError
 value:AgentSession
 value:BROWSER_TOOLS
+value:AgentValidationError
 value:FileSessionStore
 value:InMemorySessionStore
 value:ModelRegistry
@@ -15,6 +18,9 @@ value:forkSession
 value:importSession
 value:serializedSize
 value:shouldCompact
+type:AgentBudget
+type:AgentBudgetDimension
+type:AgentRunMetrics
 type:AgentSessionInit
 type:ArtifactHandle
 type:BrowserActionResult
@@ -29,6 +35,8 @@ type:ModelApi
 type:ModelCost
 type:ModelEntry
 type:ModelInputKind
+type:OutputValidator
+type:OutputValidatorContext
 type:PromptOptions
 type:RegisterProviderOptions
 type:ResolvedModel
@@ -44,4 +52,7 @@ type:SkelmAgentBackendCapabilities
 type:SkelmAgentOptions
 type:StateHandle
 type:ThinkingLevel
+type:ToolValidator
+type:ToolValidatorContext
 type:Unsubscribe
+type:ValidationResult

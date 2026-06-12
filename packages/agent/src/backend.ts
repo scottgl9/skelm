@@ -45,13 +45,21 @@ import {
 import type { ResolvedPolicy } from '@skelm/core/permissions'
 import { TrustEnforcer } from '@skelm/core/permissions'
 
+import { type AgentBudget, AgentBudgetExceededError, BudgetTracker } from './budgets.js'
+import { AGENT_METRICS_WARNING_CODE, type AgentRunMetrics } from './metrics.js'
 import type { ModelRegistry } from './models/registry.js'
-import type { ResolvedModel } from './models/types.js'
+import type { ModelCost, ResolvedModel } from './models/types.js'
 import { buildSystemPromptFromRequest } from './prompt.js'
 import type { SerializedSession } from './session/agent-session.js'
 import type { SessionMessage } from './session/messages.js'
 import type { SessionStore } from './session/store/types.js'
 import { BUILTIN_TOOLS, type ToolExecutionContext, type ToolResult, toOpenAITool } from './tools.js'
+import {
+  AgentValidationError,
+  type OutputValidator,
+  type ToolValidator,
+  type ValidationResult,
+} from './validators.js'
 
 export interface SkelmAgentOptions {
   /** Backend id. Defaults to 'agent' when only one is registered. */
@@ -127,6 +135,31 @@ export interface SkelmAgentOptions {
    * Inspection only — the run is not affected by the callback.
    */
   onPromptAssembled?: (info: { systemPrompt: string; tools: readonly string[] }) => void
+  /**
+   * Cumulative agent-harness safety budgets for each `run()` loop. When a
+   * ceiling (tokens, cost, tool calls, wall-clock) is crossed the run aborts
+   * deterministically with `AgentBudgetExceededError`, after emitting a
+   * `run.warning` (code `agent.budget.<dimension>`). This is a safety LIMIT,
+   * not a permission dimension — it never widens anything and is distinct
+   * from skelm's core HITL / oversight. Omit for unbounded (default) runs.
+   */
+  budget?: AgentBudget
+  /**
+   * Pure, caller-supplied validators run on the final assistant text of each
+   * `run()`. A failing soft validator records a `run.warning` and the run
+   * completes; a failing hard validator throws `AgentValidationError`. No LLM
+   * calls inside the harness — these are deterministic checks. Distinct from
+   * `outputSchema` validation, which the runtime still performs.
+   */
+  outputValidators?: readonly OutputValidator[]
+  /**
+   * Pure, caller-supplied validators run before each tool dispatch in a
+   * `run()` loop. A failing soft validator records a `run.warning` and the
+   * tool still runs; a failing hard validator throws `AgentValidationError`
+   * before the tool executes. Never widens permissions — runs after the
+   * `TrustEnforcer` gate, as an additional harness-level check.
+   */
+  toolValidators?: readonly ToolValidator[]
 }
 
 function resolveCallModel(
@@ -383,13 +416,32 @@ async function runAgentLoop(
     sessionStore?: SessionStore
     persistSessionId?: string
     onPromptAssembled?: SkelmAgentOptions['onPromptAssembled']
+    budget?: AgentBudget
+    cost?: ModelCost
+    outputValidators?: readonly OutputValidator[]
+    toolValidators?: readonly ToolValidator[]
   },
 ): Promise<{
   text: string
   stopReason?: string | undefined
   usage?: Usage | undefined
+  metrics: AgentRunMetrics
 }> {
   const model = opts.defaultModel
+
+  const tracker = new BudgetTracker(opts.budget, opts.cost)
+  // Abort the run deterministically the moment a cumulative ceiling is
+  // crossed. Emits an observable `run.warning` first, then throws.
+  const enforceBudget = (): void => {
+    const hit = tracker.exceeded()
+    if (hit === undefined) return
+    publishRunWarning(
+      ctx,
+      `agent.budget.${hit.dimension}`,
+      `agent budget exceeded: ${hit.dimension} reached ${hit.observed} (limit ${hit.limit})`,
+    )
+    throw new AgentBudgetExceededError(hit.dimension, hit.observed, hit.limit, opts.backendId)
+  }
 
   const enforcer = ctx.permissions
     ? new TrustEnforcer(ctx.permissions)
@@ -606,6 +658,12 @@ async function runAgentLoop(
         throw new BackendUpstreamError('LLM returned empty response')
       }
 
+      // Fold this turn's token usage into the cumulative budget/metrics
+      // accounting, then trip the budget if a token/cost ceiling is now
+      // crossed. Runs every turn so a runaway loop aborts deterministically.
+      tracker.addUsage(toOpenAIUsage(response.usage))
+      enforceBudget()
+
       const toolCalls = choice.message.tool_calls
       if (!toolCalls || toolCalls.length === 0) {
         const text = openAIResponseContentText(choice.message.content)
@@ -652,11 +710,19 @@ async function runAgentLoop(
             )
           }
         }
+        const finalStopReason = choice.finish_reason ?? 'stop'
+        await runOutputValidators(opts.outputValidators, text, ctx, opts.backendId, {
+          stopReason: finalStopReason,
+          ...(req.outputSchema !== undefined && { structured: safeParseJson(text) }),
+        })
+        const metrics = finalizeMetrics(tracker, turn)
+        publishRunMetrics(ctx, metrics)
         return {
           text,
-          stopReason: choice.finish_reason ?? 'stop',
+          stopReason: finalStopReason,
           ...(typeof reasoning === 'string' && reasoning.length > 0 && { reasoning }),
-          usage: toOpenAIUsage(response.usage),
+          usage: mergeMetricsUsage(toOpenAIUsage(response.usage), metrics),
+          metrics,
         }
       }
 
@@ -677,6 +743,21 @@ async function runAgentLoop(
         } catch {
           // pass
         }
+
+        // Harness tool validators run before dispatch (after the permission
+        // gate, which fires inside each branch below). A hard failure aborts;
+        // a soft failure warns and the tool still runs.
+        await runToolValidators(
+          opts.toolValidators,
+          tc.function.name,
+          parsedArgs,
+          ctx,
+          opts.backendId,
+        )
+
+        // Count the dispatch toward the tool-call budget before executing it.
+        tracker.addToolCall()
+        enforceBudget()
 
         const builtinTool = BUILTIN_TOOLS.find((t) => t.name === tc.function.name)
 
@@ -742,6 +823,113 @@ async function runAgentLoop(
       await agentmemory.endSession({ sessionId }).catch(() => {})
     }
     if (ownMcpHost !== undefined) await ownMcpHost.dispose()
+  }
+}
+
+function publishRunWarning(ctx: BackendContext, code: string, message: string): void {
+  if (ctx.events === undefined || ctx.runId === undefined) return
+  ctx.events.publish({
+    type: 'run.warning',
+    runId: ctx.runId,
+    ...(ctx.stepId !== undefined && { stepId: ctx.stepId }),
+    code,
+    message,
+    at: Date.now(),
+  })
+}
+
+function finalizeMetrics(tracker: BudgetTracker, turns: number): AgentRunMetrics {
+  return {
+    totalTokens: tracker.totalTokens,
+    totalCostUsd: tracker.totalCostUsd,
+    toolCalls: tracker.totalToolCalls,
+    turns,
+    wallClockMs: tracker.elapsedMs(),
+  }
+}
+
+function publishRunMetrics(ctx: BackendContext, metrics: AgentRunMetrics): void {
+  publishRunWarning(
+    ctx,
+    AGENT_METRICS_WARNING_CODE,
+    JSON.stringify({
+      tokens: metrics.totalTokens,
+      costUsd: metrics.totalCostUsd,
+      toolCalls: metrics.toolCalls,
+      turns: metrics.turns,
+      wallClockMs: metrics.wallClockMs,
+    }),
+  )
+}
+
+/**
+ * Fold the harness metrics onto the final turn's `Usage`: cumulative cost
+ * under `costUsd` (only when pricing produced a non-zero figure, so a
+ * priceless run's Usage is unchanged) and run-wide counters under
+ * `extras.metrics_*` so a consumer can read totals without re-summing turns.
+ */
+function mergeMetricsUsage(usage: Usage | undefined, metrics: AgentRunMetrics): Usage | undefined {
+  const extras = {
+    ...usage?.extras,
+    metricsTotalTokens: metrics.totalTokens,
+    metricsToolCalls: metrics.toolCalls,
+    metricsTurns: metrics.turns,
+    metricsWallClockMs: metrics.wallClockMs,
+  }
+  return {
+    ...usage,
+    ...(metrics.totalCostUsd > 0 && { costUsd: metrics.totalCostUsd }),
+    extras,
+  }
+}
+
+async function runOutputValidators(
+  validators: readonly OutputValidator[] | undefined,
+  text: string,
+  ctx: BackendContext,
+  backendId: string,
+  vctx: { stopReason?: string; structured?: unknown },
+): Promise<void> {
+  if (validators === undefined) return
+  for (const validate of validators) {
+    const result = await validate(text, vctx)
+    applyValidation(result, 'output', ctx, backendId)
+  }
+}
+
+async function runToolValidators(
+  validators: readonly ToolValidator[] | undefined,
+  tool: string,
+  args: unknown,
+  ctx: BackendContext,
+  backendId: string,
+): Promise<void> {
+  if (validators === undefined) return
+  for (const validate of validators) {
+    const result = await validate({ tool, args })
+    applyValidation(result, 'tool', ctx, backendId)
+  }
+}
+
+function applyValidation(
+  result: ValidationResult,
+  stage: 'output' | 'tool',
+  ctx: BackendContext,
+  backendId: string,
+): void {
+  if (result.ok) return
+  if (result.severity === 'hard') {
+    publishRunWarning(ctx, `agent.validator.${stage}`, result.reason)
+    throw new AgentValidationError(stage, result.reason, backendId)
+  }
+  publishRunWarning(ctx, `agent.validator.${stage}`, result.reason)
+}
+
+function safeParseJson(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return undefined
   }
 }
 
@@ -965,6 +1153,10 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
       const model = route.kind === 'registry' ? route.resolved.entry.id : route.modelId
       const perCallMax =
         (route.kind === 'registry' ? route.resolved.entry.maxTokens : undefined) ?? opts.maxTokens
+      // Cost shape for budget/metrics accounting comes from the registry
+      // entry when routing through one; single-endpoint mode has no pricing,
+      // so cost falls back to any upstream-reported `Usage.costUsd`.
+      const cost = route.kind === 'registry' ? route.resolved.entry.cost : undefined
 
       const result = await runAgentLoop(req, ctx, {
         baseUrl,
@@ -979,6 +1171,10 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
         ...(opts.sessionStore !== undefined && { sessionStore: opts.sessionStore }),
         ...(req.sessionId !== undefined && { persistSessionId: req.sessionId }),
         ...(opts.onPromptAssembled !== undefined && { onPromptAssembled: opts.onPromptAssembled }),
+        ...(opts.budget !== undefined && { budget: opts.budget }),
+        ...(cost !== undefined && { cost }),
+        ...(opts.outputValidators !== undefined && { outputValidators: opts.outputValidators }),
+        ...(opts.toolValidators !== undefined && { toolValidators: opts.toolValidators }),
       })
 
       let structured: unknown | undefined

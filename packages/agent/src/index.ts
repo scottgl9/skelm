@@ -10,6 +10,20 @@ export {
   createSkelmAgentBackend,
   type SkelmAgentOptions,
 } from './backend.js'
+export {
+  type AgentBudget,
+  type AgentBudgetDimension,
+  AgentBudgetExceededError,
+} from './budgets.js'
+export { AGENT_METRICS_WARNING_CODE, type AgentRunMetrics } from './metrics.js'
+export {
+  AgentValidationError,
+  type OutputValidator,
+  type OutputValidatorContext,
+  type ToolValidator,
+  type ToolValidatorContext,
+  type ValidationResult,
+} from './validators.js'
 export { ModelRegistry } from './models/registry.js'
 export type {
   ModelApi,

@@ -70,6 +70,9 @@ a string-keyed `backends:` entry — pass a configured instance through
 | `timeoutMs`  | `number` | `300_000`        | LLM HTTP timeout in ms.                                                  |
 | `sessionStore` | `SessionStore` | —          | Persist `run()` conversations across turns. See **Session persistence** below. |
 | `onPromptAssembled` | `(info) => void` | —    | Debug hook invoked once per `run()` with the assembled system prompt text and the advertised tool names. Inspection only. |
+| `budget`     | `AgentBudget` | —           | Cumulative harness safety limits for each `run()` loop. See **Budgets, validators, and metrics** below. |
+| `outputValidators` | `OutputValidator[]` | — | Pure checks run on the final assistant text. See below. |
+| `toolValidators` | `ToolValidator[]` | —     | Pure checks run before each tool dispatch. See below. |
 
 `baseUrl` may be `http://localhost:11434`, `http://localhost:8000/v1`,
 `https://openrouter.ai/api/v1`, or an exact URL ending in
@@ -90,6 +93,65 @@ single-shot steps) the backend issues plain non-streaming requests,
 bit-for-bit identical to the previous behavior. If the upstream rejects
 `stream: true`, the turn is retried once on the non-streaming path, so
 SSE-less servers keep working (their replies just produce no deltas).
+
+### Budgets, validators, and metrics
+
+These are **agent-harness** safety controls scoped to the `run()` loop. They
+are *not* permission dimensions and *not* skelm's core durable HITL /
+oversight primitives — they never widen anything, they only observe and (where
+configured) abort a run. Every dimension is unset by default, so the loop's
+behavior is unbounded and unchanged unless you opt in. Enforcement is
+deterministic: typed errors plus existing `run.warning` events, never a silent
+change.
+
+**Budgets** (`budget: AgentBudget`) set cumulative ceilings across *all* turns
+of one run:
+
+| Field | Limits |
+|-------|--------|
+| `tokenBudget` | cumulative input + output tokens from each turn's `Usage` — distinct from the per-call `maxTokens` output cap and from `maxTurns` |
+| `maxCostUsd` | cumulative estimated USD cost |
+| `maxToolCalls` | total tool-call dispatches |
+| `maxWallClockMs` | wall-clock elapsed since loop start |
+
+When a ceiling is crossed the loop emits a `run.warning`
+(`code: 'agent.budget.<dimension>'`) and then throws `AgentBudgetExceededError`
+carrying `{ dimension, observed, limit }`. The check runs after each turn's
+usage is folded in and after each tool-call increment.
+
+Cost is derived from the model registry entry's `ModelCost` (USD per 1K
+input/output tokens) when routing through a `registry`; in single-endpoint mode
+there is no pricing, so cost falls back to any upstream-reported
+`Usage.costUsd`, or 0 when neither is known (a priceless run never trips the
+cost budget).
+
+**Validators** are pure (sync or async) functions — no LLM calls inside the
+harness. Each returns `{ ok: true }` or `{ ok: false, reason, severity? }`. A
+soft failure (default) records a `run.warning`
+(`code: 'agent.validator.<stage>'`) and the run continues; a hard failure
+(`severity: 'hard'`) throws `AgentValidationError` (`{ stage, reason }`).
+
+- `outputValidators` run once on the final assistant text:
+  `(text, ctx) => ValidationResult`, with `ctx.stopReason` and parsed
+  `ctx.structured` (when an `outputSchema` was requested).
+- `toolValidators` run before each tool dispatch, *after* the `TrustEnforcer`
+  permission gate, as an additional harness check:
+  `({ tool, args }) => ValidationResult`. A hard failure aborts before the tool
+  runs.
+
+Validators are distinct from `outputSchema` validation: the runtime still
+validates the step result against any declared `outputSchema` and surfaces
+`SchemaValidationError` on mismatch. Validators add harness-level checks on top.
+
+**Metrics.** Every completed run surfaces token / cost / latency accounting on
+`AgentResponse.usage` — cumulative `costUsd` (when pricing is known) plus
+`extras.metricsTotalTokens` / `metricsToolCalls` / `metricsTurns` /
+`metricsWallClockMs` — and, when the run has an event sink, as a structured
+`run.warning` (`code: 'agent.metrics'`, exported as
+`AGENT_METRICS_WARNING_CODE`) whose `message` is JSON
+`{ tokens, costUsd, toolCalls, turns, wallClockMs }`. `@skelm/metrics`
+consumes the run event stream today; mapping these metrics into a dedicated
+Prometheus series is a follow-up in that package.
 
 ### Session persistence
 
