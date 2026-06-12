@@ -73,6 +73,7 @@ export default pipeline({
         allowedMcpServers: ['github'],
         allowedSkills: ['sre-runbook'],
         allowedExecutables: [],
+        executableProfiles: [],
         fsRead: [],
         fsWrite: [],
         networkEgress: { allowHosts: ['api.github.com', 'slack.com'] },

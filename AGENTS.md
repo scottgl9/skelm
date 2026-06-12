@@ -27,6 +27,7 @@ skelm/
 │   ├── scheduler/        — cron / interval / webhook triggers
 │   ├── skelm/            — meta-package; re-exports core + ships CLI
 │   ├── agent/            — first-party native agent backend with built-in tools
+│   ├── agentmemory/      — cross-session memory via the agentmemory server
 │   ├── pi/               — Pi coding-agent backend
 │   ├── opencode/         — Opencode coding-agent backend (native + ACP)
 │   ├── codex/            — OpenAI Codex backend (@openai/codex-sdk)
@@ -67,6 +68,22 @@ If a failing test is verifiably pre-existing and unrelated to your change (same 
 **Big features land in small, green increments.** Focused change → `pnpm check` → validate the increment → commit → push → continue. Confirm cadence with the user before the first commit on a fresh feature. Don't pile up unpushed work.
 
 All work lands on a branch and merges to `main` via PR; CI gates the merge. Locally, the rule is simpler: don't commit on a red tree, and don't `--no-verify` without an explicit justification line in the commit body.
+
+### Full implementation campaigns
+
+When the operator explicitly authorizes a full implementation plan, treat that plan as the approved task scope. Do not stop merely because the plan is large, spans multiple packages, requires docs/tests/self-test updates, or needs multiple PRs.
+
+For an approved implementation campaign:
+
+- use multi-agent orchestration for broad feature buildout when available, with one orchestrator coordinating bounded subagents so context and tokens stay efficient
+- create fresh branches from `main` and use git worktrees for isolated parallel PR lanes when helpful
+- make small, green commits after `pnpm check` or the agreed focused gate passes
+- push branches and open PRs for major reviewable slices where practical
+- keep RBAC/scoped service tokens as a separate PR when that work is in scope
+- update docs, examples, schemas/OpenAPI, and self-test coverage before calling a slice complete
+- run live validation where applicable, while serializing full live `skelm-self-test` passes that depend on local models
+- treat completion as full implementation complete, docs updated and checked, unit tests green, and live validation done
+- continue through the full approved plan until implemented and validated, or stop only for an explicit blocker, security/product decision, unavailable required model/tool, failing unrelated baseline that cannot be isolated, or operator direction
 
 ## Tests are mandatory for behavior changes
 
@@ -164,7 +181,15 @@ Anything exported from a package's top-level `index.ts` is public. Anything insi
 - Never run destructive git operations (`reset --hard`, `push --force`, `branch -D`) without explicit user approval.
 - Track multi-step work in your agent's task list when available, and update status as you go.
 - Stay within the scope of the task. Don't expand scope without permission; don't shrink it either.
+- For an explicitly approved full implementation campaign, the campaign plan is the scope; complete the whole plan through validated PR-ready slices rather than stopping after a proposal or partial increment.
 - When uncertain, ask. The cost of a one-line clarification is low.
+
+### Codegraph MCP
+
+- Use codegraph MCP for structural codebase understanding when available, especially before large edits, cross-package refactors, public API changes, dependency traversal, symbol lookup, or impact analysis.
+- Prefer codegraph MCP tools over the codegraph CLI for repo exploration. Use the CLI mainly for index setup or refresh when needed.
+- If codegraph is unavailable, stale, or missing an index, record that fallback and use `rg`, direct reads, and nearby tests/docs instead.
+- Do not let codegraph replace reading the actual files you are editing. Treat it as a map, then verify behavior and invariants in source and tests.
 
 ### For Claude Code specifically
 
@@ -193,4 +218,3 @@ skelm gateway stop
 
 - Summarize what changed in one or two sentences.
 - If anything is unverified or undone, say so explicitly.
-- Never auto-commit. The user runs `git commit` when they decide the work is ready.
