@@ -74,16 +74,19 @@ When the argument is a **directory**, `skelm run` behaves one of two ways:
   file, `skelm run` exits `1` (CLI error).
 
 When the argument is a **workflow-package spec** (`@scope/name`,
-`@scope/name@1.2.3`, or `@scope/name/entry`), `skelm run` resolves it through the
-gateway's installed-package store (`POST /v1/packages/resolve`) to the package's
-entry file and runs it exactly like a file. The entry id defaults to `default`.
-See [`skelm package`](#skelm-package-installlistinforemoveupdate) and
+`@scope/name@1.2.3`, `@scope/name/entry`, or unscoped `name/entry`), `skelm run`
+resolves it through the gateway's installed-package store
+(`POST /v1/packages/resolve`) to the package's entry file and runs it exactly
+like a file. For unscoped forms, a real file or directory path still wins when
+it exists on disk. The entry id defaults to `default`. See
+[`skelm package`](#skelm-package-installlistinforemoveupdate) and
 [workflow packages](./workflow-packages.md).
 
 ```bash
 skelm run examples/hello        # resolves the directory to its single workflow file
 skelm run @skelm/hello          # runs the installed package's `default` workflow
 skelm run @skelm/hello/report   # runs the `report` workflow from the package
+skelm run hello/report          # runs the `report` workflow from an unscoped package
 ```
 
 ### `skelm list [--all] [--json]`

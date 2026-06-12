@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { gzipSync } from 'node:zlib'
@@ -242,6 +242,33 @@ describe('/v1/packages', () => {
     })
     expect(res.status).toBe(404)
     expect((await res.json()).message).toMatch(/available: default/)
+  })
+
+  it('resolve rejects an installed package whose cached contents fail lockfile integrity', async () => {
+    await fetch(`${base}/v1/packages/install`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source: sourceDir }),
+    })
+    const cachedWorkflow = join(
+      projectRoot,
+      '.skelm',
+      'packages',
+      '@skelm__hello',
+      '0.1.0',
+      'workflows',
+      'hello.workflow.ts',
+    )
+    const original = await readFile(cachedWorkflow, 'utf8')
+    await writeFile(cachedWorkflow, `${original}\n// tampered\n`)
+
+    const res = await fetch(`${base}/v1/packages/resolve`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ spec: '@skelm/hello' }),
+    })
+    expect(res.status).toBe(409)
+    expect((await res.json()).message).toMatch(/failed integrity verification/)
   })
 
   it('rejects unauthenticated requests with 401 when bearer auth is on', async () => {

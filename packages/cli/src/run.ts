@@ -380,7 +380,8 @@ export async function runCommand(
 export function isPackageSpec(arg: string): boolean {
   if (arg.startsWith('@')) return true
   if (existsSync(arg)) return false
-  if (/[/\\]/.test(arg) || /\.(?:m?[tj]s|c[tj]s|tsx?)$/.test(arg)) return false
+  if (/\\/.test(arg) || /\.(?:m?[tj]s|c[tj]s|tsx?)$/.test(arg)) return false
+  if (arg.includes('/')) return true
   // Bare `name` or `name@version` with no slash and no extension: treat as a
   // package spec only when it carries a version, to avoid swallowing a typo'd
   // file name. (`@scope` forms and `name/entry` are handled above.)

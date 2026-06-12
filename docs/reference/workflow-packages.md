@@ -121,7 +121,7 @@ Package management is a privileged control-plane surface owned by the gateway. E
 | `GET /v1/packages` | List installed packages merged with their lockfile entries. |
 | `GET /v1/packages/:name` | Manifest, installed versions, content integrity, and lockfile entry. `:name` may be a URL-encoded scoped name (`@scope%2Fname`). |
 | `POST /v1/packages/install` | Body `{ "source": "<local dir or .tgz path>" }`. Validates the manifest, installs into the store, records the lockfile entry (name, version, resolved source, `sha256` integrity), and emits a `package.install` audit event. |
-| `POST /v1/packages/resolve` | Body `{ "spec": "@scope/name[@version][/entry]" }`. Resolves a run spec to the installed workflow's absolute entry file; the entry id defaults to `default`. Used by `skelm run @scope/name`. |
+| `POST /v1/packages/resolve` | Body `{ "spec": "@scope/name[@version][/entry]" }`. Resolves a run spec to the installed workflow's absolute entry file only after verifying the cached package against the lockfile integrity record; the entry id defaults to `default`. Used by `skelm run @scope/name` and unscoped `skelm run name/entry`. |
 | `DELETE /v1/packages/:name` | Optional `?version=`. Removes from the store and (when no version remains) from the lockfile; emits a `package.remove` audit event. |
 
 **Install sources.** Only a **local directory** or a **local `.tgz` tarball** are accepted this release. A tarball is gunzipped and read with a minimal ustar reader; any entry with an absolute path or a `..` traversal segment is rejected (400) before a single byte is written, and a leading `package/` prefix (npm-pack layout) is stripped. **npm-registry / URL installs are planned** but deferred pending a network-egress policy decision.
@@ -137,6 +137,6 @@ Package management is a privileged control-plane surface owned by the gateway. E
 | `skelm package info <name> [--json]` | `GET /v1/packages/:name`. |
 | `skelm package remove <name> [--version <v>]` | `DELETE /v1/packages/:name`. |
 | `skelm package update <name>` | Reinstall from the lockfile's recorded source (reads it via `info`, then re-runs install). |
-| `skelm run @scope/name[@version][/entry]` | The run command detects a package spec (leading `@`, or a `name@version` / `name/entry` form that is not a real path), resolves it via `POST /v1/packages/resolve`, then runs the resolved entry file exactly like `skelm run <file>`. |
+| `skelm run @scope/name[@version][/entry]` | The run command detects a package spec (leading `@`, or a `name@version` / `name/entry` form that is not a real path), resolves it via `POST /v1/packages/resolve`, verifies the cached package against `skelm.lock.json`, then runs the resolved entry file exactly like `skelm run <file>`. |
 
 Exit codes match the documented CLI conventions: `0` on success, `1` on a CLI/gateway error (unknown package, missing entry, gateway unreachable), and the usual run exit codes for `skelm run`.
