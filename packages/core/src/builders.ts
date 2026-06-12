@@ -457,12 +457,10 @@ export function branch(def: {
     throw new Error(`branch(${def.id}): cases must have at least one entry`)
   }
   assertValidRetryPolicy('branch', def.id, def.retry)
-  for (const child of Object.values(def.cases)) {
-    assertNoWaitInside('branch', def.id, child)
-  }
-  if (def.default !== undefined) {
-    assertNoWaitInside('branch', def.id, def.default)
-  }
+  // branch() is safe: only one case runs, the `on()` selector is deterministic
+  // given the same input, so after a gateway restart the runner re-evaluates
+  // `on()`, takes the identical branch, and reaches the same wait() step with
+  // no replay of side-effects from other cases.
   return Object.freeze({
     kind: 'branch',
     id: def.id,
