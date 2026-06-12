@@ -24,7 +24,6 @@ export function registerAuditRoutes(router: Router, gateway: GatewayContext): vo
     eventHandler(async (event) => {
       const q = getQuery(event)
       const reader = new ChainAuditWriter(auditPath)
-      const all = await reader.readAll()
       const runId = stringOf(q.runId)
       const actor = stringOf(q.actor)
       const action = stringOf(q.action)
@@ -33,6 +32,9 @@ export function registerAuditRoutes(router: Router, gateway: GatewayContext): vo
       const limitRaw = stringOf(q.limit)
       const limit =
         limitRaw === undefined ? undefined : Math.max(1, Math.min(5000, Number(limitRaw)))
+      if (limitRaw !== undefined && Number.isNaN(Number(limitRaw))) {
+        throw createError({ statusCode: 400, message: 'limit: invalid integer' })
+      }
       const sinceTs = since !== undefined ? Date.parse(since) : null
       const untilTs = until !== undefined ? Date.parse(until) : null
       if (since !== undefined && Number.isNaN(sinceTs)) {
@@ -41,16 +43,15 @@ export function registerAuditRoutes(router: Router, gateway: GatewayContext): vo
       if (until !== undefined && Number.isNaN(untilTs)) {
         throw createError({ statusCode: 400, message: 'until: invalid timestamp' })
       }
-      const filtered = all.filter((e) => {
-        if (runId !== undefined && e.runId !== runId) return false
-        if (actor !== undefined && e.actor !== actor) return false
-        if (action !== undefined && e.action !== action) return false
-        const ts = Date.parse(e.timestamp)
-        if (sinceTs !== null && ts < sinceTs) return false
-        if (untilTs !== null && ts > untilTs) return false
-        return true
+      const entries = await reader.list({
+        ...(runId !== undefined && { runId }),
+        ...(actor !== undefined && { actor }),
+        ...(action !== undefined && { action }),
+        ...(since !== undefined && { since }),
+        ...(until !== undefined && { until }),
+        ...(limit !== undefined && { limit }),
       })
-      return { entries: limit === undefined ? filtered : filtered.slice(-limit) }
+      return { entries }
     }),
   )
 

@@ -1,0 +1,15 @@
+export interface DashboardConfig {
+  host: string
+  port: number
+  gatewayUrl: string
+  token?: string
+}
+
+const config: DashboardConfig = {
+  host: process.env.SKELM_DASHBOARD_HOST ?? '127.0.0.1',
+  port: Number(process.env.SKELM_DASHBOARD_PORT ?? 14739),
+  gatewayUrl: process.env.SKELM_DASHBOARD_GATEWAY_URL ?? 'http://127.0.0.1:14738',
+  token: process.env.SKELM_DASHBOARD_TOKEN,
+}
+
+export default config

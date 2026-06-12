@@ -24,6 +24,24 @@ describe('acp-backend contract', () => {
 })
 
 describe('acp-backend — fails closed on nontrivial permissions', () => {
+  it('defaults to unsupported tool permissions and exposes advisory only when explicit', async () => {
+    const strict = createAcpBackend({
+      id: 'acp-strict',
+      command: 'node',
+      args: [new URL('./mock-acp-agent.ts', import.meta.url).pathname],
+    })
+    const advisory = createAcpBackend({
+      id: 'acp-advisory',
+      command: 'node',
+      args: [new URL('./mock-acp-agent.ts', import.meta.url).pathname],
+      permissionMode: 'advisory',
+    })
+    expect(strict.capabilities.toolPermissions).toBe('unsupported')
+    expect(advisory.capabilities.toolPermissions).toBe('advisory')
+    await strict.dispose?.()
+    await advisory.dispose?.()
+  })
+
   it('rejects steps that declare allowedTools', async () => {
     const backend = createAcpBackend({
       id: 'acp-fail',
@@ -183,6 +201,36 @@ describe('acp-backend — fails closed on nontrivial permissions', () => {
     try {
       const ctx: Partial<BackendContext> = {
         signal: AbortSignal.timeout(5_000),
+      }
+      const result = await backend.run({ prompt: 'hello' }, ctx as BackendContext)
+      expect(result.text).toBe('echo:hello')
+    } finally {
+      await backend.dispose?.()
+    }
+  })
+
+  it('allows nontrivial permissions in explicit advisory mode', async () => {
+    const backend = createAcpBackend({
+      id: 'acp-advisory',
+      command: 'node',
+      args: [new URL('./mock-acp-agent.ts', import.meta.url).pathname],
+      permissionMode: 'advisory',
+    })
+    try {
+      const ctx: Partial<BackendContext> = {
+        signal: AbortSignal.timeout(5_000),
+        permissions: {
+          allowedTools: { exact: new Set(['gh.list_issues']), prefixes: [], star: false },
+          deniedTools: { exact: new Set(), prefixes: [], star: false },
+          allowedExecutables: new Set(),
+          allowedMcpServers: new Set(),
+          allowedSkills: new Set(),
+          allowedSecrets: new Set(),
+          networkEgress: 'deny' as const,
+          fsRead: new Set(),
+          fsWrite: new Set(),
+          approval: null,
+        },
       }
       const result = await backend.run({ prompt: 'hello' }, ctx as BackendContext)
       expect(result.text).toBe('echo:hello')

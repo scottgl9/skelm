@@ -127,6 +127,17 @@ export function subscribeAuditEvents(opts: {
           at: event.at,
         },
       })
+    } else if (event.type === 'permission.advisory') {
+      queue({
+        action: 'permission.advisory',
+        details: {
+          stepId: event.stepId,
+          backendId: event.backendId,
+          dimensions: event.dimensions,
+          detail: event.detail,
+          at: event.at,
+        },
+      })
     } else if (event.type === 'permission.bypassed') {
       auditWrites.push(
         writeAudit(auditWriter, {

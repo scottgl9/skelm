@@ -186,6 +186,7 @@ type:AcpPromptResult
 type:AcpSpawnOptions
 type:AgentCapabilities
 type:AgentDefinition
+type:AgentMemoryRecord
 type:AgentMessage
 type:AgentPermissions
 type:AgentPlugin
@@ -225,6 +226,8 @@ type:ArtifactStoreHandle
 type:AssetHost
 type:AuditEntry
 type:AuditEvent
+type:AuditFilter
+type:AuditLogReader
 type:AuditWriter
 type:BackendCapabilities
 type:BackendContext
@@ -245,6 +248,7 @@ type:DescribedStep
 type:DiscordInteraction
 type:DiscordMessage
 type:DiscordTriggerConfig
+type:DurableAgentMemory
 type:EnforceDecision
 type:EventListener
 type:ExecFn
@@ -352,9 +356,9 @@ type:SkelmConfigStorage
 type:SkelmConfigTriggerSourceEntry
 type:SkelmGatewayConfig
 type:SkelmPlugin
-type:SkelmWorkflowConfig
 type:SkelmSchema
 type:SkelmTriggerSource
+type:SkelmWorkflowConfig
 type:Skill
 type:SlackBlockAction
 type:SlackCommand
@@ -392,6 +396,7 @@ type:WebhookTriggerConfig
 type:WhenPredicate
 type:WorkflowInvocation
 type:WorkflowPlugin
+type:WorkflowStateStore
 type:WorkspaceManagerOptions
 type:WorkspaceMetadata
 type:WorkspaceSummary
