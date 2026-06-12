@@ -112,7 +112,7 @@ describe('createSkelmAgentBackend', () => {
 
     expect(backend.id).toBe('test-agent')
     expect(backend.capabilities.prompt).toBe(true)
-    expect(backend.capabilities.streaming).toBe(false)
+    expect(backend.capabilities.streaming).toBe(true)
     expect(backend.capabilities.mcp).toBe(true)
     expect(backend.capabilities.skills).toBe(true)
     expect(backend.capabilities.modelSelection).toBe(true)

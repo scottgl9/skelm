@@ -70,10 +70,25 @@ a string-keyed `backends:` entry — pass a configured instance through
 | `timeoutMs`  | `number` | `300_000`        | LLM HTTP timeout in ms.                                                  |
 | `sessionStore` | `SessionStore` | —          | Persist `run()` conversations across turns. See **Session persistence** below. |
 
-The backend issues a non-streaming Chat Completions request. `baseUrl` may be
-`http://localhost:11434`, `http://localhost:8000/v1`,
+`baseUrl` may be `http://localhost:11434`, `http://localhost:8000/v1`,
 `https://openrouter.ai/api/v1`, or an exact URL ending in
 `/chat/completions`.
+
+### Streaming
+
+When a run has an event sink (the runner supplies `onPartial`, or
+`events` + `runId` + `stepId` on the `BackendContext`), agent-loop turns are
+issued with `stream: true` (Server-Sent Events) and each assistant content
+delta is published as a **`step.partial`** event — one event per delta, not
+cumulative; the concatenation of all deltas equals the turn's final text.
+Tool-call turns stream too: `tool_calls` fragments are assembled from the
+deltas and executed exactly as on the non-streaming path, and permission
+enforcement is unchanged — streaming changes how text arrives, not what is
+enforced. Without an event sink (e.g. calling `run()` directly, or `infer()`
+single-shot steps) the backend issues plain non-streaming requests,
+bit-for-bit identical to the previous behavior. If the upstream rejects
+`stream: true`, the turn is retried once on the non-streaming path, so
+SSE-less servers keep working (their replies just produce no deltas).
 
 ### Session persistence
 
@@ -143,7 +158,7 @@ tool calls (`tools`, assistant `tool_calls`, and `role: "tool"` messages).
 | `mcp`               | `true`     | Unknown tool names fall through to `ctx.mcpHost.invokeTool` (gated by `canCallTool`). |
 | `skills`            | `true`     | `load_skill` returns metadata for skills allowed by `allowedSkills`.        |
 | `toolPermissions`   | `'native'` | Every built-in tool calls `TrustEnforcer` before its side effect.           |
-| `streaming`         | `false`    | Use `@skelm/pi` SDK or `@skelm/opencode` for streaming output.              |
+| `streaming`         | `true`     | Agent-loop turns stream over SSE and emit `step.partial` per delta when an event sink is present — see **Streaming** above. |
 | `sessionLifecycle`  | `false`\*  | `true` when a `sessionStore` is configured; an `agent()` step that supplies `sessionId` then resumes the saved conversation. Default `false` (stateless). |
 
 ## Built-in tools
@@ -248,7 +263,6 @@ default-deny config, lift the relevant dimension in `defaults.permissions`
 
 ## Caveats and non-goals
 
-- **Streaming is not supported** in v1. Use `@skelm/pi` SDK or `@skelm/opencode` if you need it.
 - **`networkEgress` does not gate the LLM's HTTP call.** It controls
   `http_fetch` and per-tool network access. The backend itself reaches
   `baseUrl` directly.

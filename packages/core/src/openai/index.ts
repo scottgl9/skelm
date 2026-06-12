@@ -2,6 +2,7 @@ export { createOpenAIBackend } from './backend.js'
 export type { OpenAIBackendOptions } from './backend.js'
 export {
   chatCompletion,
+  chatCompletionStream,
   chatCompletionsUrl,
   extractOpenAIMessageContent,
   toOpenAIUsage,
@@ -9,6 +10,7 @@ export {
 export type {
   OpenAIChatCompletionOptions,
   OpenAIChatResponse,
+  OpenAIChatStreamOptions,
   OpenAIContentPart,
   OpenAIErrorResponse,
   OpenAIMessage,

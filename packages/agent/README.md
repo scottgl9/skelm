@@ -15,7 +15,7 @@ No dependency on Pi, Opencode, or ACP. The agent loop, the tool surface, and the
 | `mcp` | `true` — unknown tool names fall through to `ctx.mcpHost.invokeTool` |
 | `skills` | `true` — `load_skill` is gated by `allowedSkills` |
 | `toolPermissions` | `'native'` — every tool calls `TrustEnforcer` before its side effect |
-| `streaming` | `false` |
+| `streaming` | `true` — agent-loop turns stream over SSE (`stream: true`) and emit one `step.partial` event per content delta when the run has an event sink; without a sink the loop issues plain non-streaming requests |
 
 ## Install
 
