@@ -159,6 +159,8 @@ export interface GatewayManagers {
 export interface GatewayContext {
   // ── core stores / services ──────────────────────────────────────────────
   readonly stateDir: string
+  /** Project root used to resolve registry globs and the workflow-package store. */
+  readonly projectRoot: string
   readonly runStore: RunStore
   readonly events: EventBus
   readonly registries: GatewayRegistries
