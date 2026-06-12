@@ -58,9 +58,12 @@ value:ModelProviderBase
 value:ModelRegistry
 value:NoopAuditWriter
 value:NotImplementedError
+value:PACKAGE_MANIFEST_FILENAME
 value:PERSISTENT_TURN_STEP_ID
 value:PERSISTENT_WORKFLOW_NAMESPACE
 value:PROTOCOL_VERSION
+value:PackageIntegrityError
+value:PackageManifestError
 value:PermissionDeniedError
 value:PermissionResolver
 value:PersistentSessionLockedError
@@ -162,6 +165,7 @@ value:nextCronFireTime
 value:parallel
 value:parseCronExpression
 value:parseDuration
+value:parsePackageManifest
 value:parseSkill
 value:persistentWorkflow
 value:pickExport
@@ -180,6 +184,7 @@ value:timeoutSignal
 value:timingSafeStringEqual
 value:toErrorMessage
 value:validate
+value:validatePackageManifest
 value:wait
 type:AcpBackendOptions
 type:AcpPromptResult
@@ -395,6 +400,12 @@ type:WaitStep
 type:WebhookTriggerConfig
 type:WhenPredicate
 type:WorkflowInvocation
+type:WorkflowPackageManifest
+type:WorkflowPackageSecretRef
+type:WorkflowPackageSelfTest
+type:WorkflowPackageSkelmSection
+type:WorkflowPackageTrigger
+type:WorkflowPackageWorkflowEntry
 type:WorkflowPlugin
 type:WorkflowStateStore
 type:WorkspaceManagerOptions

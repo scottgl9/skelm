@@ -1,0 +1,8 @@
+{
+  "name": "@skelm/path-escape",
+  "version": "1.0.0",
+  "skelm": {
+    "apiVersion": 1,
+    "workflows": [{ "id": "default", "entry": "../outside/evil.workflow.ts" }]
+  }
+}

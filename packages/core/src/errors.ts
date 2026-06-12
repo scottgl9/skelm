@@ -168,6 +168,30 @@ export class DelegationDepthError extends Error {
   }
 }
 
+/** Thrown when a workflow package manifest (skelm.package.json) is missing, malformed, or invalid. */
+export class PackageManifestError extends Error {
+  override readonly name = 'PackageManifestError'
+  constructor(
+    message: string,
+    readonly source?: string,
+  ) {
+    super(message)
+  }
+}
+
+/** Thrown when a workflow package's contents do not match their recorded integrity hash. */
+export class PackageIntegrityError extends Error {
+  override readonly name = 'PackageIntegrityError'
+  constructor(
+    message: string,
+    readonly packageName: string,
+    readonly expected?: string,
+    readonly actual?: string,
+  ) {
+    super(message)
+  }
+}
+
 /** Thrown when a registry operation violates uniqueness or lookup invariants. */
 export class RegistryError extends Error {
   override readonly name = 'RegistryError'

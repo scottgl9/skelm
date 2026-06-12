@@ -1,0 +1,8 @@
+{
+  "name": "@skelm/bad-api",
+  "version": "1.0.0",
+  "skelm": {
+    "apiVersion": 2,
+    "workflows": [{ "id": "default", "entry": "index.workflow.ts" }]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@skelm/duplicate-ids",
+  "version": "1.0.0",
+  "skelm": {
+    "apiVersion": 1,
+    "workflows": [
+      { "id": "default", "entry": "a.workflow.ts" },
+      { "id": "default", "entry": "b.workflow.ts" }
+    ]
+  }
+}

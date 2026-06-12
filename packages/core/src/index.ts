@@ -232,6 +232,8 @@ export {
   DelegationDepthError,
   ExecConfigError,
   InvokePipelineNotFoundError,
+  PackageIntegrityError,
+  PackageManifestError,
   PermissionDeniedError,
   RegistryError,
   RunCancelledError,
@@ -243,6 +245,19 @@ export {
   serializeError,
   toErrorMessage,
 } from './errors.js'
+export {
+  PACKAGE_MANIFEST_FILENAME,
+  parsePackageManifest,
+  validatePackageManifest,
+} from './packages/index.js'
+export type {
+  WorkflowPackageManifest,
+  WorkflowPackageSecretRef,
+  WorkflowPackageSelfTest,
+  WorkflowPackageSkelmSection,
+  WorkflowPackageTrigger,
+  WorkflowPackageWorkflowEntry,
+} from './packages/index.js'
 export { EventBus, terminalEventTypeFor } from './events.js'
 export type { EventListener, RunEvent, RunEventType } from './events.js'
 export { CRON_LOOKAHEAD_MS, nextCronFireTime, parseCronExpression } from './cron-expression.js'
