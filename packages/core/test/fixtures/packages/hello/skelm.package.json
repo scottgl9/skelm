@@ -1,0 +1,20 @@
+{
+  "name": "@skelm/hello",
+  "version": "0.1.0",
+  "description": "Minimal fixture workflow package for the package substrate tests.",
+  "license": "MIT",
+  "skelm": {
+    "apiVersion": 1,
+    "requiredSkelmVersion": ">=0.4.0",
+    "workflows": [
+      {
+        "id": "default",
+        "entry": "workflows/hello.workflow.ts",
+        "kind": "pipeline",
+        "description": "Greets someone by name."
+      }
+    ],
+    "secrets": [{ "name": "HELLO_TOKEN", "description": "Example secret reference." }],
+    "triggers": [{ "id": "daily", "kind": "cron", "description": "Daily greeting." }]
+  }
+}

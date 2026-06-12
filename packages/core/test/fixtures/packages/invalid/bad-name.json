@@ -1,0 +1,8 @@
+{
+  "name": "Not A Valid Name!",
+  "version": "1.0.0",
+  "skelm": {
+    "apiVersion": 1,
+    "workflows": [{ "id": "default", "entry": "index.workflow.ts" }]
+  }
+}
