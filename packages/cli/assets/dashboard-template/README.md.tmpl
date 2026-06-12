@@ -7,6 +7,9 @@ skelm gateway start --foreground
 skelm dashboard start
 ```
 
+By default the dashboard listens on `127.0.0.1:14740` and proxies to the
+gateway at `127.0.0.1:14738`. Port `14739` is left free for the gateway proxy.
+
 Configuration lives in `dashboard.config.mts`. For bearer-auth gateways, set
 `SKELM_DASHBOARD_TOKEN` or pass `--token` to `skelm dashboard start`.
 

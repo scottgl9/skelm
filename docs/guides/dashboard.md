@@ -24,6 +24,10 @@ The generated project has no local dependencies. `skelm dashboard start`
 imports `src/server.mts` directly and serves `src/public/app.mts` as `/app.js`
 after stripping TypeScript types with Node's built-in loader.
 
+By default the dashboard listens on `127.0.0.1:14740` and proxies to the
+gateway at `127.0.0.1:14738`. The dashboard intentionally avoids `14739`,
+which is the gateway egress proxy default.
+
 ## Gateway connection
 
 Set the gateway URL and bearer token with flags or environment variables:
@@ -47,6 +51,8 @@ The dashboard reads and mutates the real gateway:
 
 - health, config, runtime metadata, backends, agents, MCP servers
 - workflow listing and workflow execution
+- workflow imports from `.zip`, `.mts`, and `.ts` files through
+  `/v1/workflows/register`
 - run history, run details, run events, event streams, artifacts
 - audit entries and audit-chain verification
 - approval approve/reject flows

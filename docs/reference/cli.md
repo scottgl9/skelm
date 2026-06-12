@@ -276,6 +276,9 @@ browser app, and proxies `/api/*` to the configured gateway. For bearer-auth
 gateways, pass `--token` or set `SKELM_DASHBOARD_TOKEN`; the token is injected
 server-side and is not stored in the browser.
 
+The default dashboard port is `14740`; the default gateway URL is
+`http://127.0.0.1:14738`. Port `14739` is reserved for the gateway egress proxy.
+
 ### `skelm validate <pipeline.ts>`
 
 Static check that the pipeline imports cleanly and its declared schemas/steps

@@ -1,4 +1,5 @@
-import { statSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
+import { readdir, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { type FSWatcher, watch } from 'chokidar'
 
@@ -22,8 +23,11 @@ const DEFAULT_DEBOUNCE_MS = 100
 
 export class FileWatchTrigger {
   private watcher: FSWatcher | null = null
+  private pollTimer: NodeJS.Timeout | null = null
   private timers = new Map<string, NodeJS.Timeout>()
   private pendingEvents = new Map<string, FileWatchEvent>()
+  private usingPollingFallback = false
+  private pollSnapshot = new Map<string, string>()
   private readonly watchedPath: string
   private readonly watchedIsFile: boolean
   private readonly allowedEvents: ReadonlySet<FileWatchEvent>
@@ -38,18 +42,25 @@ export class FileWatchTrigger {
 
   start(onFire: (payload: FileWatchPayload) => void, onError?: (err: Error) => void): void {
     this.stop()
-    let acceptingEvents = false
+    this.pollSnapshot = captureSnapshotSync(this.watchedPath, this.watchedIsFile)
+    this.startWatcher(onFire, onError, false)
+  }
+
+  private startWatcher(
+    onFire: (payload: FileWatchPayload) => void,
+    onError: ((err: Error) => void) | undefined,
+    usePolling: boolean,
+  ): void {
+    this.usingPollingFallback = usePolling
     this.watcher = watch(this.watchedPath, {
-      ignoreInitial: false,
-      persistent: false,
+      ignoreInitial: true,
+      persistent: true,
+      usePolling,
+      ...(usePolling ? { interval: 50 } : {}),
     })
     const queueWatchedEvent = (event: FileWatchEvent, path: string) => {
-      if (!acceptingEvents) return
       this.queueEvent(event, this.normalizePath(path), onFire)
     }
-    this.watcher.on('ready', () => {
-      acceptingEvents = true
-    })
     this.watcher.on('add', (path) => queueWatchedEvent('create', path))
     this.watcher.on('addDir', (path) => {
       const changedPath = this.normalizePath(path)
@@ -59,13 +70,68 @@ export class FileWatchTrigger {
     this.watcher.on('unlink', (path) => queueWatchedEvent('delete', path))
     this.watcher.on('unlinkDir', (path) => queueWatchedEvent('delete', path))
     this.watcher.on('error', (err) => {
-      onError?.(err instanceof Error ? err : new Error(String(err)))
+      const error = err instanceof Error ? err : new Error(String(err))
+      if (!this.usingPollingFallback && error.message.includes('ENOSPC')) {
+        onError?.(error)
+        this.watcher?.close().catch(() => {})
+        this.watcher = null
+        void this.startPollingFallback(onFire, onError)
+        return
+      }
+      onError?.(error)
     })
+  }
+
+  private async startPollingFallback(
+    onFire: (payload: FileWatchPayload) => void,
+    onError?: (err: Error) => void,
+  ): Promise<void> {
+    this.usingPollingFallback = true
+    this.pollTimer = setInterval(() => {
+      void this.pollOnce(onFire, onError)
+    }, 50)
+    this.pollTimer.unref?.()
+  }
+
+  private async pollOnce(
+    onFire: (payload: FileWatchPayload) => void,
+    onError?: (err: Error) => void,
+  ): Promise<void> {
+    try {
+      const next = await this.captureSnapshot()
+      const previous = this.pollSnapshot
+      for (const [path, stamp] of next) {
+        const last = previous.get(path)
+        if (last === undefined) this.queueEvent('create', path, onFire)
+        else if (last !== stamp) this.queueEvent('update', path, onFire)
+      }
+      for (const path of previous.keys()) {
+        if (!next.has(path)) this.queueEvent('delete', path, onFire)
+      }
+      this.pollSnapshot = next
+    } catch (err) {
+      onError?.(err instanceof Error ? err : new Error(String(err)))
+    }
+  }
+
+  private async captureSnapshot(): Promise<Map<string, string>> {
+    const snapshot = new Map<string, string>()
+    if (this.watchedIsFile) {
+      const info = await stat(this.watchedPath)
+      snapshot.set(this.watchedPath, `${info.mtimeMs}:${info.size}`)
+      return snapshot
+    }
+    await walkDirectory(this.watchedPath, snapshot)
+    return snapshot
   }
 
   stop(): void {
     this.watcher?.close()
     this.watcher = null
+    if (this.pollTimer !== null) clearInterval(this.pollTimer)
+    this.pollTimer = null
+    this.usingPollingFallback = false
+    this.pollSnapshot.clear()
     for (const timer of this.timers.values()) clearTimeout(timer)
     this.timers.clear()
     this.pendingEvents.clear()
@@ -112,4 +178,41 @@ function mergeEvents(
   if (incoming === 'delete' || existing === 'delete') return 'delete'
   if (incoming === 'create' || existing === 'create') return 'create'
   return incoming
+}
+
+async function walkDirectory(dir: string, snapshot: Map<string, string>): Promise<void> {
+  const entries = await readdir(dir, { withFileTypes: true })
+  for (const entry of entries) {
+    const path = resolve(dir, entry.name)
+    if (entry.isDirectory()) {
+      await walkDirectory(path, snapshot)
+      continue
+    }
+    const info = await stat(path)
+    snapshot.set(path, `${info.mtimeMs}:${info.size}`)
+  }
+}
+
+function captureSnapshotSync(path: string, watchedIsFile: boolean): Map<string, string> {
+  const snapshot = new Map<string, string>()
+  if (watchedIsFile) {
+    const info = statSync(path)
+    snapshot.set(path, `${info.mtimeMs}:${info.size}`)
+    return snapshot
+  }
+  walkDirectorySync(path, snapshot)
+  return snapshot
+}
+
+function walkDirectorySync(dir: string, snapshot: Map<string, string>): void {
+  const entries = statSync(dir).isDirectory() ? readdirSync(dir, { withFileTypes: true }) : []
+  for (const entry of entries) {
+    const path = resolve(dir, entry.name)
+    if (entry.isDirectory()) {
+      walkDirectorySync(path, snapshot)
+      continue
+    }
+    const info = statSync(path)
+    snapshot.set(path, `${info.mtimeMs}:${info.size}`)
+  }
 }

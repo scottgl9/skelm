@@ -25,8 +25,11 @@ describe('skelm dashboard', () => {
     expect(pkg.dependencies).toBeUndefined()
     expect(pkg.devDependencies).toBeUndefined()
     expect(readFileSync(join(target, 'dashboard.config.mts'), 'utf8')).toContain('DashboardConfig')
+    expect(readFileSync(join(target, 'dashboard.config.mts'), 'utf8')).toContain('14740')
     expect(readFileSync(join(target, 'src/server.mts'), 'utf8')).toContain('startDashboardServer')
-    expect(readFileSync(join(target, 'src/public/app.mts'), 'utf8')).toContain('type Page')
+    expect(readFileSync(join(target, 'src/public/logo-icon.svg'), 'utf8')).toContain('<svg')
+    expect(readFileSync(join(target, 'src/public/index.html'), 'utf8')).toContain('/logo-icon.svg')
+    expect(readFileSync(join(target, 'src/public/app.mts'), 'utf8')).toContain('Upload Workflow')
   })
 
   it('starts from the CLI without a local install step', async () => {
