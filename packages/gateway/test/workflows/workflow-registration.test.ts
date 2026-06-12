@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { MemoryRunStore, type Run, type RunStatus, code, pipeline } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Gateway } from '../../src/index.js'
@@ -217,11 +217,13 @@ describe('/v1/workflows/*', () => {
     await fs.writeFile(b, 'export default {}')
     const { gw, base } = await bootGateway()
     try {
-      await fetch(`${base}/v1/workflows/register`, {
+      const first = await fetch(`${base}/v1/workflows/register`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id: 'flow', source: { type: 'path', path: a } }),
       })
+      expect(first.status).toBe(200)
+      const firstBody = (await first.json()) as { workflow: { sourcePath: string } }
       const put = await fetch(`${base}/v1/workflows/flow`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -232,12 +234,39 @@ describe('/v1/workflows/*', () => {
       expect(body.workflow.sourceKind).toBe('managed')
       expect(body.workflow.originPath).toBe(b)
       expect(body.workflow.sourcePath).not.toBe(b)
+      expect(body.workflow.sourcePath).not.toBe(firstBody.workflow.sourcePath)
       expect(body.workflow.sourcePath.startsWith(join(stateDir, 'managed-workflows'))).toBe(true)
+      expect((await fs.stat(firstBody.workflow.sourcePath)).isFile()).toBe(true)
 
       const del = await fetch(`${base}/v1/workflows/flow`, { method: 'DELETE' })
       expect(del.status).toBe(200)
       const after = await fetch(`${base}/v1/workflows`).then((r) => r.json())
       expect(after.find((e: { id: string }) => e.id === 'flow')).toBeUndefined()
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('keeps dist artifacts beside the workflow when materializing a managed copy', async () => {
+    await fs.mkdir(join(projectRoot, 'workflows', 'dist'), { recursive: true })
+    const wfPath = join(projectRoot, 'workflows', 'dist-backed.workflow.ts')
+    await fs.writeFile(wfPath, 'export default {}')
+    await fs.writeFile(join(projectRoot, 'workflows', 'dist', 'step.js'), 'export default 1')
+    const { gw, base } = await bootGateway()
+    try {
+      const res = await fetch(`${base}/v1/workflows/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 'dist-backed',
+          source: { type: 'path', path: wfPath },
+        }),
+      })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { workflow: { sourcePath: string } }
+      const copied = join(dirname(body.workflow.sourcePath), 'dist', 'step.js')
+      const stats = await fs.stat(copied)
+      expect(stats.isFile()).toBe(true)
     } finally {
       await gw.stop()
     }
