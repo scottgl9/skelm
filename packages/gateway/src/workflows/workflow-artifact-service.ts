@@ -1,8 +1,8 @@
 import {
   lstat,
   mkdir,
-  readdir,
   readFile,
+  readdir,
   realpath,
   rename,
   rm,
@@ -12,7 +12,7 @@ import {
 import { dirname, join, relative, sep } from 'node:path'
 import { WorkflowRegistrationError } from './workflow-registration-service.js'
 
-const EXCLUDED_DIRS = new Set(['.git', '.skelm', 'node_modules', 'coverage', 'dist'])
+const EXCLUDED_DIRS = new Set(['.git', '.skelm', 'node_modules', 'coverage'])
 
 export interface WorkflowArtifactOptions {
   artifactRoot: string
@@ -55,15 +55,14 @@ export class WorkflowArtifactService {
         : undefined
     if (configPath !== undefined) assertWithin(configPath, sourceRoot, 'config path')
 
-    const artifactDir = this.destinationFor(input.id)
     const parentDir = this.parentFor(input.id)
+    const artifactDir = this.destinationFor(input.id)
     const staging = `${artifactDir}.tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const bytes = { total: 0 }
     try {
       await mkdir(parentDir, { recursive: true })
       await copyTree(sourceRoot, staging, this.options.maxBytes, bytes)
       await symlinkNearestNodeModules(sourceRoot, staging)
-      await rm(artifactDir, { recursive: true, force: true })
       await rename(staging, artifactDir)
     } catch (err) {
       await rm(staging, { recursive: true, force: true }).catch(() => {})
@@ -85,7 +84,7 @@ export class WorkflowArtifactService {
   }
 
   destinationFor(id: string): string {
-    return join(this.parentFor(id), 'current')
+    return join(this.parentFor(id), revisionSegment())
   }
 
   private parentFor(id: string): string {
@@ -152,4 +151,8 @@ function assertWithin(target: string, root: string, label: string): void {
   if (target !== root && !target.startsWith(normRoot)) {
     throw new WorkflowRegistrationError(400, `${label} is outside the workflow source root`)
   }
+}
+
+function revisionSegment(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }

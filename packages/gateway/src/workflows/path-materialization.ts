@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
 import { dirname, join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { CONFIG_FILENAMES, pickExport, type SkelmConfig } from '@skelm/core'
+import { CONFIG_FILENAMES, type SkelmConfig, pickExport } from '@skelm/core'
 import type { GatewayContext } from '../lifecycle/gateway-types.js'
 import {
   WorkflowRegistrationError,

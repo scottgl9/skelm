@@ -44,6 +44,8 @@ export class SuspendApprovalGate implements ApprovalGate {
       timer?: NodeJS.Timeout
     }
   > = new Map()
+  private persistChain: Promise<void> = Promise.resolve()
+  private auditChain: Promise<void> = Promise.resolve()
 
   constructor(private readonly opts: SuspendApprovalGateOptions = {}) {}
 
@@ -159,29 +161,30 @@ export class SuspendApprovalGate implements ApprovalGate {
   }
 
   /** Reject all pending approvals — used during gateway stop. */
-  drain(reason = 'gateway stopping'): void {
-    for (const [id, entry] of this.pending) {
+  async drain(reason = 'gateway stopping'): Promise<void> {
+    const pending = Array.from(this.pending.entries())
+    for (const [, entry] of pending) {
       if (entry.timer !== undefined) clearTimeout(entry.timer)
-      // Same audit-then-reject ordering as deliver()/timeout: ensure the
-      // 'approval.cancelled' row hits disk before the awaiting promise
-      // is settled, so a fast crash during drain still leaves a complete
-      // forensic record for the operator.
-      void this.audit({
-        runId: entry.request.runId,
-        actor: 'gateway',
-        action: 'approval.cancelled',
-        details: {
-          approvalId: id,
-          stepId: entry.request.stepId,
-          requestedAction: entry.request.action,
-          reason,
-        },
-      }).finally(() => {
-        entry.reject(new Error(`approval ${id} cancelled: ${reason}`))
-      })
     }
     this.pending.clear()
-    void this.persist()
+    await Promise.allSettled([
+      this.persist(),
+      ...pending.map(([id, entry]) =>
+        this.audit({
+          runId: entry.request.runId,
+          actor: 'gateway',
+          action: 'approval.cancelled',
+          details: {
+            approvalId: id,
+            stepId: entry.request.stepId,
+            requestedAction: entry.request.action,
+            reason,
+          },
+        }).finally(() => {
+          entry.reject(new Error(`approval ${id} cancelled: ${reason}`))
+        }),
+      ),
+    ])
   }
 
   private async audit(event: {
@@ -190,34 +193,43 @@ export class SuspendApprovalGate implements ApprovalGate {
     action: string
     details: Readonly<Record<string, unknown>>
   }): Promise<void> {
-    if (this.opts.auditWriter === undefined) return
-    try {
-      await this.opts.auditWriter.write(event)
-    } catch (err) {
-      // Audit failures must not affect approval flow, but they must not vanish
-      // either — an approval decision dropping out of the durable record is a
-      // forensic gap. Surface it instead of swallowing silently.
-      const detail = err instanceof Error ? err.message : String(err)
-      process.stderr.write(
-        `[skelm audit] approval write failed (action=${event.action} run=${event.runId}): ${detail}\n`,
-      )
+    if (this.opts.auditWriter === undefined) return Promise.resolve()
+    const write = async () => {
+      try {
+        await this.opts.auditWriter?.write(event)
+      } catch (err) {
+        // Audit failures must not affect approval flow, but they must not vanish
+        // either — an approval decision dropping out of the durable record is a
+        // forensic gap. Surface it instead of swallowing silently.
+        const detail = err instanceof Error ? err.message : String(err)
+        process.stderr.write(
+          `[skelm audit] approval write failed (action=${event.action} run=${event.runId}): ${detail}\n`,
+        )
+      }
     }
+    this.auditChain = this.auditChain.then(write, write)
+    return this.auditChain
   }
 
   private async persist(): Promise<void> {
-    if (this.opts.persistPath === undefined) return
-    try {
-      await fs.mkdir(dirname(this.opts.persistPath), { recursive: true })
-      const snapshot = this.list().map((p) => ({
-        id: p.id,
-        runId: p.request.runId,
-        stepId: p.request.stepId,
-        action: p.request.action,
-        createdAt: p.createdAt,
-      }))
-      await fs.writeFile(this.opts.persistPath, JSON.stringify(snapshot, null, 2))
-    } catch {
-      // Best-effort — chain audit captures the request itself.
+    const persistPath = this.opts.persistPath
+    if (persistPath === undefined) return Promise.resolve()
+    const write = async () => {
+      try {
+        await fs.mkdir(dirname(persistPath), { recursive: true })
+        const snapshot = this.list().map((p) => ({
+          id: p.id,
+          runId: p.request.runId,
+          stepId: p.request.stepId,
+          action: p.request.action,
+          createdAt: p.createdAt,
+        }))
+        await fs.writeFile(persistPath, JSON.stringify(snapshot, null, 2))
+      } catch {
+        // Best-effort — chain audit captures the request itself.
+      }
     }
+    this.persistChain = this.persistChain.then(write, write)
+    return this.persistChain
   }
 }

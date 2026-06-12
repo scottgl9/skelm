@@ -827,7 +827,7 @@ export class Gateway implements GatewayContext {
         ])
       }
       const gate = this.enforcementInternal?.approvalGate
-      if (gate instanceof SuspendApprovalGate) gate.drain('gateway stopping')
+      if (gate instanceof SuspendApprovalGate) await gate.drain('gateway stopping')
       await removeDiscovery(this.discoveryPath)
       await releaseLockfile(this.lockfilePath)
     })()

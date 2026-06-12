@@ -13,12 +13,12 @@ import {
 } from '@skelm/core'
 
 import type { GatewayContext } from '../lifecycle/gateway-types.js'
+import { pipelineTriggerToSpec } from '../triggers/pipeline-trigger-to-spec.js'
 import {
   loadManagedConfig,
   materializePathWorkflow,
   projectArtifactId,
 } from '../workflows/path-materialization.js'
-import { pipelineTriggerToSpec } from '../triggers/pipeline-trigger-to-spec.js'
 import { WorkflowRegistrationError } from '../workflows/workflow-registration-service.js'
 
 const WORKFLOW_RE = /\.(?:workflow|pipeline)\.m?ts$/

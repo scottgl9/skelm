@@ -153,6 +153,7 @@ export class FileWatchTrigger {
     onFire: (payload: FileWatchPayload) => void,
   ): void {
     if (!this.allowedEvents.has(mapped)) return
+    if (!this.watchedIsFile && changedPath === this.watchedPath && mapped === 'update') return
     const key = changedPath
     this.pendingEvents.set(key, mergeEvents(this.pendingEvents.get(key), mapped))
     const existing = this.timers.get(key)
