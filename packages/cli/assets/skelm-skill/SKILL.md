@@ -224,6 +224,12 @@ skelm describe <workflow-id-or-path> --format mermaid
 
 # View run history
 skelm history --last 10 --json
+
+# Validate a pipeline statically
+skelm validate ./workflows/ticket-to-pr.workflow.mts
+
+# Manage workflow packages
+skelm package install ./my-package.tgz
 ```
 
 Full CLI reference at [references/cli.md](references/cli.md). Exit codes: `0` ok, `1` CLI error, `2` schema validation, `3` run failed, `4` cancelled, `5` wait timeout, `6` permission denied.
@@ -278,3 +284,8 @@ bash skill/skelm/scripts/new-pipeline.sh my-pipeline "What this pipeline does"
 ```
 
 This copies `assets/pipeline.template.ts` to `./my-pipeline.pipeline.mts` and substitutes the id and description. Use `assets/agent-pipeline.template.ts` for pipelines that include an agent step.
+
+Alternatively, use the conversational builder to author a workflow via chat:
+```bash
+skelm builder
+```

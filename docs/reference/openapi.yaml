@@ -882,6 +882,63 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '501': { description: Gateway has no workflow loader }
 
+  /v1/workflows/{id}/source/apply:
+    post:
+      summary: Apply declarative graph edits to a workflow's TypeScript source
+      description: >
+        Turns a small set of safe, declarative graph edits (reorderSteps,
+        setStepField, addStep, removeStep) into a reviewable patch against the
+        workflow's authored TypeScript source. The TypeScript stays the single
+        source of truth; codeOwned regions (inline run functions, branch/loop
+        predicates, forEach factories) are never rewritten — edits that target
+        them are refused with 422 reason "code-owned" and require manual
+        editing. dryRun defaults to TRUE: a request that does not explicitly
+        send dryRun: false never writes and returns the preview diff only.
+        With dryRun: false the workflow's source path is re-validated against
+        the allowed registration roots (path escapes are refused and the
+        denial is audited), the generated source is validated by loading it
+        through the gateway's workflow loader BEFORE any write, the file is
+        replaced atomically, and a workflow.source.apply audit event is
+        written carrying the workflow id, path, and edit count — never the
+        source body. Accepts either the registry id or the authored workflow
+        id; URL-encode ids containing `/`.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [edits]
+              properties:
+                edits:
+                  type: array
+                  minItems: 1
+                  items: { $ref: '#/components/schemas/GraphEdit' }
+                dryRun:
+                  type: boolean
+                  default: true
+                  description: Defaults to true; only an explicit false writes.
+      responses:
+        '200':
+          description: Edits applied (or previewed when dryRun)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApplyWorkflowSourceResult' }
+        '400': { description: Invalid body, or the source path escapes the allowed roots }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: >
+            Edit refused (reason code-owned / unsupported / not-found /
+            invalid-source) or the generated source failed load validation.
+            Nothing was written.
+        '501': { description: Gateway has no workflow loader }
+
   /v1/tasks:
     get:
       summary: List detached tasks
@@ -1380,6 +1437,82 @@ components:
         executableProfiles:
           type: array
           items: { type: string }
+    GraphEdit:
+      description: >
+        A single safe, declarative edit against a workflow's source. Values
+        must be JSON-serializable literals; author code is not expressible.
+      oneOf:
+        - type: object
+          required: [kind, pipelineId, orderedStepIds]
+          properties:
+            kind: { type: string, enum: [reorderSteps] }
+            pipelineId: { type: string }
+            orderedStepIds:
+              type: array
+              items: { type: string }
+        - type: object
+          required: [kind, stepId, field, value]
+          properties:
+            kind: { type: string, enum: [setStepField] }
+            stepId: { type: string }
+            field:
+              type: string
+              description: >
+                Declarative fields only, whitelisted per step kind (e.g.
+                infer backend/model/temperature/maxTokens/prompt/system; wait
+                message/timeoutMs; invoke pipelineId/input; module-backed code
+                module/export/timeoutMs). Code-owned fields are refused.
+            value:
+              description: JSON-serializable literal.
+        - type: object
+          required: [kind, step]
+          properties:
+            kind: { type: string, enum: [addStep] }
+            afterStepId: { type: string }
+            step: { $ref: '#/components/schemas/DeclarativeStepSpec' }
+        - type: object
+          required: [kind, stepId]
+          properties:
+            kind: { type: string, enum: [removeStep] }
+            stepId: { type: string }
+    DeclarativeStepSpec:
+      type: object
+      description: >
+        A step expressible purely declaratively — wait, invoke, infer/agent
+        with literal config, or code with a module path. Inline run functions,
+        predicates, and factories are intentionally not representable; specs
+        carrying extra fields are refused.
+      required: [kind, id]
+      properties:
+        kind: { type: string, enum: [wait, invoke, infer, agent, code] }
+        id: { type: string }
+        message: { type: string }
+        timeoutMs: { type: number }
+        pipelineId: { type: string }
+        input: { description: JSON-serializable literal. }
+        prompt: { type: string }
+        backend: { type: string }
+        model: { type: string }
+        system: { type: string }
+        temperature: { type: number }
+        maxTokens: { type: number }
+        maxTurns: { type: number }
+        module: { type: string }
+        export: { type: string }
+    ApplyWorkflowSourceResult:
+      type: object
+      required: [ok, applied, diff]
+      properties:
+        ok: { type: boolean }
+        applied:
+          type: boolean
+          description: True only when dryRun was explicitly false and the file was rewritten.
+        dryRun:
+          type: boolean
+          description: Present (true) on dry-run responses.
+        diff:
+          type: string
+          description: Unified diff (old → new) of the workflow source for review.
     WorkflowHealth:
       type: object
       properties:

@@ -1,6 +1,14 @@
-import { mkdir, readdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { type RunStatus, type RunSummary, deriveWorkflowGraph, describePipeline } from '@skelm/core'
+import { randomBytes } from 'node:crypto'
+import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises'
+import { dirname, extname, join } from 'node:path'
+import {
+  type GraphEdit,
+  type RunStatus,
+  type RunSummary,
+  applyGraphEdits,
+  deriveWorkflowGraph,
+  describePipeline,
+} from '@skelm/core'
 import {
   type H3Event,
   type MultiPartData,
@@ -104,32 +112,107 @@ export function registerWorkflowRoutes(router: Router, gateway: GatewayContext):
       if (loader === undefined) {
         throw createError({ statusCode: 501, message: 'gateway has no workflow loader' })
       }
-      // Resolve by registry id first; fall back to scanning for a workflow
-      // whose declared id matches — mirrors GET /pipelines/:id so callers can
-      // pass either the registry id or the authored workflow id.
-      let entry = gateway.registries.workflows.get(id)
-      let workflow: Awaited<ReturnType<typeof loadWorkflowForGraph>> | undefined
-      if (entry === undefined) {
-        for (const candidate of gateway.registries.workflows.list()) {
-          try {
-            const w = await loadWorkflowForGraph(loader, candidate.id, candidate.path)
-            if (w.id === id) {
-              entry = candidate
-              workflow = w
-              break
-            }
-          } catch {
-            // skip workflows that fail to load
-          }
-        }
-      }
+      const { entry, workflow: preloaded } = await resolveWorkflowEntry(gateway, loader, id)
       if (entry === undefined) {
         throw createError({ statusCode: 404, message: 'workflow not found' })
       }
-      if (workflow === undefined) {
-        workflow = await loadWorkflowForGraph(loader, entry.id, entry.path)
-      }
+      const workflow = preloaded ?? (await loadWorkflowForGraph(loader, entry.id, entry.path))
       return deriveWorkflowGraph(workflow)
+    }),
+  )
+
+  router.post(
+    '/v1/workflows/:id/source/apply',
+    eventHandler(async (event) => {
+      const id = decodeMaybe(event.context.params?.id)
+      if (id === undefined || id.length === 0) {
+        throw createError({ statusCode: 400, message: 'workflow id is required' })
+      }
+      const body = (await readBody(event).catch(() => ({}))) as {
+        edits?: unknown
+        dryRun?: unknown
+      }
+      if (!Array.isArray(body.edits) || body.edits.length === 0) {
+        throw createError({ statusCode: 400, message: 'edits must be a non-empty array' })
+      }
+      if (body.dryRun !== undefined && typeof body.dryRun !== 'boolean') {
+        throw createError({ statusCode: 400, message: 'dryRun must be a boolean' })
+      }
+      // Default-safe: a request that does not explicitly set dryRun: false
+      // never writes.
+      const dryRun = body.dryRun !== false
+      const loader = requireLoader(gateway)
+      const { entry } = await resolveWorkflowEntry(gateway, loader, id)
+      if (entry === undefined) {
+        throw createError({ statusCode: 404, message: 'workflow not found' })
+      }
+      // Path safety: the workflow's source must still resolve (realpath, so
+      // symlink swaps cannot escape) inside the allowed registration roots.
+      let real: string
+      try {
+        real = await service.resolveSourcePath(entry.path)
+      } catch (err) {
+        if (err instanceof WorkflowRegistrationError) {
+          await gateway.enforcement.auditWriter.write({
+            actor: 'gateway',
+            action: 'workflow.source.apply',
+            details: {
+              workflowId: id,
+              denied: true,
+              reason: 'source path is outside the allowed roots',
+            },
+          })
+          throw createError({
+            statusCode: 400,
+            message: 'workflow source path is outside the allowed roots',
+          })
+        }
+        throw err
+      }
+      const source = await readFile(real, 'utf8')
+      const result = applyGraphEdits(source, body.edits as GraphEdit[])
+      if (!result.ok) {
+        throw createError({
+          statusCode: 422,
+          message: `${result.reason}: ${result.detail}`,
+          data: { reason: result.reason, detail: result.detail },
+        })
+      }
+      // Validate the generated source by loading it through the gateway's own
+      // loader BEFORE any write reaches the workflow file. The probe lives in
+      // the same directory so relative imports resolve identically.
+      const probe = join(
+        dirname(real),
+        `.skelm-apply-${randomBytes(8).toString('hex')}${extname(real)}`,
+      )
+      await writeFile(probe, result.source, 'utf8')
+      let applied = false
+      try {
+        try {
+          await loadWorkflowForGraph(loader, `apply:${id}:${probe}`, probe)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          throw createError({
+            statusCode: 422,
+            message: `generated source failed validation: ${message}`,
+          })
+        }
+        if (!dryRun) {
+          await rename(probe, real)
+          applied = true
+        }
+      } finally {
+        if (!applied) await unlink(probe).catch(() => {})
+      }
+      if (!applied) {
+        return { ok: true, applied: false, dryRun: true, diff: result.diff }
+      }
+      await gateway.enforcement.auditWriter.write({
+        actor: 'gateway',
+        action: 'workflow.source.apply',
+        details: { workflowId: id, path: real, editCount: body.edits.length },
+      })
+      return { ok: true, applied: true, diff: result.diff }
     }),
   )
 
@@ -262,6 +345,33 @@ export function registerWorkflowRoutes(router: Router, gateway: GatewayContext):
       }
     }),
   )
+}
+
+/**
+ * Resolve a caller-supplied workflow id to a registry entry: registry id
+ * first, then a fallback scan for a workflow whose authored (declared) id
+ * matches — mirrors GET /pipelines/:id so callers can pass either form.
+ * Returns the loaded workflow too when the fallback scan already loaded it.
+ */
+async function resolveWorkflowEntry(
+  gateway: GatewayContext,
+  loader: (registryId: string, absolutePath: string) => Promise<unknown>,
+  id: string,
+): Promise<{
+  entry: { id: string; path: string } | undefined
+  workflow?: Awaited<ReturnType<typeof loadWorkflowForGraph>>
+}> {
+  const direct = gateway.registries.workflows.get(id)
+  if (direct !== undefined) return { entry: direct }
+  for (const candidate of gateway.registries.workflows.list()) {
+    try {
+      const workflow = await loadWorkflowForGraph(loader, candidate.id, candidate.path)
+      if (workflow.id === id) return { entry: candidate, workflow }
+    } catch {
+      // skip workflows that fail to load
+    }
+  }
+  return { entry: undefined }
 }
 
 interface WorkflowLoadData {

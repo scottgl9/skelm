@@ -113,6 +113,7 @@ value:WorkflowPackageStore
 value:WorkspaceManager
 value:acquireSession
 value:agent
+value:applyGraphEdits
 value:assertEgressEnforceable
 value:branch
 value:buildSystemPrompt
@@ -262,6 +263,7 @@ type:ContentPart
 type:Context
 type:CronTriggerConfig
 type:CustomTriggerConfig
+type:DeclarativeStepSpec
 type:DelegateResult
 type:DeliveryTarget
 type:DescribedStep
@@ -285,6 +287,10 @@ type:GitHubPushEvent
 type:GitHubTriggerConfig
 type:GitHubWebhookEvent
 type:GraphEdge
+type:GraphEdit
+type:GraphEditFailureReason
+type:GraphEditResult
+type:GraphEditValue
 type:GraphNode
 type:GraphNodeKind
 type:InferStep

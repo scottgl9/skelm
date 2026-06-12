@@ -5,10 +5,12 @@ workflow. It is the public contract consumed by the dashboard graph viewer and
 the future visual block editor.
 
 The authored **TypeScript stays the single source of truth.** The graph is
-always *re-derived* from the workflow; it is never edited in place and never
-round-tripped back into source. `deriveWorkflowGraph()` is pure and
-deterministic — the same workflow always yields an identical graph — and never
-serializes an author function or a secret value.
+always *re-derived* from the workflow; it is never edited in place.
+`deriveWorkflowGraph()` is pure and deterministic — the same workflow always
+yields an identical graph — and never serializes an author function or a
+secret value. Visual edits flow the other way: a small set of declarative
+[graph edits](#round-tripping-graph-edits-to-source) is applied to the
+TypeScript source as a reviewable patch, and the graph is then re-derived.
 
 ## Producing a graph
 
@@ -97,6 +99,69 @@ safely round-tripped to TypeScript source:
 - a `forEach` step (its `items` selector and per-item `step` factory are author
   functions).
 
-The future visual block editor **must never rewrite a `codeOwned` region**. The
+The visual block editor **must never rewrite a `codeOwned` region**. The
 TypeScript source remains authoritative for those regions; the editor may only
 reshape the structural, non-code-owned parts of the graph.
+
+## Round-tripping graph edits to source
+
+`applyGraphEdits(source, edits)` from `@skelm/core` turns declarative graph
+edits into a reviewable patch against the workflow's TypeScript source. The
+TypeScript stays the single source of truth: edits are applied as targeted
+text splices over the parsed AST (the `typescript` compiler API), never as a
+full re-emit, so formatting and comments outside the edited spans are
+preserved byte-for-byte.
+
+### `GraphEdit`
+
+A small union of safe, declarative edits — nothing else is expressible:
+
+| Kind           | Shape                                              | Effect |
+| -------------- | -------------------------------------------------- | ------ |
+| `reorderSteps` | `{ pipelineId, orderedStepIds }`                   | Permute the top-level `steps` array. Elements move verbatim, so code-owned steps may be reordered. |
+| `setStepField` | `{ stepId, field, value }`                         | Set a declarative field to a JSON-serializable literal. Per-kind whitelist (e.g. `infer`: `backend`/`model`/`temperature`/`maxTokens`/`prompt`/`system`; `wait`: `message`/`timeoutMs`; `invoke`: `pipelineId`/`input`; module-backed `code`: `module`/`export`/`timeoutMs`). |
+| `addStep`      | `{ afterStepId?, step: DeclarativeStepSpec }`      | Insert a generated builder call. Only declaratively-expressible steps: `wait`, `invoke`, `infer` / `agent` with literal config, and `code` with a `module:` path — never an inline `run`. The named import from `skelm` / `@skelm/core` is augmented when needed. |
+| `removeStep`   | `{ stepId }`                                       | Remove a top-level step that carries **no** author code. |
+
+### Result and refusal semantics
+
+`applyGraphEdits` returns
+`{ ok: true, source, diff }` — the full modified source plus a unified diff
+for preview — or `{ ok: false, reason, detail }` with `reason` one of:
+
+- **`code-owned`** — the edit targets or would alter a code-owned region:
+  `setStepField` on a `branch` / `loop` / `forEach` step or a `code` step with
+  an inline `run`; any field that holds author code (`run`, `on`, `while`,
+  `items`, `step`, `when`, …); or `removeStep` of a step whose source carries
+  any function. These regions require **manual TypeScript editing** — the
+  round-trip never rewrites them.
+- **`unsupported`** — the edit cannot be represented safely: non-whitelisted
+  fields, step-id renames, non-literal values, ambiguous step ids, comments
+  between steps that a splice would drop, a spec smuggling extra fields, etc.
+- **`not-found`** / **`invalid-source`** — unknown step/pipeline id; source
+  that does not parse.
+
+Every `ok: true` result is verified before it is returned: the emitted source
+must parse, and **every author function in the input must appear
+byte-identically in the output** (relocation by `reorderSteps` is the only
+permitted change). `applyGraphEdits` never emits source it cannot guarantee is
+equivalent to the input except for the intended edit.
+
+### Applying edits through the gateway
+
+`POST /v1/workflows/:id/source/apply` (bearer-authed) is the only write path.
+Body: `{ edits: GraphEdit[], dryRun?: boolean }`.
+
+- **`dryRun` defaults to `true`** — a request that does not explicitly send
+  `dryRun: false` never writes; it returns `{ ok, applied: false, dryRun:
+  true, diff }` for preview.
+- The workflow's source path is re-validated against the allowed registration
+  roots (realpath, same check as `POST /v1/workflows/register`) on every call;
+  escapes are refused and the denial is audited.
+- The generated source is validated **before any write** by loading it through
+  the gateway's workflow loader (a probe file in the same directory, so
+  relative imports resolve identically). A refusal or load failure returns
+  `422` and leaves the file untouched.
+- `dryRun: false` writes atomically (probe + rename) and appends a
+  `workflow.source.apply` audit event carrying the workflow id, path, and edit
+  count — never the source body.

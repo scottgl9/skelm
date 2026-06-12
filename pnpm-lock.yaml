@@ -243,6 +243,9 @@ importers:
       pg:
         specifier: ^8.21.0
         version: 8.21.0
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
       vitest:
         specifier: ^4.1.0
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@22.19.17)(vite@8.0.16)
@@ -256,9 +259,6 @@ importers:
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0
-      typescript:
-        specifier: ^5.6.3
-        version: 5.9.3
 
   packages/gateway:
     dependencies:
@@ -4371,7 +4371,6 @@ packages:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
     hasBin: true
-    dev: true
 
   /uc.micro@2.1.0:
     resolution: {integrity: sha512-ARDJmphmdvUk6Glw7y9DQ2bFkKBHwQHLi2lsaH6PPmz/Ka9sFOBsBluozhDltWmnv9u/cF6Rt87znRTPV+yp/A==}
