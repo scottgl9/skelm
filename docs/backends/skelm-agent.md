@@ -205,15 +205,38 @@ Every tool calls `TrustEnforcer` before its side effect. Denials emit
 | `fs_read_glob`  | `fsRead`                                                                                          | List a directory with optional `*` pattern filter.                                                    |
 | `fs_write`      | `fsWrite`                                                                                         | Write / overwrite a file; creates parent dirs.                                                        |
 | `fs_append`     | `fsWrite`                                                                                         | Append to a file (creates if missing).                                                                |
+| `read_file`     | `fsRead`                                                                                          | Read a file or a 1-based line range; output is line-number-prefixed for precise edits.               |
+| `write_file`    | `fsWrite`                                                                                         | Create / overwrite a file (named alias of `fs_write`; prefer `edit_file` for in-place changes).      |
+| `edit_file`     | `fsWrite`                                                                                         | In-place edit — unique find/replace (or `replaceAll`) **or** a 1-based line-range swap. Refuses without writing on a missing / ambiguous find. |
 | `http_fetch`    | `canFetch(hostname)` (URL parsed first — non-http schemes rejected)                               | GET / POST / PUT / DELETE / PATCH; response body capped at 4 KiB.                                     |
 | `ls`            | `fsRead`                                                                                          | Directory listing.                                                                                    |
 | `get_secret`    | `allowedSecrets` (resolved by the runner)                                                         | Returns a masked-availability sentinel — **never** the raw secret value.                              |
 | `load_skill`    | `allowedSkills` via `canLoadSkill`                                                                | Returns the resolved skill's metadata.                                                                |
-| `exec`          | `canExec(basename(command))` + `canRead(cwd)` if `cwd` is supplied                                | Run an allowed binary; `spawn()` with `shell: false` — argv array is passed directly, no shell expansion. |
+| `exec`          | `canExec(basename(command))` + `canRead(cwd)` if `cwd` is supplied                                | Run an allowed binary; `spawn()` with `shell: false` — argv array is passed directly, no shell expansion. `executableProfiles` expand into `allowedExecutables` at resolution time. |
+| `memory_search` | `agentmemory` op `search` via `canUseAgentmemory`                                                 | Hybrid (BM25 + vector + graph) search over cross-session memory.                                      |
+| `memory_save`   | `agentmemory` op `save`                                                                           | Persist an insight for later recall.                                                                  |
+| `memory_recall` | `agentmemory` op `recall`                                                                         | Recall recent / by-session memories.                                                                  |
 
 Unknown tool names fall through to `ctx.mcpHost.invokeTool(name, args)`
 (gated by `canCallTool`), so MCP servers registered with the runner show up
 automatically.
+
+### Contract tools: run state, artifacts, browser
+
+Three further tool groups are **contract-defined**: they are advertised only
+when their handle/provider is wired onto the agent step (via
+`builtinToolsForContext(ctx)`), and absent the handle they are not advertised
+and refuse if reached.
+
+| Tool(s) | Gate | Status |
+|---|---|---|
+| `state_get` / `state_set` | Presence of a run-state handle (default-deny: no handle ⇒ denied). No new permission dimension. | Contract defined; **pending runtime wiring** — `BackendContext` does not yet expose a state handle, so today these tools report "not available". |
+| `artifact_put` | Presence of an artifact sink. | Contract defined; **pending runtime wiring** on `BackendContext`. |
+| `browser_navigate` / `browser_click` / `browser_type` / `browser_screenshot` / `browser_extract` | Requires a wired `BrowserProvider`; navigation routes through the **`network`** dimension (`canFetch(host)`), and `browser_screenshot` additionally requires an artifact sink. | **Contract only here — Playwright (or any driver) lands in a future `@skelm/browser-automation` package.** Hybrid placement: the typed contract and its permission posture live in `@skelm/agent`; the heavy driver dependency is deferred to the browser package. The posture reuses the existing `network` dimension plus an artifact sink rather than adding a new core permission dimension. Without a provider the browser tools are never advertised. |
+
+`BrowserProvider`, `StateHandle`, and `ArtifactHandle` are exported from
+`@skelm/agent` so `@skelm/browser-automation` and custom hosts can supply
+concrete handles.
 
 ### Notes on `exec`
 
@@ -239,8 +262,9 @@ automatically.
 | `allowedMcpServers`  | Server ids the agent may attach. Unknown tool names fall through to `ctx.mcpHost.invokeTool` only when the resolved server is permitted. |
 | `allowedSkills`      | `load_skill` only resolves ids in this set.                                                                 |
 | `allowedSecrets`     | `get_secret` only confirms availability for names in this set; the raw value is never returned to the model. |
-| `networkEgress`      | Gates `http_fetch` per-host. The LLM HTTP call to `baseUrl` is **not** gated by this — see Caveats.         |
-| `fsRead` / `fsWrite` | Path roots for read / write tools; enforced via `normalizePath`.                                            |
+| `networkEgress`      | Gates `http_fetch` per-host **and** `browser_navigate` (a browser navigation is network egress). The LLM HTTP call to `baseUrl` is **not** gated by this — see Caveats. |
+| `fsRead` / `fsWrite` | Path roots for read / write tools (`fs_*`, `read_file`, `write_file`, `edit_file`); enforced via `normalizePath`. |
+| `agentmemory`        | Per-op gate (`search` / `save` / `recall` / …) for the `memory_*` tools via `canUseAgentmemory`; each op defaults to deny. |
 
 ## Security model
 

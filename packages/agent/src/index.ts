@@ -55,4 +55,12 @@ export type { MessageRole, SessionMessage, SessionToolCall } from './session/mes
 export { FileSessionStore } from './session/store/file-store.js'
 export { InMemorySessionStore } from './session/store/in-memory.js'
 export type { SessionStore } from './session/store/types.js'
+export type {
+  BrowserActionResult,
+  BrowserProvider,
+  BrowserScreenshot,
+} from './tools/browser.js'
+export { BROWSER_TOOLS } from './tools/browser.js'
+export type { ArtifactHandle, StateHandle } from './tools/state.js'
+export { STATE_TOOLS } from './tools/state.js'
 export type { SkelmAgentBackendCapabilities } from './types.js'
