@@ -4,7 +4,7 @@
 // layers; the manifest is always validated before package files are copied.
 
 import { createHash } from 'node:crypto'
-import { cp, mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
+import { cp, lstat, mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { PackageIntegrityError, PackageManifestError } from '../errors.js'
 import {
@@ -36,6 +36,12 @@ export function encodePackageDirName(name: string): string {
 async function walkFiles(root: string, prefix = '', out: string[] = []): Promise<string[]> {
   for (const entry of await readdir(join(root, prefix), { withFileTypes: true })) {
     const rel = prefix === '' ? entry.name : `${prefix}/${entry.name}`
+    if (entry.isSymbolicLink()) {
+      throw new PackageManifestError(
+        `workflow package contents must not contain symbolic links: ${join(root, rel)}`,
+        join(root, rel),
+      )
+    }
     if (entry.isDirectory()) {
       await walkFiles(root, rel, out)
     } else if (entry.isFile()) {
@@ -86,6 +92,39 @@ async function readManifest(dir: string): Promise<WorkflowPackageManifest> {
   return parsePackageManifest(raw, manifestPath)
 }
 
+async function assertPackageEntriesAreFiles(
+  sourceDir: string,
+  manifest: WorkflowPackageManifest,
+): Promise<void> {
+  const manifestPath = join(sourceDir, PACKAGE_MANIFEST_FILENAME)
+  const entries = manifest.skelm.workflows.map((w) => w.entry)
+  if (manifest.skelm.selfTest !== undefined) entries.push(manifest.skelm.selfTest.entry)
+  for (const entry of entries) {
+    const entryPath = join(sourceDir, entry)
+    let info: Awaited<ReturnType<typeof lstat>>
+    try {
+      info = await lstat(entryPath)
+    } catch {
+      throw new PackageManifestError(
+        `entry "${entry}" declared by ${manifest.name} does not exist in ${sourceDir}`,
+        manifestPath,
+      )
+    }
+    if (info.isSymbolicLink()) {
+      throw new PackageManifestError(
+        `entry "${entry}" declared by ${manifest.name} must not be a symbolic link`,
+        manifestPath,
+      )
+    }
+    if (!info.isFile()) {
+      throw new PackageManifestError(
+        `entry "${entry}" declared by ${manifest.name} must be a file in ${sourceDir}`,
+        manifestPath,
+      )
+    }
+  }
+}
+
 /**
  * Install cache for workflow packages, rooted at
  * `<projectRoot>/.skelm/packages/<encoded-name>/<version>/`. Installs are
@@ -109,18 +148,8 @@ export class WorkflowPackageStore {
    */
   async installFromDirectory(sourceDir: string): Promise<InstalledWorkflowPackage> {
     const manifest = await readManifest(sourceDir)
-    const entries = manifest.skelm.workflows.map((w) => w.entry)
-    if (manifest.skelm.selfTest !== undefined) entries.push(manifest.skelm.selfTest.entry)
-    for (const entry of entries) {
-      try {
-        await stat(join(sourceDir, entry))
-      } catch {
-        throw new PackageManifestError(
-          `entry "${entry}" declared by ${manifest.name} does not exist in ${sourceDir}`,
-          join(sourceDir, PACKAGE_MANIFEST_FILENAME),
-        )
-      }
-    }
+    await walkFiles(sourceDir)
+    await assertPackageEntriesAreFiles(sourceDir, manifest)
 
     const dest = this.packageDir(manifest.name, manifest.version)
     // Staged sibling + rename so a crash mid-copy never leaves a partial
@@ -201,7 +230,19 @@ export class WorkflowPackageStore {
         expectedIntegrity,
       )
     }
-    const actual = await computePackageIntegrity(dir)
+    let actual: string
+    try {
+      actual = await computePackageIntegrity(dir)
+    } catch (error) {
+      if (error instanceof PackageManifestError) {
+        throw new PackageIntegrityError(
+          `${name}@${version} failed integrity verification: ${error.message}`,
+          name,
+          expectedIntegrity,
+        )
+      }
+      throw error
+    }
     if (actual !== expectedIntegrity) {
       throw new PackageIntegrityError(
         `${name}@${version} failed integrity verification: expected ${expectedIntegrity}, got ${actual}`,

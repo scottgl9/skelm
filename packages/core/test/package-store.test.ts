@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -89,6 +89,56 @@ describe('WorkflowPackageStore', () => {
     }
   })
 
+  it('rejects a manifest whose declared entry path is a directory', async () => {
+    const source = await mkdtemp(join(tmpdir(), 'skelm-pkg-entry-dir-'))
+    try {
+      await mkdir(join(source, 'workflows'))
+      await writeFile(
+        join(source, 'skelm.package.json'),
+        JSON.stringify({
+          name: '@skelm/entry-dir',
+          version: '1.0.0',
+          skelm: { apiVersion: 1, workflows: [{ id: 'default', entry: 'workflows' }] },
+        }),
+      )
+      await expect(store.installFromDirectory(source)).rejects.toThrow(
+        /entry "workflows".*must be a file/,
+      )
+    } finally {
+      await rm(source, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects packages that contain symbolic links', async () => {
+    const source = await mkdtemp(join(tmpdir(), 'skelm-pkg-symlink-'))
+    const outside = await mkdtemp(join(tmpdir(), 'skelm-pkg-symlink-target-'))
+    try {
+      await mkdir(join(source, 'workflows'))
+      await writeFile(join(outside, 'outside.workflow.ts'), 'export default {}\n')
+      await symlink(
+        join(outside, 'outside.workflow.ts'),
+        join(source, 'workflows', 'link.workflow.ts'),
+      )
+      await writeFile(
+        join(source, 'skelm.package.json'),
+        JSON.stringify({
+          name: '@skelm/symlink',
+          version: '1.0.0',
+          skelm: {
+            apiVersion: 1,
+            workflows: [{ id: 'default', entry: 'workflows/link.workflow.ts' }],
+          },
+        }),
+      )
+      await expect(store.installFromDirectory(source)).rejects.toThrow(
+        /must not contain symbolic links/,
+      )
+    } finally {
+      await rm(source, { recursive: true, force: true })
+      await rm(outside, { recursive: true, force: true })
+    }
+  })
+
   it('lists and gets installed packages, and remove() deletes them', async () => {
     expect(await store.list()).toEqual([])
     await store.installFromDirectory(HELLO_DIR)
@@ -139,6 +189,18 @@ describe('WorkflowPackageStore', () => {
     expect(integrityError.packageName).toBe('@skelm/hello')
     expect(integrityError.expected).toBe(installed.integrity)
     expect(integrityError.actual).toBe(after)
+  })
+
+  it('verify() fails when package contents contain a symbolic link', async () => {
+    const installed = await store.installFromDirectory(HELLO_DIR)
+    await symlink(
+      join(installed.dir, 'workflows', 'hello.workflow.ts'),
+      join(installed.dir, 'workflows', 'hello-link.workflow.ts'),
+    )
+
+    await expect(store.verify('@skelm/hello', '0.1.0', installed.integrity)).rejects.toThrow(
+      /symbolic links/,
+    )
   })
 
   it('verify() fails for a package that is not installed', async () => {

@@ -6,7 +6,7 @@ A **workflow package** is a directory of workflows distributed as a unit, descri
 
 - **Manifest before code.** `skelm.package.json` is parsed and validated before any package file is copied or any package code is loaded. An invalid manifest fails with a typed `PackageManifestError` and nothing reaches the cache.
 - **Install is always explicit.** Packages are never auto-loaded from `node_modules`; they enter a project only through an install into the package store.
-- **Entry paths cannot escape the package.** Every `entry` is a package-relative, forward-slash path; absolute paths and `..` segments are rejected at validation time.
+- **Entry paths cannot escape the package.** Every `entry` is a package-relative, forward-slash path; absolute paths and `..` segments are rejected at validation time, and install rejects symlinked entrypoints or any symlink anywhere under the package.
 - **Triggers are offered, never armed.** Triggers declared in a manifest are always disabled by default; an operator must enable each one explicitly.
 - **Secrets are references only.** A manifest declares the secret *names* a package needs. Values are resolved by the gateway's secret resolver at run time and never appear in manifests, the lockfile, or the store.
 - **Permissions stay default-deny.** Per-workflow `permissions` declare a ceiling; omission means deny, exactly as for hand-authored workflows.
@@ -86,9 +86,9 @@ Parse and validate manifests with `parsePackageManifest(raw, source?)` (raw JSON
 <projectRoot>/.skelm/packages/<encoded-name>/<version>/
 ```
 
-Scoped names are encoded into one path segment by replacing `/` with `__` (`@skelm/hello` → `@skelm__hello`). The store is a core library; it performs no network access. `installFromDirectory(sourceDir)` validates the manifest and checks every declared entry file exists *before* copying, stages the copy next to the final path, and renames it into place so a crash never leaves a partial install. `list()`, `get(name, version)`, and `remove(name, version?)` manage the cache; cached manifests are re-validated on every load.
+Scoped names are encoded into one path segment by replacing `/` with `__` (`@skelm/hello` → `@skelm__hello`). The store is a core library; it performs no network access. `installFromDirectory(sourceDir)` validates the manifest, rejects symlinks anywhere under the package, and checks every declared workflow or self-test entry exists as a regular file *before* copying. It stages the copy next to the final path and renames it into place so a crash never leaves a partial install. `list()`, `get(name, version)`, and `remove(name, version?)` manage the cache; cached manifests are re-validated on every load.
 
-`computePackageIntegrity(dir)` returns a deterministic `sha256:<hex>` over the package's sorted relative paths and file bytes. `store.verify(name, version, expectedIntegrity)` recomputes it and throws `PackageIntegrityError` on any mismatch — the tamper check used against the lockfile record.
+`computePackageIntegrity(dir)` returns a deterministic `sha256:<hex>` over the package's sorted relative paths and file bytes, and rejects package trees that contain symlinks. `store.verify(name, version, expectedIntegrity)` recomputes it and throws `PackageIntegrityError` on any mismatch or symlinked contents — the tamper check used against the lockfile record.
 
 ## Lockfile: `skelm.lock.json`
 
