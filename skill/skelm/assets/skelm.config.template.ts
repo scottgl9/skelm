@@ -47,6 +47,7 @@ export default defineConfig({
     // Project-wide permission baseline. Step-level permissions intersect with these.
     permissions: {
       allowedExecutables: [],
+      executableProfiles: [],
       allowedTools: [],
       allowedSkills: [],
       allowedMcpServers: [],
@@ -70,6 +71,14 @@ export default defineConfig({
       //   networkEgress: { allowHosts: ['api.github.com'] },
       // },
     },
+
+    // Named executable profiles steps can reference via permissions: { executableProfiles: ['...'] }
+    // executableProfiles: {
+    //   'base-tools': {
+    //     executables: ['rg', 'find', 'cat', 'ls'],
+    //     description: 'Basic search and read utilities',
+    //   },
+    // },
   },
 
   secrets: { driver: 'env' },

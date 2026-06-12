@@ -36,6 +36,7 @@ export default pipeline({
         // Declare only what the agent actually needs; everything else stays denied.
         allowedTools: [], // e.g. ['gh.*'] or ['bash', 'rg']
         allowedExecutables: [], // e.g. ['git', 'node']
+        executableProfiles: [], // named profiles expanded for this layer
         allowedMcpServers: [], // ids from skelm.config.ts registries.mcpServers
         allowedSkills: [], // skill ids the agent may load
         fsRead: ['./'], // path roots agent may read
