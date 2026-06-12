@@ -1,10 +1,19 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { EXIT } from '../src/exit-codes.js'
 import { main } from '../src/main.js'
 
 const FIX = join(import.meta.dirname, 'fixtures')
+const tempDirs: string[] = []
+
+afterEach(async () => {
+  while (tempDirs.length > 0) {
+    await rm(tempDirs.pop() as string, { recursive: true, force: true })
+  }
+})
 
 describe('skelm validate', () => {
   it('exits 0 on a clean pipeline file', async () => {
@@ -65,6 +74,73 @@ describe('skelm validate', () => {
     expect(r.exitCode).toBe(EXIT.SCHEMA_VALIDATION)
     expect(r.stderr).toMatch(/unknown-executable-profile/)
     expect(r.stderr).toMatch(/doesNotExist/)
+  })
+
+  it('accepts an executable profile reference defined in skelm.gateway.*', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'skelm-validate-gateway-exec-'))
+    tempDirs.push(dir)
+    await writeFile(
+      join(dir, 'skelm.gateway.mts'),
+      `export default { defaults: { executableProfiles: { gitReadOnly: { executables: ['git'] } } } }\n`,
+    )
+    const workflow = join(dir, 'known-from-gateway.workflow.mts')
+    await writeFile(
+      workflow,
+      `import { agent, pipeline } from '@skelm/core'
+
+export default pipeline({
+  id: 'known-from-gateway',
+  steps: [
+    agent({
+      id: 'reviewer',
+      prompt: 'review this',
+      permissions: { executableProfiles: ['gitReadOnly'] },
+    }),
+  ],
+})
+`,
+    )
+    const r = await invoke(['validate', workflow])
+    expect(r.exitCode).toBe(EXIT.OK)
+    expect(r.stdout).toMatch(/ok:/)
+  })
+
+  it('flags unknown executable profiles referenced through a named permission profile', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'skelm-validate-profile-exec-'))
+    tempDirs.push(dir)
+    await writeFile(
+      join(dir, 'skelm.config.mts'),
+      `export default {
+  defaults: {
+    permissionProfiles: {
+      analyst: { executableProfiles: ['doesNotExist'] },
+    },
+  },
+}
+`,
+    )
+    const workflow = join(dir, 'named-profile.workflow.mts')
+    await writeFile(
+      workflow,
+      `import { agent, pipeline } from '@skelm/core'
+
+export default pipeline({
+  id: 'named-profile',
+  steps: [
+    agent({
+      id: 'reviewer',
+      prompt: 'review this',
+      permissions: { profile: 'analyst' },
+    }),
+  ],
+})
+`,
+    )
+    const r = await invoke(['validate', workflow])
+    expect(r.exitCode).toBe(EXIT.SCHEMA_VALIDATION)
+    expect(r.stderr).toMatch(/unknown-executable-profile/)
+    expect(r.stderr).toMatch(/doesNotExist/)
+    expect(r.stderr).toMatch(/analyst/)
   })
 })
 

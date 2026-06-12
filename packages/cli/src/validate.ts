@@ -3,7 +3,7 @@ import type { AgentPermissions, PersistentWorkflow, Pipeline, Step } from '@skel
 import { isPersistentWorkflow } from '@skelm/core'
 import { EXIT, type ExitCode } from './exit-codes.js'
 import { writeJsonOutput } from './internal/output.js'
-import { loadSkelmConfig } from './load-config.js'
+import { loadGatewayConfig, loadSkelmConfig } from './load-config.js'
 import { CliError, loadWorkflowFromFile } from './load-workflow.js'
 
 /**
@@ -77,10 +77,22 @@ export async function validateCommand(
   // reference fails the run before it starts, so surface it here first. A
   // missing or unloadable config defines nothing — references stay flagged
   // (fail-closed), matching the runtime behavior.
+  const workflowDir = dirname(resolve(args.path))
   let definedExecutableProfiles: ReadonlySet<string>
+  let permissionProfiles: Readonly<Record<string, AgentPermissions>> | undefined
   try {
-    const { config } = await loadSkelmConfig({ fromDir: dirname(resolve(args.path)) })
-    definedExecutableProfiles = new Set(Object.keys(config.defaults?.executableProfiles ?? {}))
+    const [{ config: workflowConfig }, gatewayResult] = await Promise.all([
+      loadSkelmConfig({ fromDir: workflowDir }),
+      loadGatewayConfig({ fromDir: workflowDir }).catch(() => undefined),
+    ])
+    permissionProfiles = {
+      ...(gatewayResult?.config.defaults?.permissionProfiles ?? {}),
+      ...(workflowConfig.defaults?.permissionProfiles ?? {}),
+    }
+    definedExecutableProfiles = new Set([
+      ...Object.keys(gatewayResult?.config.defaults?.executableProfiles ?? {}),
+      ...Object.keys(workflowConfig.defaults?.executableProfiles ?? {}),
+    ])
   } catch {
     definedExecutableProfiles = new Set()
   }
@@ -99,6 +111,7 @@ export async function validateCommand(
     checkExecutableProfileRefs(
       workflow.agent?.permissions,
       'workflow.agent.permissions',
+      permissionProfiles,
       definedExecutableProfiles,
       issues,
     )
@@ -118,13 +131,21 @@ export async function validateCommand(
     return finish(args, io, issues)
   }
 
-  walkSteps(pipeline.steps, 'pipeline', issues, new Set<string>(), definedExecutableProfiles)
+  walkSteps(
+    pipeline.steps,
+    'pipeline',
+    issues,
+    new Set<string>(),
+    permissionProfiles,
+    definedExecutableProfiles,
+  )
   return finish(args, io, issues)
 }
 
 function checkExecutableProfileRefs(
   permissions: AgentPermissions | undefined,
   at: string,
+  permissionProfiles: Readonly<Record<string, AgentPermissions>> | undefined,
   defined: ReadonlySet<string>,
   issues: ValidationIssue[],
 ): void {
@@ -137,6 +158,17 @@ function checkExecutableProfileRefs(
       })
     }
   }
+  const named =
+    permissions?.profile === undefined ? undefined : permissionProfiles?.[permissions.profile]
+  for (const name of named?.executableProfiles ?? []) {
+    if (!defined.has(name)) {
+      issues.push({
+        at: `${at}.profile`,
+        code: 'unknown-executable-profile',
+        message: `executable profile "${name}" from permission profile "${permissions?.profile}" is not defined in config defaults.executableProfiles; the run would fail before it starts`,
+      })
+    }
+  }
 }
 
 function walkSteps(
@@ -144,6 +176,7 @@ function walkSteps(
   scope: string,
   issues: ValidationIssue[],
   seenInScope: Set<string>,
+  permissionProfiles: Readonly<Record<string, AgentPermissions>> | undefined,
   definedExecutableProfiles: ReadonlySet<string>,
 ): void {
   for (let i = 0; i < steps.length; i++) {
@@ -159,7 +192,7 @@ function walkSteps(
     } else if (step.id) {
       seenInScope.add(step.id)
     }
-    inspectStep(step, at, issues, definedExecutableProfiles)
+    inspectStep(step, at, issues, permissionProfiles, definedExecutableProfiles)
   }
 }
 
@@ -167,11 +200,13 @@ function inspectStep(
   step: Step,
   at: string,
   issues: ValidationIssue[],
+  permissionProfiles: Readonly<Record<string, AgentPermissions>> | undefined,
   definedExecutableProfiles: ReadonlySet<string>,
 ): void {
   checkExecutableProfileRefs(
     (step as { permissions?: AgentPermissions }).permissions,
     `${at}.permissions`,
+    permissionProfiles,
     definedExecutableProfiles,
     issues,
   )
@@ -216,7 +251,14 @@ function inspectStep(
         })
         return
       }
-      walkSteps(step.steps, at, issues, new Set<string>(), definedExecutableProfiles)
+      walkSteps(
+        step.steps,
+        at,
+        issues,
+        new Set<string>(),
+        permissionProfiles,
+        definedExecutableProfiles,
+      )
       return
     }
     case 'branch': {
@@ -227,16 +269,30 @@ function inspectStep(
       }
       for (const k of keys) {
         const child = step.cases[k]
-        if (child) inspectStep(child, `${at}.cases.${k}`, issues, definedExecutableProfiles)
+        if (child)
+          inspectStep(
+            child,
+            `${at}.cases.${k}`,
+            issues,
+            permissionProfiles,
+            definedExecutableProfiles,
+          )
       }
       if (step.default)
-        inspectStep(step.default, `${at}.default`, issues, definedExecutableProfiles)
+        inspectStep(
+          step.default,
+          `${at}.default`,
+          issues,
+          permissionProfiles,
+          definedExecutableProfiles,
+        )
       return
     }
     case 'loop': {
       // loop carries a single nested Step value (not a factory) so we
       // recurse through it the same way we handle direct children.
-      if (step.step) inspectStep(step.step, `${at}.step`, issues, definedExecutableProfiles)
+      if (step.step)
+        inspectStep(step.step, `${at}.step`, issues, permissionProfiles, definedExecutableProfiles)
       return
     }
     case 'forEach': {
@@ -265,12 +321,14 @@ function inspectStep(
         `${at}.pipeline`,
         issues,
         new Set<string>(),
+        permissionProfiles,
         definedExecutableProfiles,
       )
       return
     }
     case 'idempotent': {
-      if (step.step) inspectStep(step.step, `${at}.step`, issues, definedExecutableProfiles)
+      if (step.step)
+        inspectStep(step.step, `${at}.step`, issues, permissionProfiles, definedExecutableProfiles)
       return
     }
     case 'code':
