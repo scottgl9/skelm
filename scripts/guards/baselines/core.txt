@@ -97,6 +97,7 @@ value:TriggerState
 value:TriggerStopError
 value:TriggerValidationError
 value:TrustEnforcer
+value:UnknownExecutableProfileError
 value:VERSION
 value:WaitTimeoutError
 value:WebhookTrigger
@@ -254,6 +255,7 @@ type:EventListener
 type:ExecFn
 type:ExecRequest
 type:ExecResult
+type:ExecutableProfileDefinition
 type:ExecutionStore
 type:ForEachStep
 type:GitHubIssueCommentEvent

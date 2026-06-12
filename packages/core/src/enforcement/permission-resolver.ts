@@ -6,6 +6,7 @@
 
 import {
   type AgentPermissions,
+  type ExecutableProfileDefinition,
   type ResolvePermissionsOptions,
   type ResolvedPolicy,
   resolvePermissions,
@@ -14,6 +15,8 @@ import {
 export interface PermissionResolverOptions {
   defaults?: AgentPermissions
   profiles?: Readonly<Record<string, AgentPermissions>>
+  /** Operator-defined executable profile definitions referenced by `permissions.executableProfiles`. */
+  executableProfiles?: Readonly<Record<string, ExecutableProfileDefinition>>
 }
 
 export class PermissionResolver {
@@ -28,6 +31,11 @@ export class PermissionResolver {
     stepLevel?: AgentPermissions,
     resolveOpts: ResolvePermissionsOptions = {},
   ): ResolvedPolicy {
-    return resolvePermissions(this.opts.defaults, stepLevel, this.opts.profiles ?? {}, resolveOpts)
+    return resolvePermissions(this.opts.defaults, stepLevel, this.opts.profiles ?? {}, {
+      ...(this.opts.executableProfiles !== undefined && {
+        executableProfiles: this.opts.executableProfiles,
+      }),
+      ...resolveOpts,
+    })
   }
 }

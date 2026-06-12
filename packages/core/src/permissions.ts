@@ -6,7 +6,7 @@
 import { lookup as dnsLookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 import { isAbsolute, resolve as resolvePath } from 'node:path'
-import { PermissionDeniedError } from './errors.js'
+import { PermissionDeniedError, UnknownExecutableProfileError } from './errors.js'
 import { isMetadataAddress } from './net-classify.js'
 
 /** Dimensions of the permission model. Each defaults to deny when omitted. */
@@ -102,6 +102,23 @@ export interface ApprovalPolicy {
   rememberFor?: number
 }
 
+/**
+ * Operator-defined named set of executables that permissions can reference by
+ * name via `AgentPermissions.executableProfiles`. Declared in skelm config
+ * (`defaults.executableProfiles`) and supplied to resolution only by the trust
+ * boundary — author input can reference profiles but never define them.
+ */
+export interface ExecutableProfileDefinition {
+  /** Human-readable summary shown by inspection surfaces. */
+  description?: string
+  /** Executables granted when the profile is referenced. Matched like `allowedExecutables`. */
+  executables: readonly string[]
+  /** Free-form operator notes (e.g. review/rotation guidance). */
+  notes?: string
+  /** Labels for grouping/filtering in inspection surfaces. */
+  tags?: readonly string[]
+}
+
 /** What an `agent()` step author writes. Every field is optional; default is deny. */
 export interface AgentPermissions {
   /** Named project profile applied before step-level narrowing. */
@@ -112,6 +129,15 @@ export interface AgentPermissions {
   deniedTools?: ToolMatcher
   /** Executables allowed for any exec/bash tool. */
   allowedExecutables?: readonly string[]
+  /**
+   * Named executable profiles (defined operator-side, see
+   * `ExecutableProfileDefinition`) expanded to the union of their executables
+   * for this layer. An explicit `allowedExecutables` on the same layer
+   * intersects with the expansion — it can only narrow, never widen. Unknown
+   * names throw `UnknownExecutableProfileError` before the run starts.
+   * Default-deny: omitted grants nothing.
+   */
+  executableProfiles?: readonly string[]
   /** MCP server ids permitted to attach. */
   allowedMcpServers?: readonly string[]
   /** Skill ids permitted to load. */
@@ -166,6 +192,13 @@ export interface ResolvedPolicy {
   readonly fsWrite: ReadonlySet<string>
   readonly approval: ApprovalPolicy | null
   readonly agentmemory: ResolvedAgentmemoryPolicy
+  /**
+   * Names of the executable profiles applied across the input layers.
+   * Informational metadata for inspect/audit surfaces — enforcement reads only
+   * `allowedExecutables`. Optional so hand-built policies stay valid; omitted
+   * is treated as the empty set.
+   */
+  readonly executableProfileNames?: ReadonlySet<string>
   /**
    * Full bypass: when `true`, `TrustEnforcer` short-circuits every dimension to
    * allow. Set only when an author requested it AND the operator granted it
@@ -222,6 +255,13 @@ export interface ResolvePermissionsOptions {
    * self-escalating.
    */
   grantUnrestricted?: boolean
+  /**
+   * Operator-defined executable profile definitions referenced by any layer's
+   * `executableProfiles`. Supplied only by the trust boundary (gateway / CLI
+   * config loading), never derived from author input — authors can reference
+   * profiles by name but cannot define them.
+   */
+  executableProfiles?: Readonly<Record<string, ExecutableProfileDefinition>>
 }
 
 /**
@@ -251,10 +291,15 @@ export function resolvePermissions(
   const requested = inputs.some((p) => p.requestUnrestricted === true)
   const unrestricted = opts.grantUnrestricted === true && requested
 
+  const executableProfileNames = new Set<string>()
+  const layerExecutables = inputs.map((p) =>
+    expandLayerExecutables(p, opts.executableProfiles ?? {}, executableProfileNames),
+  )
+
   return Object.freeze({
     allowedTools: intersectToolMatchers(inputs.map((p) => p.allowedTools)),
     deniedTools: unionToolMatchers(inputs.map((p) => p.deniedTools)),
-    allowedExecutables: intersectExecutables(inputs.map((p) => p.allowedExecutables)),
+    allowedExecutables: intersectExecutables(layerExecutables),
     allowedMcpServers: intersectStrings(inputs.map((p) => p.allowedMcpServers)),
     allowedSkills: intersectStrings(inputs.map((p) => p.allowedSkills)),
     allowedAgents: intersectToolMatchers(inputs.map((p) => p.delegation)),
@@ -264,8 +309,31 @@ export function resolvePermissions(
     fsWrite: intersectStrings(inputs.map((p) => p.fsWrite)),
     approval: lastDefined(inputs.map((p) => p.approval)) ?? null,
     agentmemory: intersectAgentmemory(inputs.map((p) => p.agentmemory)),
+    executableProfileNames,
     unrestricted,
   })
+}
+
+// Expands a layer's named executable profiles into the union of their
+// executables. An explicit allowedExecutables on the same layer intersects
+// with the expansion so the explicit list can only narrow it, never widen.
+function expandLayerExecutables(
+  p: AgentPermissions,
+  definitions: Readonly<Record<string, ExecutableProfileDefinition>>,
+  applied: Set<string>,
+): readonly string[] | undefined {
+  if (p.executableProfiles === undefined) return p.allowedExecutables
+  const expanded: string[] = []
+  for (const name of p.executableProfiles) {
+    const definition = definitions[name]
+    if (definition === undefined) throw new UnknownExecutableProfileError(name)
+    applied.add(name)
+    for (const executable of definition.executables) {
+      if (!expanded.includes(executable)) expanded.push(executable)
+    }
+  }
+  if (p.allowedExecutables === undefined) return expanded
+  return [...intersectExecutables([expanded, p.allowedExecutables])]
 }
 
 /**
@@ -289,6 +357,12 @@ export function intersectResolvedPolicies(
   if (ceiling.unrestricted === true) {
     return Object.freeze({ ...child, unrestricted: true })
   }
+  // Profile names are informational metadata; the union records every profile
+  // that shaped either side while the executable set itself stays intersected.
+  const executableProfileNames = unionProfileNames(
+    ceiling.executableProfileNames,
+    child.executableProfileNames,
+  )
   return Object.freeze({
     allowedTools: intersectResolvedMatchers(ceiling.allowedTools, child.allowedTools),
     deniedTools: unionResolvedMatchers(ceiling.deniedTools, child.deniedTools),
@@ -302,8 +376,18 @@ export function intersectResolvedPolicies(
     fsWrite: intersectStringSets(ceiling.fsWrite, child.fsWrite),
     approval: unionApproval(ceiling.approval, child.approval),
     agentmemory: intersectResolvedAgentmemory(ceiling.agentmemory, child.agentmemory),
+    ...(executableProfileNames !== undefined && { executableProfileNames }),
     unrestricted: false,
   })
+}
+
+function unionProfileNames(
+  a: ReadonlySet<string> | undefined,
+  b: ReadonlySet<string> | undefined,
+): ReadonlySet<string> | undefined {
+  if (a === undefined) return b
+  if (b === undefined) return a
+  return new Set([...a, ...b])
 }
 
 // Semantic intersection for ceiling bounding: the result matches an id iff
