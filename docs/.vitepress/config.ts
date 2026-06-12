@@ -146,6 +146,7 @@ export default defineConfig({
             { text: 'Pipeline Authoring', link: '/reference/pipeline-authoring' },
             { text: 'Agent Step', link: '/reference/agent-step' },
             { text: 'Gateway', link: '/reference/gateway' },
+            { text: 'Workflow Packages', link: '/reference/workflow-packages' },
             { text: 'OpenAPI', link: '/reference/openapi' },
           ],
         },
