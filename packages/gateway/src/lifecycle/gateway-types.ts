@@ -27,6 +27,7 @@ import type {
 } from '../registries/index.js'
 import type { TriggerCoordinator } from '../triggers/coordinator.js'
 import type { WorkflowArchiveService } from '../workflows/workflow-archive-service.js'
+import type { WorkflowArtifactService } from '../workflows/workflow-artifact-service.js'
 import type { WorkflowRegistrationService } from '../workflows/workflow-registration-service.js'
 import type { DiscoveryRecord } from './discovery.js'
 
@@ -194,6 +195,7 @@ export interface GatewayContext {
   getWorkflowLoader(): ((registryId: string, absolutePath: string) => Promise<unknown>) | undefined
   getWorkflowRegistrationService(): WorkflowRegistrationService
   getWorkflowArchiveService(): WorkflowArchiveService
+  getWorkflowArtifactService(): WorkflowArtifactService
   getAllowedRegistrationDirs(): string[]
   getWorkflowMaxArchiveBytes(): number
 

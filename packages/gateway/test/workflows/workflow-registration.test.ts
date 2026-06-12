@@ -99,6 +99,10 @@ describe('/v1/workflows/*', () => {
       expect(body.registered).toBe(true)
       expect(body.workflow.id).toBe('my-flow')
       expect(body.workflow.version).toBe('1.0.0')
+      expect(body.workflow.sourceKind).toBe('managed')
+      expect(body.workflow.originPath).toBe(wfPath)
+      expect(body.workflow.sourcePath).not.toBe(wfPath)
+      expect(body.workflow.sourcePath.startsWith(join(stateDir, 'managed-workflows'))).toBe(true)
 
       const list = await fetch(`${base}/pipelines`).then((r) => r.json())
       expect(list.some((e: { id: string }) => e.id === 'my-flow')).toBe(true)
@@ -225,7 +229,10 @@ describe('/v1/workflows/*', () => {
       })
       expect(put.status).toBe(200)
       const body = await put.json()
-      expect(body.workflow.sourcePath).toBe(b)
+      expect(body.workflow.sourceKind).toBe('managed')
+      expect(body.workflow.originPath).toBe(b)
+      expect(body.workflow.sourcePath).not.toBe(b)
+      expect(body.workflow.sourcePath.startsWith(join(stateDir, 'managed-workflows'))).toBe(true)
 
       const del = await fetch(`${base}/v1/workflows/flow`, { method: 'DELETE' })
       expect(del.status).toBe(200)

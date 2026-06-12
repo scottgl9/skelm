@@ -1,14 +1,8 @@
-import { pathToFileURL } from 'node:url'
-import {
-  Runner,
-  type SkelmConfig,
-  deriveWorkflowGraph,
-  describePipeline,
-  pickExport,
-} from '@skelm/core'
+import { Runner, deriveWorkflowGraph, describePipeline } from '@skelm/core'
 import { type Router, createError, eventHandler, readBody } from 'h3'
 import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { createSkillSource } from '../../registries/skill-source.js'
+import { loadManagedConfig, materializePathWorkflow } from '../../workflows/path-materialization.js'
 import {
   adhocPipelineId,
   decodeMaybe,
@@ -228,12 +222,17 @@ export function registerPipelineRoutes(router: Router, gateway: GatewayContext):
       const rawBody = await readBody(event).catch(() => undefined)
       const body =
         rawBody !== null && typeof rawBody === 'object'
-          ? (rawBody as { file?: unknown; input?: unknown })
+          ? (rawBody as { file?: unknown; input?: unknown; configPath?: unknown })
           : {}
       const filePath = await validateWorkflowFile(body.file)
       const id = adhocPipelineId(filePath)
       const input = body.input ?? {}
-      const pipeline = await loadPipelineFromPath(loader, id, filePath)
+      const managed = await materializePathWorkflow(gateway, {
+        id,
+        path: filePath,
+        ...(typeof body.configPath === 'string' && { configPath: body.configPath }),
+      })
+      const pipeline = await loadPipelineFromPath(loader, id, managed.entryPath)
       const enforcement = gateway.enforcement
       const runner = new Runner({
         approvalGate: enforcement.approvalGate,
@@ -253,10 +252,10 @@ export function registerPipelineRoutes(router: Router, gateway: GatewayContext):
         const handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
           runId,
           signal: controller.signal,
-          workflowPath: filePath,
+          workflowPath: managed.entryPath,
           skillSource: createSkillSource({
             registry: gateway.registries.skills,
-            workflowPath: filePath,
+            workflowPath: managed.entryPath,
           }),
           pipelineRegistry: makeGatewayPipelineRegistry(gateway),
           ...gateway.defaultPermissionRunOptions(pipeline.id),
@@ -298,6 +297,11 @@ export function registerPipelineRoutes(router: Router, gateway: GatewayContext):
       const filePath = await validateWorkflowFile(body.file)
       const id = adhocPipelineId(filePath)
       const input = body.input ?? {}
+      const managed = await materializePathWorkflow(gateway, {
+        id,
+        path: filePath,
+        ...(typeof body.configPath === 'string' && { configPath: body.configPath }),
+      })
 
       // Load the nearest skelm.config.* from the workflow file's directory when
       // the CLI resolved one and sent its path. Apply its defaults.permissions
@@ -307,26 +311,28 @@ export function registerPipelineRoutes(router: Router, gateway: GatewayContext):
         permissionProfiles?: Readonly<Record<string, import('@skelm/core').AgentPermissions>>
       } = {}
       const perFileBackends: { defaultAgentBackend?: string; defaultInferBackend?: string } = {}
-      if (typeof body.configPath === 'string') {
+      const configToLoad =
+        managed.configPath ??
+        (typeof body.configPath === 'string' && body.configPath.length > 0
+          ? body.configPath
+          : undefined)
+      if (configToLoad !== undefined) {
         try {
-          const mod = (await import(pathToFileURL(body.configPath).href)) as Record<string, unknown>
-          const fc = pickExport(mod, 'default') as SkelmConfig | undefined
-          if (fc !== null && typeof fc === 'object') {
-            if (fc.defaults?.permissions !== undefined)
-              perFilePermissions.defaultPermissions = fc.defaults.permissions
-            if (fc.defaults?.permissionProfiles !== undefined)
-              perFilePermissions.permissionProfiles = fc.defaults.permissionProfiles
-            const agentB = fc.backends?.agent ?? fc.backends?.default ?? fc.backend
-            const inferB = fc.backends?.infer ?? fc.backends?.default ?? fc.backend
-            if (typeof agentB === 'string') perFileBackends.defaultAgentBackend = agentB
-            if (typeof inferB === 'string') perFileBackends.defaultInferBackend = inferB
-          }
+          const fc = await loadManagedConfig(configToLoad)
+          if (fc.defaults?.permissions !== undefined)
+            perFilePermissions.defaultPermissions = fc.defaults.permissions
+          if (fc.defaults?.permissionProfiles !== undefined)
+            perFilePermissions.permissionProfiles = fc.defaults.permissionProfiles
+          const agentB = fc.backends?.agent ?? fc.backends?.default ?? fc.backend
+          const inferB = fc.backends?.infer ?? fc.backends?.default ?? fc.backend
+          if (typeof agentB === 'string') perFileBackends.defaultAgentBackend = agentB
+          if (typeof inferB === 'string') perFileBackends.defaultInferBackend = inferB
         } catch {
           // Config load failure is non-fatal for an adhoc run; gateway-wide defaults apply.
         }
       }
 
-      const pipeline = await loadPipelineFromPath(loader, id, filePath)
+      const pipeline = await loadPipelineFromPath(loader, id, managed.entryPath)
       const enforcement = gateway.enforcement
       const runner = new Runner({
         approvalGate: enforcement.approvalGate,
@@ -347,10 +353,10 @@ export function registerPipelineRoutes(router: Router, gateway: GatewayContext):
         handle = runner.start(pipeline as Parameters<Runner['start']>[0], input as never, {
           runId,
           signal: controller.signal,
-          workflowPath: filePath,
+          workflowPath: managed.entryPath,
           skillSource: createSkillSource({
             registry: gateway.registries.skills,
-            workflowPath: filePath,
+            workflowPath: managed.entryPath,
           }),
           pipelineRegistry: makeGatewayPipelineRegistry(gateway),
           ...gateway.defaultPermissionRunOptions(pipeline.id),

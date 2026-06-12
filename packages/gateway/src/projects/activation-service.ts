@@ -1,5 +1,5 @@
 import { readdir, realpath } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import {
@@ -13,6 +13,11 @@ import {
 } from '@skelm/core'
 
 import type { GatewayContext } from '../lifecycle/gateway-types.js'
+import {
+  loadManagedConfig,
+  materializePathWorkflow,
+  projectArtifactId,
+} from '../workflows/path-materialization.js'
 import { pipelineTriggerToSpec } from '../triggers/pipeline-trigger-to-spec.js'
 import { WorkflowRegistrationError } from '../workflows/workflow-registration-service.js'
 
@@ -113,6 +118,8 @@ export class ProjectActivationService {
   /** workflowId → project dir, so deactivate can clear its per-workflow
    *  permission ceiling and other per-project bookkeeping. */
   private readonly workflowProjectDirs = new Map<string, string>()
+  /** project dir → managed config artifact id, for activation/deactivation cleanup. */
+  private readonly projectConfigArtifacts = new Map<string, string>()
 
   constructor(private readonly gateway: GatewayContext) {}
 
@@ -153,21 +160,27 @@ export class ProjectActivationService {
       }
     }
 
+    const configArtifactId = projectArtifactId(realDir)
+    const managedConfig = await materializePathWorkflow(this.gateway, {
+      id: configArtifactId,
+      path: configPath,
+      configPath,
+      sourceRoot: realDir,
+    })
+    this.projectConfigArtifacts.set(realDir, configArtifactId)
+
     let dirConfig: SkelmConfig
     try {
-      const mod = (await import(pathToFileURL(configPath).href)) as Record<string, unknown>
-      dirConfig = pickExport(mod, 'default') as SkelmConfig
+      dirConfig = await loadManagedConfig(managedConfig.configPath ?? managedConfig.entryPath)
     } catch (err) {
       throw new ProjectActivationError(
         400,
         `failed to import ${configPath}: ${(err as Error).message}`,
       )
     }
-    if (typeof dirConfig !== 'object' || dirConfig === null) {
-      throw new ProjectActivationError(400, `${configPath} did not default-export a config object`)
-    }
 
     const refresh = this.active.has(realDir)
+    const managedProjectDir = dirname(managedConfig.configPath ?? managedConfig.entryPath)
 
     // 1. Queue drivers (live objects from the imported config).
     for (const entry of dirConfig.triggerSources ?? []) {
@@ -182,18 +195,34 @@ export class ProjectActivationService {
     for (const file of await discoverWorkflowFiles(realDir, dirConfig)) {
       let wf: { id?: unknown; triggers?: readonly Record<string, unknown>[] } | undefined
       try {
-        const mod = (await import(pathToFileURL(file).href)) as Record<string, unknown>
+        const managedFile = join(managedProjectDir, relative(realDir, file))
+        const mod = (await import(pathToFileURL(managedFile).href)) as Record<string, unknown>
         wf = pickExport(mod, 'default') as typeof wf
       } catch (err) {
         throw new ProjectActivationError(400, `failed to import ${file}: ${(err as Error).message}`)
       }
       if (wf === undefined || typeof wf.id !== 'string') continue
       const id = wf.id
-      const real = await service.resolveSourcePath(file)
-      await service.upsert({ id, sourcePath: real, sourceKind: 'path' })
+      const registered = await materializePathWorkflow(this.gateway, {
+        id,
+        path: file,
+        configPath,
+        sourceRoot: realDir,
+      })
+      await service.upsert({
+        id,
+        sourcePath: registered.entryPath,
+        sourceKind: 'managed',
+        originPath: registered.originPath,
+        originKind: 'path',
+      })
       const persistent = isPersistentWorkflow(wf)
       if (persistent) this.persistentIds.add(id)
-      workflows.push({ id, path: real, kind: persistent ? 'persistent-workflow' : 'pipeline' })
+      workflows.push({
+        id,
+        path: registered.entryPath,
+        kind: persistent ? 'persistent-workflow' : 'pipeline',
+      })
       // Pin the project's defaults.permissions + permissionProfiles to THIS
       // workflow id so the runtime ceiling is the project's, not whatever
       // operator-wide defaults the gateway happens to have. Keyed per
@@ -409,10 +438,20 @@ export class ProjectActivationService {
       triggersRemoved.push(r.spec.id)
     }
     await this.gateway.getWorkflowRegistrationService().remove(id)
+    await this.gateway.getWorkflowArtifactService().remove(id)
     this.persistentIds.delete(id)
     this.gateway.unregisterWorkflowProjectPermissions(id)
     this.gateway.unregisterWorkflowProjectBackends(id)
+    const projectDir = this.workflowProjectDirs.get(id)
     this.workflowProjectDirs.delete(id)
+    if (projectDir !== undefined && ![...this.workflowProjectDirs.values()].includes(projectDir)) {
+      const artifactId = this.projectConfigArtifacts.get(projectDir)
+      if (artifactId !== undefined) {
+        await this.gateway.getWorkflowArtifactService().remove(artifactId)
+        this.projectConfigArtifacts.delete(projectDir)
+      }
+      this.active.delete(projectDir)
+    }
 
     const runsCancelled: string[] = []
     if (opts.cancelInflight === true) {
