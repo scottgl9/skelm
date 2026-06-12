@@ -547,6 +547,154 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: State key not found }
 
+  /v1/packages:
+    get:
+      summary: List installed workflow packages
+      description: >
+        Returns the workflow packages installed in the project's package store
+        (`.skelm/packages/`) merged with their `skelm.lock.json` entries.
+      responses:
+        '200':
+          description: Installed packages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  packages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        version: { type: string }
+                        description: { type: string }
+                        lock: { type: object, additionalProperties: true, nullable: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/packages/install:
+    post:
+      summary: Install a workflow package from a local source
+      description: >
+        Installs from a local directory path or a local `.tgz` tarball.
+        The manifest is validated before any file is copied; a tarball is
+        extracted into a temp dir with path-traversal protection. Updates
+        `skelm.lock.json` and emits a `package.install` audit event. Remote
+        (npm-registry) installs are not yet supported.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source]
+              properties:
+                source:
+                  type: string
+                  description: Local directory path or local `.tgz` tarball path.
+      responses:
+        '200':
+          description: Installed package summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  installed:
+                    type: object
+                    properties:
+                      name: { type: string }
+                      version: { type: string }
+                      integrity: { type: string }
+        '400': { description: Invalid manifest, source, or tarball }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/packages/resolve:
+    post:
+      summary: Resolve a run spec to a package workflow entry file
+      description: >
+        Resolves `@scope/name`, `@scope/name@version`, or `@scope/name/entry`
+        through the package store to the installed workflow's absolute entry
+        file. The entry id defaults to `default`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [spec]
+              properties:
+                spec: { type: string }
+      responses:
+        '200':
+          description: Resolved entry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file: { type: string }
+                  name: { type: string }
+                  version: { type: string }
+                  entryId: { type: string }
+        '400': { description: Invalid spec or ambiguous version }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Package or entry not found }
+
+  /v1/packages/{name}:
+    get:
+      summary: Get installed-package info
+      description: >
+        The manifest, installed versions, content integrity, and lockfile
+        entry for a package. `{name}` may be URL-encoded (`@scope%2Fname`).
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Package info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  manifest: { type: object, additionalProperties: true }
+                  versions: { type: array, items: { type: string } }
+                  integrity: { type: string }
+                  lock: { type: object, additionalProperties: true, nullable: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Package not installed }
+    delete:
+      summary: Remove an installed package
+      description: >
+        Removes the package from the store and (when no version remains)
+        from `skelm.lock.json`. Emits a `package.remove` audit event.
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema: { type: string }
+        - in: query
+          name: version
+          schema: { type: string }
+          description: Remove only this version; omit to remove all versions.
+      responses:
+        '200':
+          description: Removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  removed: { type: boolean }
+                  name: { type: string }
+                  version: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Package not installed }
+
   /v1/agentmemory/status:
     get:
       summary: Agentmemory integration status
