@@ -7,7 +7,10 @@
  *
  * Capabilities:
  * - prompt: true
- * - streaming: false
+ * - streaming: true — agent-loop turns stream (`stream: true` SSE) whenever
+ *   the runner supplies an event sink (`onPartial` or events+runId+stepId),
+ *   emitting one `step.partial` event per content delta; without a sink the
+ *   loop issues plain non-streaming requests
  * - sessionLifecycle: true when a `sessionStore` is configured, else false
  * - mcp: true (delegates MCP tools to attached McpHost)
  * - skills: true (wraps skillSource with canLoadSkill enforcement)
@@ -17,7 +20,7 @@
 
 export interface SkelmAgentBackendCapabilities {
   prompt: true
-  streaming: false
+  streaming: true
   sessionLifecycle: boolean
   mcp: true
   skills: true

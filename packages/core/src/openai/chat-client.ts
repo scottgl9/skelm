@@ -85,11 +85,52 @@ export interface OpenAIChatCompletionOptions {
   fetch?: typeof fetch | undefined
 }
 
-export async function chatCompletion(
+function buildChatRequestBody(
+  opts: OpenAIChatCompletionOptions,
+  stream: boolean,
+): Record<string, unknown> {
+  return {
+    model: opts.model,
+    messages: opts.messages,
+    ...(opts.temperature !== undefined && { temperature: opts.temperature }),
+    ...(opts.maxTokens !== undefined && { max_tokens: opts.maxTokens }),
+    ...(opts.tools !== undefined && opts.tools.length > 0 && { tools: opts.tools }),
+    ...(opts.responseFormat !== undefined && { response_format: opts.responseFormat }),
+    stream,
+    ...(stream && { stream_options: { include_usage: true } }),
+  }
+}
+
+function classifyChatTransportError(
+  err: unknown,
+  opts: OpenAIChatCompletionOptions,
+  timeoutSignal: AbortSignal | undefined,
+  backendId: string,
+): Error {
+  if (isKnownBackendError(err)) return err as Error
+  if (opts.signal?.aborted) {
+    const reason = opts.signal.reason
+    return reason instanceof Error
+      ? reason
+      : new BackendTimeoutError('OpenAI request aborted', backendId)
+  }
+  if (timeoutSignal?.aborted) {
+    return new BackendTimeoutError('OpenAI request timed out', backendId, { cause: err })
+  }
+  return new BackendNetworkError(
+    `OpenAI network request failed: ${err instanceof Error ? err.message : String(err)}`,
+    backendId,
+    { cause: err },
+  )
+}
+
+async function postChatRequest(
   baseUrl: string,
   opts: OpenAIChatCompletionOptions,
-): Promise<OpenAIChatResponse> {
-  const backendId = opts.backendId ?? 'openai'
+  body: Record<string, unknown>,
+  backendId: string,
+  timeoutSignal: AbortSignal | undefined,
+): Promise<Response> {
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(opts.headers ?? {}),
@@ -97,19 +138,6 @@ export async function chatCompletion(
   if (opts.apiKey) {
     requestHeaders.Authorization = `Bearer ${opts.apiKey}`
   }
-
-  const body: Record<string, unknown> = {
-    model: opts.model,
-    messages: opts.messages,
-    ...(opts.temperature !== undefined && { temperature: opts.temperature }),
-    ...(opts.maxTokens !== undefined && { max_tokens: opts.maxTokens }),
-    ...(opts.tools !== undefined && opts.tools.length > 0 && { tools: opts.tools }),
-    ...(opts.responseFormat !== undefined && { response_format: opts.responseFormat }),
-    stream: false,
-  }
-
-  const timeoutSignal =
-    opts.timeoutMs !== undefined ? AbortSignal.timeout(opts.timeoutMs) : undefined
   const signal =
     opts.signal !== undefined && timeoutSignal !== undefined
       ? AbortSignal.any([opts.signal, timeoutSignal])
@@ -124,29 +152,211 @@ export async function chatCompletion(
       ...(signal !== undefined && { signal }),
     })
   } catch (err) {
-    if (isKnownBackendError(err)) throw err
-    if (opts.signal?.aborted) {
-      const reason = opts.signal.reason
-      throw reason instanceof Error
-        ? reason
-        : new BackendTimeoutError('OpenAI request aborted', backendId)
-    }
-    if (timeoutSignal?.aborted) {
-      throw new BackendTimeoutError('OpenAI request timed out', backendId, { cause: err })
-    }
-    throw new BackendNetworkError(
-      `OpenAI network request failed: ${err instanceof Error ? err.message : String(err)}`,
-      backendId,
-      { cause: err },
-    )
+    throw classifyChatTransportError(err, opts, timeoutSignal, backendId)
   }
 
   if (!res.ok) {
     throw await classifyOpenAIHttpError(res, backendId)
   }
+  return res
+}
 
+export async function chatCompletion(
+  baseUrl: string,
+  opts: OpenAIChatCompletionOptions,
+): Promise<OpenAIChatResponse> {
+  const backendId = opts.backendId ?? 'openai'
+  const timeoutSignal =
+    opts.timeoutMs !== undefined ? AbortSignal.timeout(opts.timeoutMs) : undefined
+  const res = await postChatRequest(
+    baseUrl,
+    opts,
+    buildChatRequestBody(opts, false),
+    backendId,
+    timeoutSignal,
+  )
   const rawBody: unknown = await res.json()
   return assertOpenAIResponse(rawBody, backendId)
+}
+
+/** One streamed chunk in the OpenAI `stream: true` wire format. */
+interface OpenAIStreamChunk {
+  id?: string
+  model?: string
+  choices?: Array<{
+    index?: number
+    delta?: {
+      role?: string
+      content?: string | null
+      reasoning_content?: string | null
+      tool_calls?: Array<{
+        index?: number
+        id?: string
+        type?: string
+        function?: { name?: string; arguments?: string }
+      }>
+    }
+    finish_reason?: string | null
+  }>
+  usage?: OpenAIChatResponse['usage'] | null
+}
+
+export interface OpenAIChatStreamOptions extends OpenAIChatCompletionOptions {
+  /**
+   * Called once per assistant-content chunk as it arrives. Each call carries
+   * ONE new delta (not the cumulative text); the concatenation of all deltas
+   * equals the assembled `message.content` of the returned response.
+   */
+  onDelta: (delta: string) => void
+}
+
+/**
+ * Streaming variant of `chatCompletion` (`stream: true`, Server-Sent Events).
+ * Content deltas are forwarded to `onDelta` as they arrive; tool-call and
+ * reasoning deltas are assembled silently. Resolves to the same
+ * `OpenAIChatResponse` shape as the non-streaming call so callers can share
+ * their response handling.
+ *
+ * If the upstream ignores `stream: true` and answers with a plain JSON body,
+ * the response is parsed normally and its full text is emitted as a single
+ * delta — callers do not need to special-case non-streaming servers that
+ * accept the flag.
+ */
+export async function chatCompletionStream(
+  baseUrl: string,
+  opts: OpenAIChatStreamOptions,
+): Promise<OpenAIChatResponse> {
+  const backendId = opts.backendId ?? 'openai'
+  const timeoutSignal =
+    opts.timeoutMs !== undefined ? AbortSignal.timeout(opts.timeoutMs) : undefined
+  const res = await postChatRequest(
+    baseUrl,
+    opts,
+    buildChatRequestBody(opts, true),
+    backendId,
+    timeoutSignal,
+  )
+
+  const contentType = res.headers.get('content-type') ?? ''
+  if (!contentType.includes('text/event-stream')) {
+    // Upstream ignored `stream: true` and replied with a regular completion.
+    const rawBody: unknown = await res.json()
+    const response = assertOpenAIResponse(rawBody, backendId)
+    const text = response.choices?.[0]?.message?.content
+    if (typeof text === 'string' && text.length > 0) opts.onDelta(text)
+    return response
+  }
+
+  if (res.body === null) {
+    throw new BackendUpstreamError('OpenAI stream response had no body', backendId)
+  }
+
+  let id: string | undefined
+  let model: string | undefined
+  let content = ''
+  let reasoning = ''
+  let finishReason: string | undefined
+  let usage: OpenAIChatResponse['usage']
+  let sawChunk = false
+  const toolCalls = new Map<
+    number,
+    { id: string; type: string; function: { name: string; arguments: string } }
+  >()
+
+  const handleData = (data: string): void => {
+    if (data === '[DONE]') return
+    let chunk: OpenAIStreamChunk
+    try {
+      chunk = JSON.parse(data) as OpenAIStreamChunk
+    } catch {
+      // Tolerate malformed keep-alive / vendor extension lines.
+      return
+    }
+    sawChunk = true
+    if (chunk.id !== undefined) id = chunk.id
+    if (chunk.model !== undefined) model = chunk.model
+    if (chunk.usage !== undefined && chunk.usage !== null) usage = chunk.usage
+    const choice = chunk.choices?.[0]
+    if (choice === undefined) return
+    const delta = choice.delta
+    if (typeof delta?.content === 'string' && delta.content.length > 0) {
+      content += delta.content
+      opts.onDelta(delta.content)
+    }
+    if (typeof delta?.reasoning_content === 'string' && delta.reasoning_content.length > 0) {
+      reasoning += delta.reasoning_content
+    }
+    for (const tc of delta?.tool_calls ?? []) {
+      const index = tc.index ?? 0
+      let entry = toolCalls.get(index)
+      if (entry === undefined) {
+        entry = { id: '', type: 'function', function: { name: '', arguments: '' } }
+        toolCalls.set(index, entry)
+      }
+      if (tc.id !== undefined && tc.id.length > 0) entry.id = tc.id
+      if (tc.type !== undefined && tc.type.length > 0) entry.type = tc.type
+      // Name arrives whole (some servers resend it per chunk) — assign, don't
+      // append. Arguments stream as JSON fragments — append.
+      if (tc.function?.name !== undefined && tc.function.name.length > 0) {
+        entry.function.name = tc.function.name
+      }
+      if (tc.function?.arguments !== undefined) {
+        entry.function.arguments += tc.function.arguments
+      }
+    }
+    if (choice.finish_reason !== undefined && choice.finish_reason !== null) {
+      finishReason = choice.finish_reason
+    }
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let newline = buffer.indexOf('\n')
+      while (newline !== -1) {
+        const line = buffer.slice(0, newline).replace(/\r$/, '')
+        buffer = buffer.slice(newline + 1)
+        if (line.startsWith('data:')) handleData(line.slice(5).trim())
+        newline = buffer.indexOf('\n')
+      }
+    }
+    const tail = buffer.replace(/\r$/, '')
+    if (tail.startsWith('data:')) handleData(tail.slice(5).trim())
+  } catch (err) {
+    throw classifyChatTransportError(err, opts, timeoutSignal, backendId)
+  } finally {
+    reader.releaseLock()
+  }
+
+  if (!sawChunk) {
+    throw new BackendUpstreamError('OpenAI stream ended without any data events', backendId)
+  }
+
+  return {
+    ...(id !== undefined && { id }),
+    object: 'chat.completion',
+    ...(model !== undefined && { model }),
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content,
+          ...(reasoning.length > 0 && { reasoning_content: reasoning }),
+          ...(toolCalls.size > 0 && {
+            tool_calls: [...toolCalls.entries()].sort(([a], [b]) => a - b).map(([, tc]) => tc),
+          }),
+        },
+        ...(finishReason !== undefined && { finish_reason: finishReason }),
+      },
+    ],
+    ...(usage !== undefined && { usage }),
+  }
 }
 
 export function chatCompletionsUrl(baseUrl: string): string {

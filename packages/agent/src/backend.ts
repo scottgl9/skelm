@@ -34,9 +34,12 @@ import type {
   Usage,
 } from '@skelm/core/backend'
 import {
+  type OpenAIChatCompletionOptions,
+  type OpenAIChatResponse,
   type OpenAIContentPart,
   type OpenAIMessage,
   chatCompletion,
+  chatCompletionStream,
   toOpenAIUsage,
 } from '@skelm/core/openai'
 import type { ResolvedPolicy } from '@skelm/core/permissions'
@@ -305,10 +308,42 @@ function openAIToSessionMessages(messages: readonly OpenAIMessage[]): SessionMes
   return out
 }
 
+/**
+ * Issue one agent-loop chat completion. When `onDelta` is supplied the call
+ * streams (`stream: true`) and forwards each content delta; if the upstream
+ * rejects the streaming request before any delta arrived, it retries once on
+ * the plain non-streaming path so servers without SSE support keep working.
+ */
+async function chatCompletionMaybeStreaming(
+  baseUrl: string,
+  opts: OpenAIChatCompletionOptions,
+  onDelta: ((delta: string) => void) | undefined,
+): Promise<OpenAIChatResponse> {
+  if (onDelta === undefined) return chatCompletion(baseUrl, opts)
+  let emitted = false
+  try {
+    return await chatCompletionStream(baseUrl, {
+      ...opts,
+      onDelta: (delta) => {
+        emitted = true
+        onDelta(delta)
+      },
+    })
+  } catch (err) {
+    // Only upstream rejections fall back (e.g. a server that 400s on
+    // `stream: true`). Auth, rate-limit, timeout, network, and abort errors
+    // propagate; once a delta was emitted a retry would duplicate output.
+    if (err instanceof BackendUpstreamError && !emitted) {
+      return chatCompletion(baseUrl, opts)
+    }
+    throw err
+  }
+}
+
 function baseCapabilities(vision: boolean, sessionLifecycle: boolean): BackendCapabilities {
   return {
     prompt: true,
-    streaming: false,
+    streaming: true,
     sessionLifecycle,
     mcp: true,
     vision,
@@ -511,22 +546,45 @@ async function runAgentLoop(
     const maxTurns = req.maxTurns ?? 30
     let turn = 0
 
+    // Stream only when the caller gave us somewhere to put deltas. The
+    // runner's onPartial already publishes `step.partial`; when only a raw
+    // event sink is wired (events + runId + stepId), publish the same event
+    // directly. No sink → the plain non-streaming request, bit-for-bit.
+    const emitDelta: ((delta: string) => void) | undefined =
+      ctx.onPartial ??
+      (ctx.events !== undefined && ctx.runId !== undefined && ctx.stepId !== undefined
+        ? (delta: string) => {
+            ctx.events?.publish({
+              type: 'step.partial',
+              runId: ctx.runId,
+              stepId: ctx.stepId,
+              kind: 'agent',
+              delta,
+              at: Date.now(),
+            })
+          }
+        : undefined)
+
     while (turn < maxTurns) {
       turn++
 
-      const response = await chatCompletion(opts.baseUrl, {
-        apiKey: opts.apiKey,
-        headers: opts.headers,
-        model,
-        messages,
-        temperature: undefined,
-        maxTokens: opts.maxTokens,
-        tools,
-        responseFormat: undefined,
-        signal: ctx.signal,
-        timeoutMs: opts.timeoutMs,
-        backendId: opts.backendId,
-      })
+      const response = await chatCompletionMaybeStreaming(
+        opts.baseUrl,
+        {
+          apiKey: opts.apiKey,
+          headers: opts.headers,
+          model,
+          messages,
+          temperature: undefined,
+          maxTokens: opts.maxTokens,
+          tools,
+          responseFormat: undefined,
+          signal: ctx.signal,
+          timeoutMs: opts.timeoutMs,
+          backendId: opts.backendId,
+        },
+        emitDelta,
+      )
 
       const choice = response.choices?.[0]
       if (!choice?.message) {
