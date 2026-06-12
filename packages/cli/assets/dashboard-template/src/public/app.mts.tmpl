@@ -1,13 +1,8 @@
-type Page =
-  | 'overview'
-  | 'workflows'
-  | 'runs'
-  | 'approvals'
-  | 'schedules'
-  | 'sessions'
-  | 'runtime'
-  | 'audit'
-  | 'metrics'
+// skelm operations dashboard — module-based app shell.
+//
+// All data is read through the same-origin `/api/*` proxy served by
+// src/server.mts, which injects the gateway bearer token server-side. No
+// gateway token is ever present in this browser code.
 
 interface RunRow {
   runId: string
@@ -17,238 +12,245 @@ interface RunRow {
   startedAt?: number
 }
 
+interface ModuleContext {
+  mount: HTMLElement
+  setNotice(message: string): void
+  navigate(id: ModuleId, params?: Record<string, string>): void
+  params: Record<string, string>
+}
+
+interface DashboardModule {
+  id: ModuleId
+  label: string
+  group: string
+  render(ctx: ModuleContext): Promise<void>
+}
+
+type ModuleId =
+  | 'overview'
+  | 'workflows'
+  | 'graph'
+  | 'runs'
+  | 'lineage'
+  | 'packages'
+  | 'integrations'
+  | 'approvals'
+  | 'schedules'
+  | 'sessions'
+  | 'runtime'
+  | 'audit'
+  | 'metrics'
+
 interface AppState {
-  page: Page
-  selectedRun: string | null
+  module: ModuleId
+  params: Record<string, string>
   stream: EventSource | null
+  timer: ReturnType<typeof setInterval> | null
 }
 
-const navItems: ReadonlyArray<readonly [Page, string]> = [
-  ['overview', 'Overview'],
-  ['workflows', 'Workflows'],
-  ['runs', 'Runs'],
-  ['approvals', 'Approvals'],
-  ['schedules', 'Schedules'],
-  ['sessions', 'ACP Sessions'],
-  ['runtime', 'Runtime'],
-  ['audit', 'Audit'],
-  ['metrics', 'Metrics'],
-]
+// ---------------------------------------------------------------------------
+// Typed gateway proxy client. Every call is same-origin to `/api/*`; the local
+// server.mts proxy adds the bearer token. This client never sees a token.
+// ---------------------------------------------------------------------------
 
-const state: AppState = {
-  page: pageFromHash(),
-  selectedRun: null,
-  stream: null,
-}
-
-const el = {
-  nav: required<HTMLElement>('#nav'),
-  title: required<HTMLElement>('#page-title'),
-  content: required<HTMLElement>('#content'),
-  notice: required<HTMLElement>('#notice'),
-  status: required<HTMLElement>('#status-strip'),
-  refresh: required<HTMLButtonElement>('#refresh'),
-  openGateway: required<HTMLButtonElement>('#open-gateway'),
-}
-
-for (const [id, label] of navItems) {
-  const btn = document.createElement('button')
-  btn.type = 'button'
-  btn.className = 'nav-btn'
-  btn.textContent = label
-  btn.addEventListener('click', () => {
-    state.page = id
-    history.replaceState(null, '', `#${id}`)
-    void render()
-  })
-  el.nav.append(btn)
-}
-
-el.refresh.addEventListener('click', () => void render())
-el.openGateway.addEventListener('click', () => window.open('/api/health', '_blank', 'noopener'))
-window.addEventListener('hashchange', () => {
-  state.page = pageFromHash()
-  void render()
-})
-
-void render()
-
-async function render(): Promise<void> {
-  closeStream()
-  setNotice('')
-  ;[...el.nav.children].forEach((child, index) => {
-    child.classList.toggle('active', navItems[index]?.[0] === state.page)
-  })
-  el.title.textContent = navItems.find(([id]) => id === state.page)?.[1] ?? 'Overview'
-  el.content.innerHTML = '<div class="panel muted">Loading</div>'
-  try {
-    await updateStatus()
-    const views: Record<Page, () => Promise<void>> = {
-      overview,
-      workflows,
-      runs,
-      approvals,
-      schedules,
-      sessions,
-      runtime,
-      audit,
-      metrics,
-    }
-    await views[state.page]()
-  } catch (err) {
-    el.content.innerHTML = `<div class="panel"><h2>Request failed</h2><p class="muted">${escapeHtml(messageOf(err))}</p></div>`
-  }
-}
-
-async function updateStatus(): Promise<void> {
-  const health = await api<Record<string, unknown>>('/health')
-  const gatewayState = String(health.state ?? health.status ?? 'unknown')
-  el.status.innerHTML = `
-    <span class="pill ${gatewayState === 'running' ? 'ok' : 'warn'}">${escapeHtml(gatewayState)}</span>
-    <div class="muted">gateway ${escapeHtml(String(health.status ?? 'unknown'))}</div>
-  `
-}
-
-async function overview(): Promise<void> {
-  const [summary, runtimeInfo, recent] = await Promise.all([
-    api<Record<string, any>>('/v1/dashboard/overview'),
-    api<Record<string, any>>('/v1/dashboard/runtime').catch(() => null),
-    api<{ runs: RunRow[] }>('/v1/dashboard/runs?limit=8').catch(() => ({ runs: [] })),
-  ])
-  const advisory = runtimeInfo?.advisoryBackends ?? []
-  if (advisory.length > 0)
-    setNotice(`Advisory permission mode is active for: ${advisory.join(', ')}`)
-  el.content.innerHTML = `
-    <div class="grid">
-      ${metric('Runs', summary.runs?.total ?? 0, 'all recorded runs')}
-      ${metric('Running', summary.runs?.byStatus?.running ?? 0, 'currently active')}
-      ${metric('Failed', summary.runs?.byStatus?.failed ?? 0, 'needs attention')}
-      ${metric('Approvals', summary.approvals?.pendingCount ?? 0, 'pending decisions')}
-    </div>
-    <div class="split">
-      <section class="panel">
-        <h2>Recent Runs</h2>
-        ${runsTable(recent.runs ?? [])}
-      </section>
-      <section class="panel">
-        <h2>Gateway Summary</h2>
-        <p><span class="pill ok">${escapeHtml(summary.gateway?.status ?? 'unknown')}</span></p>
-        <pre>${escapeHtml(
-          JSON.stringify(
-            {
-              version: summary.gateway?.version,
-              uptimeMs: summary.gateway?.uptimeMs,
-              auth: runtimeInfo?.gateway?.auth,
-              metricsEnabled: runtimeInfo?.gateway?.metricsEnabled,
-            },
-            null,
-            2,
-          ),
-        )}</pre>
-      </section>
-    </div>
-  `
-}
-
-async function workflows(): Promise<void> {
-  const pipelines = await api<Array<Record<string, any>>>('/pipelines').catch(() => [])
-  el.content.innerHTML = `
-    <div class="split even">
-      <section class="panel">
-        <div class="section-head">
-          <div>
-            <h2>Execute Workflow</h2>
-            <p class="muted">Run a registered workflow with JSON input.</p>
-          </div>
-        </div>
-        <div class="form">
-          <label>Workflow ID<input id="workflow-id" placeholder="workflow id" /></label>
-          <label>Input JSON<textarea id="workflow-input">{}</textarea></label>
-          <button id="run-workflow" class="primary" type="button">Run Workflow</button>
-        </div>
-      </section>
-      <section class="panel">
-        <div class="section-head">
-          <div>
-            <h2>Import Workflow</h2>
-            <p class="muted">Upload .zip, .mts, or .ts files into the gateway registry.</p>
-          </div>
-        </div>
-        <form id="workflow-upload" class="form">
-          <label>Workflow ID<input id="upload-id" placeholder="optional id" /></label>
-          <label>Entry file<input id="upload-entry" placeholder="optional zip entry" /></label>
-          <label class="file-drop">
-            <input id="upload-file" type="file" accept=".zip,.mts,.ts" />
-            <span>Choose workflow file</span>
-            <strong id="upload-name">No file selected</strong>
-          </label>
-          <button class="primary" type="submit">Upload Workflow</button>
-        </form>
-      </section>
-    </div>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Workflow</th><th>File</th><th>Description</th><th></th></tr></thead>
-      <tbody>${
-        pipelines
-          .map(
-            (wf) => `
-        <tr>
-          <td><strong>${escapeHtml(wf.id ?? '-')}</strong><div class="muted">${escapeHtml(wf.pipelineId ?? '')}</div></td>
-          <td>${escapeHtml(wf.file ?? '-')}</td>
-          <td>${escapeHtml(wf.description ?? '')}</td>
-          <td class="row-actions"><button class="primary" data-run="${escapeAttr(wf.id ?? '')}">Run</button></td>
-        </tr>`,
-          )
-          .join('') || emptyRow(4, 'No workflows discovered')
-      }</tbody>
-    </table></div>
-  `
-  required<HTMLButtonElement>('#run-workflow', el.content).addEventListener(
-    'click',
-    () => void runWorkflow(),
-  )
-  const uploadFile = required<HTMLInputElement>('#upload-file', el.content)
-  uploadFile.addEventListener('change', () => {
-    required<HTMLElement>('#upload-name', el.content).textContent =
-      uploadFile.files?.[0]?.name ?? 'No file selected'
-  })
-  required<HTMLFormElement>('#workflow-upload', el.content).addEventListener('submit', (event) => {
-    event.preventDefault()
-    void uploadWorkflow()
-  })
-  for (const btn of el.content.querySelectorAll<HTMLButtonElement>('[data-run]')) {
-    btn.addEventListener('click', () => {
-      required<HTMLInputElement>('#workflow-id', el.content).value = btn.dataset.run ?? ''
-      void runWorkflow()
+const gateway = {
+  async json<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
+    const res = await fetch(`/api${path}`, {
+      ...init,
+      headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
     })
-  }
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+    return (await res.json()) as T
+  },
+  async text(path: string): Promise<string> {
+    const res = await fetch(`/api${path}`)
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+    return res.text()
+  },
+  async maybe<T>(path: string, fallback: T): Promise<T> {
+    try {
+      return await this.json<T>(path)
+    } catch {
+      return fallback
+    }
+  },
+  stream(path: string): EventSource {
+    return new EventSource(`/api${path}`)
+  },
 }
 
-async function runWorkflow(): Promise<void> {
-  const id = required<HTMLInputElement>('#workflow-id', el.content).value.trim()
-  if (!id) return setNotice('Workflow id is required')
+// ---------------------------------------------------------------------------
+// Modules
+// ---------------------------------------------------------------------------
+
+const overviewModule: DashboardModule = {
+  id: 'overview',
+  label: 'Overview',
+  group: 'Operate',
+  async render(ctx) {
+    const [summary, runtimeInfo, recent] = await Promise.all([
+      gateway.json<Record<string, any>>('/v1/dashboard/overview'),
+      gateway.maybe<Record<string, any> | null>('/v1/dashboard/runtime', null),
+      gateway.maybe<{ runs: RunRow[] }>('/v1/dashboard/runs?limit=8', { runs: [] }),
+    ])
+    const advisory = runtimeInfo?.advisoryBackends ?? []
+    if (advisory.length > 0)
+      ctx.setNotice(`Advisory permission mode is active for: ${advisory.join(', ')}`)
+    ctx.mount.innerHTML = `
+      <div class="grid">
+        ${metric('Runs', summary.runs?.total ?? 0, 'all recorded runs')}
+        ${metric('Running', summary.runs?.byStatus?.running ?? 0, 'currently active')}
+        ${metric('Failed', summary.runs?.byStatus?.failed ?? 0, 'needs attention')}
+        ${metric('Approvals', summary.approvals?.pendingCount ?? 0, 'pending decisions')}
+      </div>
+      <div class="split">
+        <section class="panel">
+          <h2>Recent Runs</h2>
+          ${runsTable(recent.runs ?? [])}
+        </section>
+        <section class="panel">
+          <h2>Gateway Summary</h2>
+          <p><span class="pill ok">${escapeHtml(summary.gateway?.status ?? 'unknown')}</span></p>
+          <pre>${escapeHtml(
+            JSON.stringify(
+              {
+                version: summary.gateway?.version,
+                uptimeMs: summary.gateway?.uptimeMs,
+                auth: runtimeInfo?.gateway?.auth,
+                metricsEnabled: runtimeInfo?.gateway?.metricsEnabled,
+              },
+              null,
+              2,
+            ),
+          )}</pre>
+        </section>
+      </div>
+    `
+  },
+}
+
+const workflowsModule: DashboardModule = {
+  id: 'workflows',
+  label: 'Workflows',
+  group: 'Operate',
+  async render(ctx) {
+    const pipelines = await gateway.maybe<Array<Record<string, any>>>('/pipelines', [])
+    const selected =
+      ctx.params.id ?? (typeof pipelines[0]?.id === 'string' ? pipelines[0].id : undefined)
+    ctx.mount.innerHTML = `
+      <div class="split even">
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <h2>Execute Workflow</h2>
+              <p class="muted">Run a registered workflow with JSON input through the gateway.</p>
+            </div>
+          </div>
+          <div class="form">
+            <label>Workflow ID<input id="workflow-id" placeholder="workflow id" value="${escapeAttr(selected ?? '')}" /></label>
+            <label>Input JSON<textarea id="workflow-input">{}</textarea></label>
+            <button id="run-workflow" class="primary" type="button">Run Workflow</button>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <h2>Import Workflow</h2>
+              <p class="muted">Upload .zip, .mts, or .ts files into the gateway registry.</p>
+            </div>
+          </div>
+          <form id="workflow-upload" class="form">
+            <label>Workflow ID<input id="upload-id" placeholder="optional id" /></label>
+            <label>Entry file<input id="upload-entry" placeholder="optional zip entry" /></label>
+            <label class="file-drop">
+              <input id="upload-file" type="file" accept=".zip,.mts,.ts" />
+              <span>Choose workflow file</span>
+              <strong id="upload-name">No file selected</strong>
+            </label>
+            <button class="primary" type="submit">Upload Workflow</button>
+          </form>
+        </section>
+      </div>
+      <div class="split">
+        <section>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Workflow</th><th>File</th><th></th></tr></thead>
+            <tbody>${
+              pipelines
+                .map(
+                  (wf) => `
+              <tr ${wf.id === selected ? 'class="selected"' : ''}>
+                <td>
+                  <strong data-pick="${escapeAttr(wf.id ?? '')}" class="link">${escapeHtml(wf.id ?? '-')}</strong>
+                  <div class="muted">${escapeHtml(wf.description ?? '')}</div>
+                </td>
+                <td class="mono">${escapeHtml(wf.file ?? '-')}</td>
+                <td class="row-actions">
+                  <button data-graph="${escapeAttr(wf.id ?? '')}">Graph</button>
+                  <button class="primary" data-run="${escapeAttr(wf.id ?? '')}">Run</button>
+                </td>
+              </tr>`,
+                )
+                .join('') || emptyRow(3, 'No workflows discovered')
+            }</tbody>
+          </table></div>
+        </section>
+        <section id="wf-detail" class="panel">${
+          selected ? 'Loading workflow' : '<p class="muted">Select a workflow</p>'
+        }</section>
+      </div>
+    `
+    required<HTMLButtonElement>('#run-workflow', ctx.mount).addEventListener(
+      'click',
+      () => void runWorkflow(ctx),
+    )
+    const uploadFile = required<HTMLInputElement>('#upload-file', ctx.mount)
+    uploadFile.addEventListener('change', () => {
+      required<HTMLElement>('#upload-name', ctx.mount).textContent =
+        uploadFile.files?.[0]?.name ?? 'No file selected'
+    })
+    required<HTMLFormElement>('#workflow-upload', ctx.mount).addEventListener('submit', (event) => {
+      event.preventDefault()
+      void uploadWorkflow(ctx)
+    })
+    for (const node of ctx.mount.querySelectorAll<HTMLElement>('[data-pick]')) {
+      node.addEventListener('click', () => loadWorkflowDetail(ctx, node.dataset.pick ?? ''))
+    }
+    for (const btn of ctx.mount.querySelectorAll<HTMLElement>('[data-graph]')) {
+      btn.addEventListener('click', () => ctx.navigate('graph', { id: btn.dataset.graph ?? '' }))
+    }
+    for (const btn of ctx.mount.querySelectorAll<HTMLElement>('[data-run]')) {
+      btn.addEventListener('click', () => {
+        required<HTMLInputElement>('#workflow-id', ctx.mount).value = btn.dataset.run ?? ''
+        void runWorkflow(ctx)
+      })
+    }
+    if (selected) await loadWorkflowDetail(ctx, selected)
+  },
+}
+
+async function runWorkflow(ctx: ModuleContext): Promise<void> {
+  const id = required<HTMLInputElement>('#workflow-id', ctx.mount).value.trim()
+  if (!id) return ctx.setNotice('Workflow id is required')
   let input: unknown
   try {
-    input = JSON.parse(required<HTMLTextAreaElement>('#workflow-input', el.content).value || '{}')
+    input = JSON.parse(required<HTMLTextAreaElement>('#workflow-input', ctx.mount).value || '{}')
   } catch {
-    return setNotice('Workflow input must be JSON')
+    return ctx.setNotice('Workflow input must be JSON')
   }
-  const result = await api<{ runId: string }>(`/pipelines/${encodeURIComponent(id)}/start`, {
-    method: 'POST',
-    body: JSON.stringify({ input }),
-  })
-  state.selectedRun = result.runId
-  state.page = 'runs'
-  history.replaceState(null, '', '#runs')
-  await render()
+  const result = await gateway.json<{ runId: string }>(
+    `/pipelines/${encodeURIComponent(id)}/start`,
+    { method: 'POST', body: JSON.stringify({ input }) },
+  )
+  ctx.navigate('runs', { run: result.runId })
 }
 
-async function uploadWorkflow(): Promise<void> {
-  const input = required<HTMLInputElement>('#upload-file', el.content)
+async function uploadWorkflow(ctx: ModuleContext): Promise<void> {
+  const input = required<HTMLInputElement>('#upload-file', ctx.mount)
   const file = input.files?.[0]
-  if (file === undefined) return setNotice('Choose a .zip, .mts, or .ts workflow file')
-  const id = required<HTMLInputElement>('#upload-id', el.content).value.trim()
-  const entry = required<HTMLInputElement>('#upload-entry', el.content).value.trim()
+  if (file === undefined) return ctx.setNotice('Choose a .zip, .mts, or .ts workflow file')
+  const id = required<HTMLInputElement>('#upload-id', ctx.mount).value.trim()
+  const entry = required<HTMLInputElement>('#upload-entry', ctx.mount).value.trim()
   const archive = file.name.endsWith('.zip')
     ? new Uint8Array(await file.arrayBuffer())
     : await zipSingleFile(file)
@@ -263,226 +265,8 @@ async function uploadWorkflow(): Promise<void> {
   const res = await fetch('/api/v1/workflows/register', { method: 'POST', body: form })
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
   const body = (await res.json()) as { workflow?: { id?: string } }
-  setNotice(`Workflow uploaded: ${(body.workflow?.id ?? id) || file.name}`)
-  await workflows()
-}
-
-async function runs(): Promise<void> {
-  const data = await api<{ runs: RunRow[] }>('/v1/dashboard/runs?limit=50')
-  const selected = state.selectedRun ?? data.runs?.[0]?.runId
-  el.content.innerHTML = `
-    <div class="split">
-      <section>${runsTable(data.runs ?? [], true)}</section>
-      <section id="run-detail" class="panel">${selected ? 'Loading run' : '<p class="muted">Select a run</p>'}</section>
-    </div>
-  `
-  for (const row of el.content.querySelectorAll<HTMLElement>('[data-run-id]')) {
-    row.addEventListener('click', () => void loadRunDetail(row.dataset.runId ?? ''))
-  }
-  if (selected) await loadRunDetail(selected)
-}
-
-async function loadRunDetail(runId: string): Promise<void> {
-  state.selectedRun = runId
-  closeStream()
-  const [run, events, artifacts] = await Promise.all([
-    api<Record<string, any>>(`/runs/${encodeURIComponent(runId)}`),
-    api<{ events: unknown[] }>(`/runs/${encodeURIComponent(runId)}/events`).catch(() => ({
-      events: [],
-    })),
-    api<{ artifacts: Array<Record<string, any>> }>(
-      `/runs/${encodeURIComponent(runId)}/artifacts`,
-    ).catch(() => ({ artifacts: [] })),
-  ])
-  const detail = required<HTMLElement>('#run-detail', el.content)
-  detail.innerHTML = `
-    <h2>${escapeHtml(run.runId)}</h2>
-    <p><span class="pill ${statusClass(run.status)}">${escapeHtml(run.status)}</span></p>
-    <div class="row-actions">
-      <button id="stream-run" type="button">Stream Events</button>
-      <button id="cancel-run" class="danger" type="button" ${isTerminal(run.status) ? 'disabled' : ''}>Cancel</button>
-    </div>
-    <h3>Events</h3>
-    <pre id="event-log">${escapeHtml(JSON.stringify(events.events ?? [], null, 2))}</pre>
-    <h3>Artifacts</h3>
-    ${artifactsList(runId, artifacts.artifacts ?? [])}
-    <h3>Run State</h3>
-    <pre>${escapeHtml(JSON.stringify(run, null, 2))}</pre>
-  `
-  required<HTMLButtonElement>('#stream-run', detail).addEventListener('click', () =>
-    streamRun(runId),
-  )
-  required<HTMLButtonElement>('#cancel-run', detail).addEventListener('click', async () => {
-    await api(`/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' })
-    await render()
-  })
-}
-
-async function approvals(): Promise<void> {
-  const data = await api<Record<string, any>>('/v1/dashboard/approvals').catch(() => ({
-    pending: [],
-  }))
-  const pending: Array<Record<string, any>> = data.pending ?? data.items ?? []
-  el.content.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Approval</th><th>Request</th><th>Created</th><th></th></tr></thead>
-    <tbody>${
-      pending
-        .map(
-          (item) => `
-      <tr>
-        <td><strong>${escapeHtml(item.id)}</strong></td>
-        <td><pre>${escapeHtml(JSON.stringify(item.request ?? item, null, 2))}</pre></td>
-        <td>${formatTime(item.createdAt)}</td>
-        <td class="row-actions">
-          <button class="primary" data-approve="${escapeAttr(item.id)}">Approve</button>
-          <button class="danger" data-deny="${escapeAttr(item.id)}">Reject</button>
-        </td>
-      </tr>`,
-        )
-        .join('') || emptyRow(4, 'No pending approvals')
-    }</tbody>
-  </table></div>`
-  for (const btn of el.content.querySelectorAll<HTMLButtonElement>('[data-approve], [data-deny]')) {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset.approve ?? btn.dataset.deny ?? ''
-      const [runId, stepId] = splitApprovalId(id)
-      await api(`/runs/${encodeURIComponent(runId)}/${btn.dataset.approve ? 'approve' : 'deny'}`, {
-        method: 'POST',
-        body: JSON.stringify({ stepId, approver: 'dashboard' }),
-      })
-      await render()
-    })
-  }
-}
-
-async function schedules(): Promise<void> {
-  const data = await api<{ schedules: Array<Record<string, any>> }>(
-    '/v1/dashboard/schedules',
-  ).catch(() => ({ schedules: [] }))
-  el.content.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Schedule</th><th>Workflow</th><th>Trigger</th><th>State</th><th></th></tr></thead>
-    <tbody>${
-      (data.schedules ?? [])
-        .map(
-          (s) => `
-      <tr>
-        <td><strong>${escapeHtml(s.id ?? s.spec?.id)}</strong></td>
-        <td>${escapeHtml(s.workflowId ?? s.spec?.workflowId ?? '-')}</td>
-        <td>${escapeHtml(s.kind ?? s.spec?.kind ?? '-')}</td>
-        <td><span class="pill">${escapeHtml(s.status ?? s.state ?? 'registered')}</span></td>
-        <td class="row-actions"><button data-fire="${escapeAttr(s.id ?? s.spec?.id)}">Fire</button></td>
-      </tr>`,
-        )
-        .join('') || emptyRow(5, 'No schedules registered')
-    }</tbody>
-  </table></div>`
-  for (const btn of el.content.querySelectorAll<HTMLButtonElement>('[data-fire]')) {
-    btn.addEventListener('click', async () => {
-      await api(`/triggers/${encodeURIComponent(btn.dataset.fire ?? '')}/fire`, { method: 'POST' })
-      await render()
-    })
-  }
-}
-
-async function sessions(): Promise<void> {
-  const [acp, agentmemory] = await Promise.all([
-    api<unknown[]>('/sessions').catch(() => []),
-    api<Record<string, any>>('/v1/agentmemory/sessions').catch(() => ({
-      enabled: false,
-      sessions: [],
-    })),
-  ])
-  el.content.innerHTML = `
-    <section class="panel"><h2>ACP Sessions</h2><pre>${escapeHtml(JSON.stringify(acp, null, 2))}</pre></section>
-    <section class="panel"><h2>Agentmemory Sessions</h2><p><span class="pill ${agentmemory.enabled ? 'ok' : ''}">${agentmemory.enabled ? 'enabled' : 'disabled'}</span></p><pre>${escapeHtml(JSON.stringify(agentmemory.sessions ?? [], null, 2))}</pre></section>
-  `
-}
-
-async function runtime(): Promise<void> {
-  const data = await api<Record<string, any>>('/v1/dashboard/runtime')
-  el.content.innerHTML = `
-    <div class="grid">
-      ${metric('Backends', data.backends?.length ?? 0, 'registered')}
-      ${metric('Agents', data.agents?.length ?? 0, 'configured')}
-      ${metric('MCP', data.mcpServers?.length ?? 0, 'servers')}
-      ${metric('Advisory', data.advisoryBackends?.length ?? 0, 'backends')}
-    </div>
-    <section class="panel"><h2>Runtime Metadata</h2><pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre></section>
-  `
-}
-
-async function audit(): Promise<void> {
-  const data = await api<{ entries: Array<Record<string, any>> }>('/audit?limit=100')
-  const verify = await api<Record<string, any>>('/audit/verify').catch(() => null)
-  el.content.innerHTML = `
-    <section class="panel"><h2>Audit Chain</h2><p><span class="pill ${verify?.ok ? 'ok' : 'warn'}">${verify?.ok ? 'verified' : 'unverified'}</span></p></section>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Seq</th><th>Action</th><th>Actor</th><th>Run</th><th>Details</th></tr></thead>
-      <tbody>${
-        (data.entries ?? [])
-          .map(
-            (entry) => `
-        <tr><td>${entry.seq ?? ''}</td><td>${escapeHtml(entry.action)}</td><td>${escapeHtml(entry.actor)}</td><td>${escapeHtml(entry.runId ?? '')}</td><td><pre>${escapeHtml(JSON.stringify(entry.details ?? {}, null, 2))}</pre></td></tr>`,
-          )
-          .join('') || emptyRow(5, 'No audit entries')
-      }</tbody>
-    </table></div>
-  `
-}
-
-async function metrics(): Promise<void> {
-  const text = await apiText('/metrics').catch((err) => messageOf(err))
-  el.content.innerHTML = `<section class="panel"><h2>Prometheus Metrics</h2><pre>${escapeHtml(text)}</pre></section>`
-}
-
-function streamRun(runId: string): void {
-  closeStream()
-  const log = required<HTMLElement>('#event-log')
-  state.stream = new EventSource(`/api/runs/${encodeURIComponent(runId)}/stream`)
-  state.stream.onmessage = (event) => appendEvent(log, 'message', event.data)
-  for (const type of [
-    'run.state',
-    'step.start',
-    'step.complete',
-    'step.error',
-    'step.partial',
-    'run.completed',
-    'run.failed',
-    'run.cancelled',
-    'permission.advisory',
-  ]) {
-    state.stream.addEventListener(type, (event) => appendEvent(log, type, event.data))
-  }
-  state.stream.onerror = () => appendEvent(log, 'stream.error', '{}')
-}
-
-function runsTable(runs: readonly RunRow[], clickable = false): string {
-  return `<div class="table-wrap"><table>
-    <thead><tr><th>Run</th><th>Workflow</th><th>Status</th><th>Started</th></tr></thead>
-    <tbody>${
-      runs
-        .map(
-          (run) => `
-      <tr ${clickable ? `data-run-id="${escapeAttr(run.runId)}"` : ''}>
-        <td><strong>${escapeHtml(run.runId)}</strong></td>
-        <td>${escapeHtml(run.pipelineId ?? run.workflowId ?? '-')}</td>
-        <td><span class="pill ${statusClass(run.status)}">${escapeHtml(run.status)}</span></td>
-        <td>${formatTime(run.startedAt)}</td>
-      </tr>`,
-        )
-        .join('') || emptyRow(4, 'No runs recorded')
-    }</tbody>
-  </table></div>`
-}
-
-function artifactsList(runId: string, artifacts: Array<Record<string, any>>): string {
-  if (artifacts.length === 0) return '<p class="muted">No artifacts</p>'
-  return `<div class="table-wrap"><table><tbody>${artifacts
-    .map(
-      (a) => `
-    <tr><td>${escapeHtml(a.name)}</td><td>${escapeHtml(a.mimeType)}</td><td>${Number(a.sizeBytes ?? 0).toLocaleString()} bytes</td><td><a href="/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(a.artifactId)}">Download</a></td></tr>`,
-    )
-    .join('')}</tbody></table></div>`
+  ctx.setNotice(`Workflow uploaded: ${(body.workflow?.id ?? id) || file.name}`)
+  await workflowsModule.render(ctx)
 }
 
 async function zipSingleFile(file: File): Promise<Uint8Array> {
@@ -578,29 +362,703 @@ const CRC32_TABLE = Array.from({ length: 256 }, (_, index) => {
   return value >>> 0
 })
 
-async function api<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    ...init,
-    headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
-  })
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
-  return (await res.json()) as T
+async function loadWorkflowDetail(ctx: ModuleContext, id: string): Promise<void> {
+  const detail = required<HTMLElement>('#wf-detail', ctx.mount)
+  detail.innerHTML = '<p class="muted">Loading workflow</p>'
+  const info = await gateway.maybe<Record<string, any> | null>(
+    `/pipelines/${encodeURIComponent(id)}`,
+    null,
+  )
+  if (info === null) {
+    detail.innerHTML = `<p class="muted">No detail for ${escapeHtml(id)}</p>`
+    return
+  }
+  const perms = collectPermissionDimensions(info)
+  detail.innerHTML = `
+    <h2>${escapeHtml(id)}</h2>
+    <p class="muted">${escapeHtml(info.description ?? '')}</p>
+    <h3>Permissions Summary</h3>
+    ${permissionsSummary(perms)}
+    <div class="row-actions">
+      <button class="primary" data-open-graph="${escapeAttr(id)}">Open Graph</button>
+    </div>
+    <h3>Definition</h3>
+    <pre>${escapeHtml(JSON.stringify(info, null, 2))}</pre>
+  `
+  required<HTMLButtonElement>('[data-open-graph]', detail).addEventListener('click', () =>
+    ctx.navigate('graph', { id }),
+  )
 }
 
-async function apiText(path: string): Promise<string> {
-  const res = await fetch(`/api${path}`)
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
-  return res.text()
+const graphModule: DashboardModule = {
+  id: 'graph',
+  label: 'Graph Viewer',
+  group: 'Operate',
+  async render(ctx) {
+    const pipelines = await gateway.maybe<Array<Record<string, any>>>('/pipelines', [])
+    const id =
+      ctx.params.id ?? (typeof pipelines[0]?.id === 'string' ? pipelines[0].id : undefined)
+    const options = pipelines
+      .map(
+        (wf) =>
+          `<option value="${escapeAttr(wf.id ?? '')}" ${wf.id === id ? 'selected' : ''}>${escapeHtml(wf.id ?? '')}</option>`,
+      )
+      .join('')
+    ctx.mount.innerHTML = `
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Workflow Graph</h2>
+            <p class="muted">Read-only structure derived from the workflow source. Code-owned regions are marked.</p>
+          </div>
+          <label class="inline">Workflow<select id="graph-pick">${options || '<option>none</option>'}</select></label>
+        </div>
+        <div id="graph-canvas">${id ? 'Loading graph' : '<p class="muted">No workflow selected</p>'}</div>
+      </section>
+    `
+    const pick = required<HTMLSelectElement>('#graph-pick', ctx.mount)
+    pick.addEventListener('change', () => ctx.navigate('graph', { id: pick.value }))
+    if (id) await loadGraph(ctx, id)
+  },
 }
 
-function metric(label: string, value: unknown, note: string): string {
-  return `<div class="card metric"><span class="muted">${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong><span>${escapeHtml(note)}</span></div>`
+async function loadGraph(ctx: ModuleContext, id: string): Promise<void> {
+  const canvas = required<HTMLElement>('#graph-canvas', ctx.mount)
+  let graph: GraphResponse
+  try {
+    graph = await gateway.json<GraphResponse>(`/v1/workflows/${encodeURIComponent(id)}/graph`)
+  } catch (err) {
+    canvas.innerHTML = `<p class="muted">Graph unavailable: ${escapeHtml(messageOf(err))}</p>`
+    return
+  }
+  const legend = `
+    <div class="graph-legend">
+      <span class="pill">${escapeHtml(graph.kind ?? 'graph')}</span>
+      <span class="pill code-owned">code-owned</span>
+      <span class="muted">${(graph.nodes ?? []).length} top-level nodes</span>
+    </div>`
+  const body = (graph.nodes ?? []).map((node) => renderGraphNode(node)).join('')
+  canvas.innerHTML = `${legend}<div class="graph-flow">${body || '<p class="muted">Empty graph</p>'}</div>`
 }
 
-function appendEvent(log: HTMLElement, type: string, data: string): void {
-  const current = log.textContent?.trim() ?? ''
-  log.textContent = current ? `${current}\n${type} ${data}` : `${type} ${data}`
-  log.scrollTop = log.scrollHeight
+function renderGraphNode(node: GraphNode): string {
+  const codeOwned = node.codeOwned === true
+  const perms = node.permissions
+  const dims =
+    perms && perms.dimensions && perms.dimensions.length > 0
+      ? `<div class="graph-perms">${perms.dimensions
+          .map((d) => `<span class="pill perm">${escapeHtml(d)}</span>`)
+          .join('')}${perms.profile ? `<span class="pill">profile: ${escapeHtml(perms.profile)}</span>` : ''}</div>`
+      : ''
+  const children =
+    node.children && node.children.length > 0
+      ? `<div class="graph-children">${node.children.map((c) => renderGraphNode(c)).join('')}</div>`
+      : ''
+  const summary = node.summary ? `<div class="muted">${escapeHtml(node.summary)}</div>` : ''
+  return `
+    <div class="graph-node ${codeOwned ? 'code-owned' : ''}">
+      <div class="graph-node-head">
+        <span class="graph-kind">${escapeHtml(node.kind ?? 'step')}</span>
+        <strong>${escapeHtml(node.label ?? node.id)}</strong>
+        ${codeOwned ? '<span class="pill code-owned" title="wraps author code; not editable">code-owned</span>' : ''}
+      </div>
+      ${summary}
+      ${dims}
+      ${children}
+    </div>`
+}
+
+const runsModule: DashboardModule = {
+  id: 'runs',
+  label: 'Runs',
+  group: 'Operate',
+  async render(ctx) {
+    const data = await gateway.json<{ runs: RunRow[] }>('/v1/dashboard/runs?limit=50')
+    const selected = ctx.params.run ?? data.runs?.[0]?.runId
+    ctx.mount.innerHTML = `
+      <div class="split">
+        <section>${runsTable(data.runs ?? [], true)}</section>
+        <section id="run-detail" class="panel">${
+          selected ? 'Loading run' : '<p class="muted">Select a run</p>'
+        }</section>
+      </div>
+    `
+    for (const row of ctx.mount.querySelectorAll<HTMLElement>('[data-run-id]')) {
+      row.addEventListener('click', () => loadRunDetail(ctx, row.dataset.runId ?? ''))
+    }
+    if (selected) await loadRunDetail(ctx, selected)
+  },
+}
+
+async function loadRunDetail(ctx: ModuleContext, runId: string): Promise<void> {
+  ctx.params.run = runId
+  closeStream()
+  const detail = required<HTMLElement>('#run-detail', ctx.mount)
+  const [run, eventsRes, artifactsRes] = await Promise.all([
+    gateway.json<Record<string, any>>(`/runs/${encodeURIComponent(runId)}`),
+    gateway.maybe<{ events: GatewayEvent[] }>(`/runs/${encodeURIComponent(runId)}/events`, {
+      events: [],
+    }),
+    gateway.maybe<{ artifacts: Array<Record<string, any>> }>(
+      `/runs/${encodeURIComponent(runId)}/artifacts`,
+      { artifacts: [] },
+    ),
+  ])
+  detail.innerHTML = `
+    <h2>${escapeHtml(run.runId)}</h2>
+    <p><span class="pill ${statusClass(run.status)}">${escapeHtml(run.status)}</span> <span class="muted">${escapeHtml(run.pipelineId ?? run.workflowId ?? '')}</span></p>
+    <div class="row-actions">
+      <button id="stream-run" type="button">Stream Events</button>
+      <button id="view-lineage" type="button">Lineage</button>
+    </div>
+    <h3>Timeline</h3>
+    <div id="timeline" class="timeline">${renderTimeline(eventsRes.events ?? [])}</div>
+    <h3>Artifacts</h3>
+    ${artifactsList(runId, artifactsRes.artifacts ?? [])}
+    <h3>Run State</h3>
+    <pre>${escapeHtml(JSON.stringify(run, null, 2))}</pre>
+  `
+  required<HTMLButtonElement>('#stream-run', detail).addEventListener('click', () =>
+    streamRun(runId),
+  )
+  required<HTMLButtonElement>('#view-lineage', detail).addEventListener('click', () =>
+    ctx.navigate('lineage', { run: runId }),
+  )
+}
+
+function renderTimeline(events: readonly GatewayEvent[]): string {
+  if (events.length === 0) return '<p class="muted">No events recorded</p>'
+  return events
+    .map((e) => {
+      const type = String(e.type ?? e.event ?? 'event')
+      const label = e.stepId ?? e.toolName ?? ''
+      return `
+      <div class="tl-row ${timelineClass(type)}">
+        <span class="tl-dot"></span>
+        <div class="tl-body">
+          <div class="tl-head"><strong>${escapeHtml(type)}</strong>${label ? `<span class="muted">${escapeHtml(String(label))}</span>` : ''}<span class="muted tl-time">${formatTime(e.timestamp ?? e.at)}</span></div>
+          ${timelineDetail(e)}
+        </div>
+      </div>`
+    })
+    .join('')
+}
+
+function timelineDetail(e: GatewayEvent): string {
+  const payload = e.data ?? e.payload ?? e.detail
+  if (payload === undefined || payload === null) {
+    if (e.error !== undefined)
+      return `<div class="tl-detail bad">${escapeHtml(String(e.error))}</div>`
+    return ''
+  }
+  return `<pre class="tl-detail">${escapeHtml(JSON.stringify(payload, null, 2))}</pre>`
+}
+
+function timelineClass(type: string): string {
+  if (type.includes('error') || type.includes('failed') || type === 'permission.denied') return 'bad'
+  if (type.includes('complete') || type.includes('completed')) return 'ok'
+  if (type.includes('start') || type.includes('call')) return 'info'
+  return ''
+}
+
+const lineageModule: DashboardModule = {
+  id: 'lineage',
+  label: 'Lineage & Tasks',
+  group: 'Inspect',
+  async render(ctx) {
+    const tasks = await gateway.maybe<{ tasks: TaskRecord[] }>('/v1/tasks?limit=50', { tasks: [] })
+    const selectedRun = ctx.params.run
+    ctx.mount.innerHTML = `
+      <div class="split">
+        <section>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Task</th><th>Workflow</th><th>Status</th><th>Child Run</th></tr></thead>
+            <tbody>${
+              (tasks.tasks ?? [])
+                .map(
+                  (t) => `
+              <tr>
+                <td><strong>${escapeHtml(t.taskId)}</strong><div class="muted">${formatTime(t.createdAt)}</div></td>
+                <td>${escapeHtml(t.workflowId ?? '-')}</td>
+                <td><span class="pill ${statusClass(t.status)}">${escapeHtml(t.status)}</span></td>
+                <td>${t.childRunId ? `<span class="link mono" data-lineage="${escapeAttr(t.childRunId)}">${escapeHtml(t.childRunId)}</span>` : '<span class="muted">-</span>'}</td>
+              </tr>`,
+                )
+                .join('') || emptyRow(4, 'No tasks recorded')
+            }</tbody>
+          </table></div>
+        </section>
+        <section id="lineage-detail" class="panel">
+          <div class="form">
+            <label>Run ID<input id="lineage-run" placeholder="run id" value="${escapeAttr(selectedRun ?? '')}" /></label>
+            <button id="lineage-load" class="primary" type="button">Load Lineage</button>
+          </div>
+          <div id="lineage-tree">${
+            selectedRun ? 'Loading lineage' : '<p class="muted">Enter a run id or pick a child run</p>'
+          }</div>
+        </section>
+      </div>
+    `
+    for (const node of ctx.mount.querySelectorAll<HTMLElement>('[data-lineage]')) {
+      node.addEventListener('click', () => loadLineage(ctx, node.dataset.lineage ?? ''))
+    }
+    required<HTMLButtonElement>('#lineage-load', ctx.mount).addEventListener('click', () => {
+      const value = required<HTMLInputElement>('#lineage-run', ctx.mount).value.trim()
+      if (value) loadLineage(ctx, value)
+    })
+    if (selectedRun) await loadLineage(ctx, selectedRun)
+  },
+}
+
+async function loadLineage(ctx: ModuleContext, runId: string): Promise<void> {
+  ctx.params.run = runId
+  const input = ctx.mount.querySelector<HTMLInputElement>('#lineage-run')
+  if (input) input.value = runId
+  const tree = required<HTMLElement>('#lineage-tree', ctx.mount)
+  tree.innerHTML = '<p class="muted">Loading lineage</p>'
+  const lineage = await gateway.maybe<LineageResult | null>(
+    `/v1/lineage/${encodeURIComponent(runId)}`,
+    null,
+  )
+  if (lineage === null) {
+    tree.innerHTML = `<p class="muted">No lineage for ${escapeHtml(runId)}</p>`
+    return
+  }
+  const ancestors = (lineage.ancestors ?? [])
+    .map((a) => `<div class="lineage-up">${runRef(a)}</div>`)
+    .join('')
+  const descendants = (lineage.descendants ?? []).map((d) => renderLineageNode(d)).join('')
+  tree.innerHTML = `
+    ${ancestors ? `<h3>Ancestors (nearest first)</h3>${ancestors}` : ''}
+    <h3>Run</h3>
+    <div class="lineage-self mono">${escapeHtml(lineage.runId)}</div>
+    <h3>Descendants</h3>
+    ${descendants || '<p class="muted">No child runs</p>'}
+  `
+}
+
+function renderLineageNode(node: LineageNode): string {
+  const children =
+    node.children && node.children.length > 0
+      ? `<div class="lineage-children">${node.children.map((c) => renderLineageNode(c)).join('')}</div>`
+      : ''
+  return `<div class="lineage-node">${runRef(node)}${children}</div>`
+}
+
+function runRef(ref: { runId: string; pipelineId?: string; status?: string }): string {
+  return `<span class="mono">${escapeHtml(ref.runId)}</span> <span class="muted">${escapeHtml(ref.pipelineId ?? '')}</span> <span class="pill ${statusClass(ref.status ?? '')}">${escapeHtml(ref.status ?? '')}</span>`
+}
+
+const packagesModule: DashboardModule = {
+  id: 'packages',
+  label: 'Packages',
+  group: 'Inspect',
+  async render(ctx) {
+    const data = await gateway.maybe<{ packages: Array<Record<string, any>> }>('/v1/packages', {
+      packages: [],
+    })
+    const list = data.packages ?? []
+    const selected = ctx.params.name ?? (typeof list[0]?.name === 'string' ? list[0].name : undefined)
+    ctx.mount.innerHTML = `
+      <div class="split">
+        <section>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Package</th><th>Version</th></tr></thead>
+            <tbody>${
+              list
+                .map(
+                  (p) => `
+              <tr ${p.name === selected ? 'class="selected"' : ''}>
+                <td><strong class="link" data-pkg="${escapeAttr(p.name ?? '')}">${escapeHtml(p.name ?? '-')}</strong><div class="muted">${escapeHtml(p.description ?? '')}</div></td>
+                <td class="mono">${escapeHtml(p.version ?? '-')}</td>
+              </tr>`,
+                )
+                .join('') || emptyRow(2, 'No packages installed')
+            }</tbody>
+          </table></div>
+          <p class="muted hint">Read-only this release. Install/remove lands in a follow-up.</p>
+        </section>
+        <section id="pkg-detail" class="panel">${
+          selected ? 'Loading package' : '<p class="muted">Select a package</p>'
+        }</section>
+      </div>
+    `
+    for (const node of ctx.mount.querySelectorAll<HTMLElement>('[data-pkg]')) {
+      node.addEventListener('click', () => loadPackageDetail(ctx, node.dataset.pkg ?? ''))
+    }
+    if (selected) await loadPackageDetail(ctx, selected)
+  },
+}
+
+async function loadPackageDetail(ctx: ModuleContext, name: string): Promise<void> {
+  ctx.params.name = name
+  const detail = required<HTMLElement>('#pkg-detail', ctx.mount)
+  detail.innerHTML = '<p class="muted">Loading package</p>'
+  const pkg = await gateway.maybe<Record<string, any> | null>(
+    `/v1/packages/${encodeURIComponent(name)}`,
+    null,
+  )
+  if (pkg === null) {
+    detail.innerHTML = `<p class="muted">No detail for ${escapeHtml(name)}</p>`
+    return
+  }
+  const perms = collectPermissionDimensions(pkg.manifest ?? {})
+  detail.innerHTML = `
+    <h2>${escapeHtml(pkg.name)}</h2>
+    <p class="muted">${escapeHtml(pkg.manifest?.description ?? '')}</p>
+    <div class="grid two">
+      ${metric('Versions', (pkg.versions ?? []).length, (pkg.versions ?? []).join(', ') || '-')}
+      ${metric('Integrity', pkg.integrity ? 'present' : 'unverified', shortHash(pkg.integrity))}
+    </div>
+    <h3>Permissions Summary</h3>
+    ${permissionsSummary(perms)}
+    <h3>Manifest</h3>
+    <pre>${escapeHtml(JSON.stringify(pkg.manifest ?? {}, null, 2))}</pre>
+    <h3>Lockfile Entry</h3>
+    <pre>${escapeHtml(JSON.stringify(pkg.lock ?? null, null, 2))}</pre>
+  `
+}
+
+const integrationsModule: DashboardModule = {
+  id: 'integrations',
+  label: 'Integrations',
+  group: 'Inspect',
+  async render(ctx) {
+    const data = await gateway.maybe<Record<string, any>>('/v1/dashboard/runtime', {})
+    const backends: any[] = data.backends ?? []
+    const mcp: any[] = data.mcpServers ?? []
+    const agents: any[] = data.agents ?? []
+    ctx.mount.innerHTML = `
+      <p class="muted hint">Read-only inventory derived from gateway runtime metadata. A dedicated integration admin API lands in a follow-up.</p>
+      <section class="panel">
+        <h2>Backends</h2>
+        ${inventoryList(backends, 'No backends registered')}
+      </section>
+      <section class="panel">
+        <h2>MCP Servers</h2>
+        ${inventoryList(mcp, 'No MCP servers configured')}
+      </section>
+      <section class="panel">
+        <h2>Agents</h2>
+        ${inventoryList(agents, 'No agents configured')}
+      </section>
+    `
+  },
+}
+
+function inventoryList(items: readonly any[], empty: string): string {
+  if (items.length === 0) return `<p class="muted">${escapeHtml(empty)}</p>`
+  return `<div class="chips">${items
+    .map((item) => {
+      const name =
+        typeof item === 'string' ? item : (item?.name ?? item?.id ?? item?.kind ?? 'unknown')
+      const status = typeof item === 'object' && item !== null ? item.status : undefined
+      return `<span class="chip"><strong>${escapeHtml(String(name))}</strong>${status ? `<span class="pill ${statusClass(String(status))}">${escapeHtml(String(status))}</span>` : ''}</span>`
+    })
+    .join('')}</div>`
+}
+
+const approvalsModule: DashboardModule = {
+  id: 'approvals',
+  label: 'Approvals',
+  group: 'Operate',
+  async render(ctx) {
+    const data = await gateway.maybe<Record<string, any>>('/v1/dashboard/approvals', {
+      pending: [],
+    })
+    const pending: Array<Record<string, any>> = data.pending ?? data.items ?? []
+    ctx.mount.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>Approval</th><th>Request</th><th>Created</th></tr></thead>
+      <tbody>${
+        pending
+          .map(
+            (item) => `
+        <tr>
+          <td><strong>${escapeHtml(item.id)}</strong></td>
+          <td><pre>${escapeHtml(JSON.stringify(item.request ?? item, null, 2))}</pre></td>
+          <td>${formatTime(item.createdAt)}</td>
+        </tr>`,
+          )
+          .join('') || emptyRow(3, 'No pending approvals')
+      }</tbody>
+    </table></div>`
+  },
+}
+
+const schedulesModule: DashboardModule = {
+  id: 'schedules',
+  label: 'Schedules',
+  group: 'Operate',
+  async render(ctx) {
+    const data = await gateway.maybe<{ schedules: Array<Record<string, any>> }>(
+      '/v1/dashboard/schedules',
+      { schedules: [] },
+    )
+    ctx.mount.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>Schedule</th><th>Workflow</th><th>Trigger</th><th>State</th></tr></thead>
+      <tbody>${
+        (data.schedules ?? [])
+          .map(
+            (s) => `
+        <tr>
+          <td><strong>${escapeHtml(s.id ?? s.spec?.id)}</strong></td>
+          <td>${escapeHtml(s.workflowId ?? s.spec?.workflowId ?? '-')}</td>
+          <td>${escapeHtml(s.kind ?? s.spec?.kind ?? '-')}</td>
+          <td><span class="pill">${escapeHtml(s.status ?? s.state ?? 'registered')}</span></td>
+        </tr>`,
+          )
+          .join('') || emptyRow(4, 'No schedules registered')
+      }</tbody>
+    </table></div>`
+  },
+}
+
+const sessionsModule: DashboardModule = {
+  id: 'sessions',
+  label: 'ACP Sessions',
+  group: 'Inspect',
+  async render(ctx) {
+    const [acp, agentmemory] = await Promise.all([
+      gateway.maybe<unknown[]>('/sessions', []),
+      gateway.maybe<Record<string, any>>('/v1/agentmemory/sessions', {
+        enabled: false,
+        sessions: [],
+      }),
+    ])
+    ctx.mount.innerHTML = `
+      <section class="panel"><h2>ACP Sessions</h2><pre>${escapeHtml(JSON.stringify(acp, null, 2))}</pre></section>
+      <section class="panel"><h2>Agentmemory Sessions</h2><p><span class="pill ${agentmemory.enabled ? 'ok' : ''}">${agentmemory.enabled ? 'enabled' : 'disabled'}</span></p><pre>${escapeHtml(JSON.stringify(agentmemory.sessions ?? [], null, 2))}</pre></section>
+    `
+  },
+}
+
+const runtimeModule: DashboardModule = {
+  id: 'runtime',
+  label: 'Runtime',
+  group: 'Inspect',
+  async render(ctx) {
+    const data = await gateway.json<Record<string, any>>('/v1/dashboard/runtime')
+    ctx.mount.innerHTML = `
+      <div class="grid">
+        ${metric('Backends', data.backends?.length ?? 0, 'registered')}
+        ${metric('Agents', data.agents?.length ?? 0, 'configured')}
+        ${metric('MCP', data.mcpServers?.length ?? 0, 'servers')}
+        ${metric('Advisory', data.advisoryBackends?.length ?? 0, 'backends')}
+      </div>
+      <section class="panel"><h2>Runtime Metadata</h2><pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre></section>
+    `
+  },
+}
+
+const auditModule: DashboardModule = {
+  id: 'audit',
+  label: 'Audit',
+  group: 'Inspect',
+  async render(ctx) {
+    const data = await gateway.json<{ entries: Array<Record<string, any>> }>('/audit?limit=100')
+    const verify = await gateway.maybe<Record<string, any> | null>('/audit/verify', null)
+    ctx.mount.innerHTML = `
+      <section class="panel"><h2>Audit Chain</h2><p><span class="pill ${verify?.ok ? 'ok' : 'warn'}">${verify?.ok ? 'verified' : 'unverified'}</span></p></section>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Seq</th><th>Action</th><th>Actor</th><th>Run</th><th>Details</th></tr></thead>
+        <tbody>${
+          (data.entries ?? [])
+            .map(
+              (entry) => `
+          <tr><td>${entry.seq ?? ''}</td><td>${escapeHtml(entry.action)}</td><td>${escapeHtml(entry.actor)}</td><td>${escapeHtml(entry.runId ?? '')}</td><td><pre>${escapeHtml(JSON.stringify(entry.details ?? {}, null, 2))}</pre></td></tr>`,
+            )
+            .join('') || emptyRow(5, 'No audit entries')
+        }</tbody>
+      </table></div>
+    `
+  },
+}
+
+const metricsModule: DashboardModule = {
+  id: 'metrics',
+  label: 'Metrics',
+  group: 'Inspect',
+  async render(ctx) {
+    const text = await gateway.text('/metrics').catch((err) => messageOf(err))
+    ctx.mount.innerHTML = `<section class="panel"><h2>Prometheus Metrics</h2><pre>${escapeHtml(text)}</pre></section>`
+  },
+}
+
+const MODULES: ReadonlyArray<DashboardModule> = [
+  overviewModule,
+  workflowsModule,
+  graphModule,
+  runsModule,
+  lineageModule,
+  packagesModule,
+  integrationsModule,
+  approvalsModule,
+  schedulesModule,
+  sessionsModule,
+  runtimeModule,
+  auditModule,
+  metricsModule,
+]
+
+const MODULE_BY_ID = new Map<ModuleId, DashboardModule>(MODULES.map((m) => [m.id, m]))
+
+// ---------------------------------------------------------------------------
+// App shell
+// ---------------------------------------------------------------------------
+
+const state: AppState = {
+  module: 'overview',
+  params: {},
+  stream: null,
+  timer: null,
+}
+
+const el = {
+  nav: required<HTMLElement>('#nav'),
+  title: required<HTMLElement>('#page-title'),
+  content: required<HTMLElement>('#content'),
+  notice: required<HTMLElement>('#notice'),
+  status: required<HTMLElement>('#status-strip'),
+  refresh: required<HTMLButtonElement>('#refresh'),
+  openGateway: required<HTMLButtonElement>('#open-gateway'),
+}
+
+buildNav()
+parseHash()
+
+el.refresh.addEventListener('click', () => void render())
+el.openGateway.addEventListener('click', () => window.open('/api/health', '_blank', 'noopener'))
+window.addEventListener('hashchange', () => {
+  parseHash()
+  void render()
+})
+
+void render()
+startAutoRefresh()
+
+function buildNav(): void {
+  let currentGroup = ''
+  for (const mod of MODULES) {
+    if (mod.group !== currentGroup) {
+      currentGroup = mod.group
+      const header = document.createElement('div')
+      header.className = 'nav-group'
+      header.textContent = mod.group
+      el.nav.append(header)
+    }
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'nav-btn'
+    btn.dataset.module = mod.id
+    btn.textContent = mod.label
+    btn.addEventListener('click', () => navigate(mod.id))
+    el.nav.append(btn)
+  }
+}
+
+function navigate(id: ModuleId, params: Record<string, string> = {}): void {
+  state.module = id
+  state.params = params
+  history.replaceState(null, '', `#${id}`)
+  void render()
+}
+
+function makeContext(): ModuleContext {
+  return {
+    mount: el.content,
+    setNotice,
+    navigate,
+    params: state.params,
+  }
+}
+
+async function render(): Promise<void> {
+  closeStream()
+  setNotice('')
+  const mod = MODULE_BY_ID.get(state.module) ?? overviewModule
+  for (const btn of el.nav.querySelectorAll<HTMLElement>('.nav-btn')) {
+    btn.classList.toggle('active', btn.dataset.module === mod.id)
+  }
+  el.title.textContent = mod.label
+  el.content.innerHTML = '<div class="panel muted">Loading</div>'
+  try {
+    await updateStatus()
+    await mod.render(makeContext())
+  } catch (err) {
+    el.content.innerHTML = `<div class="panel"><h2>Request failed</h2><p class="muted">${escapeHtml(messageOf(err))}</p></div>`
+  }
+}
+
+// Refresh the current module on an interval without resetting nav/scroll, and
+// only when the tab is visible and no stream is open, to avoid visual churn.
+function startAutoRefresh(): void {
+  state.timer = setInterval(() => {
+    if (document.hidden || state.stream !== null) return
+    void render()
+  }, 10000)
+}
+
+async function updateStatus(): Promise<void> {
+  const health = await gateway.json<Record<string, unknown>>('/health')
+  const gatewayState = String(health.state ?? health.status ?? 'unknown')
+  el.status.innerHTML = `
+    <span class="pill ${gatewayState === 'running' ? 'ok' : 'warn'}">${escapeHtml(gatewayState)}</span>
+    <div class="muted">gateway ${escapeHtml(String(health.status ?? 'unknown'))}</div>
+  `
+}
+
+function parseHash(): void {
+  const raw = location.hash.replace('#', '')
+  state.module = MODULE_BY_ID.has(raw as ModuleId) ? (raw as ModuleId) : 'overview'
+  state.params = {}
+}
+
+// ---------------------------------------------------------------------------
+// Event streaming
+// ---------------------------------------------------------------------------
+
+function streamRun(runId: string): void {
+  closeStream()
+  const timeline = required<HTMLElement>('#timeline')
+  timeline.innerHTML = ''
+  state.stream = gateway.stream(`/runs/${encodeURIComponent(runId)}/stream`)
+  state.stream.onmessage = (event) => appendStreamEvent(timeline, 'message', event.data)
+  for (const type of [
+    'run.state',
+    'step.start',
+    'step.complete',
+    'step.error',
+    'step.partial',
+    'tool.call',
+    'tool.result',
+    'permission.denied',
+    'run.completed',
+    'run.failed',
+    'run.cancelled',
+    'permission.advisory',
+  ]) {
+    state.stream.addEventListener(type, (event) => appendStreamEvent(timeline, type, event.data))
+  }
+  state.stream.onerror = () => appendStreamEvent(timeline, 'stream.error', '{}')
+}
+
+function appendStreamEvent(timeline: HTMLElement, type: string, data: string): void {
+  let payload: unknown
+  try {
+    payload = JSON.parse(data)
+  } catch {
+    payload = data
+  }
+  const row = document.createElement('div')
+  row.className = `tl-row ${timelineClass(type)}`
+  row.innerHTML = `
+    <span class="tl-dot"></span>
+    <div class="tl-body">
+      <div class="tl-head"><strong>${escapeHtml(type)}</strong><span class="muted tl-time">${formatTime(Date.now())}</span></div>
+      <pre class="tl-detail">${escapeHtml(typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2))}</pre>
+    </div>`
+  timeline.append(row)
+  timeline.scrollTop = timeline.scrollHeight
 }
 
 function closeStream(): void {
@@ -608,9 +1066,70 @@ function closeStream(): void {
   state.stream = null
 }
 
-function setNotice(message: string): void {
-  el.notice.textContent = message
-  el.notice.classList.toggle('hidden', message === '')
+// ---------------------------------------------------------------------------
+// Shared rendering helpers
+// ---------------------------------------------------------------------------
+
+function runsTable(runs: readonly RunRow[], clickable = false): string {
+  return `<div class="table-wrap"><table>
+    <thead><tr><th>Run</th><th>Workflow</th><th>Status</th><th>Started</th></tr></thead>
+    <tbody>${
+      runs
+        .map(
+          (run) => `
+      <tr ${clickable ? `data-run-id="${escapeAttr(run.runId)}"` : ''}>
+        <td><strong>${escapeHtml(run.runId)}</strong></td>
+        <td>${escapeHtml(run.pipelineId ?? run.workflowId ?? '-')}</td>
+        <td><span class="pill ${statusClass(run.status)}">${escapeHtml(run.status)}</span></td>
+        <td>${formatTime(run.startedAt)}</td>
+      </tr>`,
+        )
+        .join('') || emptyRow(4, 'No runs recorded')
+    }</tbody>
+  </table></div>`
+}
+
+function artifactsList(runId: string, artifacts: Array<Record<string, any>>): string {
+  if (artifacts.length === 0) return '<p class="muted">No artifacts</p>'
+  return `<div class="table-wrap"><table><tbody>${artifacts
+    .map(
+      (a) => `
+    <tr><td>${escapeHtml(a.name)}</td><td>${escapeHtml(a.mimeType)}</td><td>${Number(a.sizeBytes ?? 0).toLocaleString()} bytes</td><td><a href="/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(a.artifactId)}">Download</a></td></tr>`,
+    )
+    .join('')}</tbody></table></div>`
+}
+
+function permissionsSummary(perms: PermissionView): string {
+  const dims = perms.dimensions
+  if (dims.length === 0 && perms.profile === undefined)
+    return '<p class="muted">No declared permissions (default-deny).</p>'
+  const chips = dims.map((d) => `<span class="pill perm">${escapeHtml(d)}</span>`).join('')
+  const profile = perms.profile
+    ? `<span class="pill">profile: ${escapeHtml(perms.profile)}</span>`
+    : ''
+  return `<div class="graph-perms">${chips}${profile}</div>`
+}
+
+// Best-effort permission dimension extraction from a workflow/manifest record.
+// Only dimension labels and profile names are surfaced — never hosts, paths,
+// tool ids, or secret values.
+function collectPermissionDimensions(record: Record<string, any>): PermissionView {
+  const perms =
+    record.permissions ??
+    record.skelm?.permissions ??
+    record.defaultPermissions ??
+    record.manifest?.permissions
+  if (perms === undefined || perms === null || typeof perms !== 'object')
+    return { dimensions: [] }
+  const dimensions = Object.keys(perms).filter(
+    (k) => k !== 'profile' && perms[k] !== undefined && perms[k] !== null,
+  )
+  const profile = typeof perms.profile === 'string' ? perms.profile : undefined
+  return { dimensions, ...(profile !== undefined && { profile }) }
+}
+
+function metric(label: string, value: unknown, note: string): string {
+  return `<div class="card metric"><span class="muted">${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong><span>${escapeHtml(note)}</span></div>`
 }
 
 function emptyRow(cols: number, message: string): string {
@@ -623,24 +1142,20 @@ function statusClass(status: string): string {
   return 'warn'
 }
 
-function isTerminal(status: string): boolean {
-  return status === 'completed' || status === 'failed' || status === 'cancelled'
+function shortHash(value: unknown): string {
+  if (typeof value !== 'string' || value === '') return '-'
+  return value.length > 18 ? `${value.slice(0, 18)}…` : value
 }
 
-function splitApprovalId(id: string): readonly [string, string] {
-  const index = id.indexOf(':')
-  return index === -1 ? [id, ''] : [id.slice(0, index), id.slice(index + 1)]
+function setNotice(message: string): void {
+  el.notice.textContent = message
+  el.notice.classList.toggle('hidden', message === '')
 }
 
 function formatTime(value: unknown): string {
   if (value === undefined || value === null || value === '') return '-'
   const date = typeof value === 'number' ? new Date(value) : new Date(String(value))
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString()
-}
-
-function pageFromHash(): Page {
-  const raw = location.hash.replace('#', '')
-  return navItems.some(([id]) => id === raw) ? (raw as Page) : 'overview'
 }
 
 function messageOf(err: unknown): string {
@@ -669,4 +1184,78 @@ function required<T extends Element>(selector: string, root: ParentNode = docume
   const found = root.querySelector<T>(selector)
   if (found === null) throw new Error(`missing element: ${selector}`)
   return found
+}
+
+// ---------------------------------------------------------------------------
+// Types for read-only gateway payloads
+// ---------------------------------------------------------------------------
+
+interface PermissionView {
+  dimensions: string[]
+  profile?: string
+}
+
+interface AgentPermissionsSummary {
+  dimensions?: string[]
+  profile?: string
+  executableProfiles?: string[]
+}
+
+interface GraphNode {
+  id: string
+  kind?: string
+  label?: string
+  summary?: string
+  permissions?: AgentPermissionsSummary
+  codeOwned?: boolean
+  children?: GraphNode[]
+  data?: Record<string, unknown>
+}
+
+interface GraphResponse {
+  id?: string
+  version?: string
+  kind?: string
+  nodes?: GraphNode[]
+  edges?: Array<{ from: string; to: string; kind?: string; label?: string }>
+  meta?: Record<string, unknown>
+}
+
+interface GatewayEvent {
+  type?: string
+  event?: string
+  stepId?: string
+  toolName?: string
+  timestamp?: number | string
+  at?: number | string
+  data?: unknown
+  payload?: unknown
+  detail?: unknown
+  error?: unknown
+}
+
+interface TaskRecord {
+  taskId: string
+  workflowId?: string
+  childRunId?: string
+  parentRunId?: string
+  status: string
+  createdAt?: string
+}
+
+interface RunRefNode {
+  runId: string
+  pipelineId?: string
+  status?: string
+  taskId?: string
+}
+
+interface LineageNode extends RunRefNode {
+  children?: LineageNode[]
+}
+
+interface LineageResult {
+  runId: string
+  ancestors?: RunRefNode[]
+  descendants?: LineageNode[]
 }

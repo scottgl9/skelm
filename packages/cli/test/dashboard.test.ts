@@ -32,6 +32,85 @@ describe('skelm dashboard', () => {
     expect(readFileSync(join(target, 'src/public/app.mts'), 'utf8')).toContain('Upload Workflow')
   })
 
+  it('scaffolds the module shell with a proxy client and read-only modules', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-dashboard-'))
+    const target = join(dir, 'dashboard')
+    await invoke(['dashboard', 'init', target])
+    const app = readFileSync(join(target, 'src/public/app.mts'), 'utf8')
+
+    // Typed gateway proxy client (same-origin /api/*; token stays server-side).
+    expect(app).toContain('const gateway = {')
+    expect(app).toContain('fetch(`/api${path}`')
+    // No bearer token ever reaches browser JS: the app never constructs an
+    // Authorization header or a `Bearer <token>` string itself.
+    expect(app).not.toMatch(/Bearer\s+\$\{/)
+    expect(app).not.toMatch(/['"`]authorization['"`]\s*:/i)
+    expect(app).not.toMatch(/setRequestHeader\(\s*['"]authorization/i)
+
+    // Module registry + new read-only modules mount in the shell.
+    expect(app).toContain('const MODULES')
+    for (const moduleId of [
+      'graphModule',
+      'lineageModule',
+      'packagesModule',
+      'integrationsModule',
+    ]) {
+      expect(app).toContain(moduleId)
+    }
+
+    // Modules read the new gateway APIs.
+    expect(app).toContain('/v1/workflows/${encodeURIComponent(id)}/graph')
+    expect(app).toContain('/v1/tasks')
+    expect(app).toContain('/v1/lineage/${encodeURIComponent(runId)}')
+    expect(app).toContain('/v1/packages')
+
+    // Graph viewer marks codeOwned nodes.
+    expect(app).toContain('codeOwned')
+    expect(app).toContain('code-owned')
+
+    const css = readFileSync(join(target, 'src/public/styles.css'), 'utf8')
+    expect(css).toContain('.graph-node')
+    expect(css).toContain('.timeline')
+  })
+
+  it('proxies the new read-only views (graph, tasks, packages) through the server', async () => {
+    const gateway = await startGatewayFixture()
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-dashboard-'))
+    const target = join(dir, 'dashboard')
+    await invoke(['dashboard', 'init', target])
+
+    const port = await pickPort()
+    const mod = (await import(pathToFileURL(join(target, 'src/server.mts')).href)) as {
+      startDashboardServer(opts: {
+        port: number
+        gatewayUrl: string
+        token: string
+      }): Promise<{ url: string; close(): Promise<void> }>
+    }
+    const dashboard = await mod.startDashboardServer({
+      port,
+      gatewayUrl: gateway.url,
+      token: 'sekret',
+    })
+    try {
+      const graph = await fetch(`${dashboard.url}/api/v1/workflows/demo/graph`)
+      expect(graph.status).toBe(200)
+      expect(await graph.json()).toMatchObject({ id: 'demo' })
+
+      const tasks = await fetch(`${dashboard.url}/api/v1/tasks`)
+      expect(await tasks.json()).toMatchObject({ tasks: [] })
+
+      const packages = await fetch(`${dashboard.url}/api/v1/packages`)
+      expect(await packages.json()).toMatchObject({ packages: [] })
+
+      // The token was injected server-side on every proxied request.
+      expect(gateway.authorized).toBe(true)
+    } finally {
+      await dashboard.close()
+      await gateway.close()
+    }
+  })
+
   it('starts from the CLI without a local install step', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'skelm-dashboard-'))
     const target = join(dir, 'dashboard')
@@ -150,11 +229,15 @@ async function startGatewayFixture(): Promise<{
   const port = await pickPort()
   const server = createServer((req, res) => {
     if (req.headers.authorization === 'Bearer sekret') authorized = true
-    if (req.url === '/health') {
+    const url = req.url ?? '/'
+    const json = (body: unknown): void => {
       res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ status: 'ok', state: 'running' }))
-      return
+      res.end(JSON.stringify(body))
     }
+    if (url === '/health') return json({ status: 'ok', state: 'running' })
+    if (url.endsWith('/graph')) return json({ id: 'demo', kind: 'pipeline', nodes: [], edges: [] })
+    if (url.startsWith('/v1/tasks')) return json({ tasks: [] })
+    if (url.startsWith('/v1/packages')) return json({ packages: [] })
     res.writeHead(404, { 'content-type': 'application/json' })
     res.end('{}')
   })
