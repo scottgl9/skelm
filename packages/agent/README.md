@@ -102,10 +102,36 @@ createSkelmAgentBackend({
   headers?: Record<string, string> // extra LLM request headers, e.g. OpenRouter attribution
   model?: string         // default model when the step doesn't specify one
   timeoutMs?: number     // LLM HTTP timeout (default 300_000)
+  sessionStore?: SessionStore // persist run() conversations; see Session lifecycle
+  onPromptAssembled?: (info) => void // debug hook: assembled system prompt + tool names
 })
 ```
 
-The backend issues a non-streaming Chat Completions request. Host roots such as `http://localhost:11434`, `/v1` bases such as `http://localhost:8000/v1`, nested bases such as `https://openrouter.ai/api/v1`, and exact URLs ending in `/chat/completions` are all accepted.
+Host roots such as `http://localhost:11434`, `/v1` bases such as `http://localhost:8000/v1`, nested bases such as `https://openrouter.ai/api/v1`, and exact URLs ending in `/chat/completions` are all accepted.
+
+## Streaming
+
+When a run has an event sink (the runner supplies `onPartial`, or `events` + `runId` + `stepId` on the `BackendContext`), agent-loop turns are issued with `stream: true` (SSE) and every assistant content delta is published as a `step.partial` event — one event per delta, not cumulative; the concatenation of all deltas equals the turn's final text. Tool-call turns stream too (the `tool_calls` fragments are assembled, then executed exactly as on the non-streaming path), and permission enforcement is unchanged. Without an event sink the backend issues plain non-streaming requests. If the upstream rejects `stream: true`, the turn is retried once non-streaming, so SSE-less servers keep working.
+
+## Session lifecycle
+
+Configure a `sessionStore` (`InMemorySessionStore`, `FileSessionStore`, or your own `SessionStore`) and `agent()` runs that supply a `sessionId` resume the saved conversation and save the updated history back on completion. On top of the store, the package exports lifecycle verbs that work with **any** `SessionStore` implementation:
+
+| Verb | Shape | Behavior |
+|---|---|---|
+| `forkSession(store, sourceId, targetId)` | → `SerializedSession` | Copy (fork/clone) a session under a new id; the copies are independent. |
+| `exportSession(store, id)` | → `SerializedSession` | Portable JSON snapshot of a session; throws if missing. |
+| `importSession(store, id, json)` | → `SerializedSession` | Validate untrusted JSON (`assertSerializedSession`) and persist it. |
+| `store.list()` / `store.delete(id)` | — | Enumerate / remove stored sessions. |
+| `shouldCompact(...)` / `compact(...)` | — | Token/payload-budget compaction: collapse the history prefix into a summary `system` turn. |
+
+## Replay events
+
+With an event sink wired, a run is fully replayable from its event log. A dashboard can rely on:
+
+- `step.partial` — one event per streamed content delta (`delta` is the chunk, not cumulative).
+- `tool.call` / `tool.result` — emitted for **both** native built-in tool execution and MCP tool dispatch (`tool`, `arguments`, then `result: { content, isError? }` + `durationMs`).
+- `tool.denied` + `permission.denied` — a blocked tool call (denylist, fs/network/exec policy, delegation) emits both; no `tool.call`/`tool.result` is emitted for the denied dispatch.
 
 ## Provider examples
 

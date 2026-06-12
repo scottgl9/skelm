@@ -69,6 +69,7 @@ a string-keyed `backends:` entry — pass a configured instance through
 | `model`      | `string` | —                | Default model when the step doesn't specify one.                         |
 | `timeoutMs`  | `number` | `300_000`        | LLM HTTP timeout in ms.                                                  |
 | `sessionStore` | `SessionStore` | —          | Persist `run()` conversations across turns. See **Session persistence** below. |
+| `onPromptAssembled` | `(info) => void` | —    | Debug hook invoked once per `run()` with the assembled system prompt text and the advertised tool names. Inspection only. |
 
 `baseUrl` may be `http://localhost:11434`, `http://localhost:8000/v1`,
 `https://openrouter.ai/api/v1`, or an exact URL ending in
@@ -103,6 +104,37 @@ tools, skills), so a persisted system turn is never replayed. Runs without a
 `sessionId`, or with no `sessionStore` configured, stay stateless and persist
 nothing. (Multimodal image content is flattened to its text in the persisted
 history and is not re-sent on resume.)
+
+#### Lifecycle verbs
+
+On top of the store, `@skelm/agent` exports lifecycle verbs that work with
+**any** `SessionStore` implementation:
+
+- `forkSession(store, sourceId, targetId)` — copy (fork/clone) a session under
+  a new id. The copies are independent; throws `BackendSessionError` when the
+  source is missing.
+- `exportSession(store, id)` — returns the portable `SerializedSession`
+  snapshot; throws when missing.
+- `importSession(store, id, json)` — validates untrusted JSON via
+  `assertSerializedSession` (version, message roles/content) before
+  persisting; nothing is saved on rejection.
+- `store.list()` / `store.delete(id)` — enumerate / remove stored sessions.
+- `shouldCompact(session, opts)` / `compact(messages, opts)` — the
+  compact/summarize path: when the token or payload budget is exceeded,
+  collapse the history prefix into a single summary `system` turn and keep
+  the recent tail verbatim.
+
+### Replay events
+
+With an event sink wired (the runner supplies `events` + `runId` + `stepId`),
+a run is fully replayable from its event log. A dashboard can rely on:
+
+| Event | Contract |
+|---|---|
+| `step.partial` | One event per streamed content delta. `delta` is the new chunk, **not** cumulative; concatenating all deltas yields the turn's final text. |
+| `tool.call` | Emitted before every tool execution — native built-ins **and** MCP dispatch — with `tool` and parsed `arguments`. |
+| `tool.result` | Emitted after execution with `result: { content, isError? }` and `durationMs`. |
+| `tool.denied` + `permission.denied` | A blocked tool call (denylist, fs/network/exec policy, delegation) emits both; no `tool.call` / `tool.result` is emitted for the denied dispatch. |
 
 ## Provider examples
 
