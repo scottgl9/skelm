@@ -245,6 +245,21 @@ describe('buildBackendRegistry', () => {
     }
   })
 
+  it('threads ACP advisory permission mode from config', async () => {
+    const registry = await buildBackendRegistry({
+      backends: {
+        acp: {
+          command: 'node',
+          args: ['mock-agent.js'],
+          permissionMode: 'advisory',
+        },
+      },
+    } satisfies SkelmConfig)
+
+    const backend = registry?.resolveForAgent({ backendId: 'acp' })
+    expect(backend?.capabilities.toolPermissions).toBe('advisory')
+  })
+
   it('rejects legacy pi RPC command config instead of ignoring it', async () => {
     await expect(
       buildBackendRegistry({

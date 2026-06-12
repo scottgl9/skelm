@@ -1,0 +1,164 @@
+import { createReadStream } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { stripTypeScriptTypes } from 'node:module'
+import { extname, normalize, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import config from '../dashboard.config.mts'
+
+export interface DashboardServerOptions {
+  host?: string
+  port?: number
+  gatewayUrl?: string
+  token?: string
+}
+
+export interface DashboardServerHandle {
+  url: string
+  close(): Promise<void>
+}
+
+interface RuntimeConfig {
+  gatewayUrl: string
+  token?: string
+}
+
+const here = fileURLToPath(new URL('.', import.meta.url))
+const publicDir = resolve(here, 'public')
+
+export async function startDashboardServer(
+  options: DashboardServerOptions = {},
+): Promise<DashboardServerHandle> {
+  const host = options.host ?? config.host ?? '127.0.0.1'
+  const port = Number(options.port ?? config.port ?? 14739)
+  const runtime: RuntimeConfig = {
+    gatewayUrl: String(options.gatewayUrl ?? config.gatewayUrl ?? 'http://127.0.0.1:14738'),
+    ...(options.token ?? config.token ?? process.env.SKELM_TOKEN
+      ? { token: String(options.token ?? config.token ?? process.env.SKELM_TOKEN) }
+      : {}),
+  }
+  const server = createServer((req, res) => {
+    void handleRequest(req, res, runtime)
+  })
+  await new Promise<void>((resolvePromise, reject) => {
+    server.once('error', reject)
+    server.listen(port, host, () => {
+      server.off('error', reject)
+      resolvePromise()
+    })
+  })
+  return {
+    url: `http://${host}:${port}`,
+    close: () => new Promise((resolvePromise) => server.close(() => resolvePromise())),
+  }
+}
+
+async function handleRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  runtime: RuntimeConfig,
+): Promise<void> {
+  try {
+    const url = new URL(req.url ?? '/', 'http://dashboard.local')
+    if (url.pathname.startsWith('/api/')) {
+      await proxyGateway(req, res, url, runtime)
+      return
+    }
+    await serveStatic(url.pathname, res)
+  } catch (err) {
+    if (!res.headersSent) {
+      res.writeHead(500, { 'content-type': 'application/json' })
+    }
+    res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+  }
+}
+
+async function proxyGateway(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  runtime: RuntimeConfig,
+): Promise<void> {
+  const upstream = new URL(url.pathname.slice('/api'.length) + url.search, runtime.gatewayUrl)
+  const headers = new Headers()
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (value === undefined || name.toLowerCase() === 'host') continue
+    headers.set(name, Array.isArray(value) ? value.join(', ') : value)
+  }
+  if (runtime.token !== undefined && runtime.token !== '') {
+    headers.set('authorization', `Bearer ${runtime.token}`)
+  }
+  const init: RequestInit & { duplex?: 'half' } = {
+    method: req.method,
+    headers,
+  }
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    init.body = req as unknown as BodyInit
+    init.duplex = 'half'
+  }
+  const upstreamRes = await fetch(upstream, init)
+  res.writeHead(upstreamRes.status, Object.fromEntries(upstreamRes.headers.entries()))
+  if (upstreamRes.body === null) {
+    res.end()
+    return
+  }
+  const reader = upstreamRes.body.getReader()
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    res.write(Buffer.from(value))
+  }
+  res.end()
+}
+
+async function serveStatic(pathname: string, res: ServerResponse): Promise<void> {
+  if (pathname === '/app.js') {
+    const source = await readFile(resolve(publicDir, 'app.mts'), 'utf8')
+    const js = stripTypeScriptTypes(source, { mode: 'strip' })
+    res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' })
+    res.end(js)
+    return
+  }
+  const requested = pathname === '/' ? '/index.html' : pathname
+  const file = resolve(publicDir, `.${normalize(decodeURIComponent(requested))}`)
+  if (!file.startsWith(publicDir)) {
+    res.writeHead(403)
+    res.end('forbidden')
+    return
+  }
+  let info
+  try {
+    info = await stat(file)
+  } catch {
+    res.writeHead(404)
+    res.end('not found')
+    return
+  }
+  if (!info.isFile()) {
+    res.writeHead(404)
+    res.end('not found')
+    return
+  }
+  res.writeHead(200, { 'content-type': contentType(file) })
+  createReadStream(file).pipe(res)
+}
+
+function contentType(file: string): string {
+  switch (extname(file)) {
+    case '.html':
+      return 'text/html; charset=utf-8'
+    case '.css':
+      return 'text/css; charset=utf-8'
+    case '.js':
+      return 'text/javascript; charset=utf-8'
+    case '.json':
+      return 'application/json; charset=utf-8'
+    default:
+      return 'application/octet-stream'
+  }
+}
+
+if (process.argv[1] !== undefined && import.meta.url === new URL(process.argv[1], 'file:').href) {
+  const server = await startDashboardServer()
+  console.log(`skelm dashboard listening at ${server.url}`)
+}

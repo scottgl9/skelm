@@ -26,6 +26,12 @@ export interface SkelmConfigTriggerSourceEntry {
 }
 
 export interface SkelmConfigBackendEntry {
+  /**
+   * ACP-only permission mode. Defaults to `strict`, which fails closed when
+   * skelm cannot enforce a declared permission policy. `advisory` must be
+   * explicit and is surfaced in runtime diagnostics/audit metadata.
+   */
+  permissionMode?: 'strict' | 'advisory'
   /** Backend-specific configuration. The runtime forwards this to the backend factory. */
   [k: string]: unknown
 }

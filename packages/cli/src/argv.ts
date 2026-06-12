@@ -18,6 +18,7 @@ const COMMANDS = [
   'validate',
   'logs',
   'builder',
+  'dashboard',
 ] as const
 
 type Subcommand = (typeof COMMANDS)[number]
@@ -49,6 +50,10 @@ const VALUE_FLAGS = [
   'reason',
   'run',
   'since',
+  'gateway-url',
+  'host',
+  'port',
+  'token',
   'tz',
   'until',
   'value',
