@@ -259,6 +259,23 @@ The agent backend resolves with a runtime fallback (skelm's
 (`OPENAI_BASE_URL` / `OPENAI_MODEL`) if a codex turn errors. Set
 `SKELM_BUILDER_BACKEND=codex|pi` to pin one backend and skip the fallback.
 
+### `skelm dashboard <init|start> [<dir>]`
+
+Scaffold and run the local skelm operations dashboard.
+
+```
+skelm dashboard init [<dir>] [--force]
+skelm dashboard start [<dir>] [--host <host>] [--port <port>]
+  --gateway-url <url>
+  --token <token>
+```
+
+The scaffold defaults to `dashboard`, uses `.mts` TypeScript source, and has no
+local dependencies or install step. `start` runs `src/server.mts`, serves the
+browser app, and proxies `/api/*` to the configured gateway. For bearer-auth
+gateways, pass `--token` or set `SKELM_DASHBOARD_TOKEN`; the token is injected
+server-side and is not stored in the browser.
+
 ### `skelm validate <pipeline.ts>`
 
 Static check that the pipeline imports cleanly and its declared schemas/steps
