@@ -1,7 +1,9 @@
 value:AgentSession
+value:BROWSER_TOOLS
 value:FileSessionStore
 value:InMemorySessionStore
 value:ModelRegistry
+value:STATE_TOOLS
 value:assertSerializedSession
 value:compact
 value:createSkelmAgentBackend
@@ -14,6 +16,10 @@ value:importSession
 value:serializedSize
 value:shouldCompact
 type:AgentSessionInit
+type:ArtifactHandle
+type:BrowserActionResult
+type:BrowserProvider
+type:BrowserScreenshot
 type:CompactOptions
 type:CompactionResult
 type:FindCutPointOptions
@@ -36,5 +42,6 @@ type:SessionToolCall
 type:ShouldCompactOptions
 type:SkelmAgentBackendCapabilities
 type:SkelmAgentOptions
+type:StateHandle
 type:ThinkingLevel
 type:Unsubscribe

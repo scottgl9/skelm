@@ -404,6 +404,8 @@ async function runAgentLoop(
     secrets: req.secrets,
     signal: ctx.signal,
     delegate: ctx.delegate,
+    agentmemory: ctx.agentmemory,
+    agentmemoryProject: opts.cwd,
     events: ctx.permissions
       ? {
           // Tool.call / tool.result are published by the loop around each
@@ -443,6 +445,7 @@ async function runAgentLoop(
 
   const agentmemory = ctx.agentmemory
   const sessionId = req.sessionId ?? `skelm-${ctx.runId ?? Date.now()}-${ctx.stepId ?? 'agent'}`
+  toolCtx.agentmemorySessionId = sessionId
   if (agentmemory !== undefined) {
     await agentmemory.startSession({ sessionId, project: opts.cwd, cwd: opts.cwd })
   }

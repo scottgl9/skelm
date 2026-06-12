@@ -193,13 +193,31 @@ Every tool calls `TrustEnforcer` before its side effect. Denials emit `permissio
 | `fs_read_glob` | `fsRead` | List a directory with optional `*` pattern filter |
 | `fs_write` | `fsWrite` | Write/overwrite a file; creates parent dirs |
 | `fs_append` | `fsWrite` | Append to a file (creates if missing) |
+| `read_file` | `fsRead` | Read a file or a 1-based line range; output carries line-number prefixes for precise edits |
+| `write_file` | `fsWrite` | Create/overwrite a file (named alias of `fs_write`; prefer `edit_file` for in-place changes) |
+| `edit_file` | `fsWrite` | In-place edit: unique find/replace (or `replaceAll`) **or** a 1-based line-range swap. Refuses without writing when the find target is missing or ambiguous |
 | `http_fetch` | `canFetch(hostname)` (URL parsed first — non-http schemes rejected) | GET / POST / PUT / DELETE / PATCH; response body capped at 4 KiB |
 | `ls` | `fsRead` | Directory listing |
 | `get_secret` | `allowedSecrets` (resolved by the runner) | Returns a masked-availability sentinel — **never** the raw secret value |
 | `load_skill` | `allowedSkills` via `canLoadSkill` | Returns the resolved skill's metadata |
-| `exec` | `canExec(basename(command))` + `canRead(cwd)` if `cwd` provided | Run an allowed binary; **`spawn()` with `shell: false`** — argv array is passed directly, shell metacharacters are NOT expanded |
+| `exec` | `canExec(basename(command))` + `canRead(cwd)` if `cwd` provided | Run an allowed binary; **`spawn()` with `shell: false`** — argv array is passed directly, shell metacharacters are NOT expanded. `executableProfiles` expand into `allowedExecutables` at resolution time, so a profile-granted binary is allowed and a non-granted one denied |
+| `memory_search` | `agentmemory` op `search` via `canUseAgentmemory` | Hybrid (BM25 + vector + graph) search over cross-session memory |
+| `memory_save` | `agentmemory` op `save` | Persist an insight for later recall |
+| `memory_recall` | `agentmemory` op `recall` | Recall recent / by-session memories |
 
 Unknown tool names fall through to `ctx.mcpHost.invokeTool(name, args)` (gated by `canCallTool`), so MCP servers registered with the runner show up automatically.
+
+### Run state, artifacts, and browser (contract tools)
+
+Three further tool groups are **contract-defined**. They are advertised only when their handle/provider is wired onto the agent step; absent the handle they are not advertised and refuse if reached:
+
+| Tool(s) | Gate | Status |
+|---|---|---|
+| `state_get` / `state_set` | Presence of a run-state handle (default-deny: no handle ⇒ denied). No new permission dimension. | Contract defined; **pending runtime wiring** — `BackendContext` does not yet expose a state handle, so today these tools report "not available". |
+| `artifact_put` | Presence of an artifact sink. | Contract defined; **pending runtime wiring** on `BackendContext`. |
+| `browser_navigate` / `browser_click` / `browser_type` / `browser_screenshot` / `browser_extract` | Requires a wired `BrowserProvider`; navigation routes through the **`network`** dimension (`canFetch(host)`), and `browser_screenshot` additionally requires an artifact sink. | **Contract only here — Playwright (or any driver) lands in a future `@skelm/browser-automation` package.** The browser posture reuses the existing `network` dimension plus an artifact sink rather than introducing a new core permission dimension. Without a provider the browser tools are never advertised. |
+
+`builtinToolsForContext(ctx)` is the forward-compatible registration path: it returns `BUILTIN_TOOLS` plus the state/artifact/browser tools whose handles are present on the context. `BrowserProvider`, `StateHandle`, and `ArtifactHandle` are exported so `@skelm/browser-automation` and custom hosts can supply concrete handles.
 
 ### Notes on `exec`
 

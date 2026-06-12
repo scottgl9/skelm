@@ -11,12 +11,15 @@ import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promise
 import { basename, isAbsolute, resolve } from 'node:path'
 
 import { PermissionDeniedError } from '@skelm/core'
-import type { DelegateResult } from '@skelm/core'
-import type { PermissionDimension } from '@skelm/core/permissions'
+import type { AgentmemoryHandle, DelegateResult } from '@skelm/core'
+import type { AgentmemoryOperation, PermissionDimension } from '@skelm/core/permissions'
 import type { TrustEnforcer } from '@skelm/core/permissions'
 import type { Skill } from '@skelm/core/skills'
 
 import type { OpenAITool } from '@skelm/core/openai'
+
+import { BROWSER_TOOLS, type BrowserProvider } from './tools/browser.js'
+import { type ArtifactHandle, STATE_TOOLS, type StateHandle } from './tools/state.js'
 
 export interface ToolResult {
   content: string
@@ -45,6 +48,41 @@ export interface ToolExecutionContext {
    * wired (no pipelineRegistry / no resolved policy) for this run.
    */
   delegate?: ((agentId: string, input: unknown) => Promise<DelegateResult>) | undefined
+  /**
+   * Gateway-owned agentmemory handle, forwarded from the BackendContext. The
+   * memory tools call its methods after `enforcer.canUseAgentmemory` allows the
+   * matching operation. Undefined means agentmemory is not wired for this run
+   * (no integration configured, or the resolved policy denies every op); the
+   * memory tools then refuse with an actionable message.
+   */
+  agentmemory?: AgentmemoryHandle | undefined
+  /**
+   * Stable session id for agentmemory operations, supplied by the backend so
+   * tool-driven memory writes land in the same session as the loop's automatic
+   * observations.
+   */
+  agentmemorySessionId?: string | undefined
+  /** Project root used as the agentmemory `project` scope. */
+  agentmemoryProject?: string | undefined
+  /**
+   * Run-state handle. Present only when the runtime wires a state store into
+   * the step (contract-defined; not yet exposed on BackendContext). Absent →
+   * the state tool refuses and is not advertised.
+   */
+  state?: StateHandle | undefined
+  /**
+   * Artifact handle. Present only when the runtime wires an artifact sink into
+   * the step. Absent → the artifact tool refuses and is not advertised. Also
+   * required as the screenshot sink for the browser tools.
+   */
+  artifacts?: ArtifactHandle | undefined
+  /**
+   * Concrete browser-automation provider. Present only when a provider (e.g.
+   * @skelm/browser-automation) is wired into the run. Absent → the browser
+   * tools are not advertised at all (the contract is not exposed without an
+   * implementation).
+   */
+  browser?: BrowserProvider | undefined
 }
 
 export type ToolHandler = (args: unknown, ctx: ToolExecutionContext) => Promise<ToolResult>
@@ -96,6 +134,31 @@ function publishDenied(
     detail,
     at: Date.now(),
   })
+}
+
+/**
+ * Gate an agentmemory tool on the matching operation and the presence of a
+ * handle. Returns a denial ToolResult to short-circuit, or undefined to
+ * proceed. Mirrors the other tools: a denied op publishes `permission.denied`
+ * and refuses; a missing handle is reported as not-wired.
+ */
+function requireAgentmemory(
+  ctx: ToolExecutionContext,
+  op: AgentmemoryOperation,
+): ToolResult | undefined {
+  const decision = ctx.enforcer.canUseAgentmemory(op)
+  if (!decision.allow) {
+    publishDenied(ctx.events, 'agentmemory', `memory.${op} denied: ${decision.reason}`)
+    return { content: `Permission denied: ${decision.reason}`, isError: true }
+  }
+  if (ctx.agentmemory === undefined) {
+    return {
+      content:
+        'Agent memory is not available for this run (the agentmemory integration is not configured on the gateway).',
+      isError: true,
+    }
+  }
+  return undefined
 }
 
 export const BUILTIN_TOOLS: BuiltInToolDef[] = [
@@ -233,6 +296,276 @@ export const BUILTIN_TOOLS: BuiltInToolDef[] = [
       } catch (err) {
         return { content: `Error appending to file: ${(err as Error).message}`, isError: true }
       }
+    },
+  },
+
+  {
+    name: 'read_file',
+    description:
+      'Read a text file, optionally a line range. Use `startLine`/`endLine` (1-based, ' +
+      'inclusive) to read a slice; omit both to read the whole file. Output is prefixed ' +
+      'with line numbers so edits can target exact lines.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to the file to read.' },
+        startLine: { type: 'number', description: '1-based first line to read (inclusive).' },
+        endLine: { type: 'number', description: '1-based last line to read (inclusive).' },
+      },
+      required: ['path'],
+    },
+    handler: async (args, ctx): Promise<ToolResult> => {
+      const p = args as { path?: string; startLine?: number; endLine?: number }
+      if (!p.path) return { content: 'Error: path is required', isError: true }
+      try {
+        const resolved = normalizePath(p.path, ctx)
+        const decision = ctx.enforcer.canRead(resolved)
+        if (!decision.allow) {
+          publishDenied(ctx.events, 'fs.read', `read_file denied: ${resolved} — ${decision.reason}`)
+          return { content: `Permission denied: ${decision.reason}`, isError: true }
+        }
+        const raw = await readFile(resolved, 'utf-8')
+        const lines = raw.split('\n')
+        const start = p.startLine !== undefined ? Math.max(1, Math.floor(p.startLine)) : 1
+        const end =
+          p.endLine !== undefined ? Math.min(lines.length, Math.floor(p.endLine)) : lines.length
+        if (start > end) {
+          return { content: `Error: startLine ${start} is after endLine ${end}`, isError: true }
+        }
+        const slice = lines
+          .slice(start - 1, end)
+          .map((l, i) => `${start + i}\t${l}`)
+          .join('\n')
+        return { content: slice }
+      } catch (err) {
+        return { content: `Error reading file: ${(err as Error).message}`, isError: true }
+      }
+    },
+  },
+
+  {
+    name: 'write_file',
+    description:
+      'Create or overwrite a file with the given content, gated on fsWrite. Distinct from ' +
+      'fs_write only in name; prefer edit_file for in-place changes to existing files.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to the file to write.' },
+        content: { type: 'string', description: 'Full file contents to write.' },
+      },
+      required: ['path', 'content'],
+    },
+    handler: async (args, ctx): Promise<ToolResult> => {
+      const p = args as { path?: string; content?: string }
+      if (!p.path || p.content === undefined) {
+        return { content: 'Error: path and content are required', isError: true }
+      }
+      try {
+        const resolved = normalizePath(p.path, ctx)
+        const decision = ctx.enforcer.canWrite(resolved)
+        if (!decision.allow) {
+          publishDenied(
+            ctx.events,
+            'fs.write',
+            `write_file denied: ${resolved} — ${decision.reason}`,
+          )
+          return { content: `Permission denied: ${decision.reason}`, isError: true }
+        }
+        const parent = requireParentDir(resolved)
+        await mkdir(parent, { recursive: true })
+        await writeFile(resolved, p.content, 'utf-8')
+        return { content: `Wrote ${resolved} (${p.content.length} bytes)` }
+      } catch (err) {
+        return { content: `Error writing file: ${(err as Error).message}`, isError: true }
+      }
+    },
+  },
+
+  {
+    name: 'edit_file',
+    description:
+      'Edit an existing file in place. Two modes: (1) find/replace — pass `find` and ' +
+      '`replace`; `find` must occur exactly once unless `replaceAll` is true. (2) line ' +
+      'range — pass `startLine`/`endLine` (1-based, inclusive) and `replace` to swap those ' +
+      'lines. Gated on fsWrite. Returns an error without writing if the target is ambiguous ' +
+      'or not found, so the edit is never applied to the wrong place.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to the file to edit.' },
+        find: { type: 'string', description: 'Exact substring to replace (find/replace mode).' },
+        replace: { type: 'string', description: 'Replacement text.' },
+        replaceAll: {
+          type: 'boolean',
+          description: 'Replace every occurrence of `find` (default false: must be unique).',
+        },
+        startLine: { type: 'number', description: '1-based first line to replace (range mode).' },
+        endLine: { type: 'number', description: '1-based last line to replace (range mode).' },
+      },
+      required: ['path'],
+    },
+    handler: async (args, ctx): Promise<ToolResult> => {
+      const p = args as {
+        path?: string
+        find?: string
+        replace?: string
+        replaceAll?: boolean
+        startLine?: number
+        endLine?: number
+      }
+      if (!p.path) return { content: 'Error: path is required', isError: true }
+      const rangeMode = p.startLine !== undefined || p.endLine !== undefined
+      const findMode = p.find !== undefined
+      if (rangeMode === findMode) {
+        return {
+          content:
+            'Error: provide exactly one edit mode — either `find` (find/replace) or `startLine`/`endLine` (line range).',
+          isError: true,
+        }
+      }
+      if (p.replace === undefined) {
+        return { content: 'Error: replace is required', isError: true }
+      }
+      try {
+        const resolved = normalizePath(p.path, ctx)
+        const decision = ctx.enforcer.canWrite(resolved)
+        if (!decision.allow) {
+          publishDenied(
+            ctx.events,
+            'fs.write',
+            `edit_file denied: ${resolved} — ${decision.reason}`,
+          )
+          return { content: `Permission denied: ${decision.reason}`, isError: true }
+        }
+        const original = await readFile(resolved, 'utf-8')
+        let updated: string
+        if (findMode) {
+          const find = p.find as string
+          if (find.length === 0) {
+            return { content: 'Error: find must be non-empty', isError: true }
+          }
+          const count = original.split(find).length - 1
+          if (count === 0) {
+            return { content: `Error: find text not found in ${resolved}`, isError: true }
+          }
+          if (count > 1 && p.replaceAll !== true) {
+            return {
+              content: `Error: find text occurs ${count} times in ${resolved}; pass replaceAll:true or a more specific find`,
+              isError: true,
+            }
+          }
+          updated =
+            p.replaceAll === true
+              ? original.split(find).join(p.replace)
+              : original.replace(find, p.replace)
+        } else {
+          const lines = original.split('\n')
+          const start = Math.max(1, Math.floor(p.startLine ?? 1))
+          const end = Math.min(lines.length, Math.floor(p.endLine ?? start))
+          if (start > end) {
+            return { content: `Error: startLine ${start} is after endLine ${end}`, isError: true }
+          }
+          const replacementLines = p.replace.split('\n')
+          lines.splice(start - 1, end - start + 1, ...replacementLines)
+          updated = lines.join('\n')
+        }
+        await writeFile(resolved, updated, 'utf-8')
+        return { content: `Edited ${resolved} (${updated.length} bytes)` }
+      } catch (err) {
+        return { content: `Error editing file: ${(err as Error).message}`, isError: true }
+      }
+    },
+  },
+
+  {
+    name: 'memory_search',
+    description:
+      'Search cross-session agent memory (hybrid BM25 + vector + graph) and return the top ' +
+      'hits. Gated on the agentmemory `search` operation.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query.' },
+        limit: { type: 'number', description: 'Max hits to return (default 5).' },
+      },
+      required: ['query'],
+    },
+    handler: async (args, ctx): Promise<ToolResult> => {
+      const p = args as { query?: string; limit?: number }
+      if (!p.query) return { content: 'Error: query is required', isError: true }
+      const denied = requireAgentmemory(ctx, 'search')
+      if (denied) return denied
+      const handle = ctx.agentmemory as AgentmemoryHandle
+      const result = await handle.smartSearch({
+        query: p.query,
+        limit: p.limit ?? 5,
+        ...(ctx.agentmemorySessionId !== undefined && { sessionId: ctx.agentmemorySessionId }),
+      })
+      return { content: JSON.stringify(result.hits, null, 2) }
+    },
+  },
+
+  {
+    name: 'memory_save',
+    description:
+      'Persist an insight into cross-session agent memory for later recall. Gated on the ' +
+      'agentmemory `save` operation.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short title for the insight.' },
+        content: { type: 'string', description: 'The insight body to store.' },
+        concepts: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional concept tags.',
+        },
+      },
+      required: ['title', 'content'],
+    },
+    handler: async (args, ctx): Promise<ToolResult> => {
+      const p = args as { title?: string; content?: string; concepts?: readonly string[] }
+      if (!p.title || p.content === undefined) {
+        return { content: 'Error: title and content are required', isError: true }
+      }
+      const denied = requireAgentmemory(ctx, 'save')
+      if (denied) return denied
+      const handle = ctx.agentmemory as AgentmemoryHandle
+      const result = await handle.save({
+        title: p.title,
+        content: p.content,
+        ...(p.concepts !== undefined && { concepts: p.concepts }),
+        ...(ctx.agentmemorySessionId !== undefined && { sessionId: ctx.agentmemorySessionId }),
+        ...(ctx.agentmemoryProject !== undefined && { project: ctx.agentmemoryProject }),
+      })
+      return { content: `Saved insight "${p.title}" (id ${result.id})` }
+    },
+  },
+
+  {
+    name: 'memory_recall',
+    description:
+      'Recall recent or by-session memories (distinct from hybrid memory_search). Gated on ' +
+      'the agentmemory `recall` operation.',
+    parameters: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Max memories to return (default 5).' },
+      },
+      required: [],
+    },
+    handler: async (args, ctx): Promise<ToolResult> => {
+      const p = args as { limit?: number }
+      const denied = requireAgentmemory(ctx, 'recall')
+      if (denied) return denied
+      const handle = ctx.agentmemory as AgentmemoryHandle
+      const result = await handle.recall({
+        limit: p.limit ?? 5,
+        ...(ctx.agentmemorySessionId !== undefined && { sessionId: ctx.agentmemorySessionId }),
+        ...(ctx.agentmemoryProject !== undefined && { project: ctx.agentmemoryProject }),
+      })
+      return { content: JSON.stringify(result.hits, null, 2) }
     },
   },
 
@@ -655,4 +988,28 @@ export function toOpenAITool(tool: BuiltInToolDef): OpenAITool {
       ...(tool.parameters && { parameters: tool.parameters }),
     },
   }
+}
+
+/**
+ * The built-in tools advertised for a given run, including provider-gated
+ * tools. The always-on tools (fs, exec, file-edit, agentmemory, …) are in
+ * `BUILTIN_TOOLS` and refuse at dispatch when their dimension/handle is not
+ * granted. The state/artifact and browser tools are contract-gated on the
+ * presence of their handle/provider: they are advertised ONLY when wired, so an
+ * agent without a browser provider never sees the browser tools at all. The
+ * agent loop can adopt this in place of the static `BUILTIN_TOOLS` once the
+ * runtime forwards state/artifact/browser handles onto the context; until then
+ * the conditional sets are inert because the handles are always undefined.
+ */
+export function builtinToolsForContext(ctx: ToolExecutionContext): BuiltInToolDef[] {
+  const tools: BuiltInToolDef[] = [...BUILTIN_TOOLS]
+  if (ctx.state !== undefined || ctx.artifacts !== undefined) {
+    for (const t of STATE_TOOLS) {
+      if (t.name.startsWith('state_') && ctx.state === undefined) continue
+      if (t.name.startsWith('artifact_') && ctx.artifacts === undefined) continue
+      tools.push(t)
+    }
+  }
+  if (ctx.browser !== undefined) tools.push(...BROWSER_TOOLS)
+  return tools
 }
