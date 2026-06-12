@@ -118,7 +118,9 @@ export function runBackendContract(
         } else {
           expect(backend.inference).toBeUndefined()
         }
-        expect(['native', 'wrapped', 'unsupported']).toContain(backend.capabilities.toolPermissions)
+        expect(['native', 'wrapped', 'advisory', 'unsupported']).toContain(
+          backend.capabilities.toolPermissions,
+        )
       })
     })
 
@@ -166,6 +168,7 @@ export function runBackendContract(
         await withBackend(backendOrFactory, async (backend) => {
           if (typeof backend.run !== 'function') return
           if (backend.capabilities.toolPermissions === 'native') return
+          if (backend.capabilities.toolPermissions === 'advisory') return
 
           const registry = new BackendRegistry()
           registry.register(backend)

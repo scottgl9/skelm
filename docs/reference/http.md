@@ -158,6 +158,7 @@ a five-second TTL.
 | GET    | `/v1/dashboard/errors`        | Recent failed runs + groupings by pipeline + message. Query: `limit`                       |
 | GET    | `/v1/dashboard/schedules`     | Trigger status: kind, workflowId, fired count, inflight, queue/running counts, next/last fire metadata, lastError |
 | GET    | `/v1/dashboard/approvals`     | Pending approvals with `ageMs`; reports `pendingCount` and `oldestPendingAgeMs`            |
+| GET    | `/v1/dashboard/runtime`       | Gateway runtime metadata: auth mode, metrics status, backends, agents, MCP servers, ACP sessions, advisory backends |
 
 Example:
 
@@ -166,8 +167,19 @@ curl -H "Authorization: Bearer $SKELM_TOKEN" \
   "http://127.0.0.1:14738/v1/dashboard/analytics?metric=runs-per-hour&resolution=hour&dateFrom=1715600000000&dateTo=1715686400000"
 ```
 
-A minimal reference dashboard that consumes these endpoints lives in
-[`examples/dashboard-demo`](https://github.com/scottgl9/skelm/tree/main/examples/dashboard-demo).
+Use `skelm dashboard init` and `skelm dashboard start` for the maintained local
+dashboard app.
+
+## Memory Inspection
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET    | `/runs/:runId/artifacts` | List workspace-backed artifacts for a run |
+| GET    | `/runs/:runId/artifacts/:artifactId` | Download artifact bytes |
+| GET    | `/v1/state/:namespace` | List workflow KV state entries. Query: `prefix`, `limit` |
+| GET    | `/v1/state/:namespace/:key` | Read one workflow KV state value |
+| GET    | `/v1/agentmemory/status` | Agentmemory client status |
+| GET    | `/v1/agentmemory/sessions` | Agentmemory sessions. Query: `limit` |
 
 ## Workflow health (`/v1/workflows/health`)
 

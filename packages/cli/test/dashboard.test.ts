@@ -1,5 +1,5 @@
-import { mkdtempSync, readFileSync } from 'node:fs'
-import { createServer } from 'node:http'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { createServer, request } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
@@ -24,12 +24,8 @@ describe('skelm dashboard', () => {
     }
     expect(pkg.dependencies).toBeUndefined()
     expect(pkg.devDependencies).toBeUndefined()
-    expect(readFileSync(join(target, 'dashboard.config.mts'), 'utf8')).toContain(
-      'DashboardConfig',
-    )
-    expect(readFileSync(join(target, 'src/server.mts'), 'utf8')).toContain(
-      'startDashboardServer',
-    )
+    expect(readFileSync(join(target, 'dashboard.config.mts'), 'utf8')).toContain('DashboardConfig')
+    expect(readFileSync(join(target, 'src/server.mts'), 'utf8')).toContain('startDashboardServer')
     expect(readFileSync(join(target, 'src/public/app.mts'), 'utf8')).toContain('type Page')
   })
 
@@ -75,6 +71,33 @@ describe('skelm dashboard', () => {
     } finally {
       await dashboard.close()
       await gateway.close()
+    }
+  })
+
+  it('rejects traversal outside src/public even for sibling prefix matches', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'skelm-dashboard-'))
+    const target = join(dir, 'dashboard')
+    await invoke(['dashboard', 'init', target])
+    mkdirSync(join(target, 'src', 'public2'))
+    writeFileSync(join(target, 'src', 'public2', 'secret.txt'), 'top-secret', 'utf8')
+
+    const port = await pickPort()
+    const mod = (await import(pathToFileURL(join(target, 'src/server.mts')).href)) as {
+      isPathInside(root: string, target: string): boolean
+      startDashboardServer(opts: {
+        port: number
+      }): Promise<{ url: string; close(): Promise<void> }>
+    }
+    expect(
+      mod.isPathInside('/tmp/dashboard/src/public', '/tmp/dashboard/src/public2/secret.txt'),
+    ).toBe(false)
+    const dashboard = await mod.startDashboardServer({ port })
+    try {
+      const res = await rawGet(port, '/%2e%2e%2fpublic2/secret.txt')
+      expect(res.statusCode).not.toBe(200)
+      expect(res.body).not.toContain('top-secret')
+    } finally {
+      await dashboard.close()
     }
   })
 
@@ -152,4 +175,30 @@ async function pickPort(): Promise<number> {
   await new Promise<void>((resolve) => server.close(() => resolve()))
   if (address === null || typeof address === 'string') throw new Error('failed to allocate port')
   return address.port
+}
+
+async function rawGet(port: number, path: string): Promise<{ statusCode: number; body: string }> {
+  return await new Promise((resolve, reject) => {
+    const req = request(
+      {
+        host: '127.0.0.1',
+        port,
+        path,
+        method: 'GET',
+      },
+      (res) => {
+        const chunks: string[] = []
+        res.setEncoding('utf8')
+        res.on('data', (chunk) => chunks.push(chunk))
+        res.on('end', () =>
+          resolve({
+            statusCode: res.statusCode ?? 0,
+            body: chunks.join(''),
+          }),
+        )
+      },
+    )
+    req.on('error', reject)
+    req.end()
+  })
 }

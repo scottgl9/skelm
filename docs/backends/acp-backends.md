@@ -102,7 +102,28 @@ export default pipeline({
 })
 ```
 
-The step's permissions are forwarded to the subprocess as metadata. They are *not* enforced at the skelm layer — the subprocess decides whether to honour them.
+By default, ACP runs in strict mode. If a step declares a non-empty permission
+policy that skelm cannot enforce for the ACP process, the run fails closed
+before the subprocess starts.
+
+Operators may explicitly opt into advisory mode:
+
+```ts
+export default defineConfig({
+  backends: {
+    acp: {
+      command: 'my-acp-agent',
+      args: ['--acp'],
+      permissionMode: 'advisory',
+    },
+  },
+})
+```
+
+Advisory mode forwards permissions to the subprocess as metadata and emits
+`permission.advisory` run events plus audit entries. It does not silently weaken
+security: `permissionMode: 'advisory'` must be present in config, and network
+egress still requires the gateway egress proxy for network policies.
 
 ## Capabilities
 
@@ -112,14 +133,18 @@ ACP backends declare:
 - `streaming: true`
 - `mcp: true` (advisory only — see above)
 - `skills: false`
-- `toolPermissions: 'unsupported'`
+- `toolPermissions: 'unsupported'` in strict mode
+- `toolPermissions: 'advisory'` only when `permissionMode: 'advisory'`
 
 ## Troubleshooting
 
 - **"command not found"** — verify the binary is on `$PATH` (`which copilot`, `which claude`, etc.). Use an absolute `command:` path if needed.
 - **"Authentication failed"** — log into the agent through its own mechanism; skelm cannot help here.
 - **"Timeout waiting for ACP response"** — the subprocess is unresponsive. Check that it works standalone (`claude --acp` then send a prompt manually).
-- **"Agent ignored my permission"** — ACP enforcement is advisory; switch to an SDK backend (`@skelm/opencode` or `@skelm/pi` SDK) for native enforcement.
+- **"Agent ignored my permission"** — ACP advisory mode does not enforce skelm
+  permissions in the subprocess. Remove `permissionMode: 'advisory'` to fail
+  closed, or switch to an SDK backend (`@skelm/opencode` or `@skelm/pi` SDK)
+  for native enforcement.
 
 ## See also
 
