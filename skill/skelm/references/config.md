@@ -1,18 +1,31 @@
-# Config reference (`skelm.config.ts`)
+# Config reference
 
-The CLI walks up from `cwd` to find `skelm.config.ts` (or `.js` / `.mjs`). When none is found, the gateway uses [`DEFAULT_CONFIG`](../../../packages/core/src/config.ts).
+skelm uses two config files with distinct ownership:
 
-## Shape
+| File | Owner | Purpose |
+|---|---|---|
+| `skelm.config.ts` | workflow author, project-local | workflows, backends, permissions, trigger sources |
+| `skelm.gateway.ts` | operator, runtime-local | server port/host, storage, plugins, gateway auth |
+
+## Workflow project config (`skelm.config.ts`)
+
+For `skelm run <directory>`, the CLI walks up from that directory to find the nearest `skelm.config.ts`. For `skelm run <file>`, the CLI also walks up from the workflow file's directory; if a config is found, its path is sent to the gateway as `configPath` and the gateway loads it, applying its `defaults.permissions`, `defaults.permissionProfiles`, and backend selections on top of gateway-wide defaults for that run only. A config load failure is non-fatal and falls back silently to gateway-wide defaults. When no config is found the gateway uses [`DEFAULT_CONFIG`](https://github.com/scottgl9/skelm/blob/main/packages/core/src/config.ts).
+
+Use `defineWorkflowConfig` when authoring this file. TypeScript will reject gateway-only fields (`server`, `storage`, `plugins`, `secrets`) at the type level.
+
+## Shape (`SkelmWorkflowConfig`)
 
 ```ts
-import { defineConfig } from 'skelm'
+import { defineWorkflowConfig } from 'skelm'
 
-export default defineConfig({
+export default defineWorkflowConfig({
+  entrypoint?: string,                       // workflow run by `skelm run <dir>` (relative to this file)
+
   // ── Backends ────────────────────────────────────────────────────────
   backend?: string,                          // legacy single-backend selector; prefer `backends.default`
   backends?: {
     default?: string,                        // used by both infer() and agent() unless overridden
-    infer?:     string,                        // optional override for infer()
+    infer?:   string,                        // optional override for infer()
     agent?:   string,                        // optional override for agent()
     [id: string]: SkelmConfigBackendEntry | string | undefined,
   },
@@ -43,41 +56,34 @@ export default defineConfig({
     backend?:            string,             // alias for backends.default
     permissions?:        AgentPermissions,   // project-wide permission baseline
     permissionProfiles?: Record<string, AgentPermissions>,
+    // Named executable sets referenced by permissions.executableProfiles.
+    // Definitions only — nothing is granted unless a permission layer
+    // references a profile by name. See docs/reference/permissions.md.
+    executableProfiles?: Record<string, ExecutableProfileDefinition>,
   },
 
-  // ── Operational surfaces ────────────────────────────────────────────
-  secrets?: {
-    driver?: 'env' | 'file',
-    file?:   string,                         // path to JSON secrets file when driver === 'file'
-  },
-  storage?: {
-    runs?:       { driver?: 'sqlite' | 'memory', path?: string },
-    state?:      { driver?: 'sqlite' | 'memory', path?: string },
-    workspaces?: { base?: string, ephemeralBase?: string },
-  },
-  server?: {
-    port?:              number,              // default: 14738
-    host?:              string,              // default: 127.0.0.1
-    auth?:              { mode: 'none' | 'bearer' },
-    maxConcurrentRuns?: number,              // default: 10
-    proxy?: {
-      enabled?: boolean,                     // default: true
-      port?: number,                         // default: server.port + 1
-    },
-  },
-  plugins?: readonly string[],               // package names imported at gateway startup
+  // ── Trigger sources ─────────────────────────────────────────────────
+  triggerSources?: readonly SkelmConfigTriggerSourceEntry[],
 
-  // ── Optional integrations ───────────────────────────────────────────
-  agentmemory?: {
-    enabled?:    boolean,                    // default false — integration is off unless true
-    url?:        string,                     // default 'http://localhost:3111'
-    secretName?: string,                     // secret resolved by SecretResolver, sent as Bearer
-    timeoutMs?:  number,                     // per-request timeout, default 3000
-  },
+  // ── Environment variables ───────────────────────────────────────────
+  env?: Record<string, string>,              // static defaults; layered with .env (see below)
 })
 ```
 
 `SkelmConfigBackendEntry` is a free-form record forwarded to the matching factory. Strings allowed for keys like `backends.default` (selectors), record values for backend-specific config (`apiKey`, `model`, `baseUrl`, …).
+
+`ExecutableProfileDefinition` is the value shape of `defaults.executableProfiles`:
+
+```ts
+interface ExecutableProfileDefinition {
+  description?: string            // shown by inspection surfaces
+  executables: readonly string[]  // matched like allowedExecutables (binary-level)
+  notes?: string                  // free-form operator notes
+  tags?: readonly string[]        // grouping labels for inspection
+}
+```
+
+Profiles are referenced by name from `permissions.executableProfiles`; an unknown reference fails `skelm validate` and rejects the run at workflow load. See the executable-profiles section of [docs/reference/permissions.md](./permissions.md) for resolution semantics.
 
 ## Backends
 
@@ -87,24 +93,48 @@ The CLI knows these ids and wires them automatically:
 |-----------------|----------------------------------------|----------------------------------------|
 | `openai`        | `createOpenAIBackend`                  | OpenAI-compatible HTTP endpoint        |
 | `anthropic`     | `createAnthropicBackend`               | Direct Anthropic API                   |
+| `skelm-agent`   | `createSkelmAgentBackend`              | OpenAI-compatible agent loop           |
 | `opencode`      | `createOpencodeBackendFromConfig`      | opencode SDK                           |
 | `copilot-acp`   | `createAcpBackend`                     | GitHub Copilot ACP subprocess          |
 | `acp`           | `createAcpBackend`                     | Generic ACP; `command` required        |
 | `pi`            | `createPiSdkBackend`                   | Pi SDK backend                         |
 
-For the **pi SDK** backend, register an instance:
+For Pi, either configure the `pi` backend entry or register an instance:
 
 ```ts
-import { defineConfig } from 'skelm'
+import { defineWorkflowConfig } from 'skelm'
 import { createPiSdkBackend } from '@skelm/pi'
 
-export default defineConfig({
-  backends: { agent: 'pi' },
-  instances: [createPiSdkBackend({ id: 'pi' })],
+export default defineWorkflowConfig({
+  backends: {
+    agent: 'pi',
+    pi: {
+      provider: 'openai',
+      model: 'qwen36',
+      baseUrl: 'http://localhost:8000/v1',
+      apiKey: 'unused',
+    },
+  },
+  // or: instances: [createPiSdkBackend({ id: 'pi', ... })],
 })
 ```
 
 API keys can be inlined (`apiKey: 'sk-...'`) or resolved from env (`apiKey: { secret: 'OPENAI_API_KEY' }`). The runtime resolves the secret at gateway start.
+
+For `skelm-agent`, `headers` may also contain string values or env-backed
+secret references. This is useful for OpenRouter attribution headers:
+
+```ts
+'skelm-agent': {
+  baseUrl: 'https://openrouter.ai/api/v1',
+  apiKey: { secret: 'OPENROUTER_API_KEY' },
+  model: 'openai/gpt-5.2',
+  headers: {
+    'HTTP-Referer': 'https://skelm.dev',
+    'X-OpenRouter-Title': 'skelm',
+  },
+}
+```
 
 ## Agent registry entries
 
@@ -144,11 +174,13 @@ interface SkelmConfigMcpServerEntry {
 
 ## Full example
 
+`skelm.config.ts` (workflow project):
+
 ```ts
-import { defineConfig } from 'skelm'
+import { defineWorkflowConfig } from 'skelm'
 import { createPiSdkBackend } from '@skelm/pi'
 
-export default defineConfig({
+export default defineWorkflowConfig({
   backends: {
     default: 'openai',
     agent:   'pi',
@@ -192,10 +224,19 @@ export default defineConfig({
       },
     },
   },
+})
+```
 
+`skelm.gateway.ts` (operator):
+
+```ts
+import { defineGatewayConfig } from 'skelm'
+
+export default defineGatewayConfig({
   secrets: { driver: 'env' },
 
   storage: {
+    // SQLite is the default local production choice.
     runs:  { driver: 'sqlite', path: '.skelm/runs.sqlite' },
     state: { driver: 'sqlite', path: '.skelm/state.sqlite' },
   },
@@ -208,10 +249,188 @@ export default defineConfig({
 })
 ```
 
+Postgres-backed runs storage (in `skelm.gateway.ts`):
+
+```ts
+export default defineGatewayConfig({
+  storage: {
+    runs: {
+      driver: 'postgres',
+      url: 'postgres://user:pass@localhost:5432/skelm',
+      schema: 'skelm',
+      // optional:
+      poolSize: 20,
+      artifactQuotaBytes: 268_435_456,
+    },
+  },
+})
+```
+
+## Environment variables — `.env` and `config.env`
+
+The CLI loads environment variables from two layered sources at startup so workflow authors can keep model names, base URLs, and similar defaults out of code:
+
+1. **`config.env`** — static defaults declared inside `skelm.config.mts`.
+2. **`<projectRoot>/.env`** — a [dotenv](https://github.com/motdotla/dotenv) file at the same directory as the config file. Add it to `.gitignore` if it carries secrets.
+3. **`process.env`** — the parent process's environment, always wins.
+
+Precedence is `process.env > .env > config.env`. The CLI merges the lower layers into `process.env` so subprocess steps (`ctx.exec`, coding agents, MCP servers) inherit them, but **values already set in the parent process are never overwritten** — running `OPENAI_BASE_URL=https://staging skelm run …` keeps the explicit override.
+
+```ts
+// skelm.config.mts
+import { defineWorkflowConfig } from 'skelm'
+
+export default defineWorkflowConfig({
+  env: {
+    OPENAI_MODEL: 'gpt-4o-mini',
+    OPENAI_BASE_URL: 'https://api.openai.com/v1',
+  },
+})
+```
+
+```bash
+# .env (gitignored)
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o   # overrides config.env default
+```
+
+```bash
+# explicit override wins over both
+OPENAI_MODEL=gpt-4-turbo skelm run my.workflow.mts
+```
+
+For secrets accessed via `step.secrets` declarations, the existing `secrets.driver` mechanism is the right channel — the `.env` layer is intended for non-secret defaults and for operators who already manage secrets via `.env` files.
+
+For the full list of variables skelm reads at runtime, see the [Environment variables reference](./environment-variables.md).
+
+## entrypoint
+
+When `skelm run <directory>` targets a directory, the CLI looks for the nearest
+`skelm.config.*` and runs the workflow named by its `entrypoint` field, resolved
+relative to the config file. This lets a workflow project be run by directory:
+
+```ts
+// myproject/skelm.config.mts
+import { defineWorkflowConfig } from 'skelm'
+export default defineWorkflowConfig({ entrypoint: './myproject.workflow.mts' })
+```
+
+```bash
+skelm run myproject        # runs myproject/myproject.workflow.mts
+```
+
+When unset, `skelm run <dir>` falls back to `index.workflow.{mts,ts}` or a
+single unambiguous `*.workflow.{mts,ts}` file. See the
+[`skelm run` reference](./cli.md). Note the gateway resolves backends from the
+config it was **started** with, so a project's own backend wiring only applies
+when the gateway runs with that config.
+
+## Gateway config (`skelm.gateway.ts`)
+
+The gateway config is operator-owned and runtime-local. It controls how the gateway process is hosted, where it stores data, and which plugins it loads. Use `defineGatewayConfig` when authoring this file. TypeScript will reject workflow-only fields (`entrypoint`, `instances`, `registries`, `triggerSources`) at the type level.
+
+### Shape (`SkelmGatewayConfig`)
+
+```ts
+import { defineGatewayConfig } from 'skelm'
+
+export default defineGatewayConfig({
+  // ── Server ───────────────────────────────────────────────────────────
+  server?: {
+    port?:              number,              // default: 14738
+    host?:              string,              // default: 127.0.0.1
+    auth?:              { mode: 'none' | 'bearer' },
+    maxConcurrentRuns?: number,              // default: 10
+    proxy?: {
+      enabled?: boolean,                     // default: true
+      port?: number,                         // default: server.port + 1
+    },
+  },
+
+  // ── Storage ──────────────────────────────────────────────────────────
+  storage?: {
+    runs?: {
+      driver?: 'sqlite' | 'memory' | 'postgres',
+      // sqlite only:
+      path?: string,
+      // postgres only (PostgreSQL 15+):
+      url?: string,
+      schema?: string,
+      poolSize?: number,
+      artifactQuotaBytes?: number,
+    },
+    state?:      { driver?: 'sqlite' | 'memory', path?: string },
+    workspaces?: { base?: string, ephemeralBase?: string },
+  },
+
+  // ── Secrets ──────────────────────────────────────────────────────────
+  secrets?: {
+    driver?: 'env' | 'file',
+    file?:   string,                         // path to JSON secrets file when driver === 'file'
+  },
+
+  // ── Plugins & integrations ───────────────────────────────────────────
+  plugins?: readonly string[],               // package names imported at gateway startup
+  agentmemory?: { enabled?: boolean, url?: string, secretName?: string, timeoutMs?: number },
+
+  // ── Operator grants ──────────────────────────────────────────────────
+  defaults?: {
+    unrestrictedGrants?: readonly string[],  // workflow ids allowed to run unrestricted
+    permissions?:        AgentPermissions,   // gateway-wide permission baseline
+    permissionProfiles?: Record<string, AgentPermissions>,
+    // Named executable sets referenced by permissions.executableProfiles,
+    // available to all projects on this gateway. Definitions only — no
+    // profile is granted unless permissions reference it by name.
+    executableProfiles?: Record<string, ExecutableProfileDefinition>,
+  },
+
+  // ── Shared with workflow config ───────────────────────────────────────
+  backend?: string,
+  backends?: SkelmConfigBackends,
+  env?: Record<string, string>,
+})
+```
+
+`storage.workspaces.base` controls the gateway-managed persistent workspace base; `storage.workspaces.ephemeralBase` controls temporary workspace placement.
+
+### Lookup precedence
+
+1. `--gateway-config <path>` CLI flag
+2. `SKELM_GATEWAY_CONFIG` environment variable
+3. `~/.skelm/skelm.gateway.ts` (operator home config — recommended production location)
+4. Walk up from cwd: nearest `skelm.gateway.*` then `skelm.config.*` (backwards compat)
+5. Framework defaults
+
+### Starting the gateway with an explicit config
+
+```bash
+skelm gateway start --foreground --gateway-config /etc/skelm/prod.gateway.ts
+SKELM_GATEWAY_CONFIG=/etc/skelm/prod.gateway.ts skelm gateway start --foreground
+```
+
+### Example gateway config
+
+```ts
+// ~/.skelm/skelm.gateway.ts
+import { defineGatewayConfig } from 'skelm'
+
+export default defineGatewayConfig({
+  server: {
+    port: 14738,
+    host: '127.0.0.1',
+    auth: { mode: 'bearer' },
+  },
+  storage: {
+    runs:  { driver: 'sqlite' },
+    state: { driver: 'sqlite' },
+  },
+  secrets: { driver: 'env' },
+})
+```
+
 ## Notes
 
 - Config is hot-reloaded when the gateway receives `SIGHUP` or `skelm gateway reload`.
 - `permissionProfiles` entries narrow `defaults.permissions`; profiles cannot widen the project baseline.
 - When `registries.workflows.glob` is omitted, the gateway uses the value from `pipelines.glob` (or the default `workflows/**/*.workflow.{mts,ts}`).
 - `secrets.driver: 'file'` reads JSON from `secrets.file`; the gateway never logs secret values.
-- `agentmemory` enables the optional cross-session memory integration. It is **disabled by default**; set `enabled: true` and grant the relevant ops via `defaults.permissions.agentmemory` (or per step). See [the agentmemory guide](../../../docs/guides/agentmemory.md).
