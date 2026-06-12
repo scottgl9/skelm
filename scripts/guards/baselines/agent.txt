@@ -2,11 +2,15 @@ value:AgentSession
 value:FileSessionStore
 value:InMemorySessionStore
 value:ModelRegistry
+value:assertSerializedSession
 value:compact
 value:createSkelmAgentBackend
 value:estimateMessagesTokens
 value:estimateTokens
+value:exportSession
 value:findCutPoint
+value:forkSession
+value:importSession
 value:serializedSize
 value:shouldCompact
 type:AgentSessionInit

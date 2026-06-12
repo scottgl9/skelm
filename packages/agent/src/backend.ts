@@ -120,6 +120,13 @@ export interface SkelmAgentOptions {
    * behavior (default).
    */
   sessionStore?: SessionStore
+  /**
+   * Debug hook invoked once per `run()` after the system prompt is
+   * assembled, with the final system-message text and the tool names
+   * advertised to the model (built-ins plus bridged MCP tools).
+   * Inspection only — the run is not affected by the callback.
+   */
+  onPromptAssembled?: (info: { systemPrompt: string; tools: readonly string[] }) => void
 }
 
 function resolveCallModel(
@@ -375,6 +382,7 @@ async function runAgentLoop(
     // and the updated history is saved back on completion.
     sessionStore?: SessionStore
     persistSessionId?: string
+    onPromptAssembled?: SkelmAgentOptions['onPromptAssembled']
   },
 ): Promise<{
   text: string
@@ -398,10 +406,11 @@ async function runAgentLoop(
     delegate: ctx.delegate,
     events: ctx.permissions
       ? {
-          // Tool.call / tool.result auditing is handled by the runner's MCP
-          // subscription; forward only permission denials to the run bus so a
-          // denied native-tool action (delegation, exec, fs, …) stays
-          // observable and auditable, matching createPolicyFetch.
+          // Tool.call / tool.result are published by the loop around each
+          // dispatch (and by McpHost for MCP tools); forward only permission
+          // denials from inside tool handlers so a denied native-tool action
+          // (delegation, exec, fs, …) stays observable and auditable,
+          // matching createPolicyFetch.
           publish: (ev: unknown) => {
             if ((ev as { type?: string }).type === 'permission.denied') {
               ctx.events?.publish(ev)
@@ -517,6 +526,12 @@ async function runAgentLoop(
       ...(skillSummaries.length > 0 && { skills: skillSummaries }),
       ...(mcpServerSummaries && { mcpServers: mcpServerSummaries }),
     })
+    const systemMessageContent =
+      memoryRecall.length > 0 ? `${memoryRecall}\n\n${systemContent}` : systemContent
+    opts.onPromptAssembled?.({
+      systemPrompt: systemMessageContent,
+      tools: promptTools.map((t) => t.name),
+    })
 
     // Session lifecycle: seed the prior conversation ahead of the new prompt
     // when a store + explicit sessionId are configured. The system turn is
@@ -535,10 +550,7 @@ async function runAgentLoop(
     }
 
     const messages: OpenAIMessage[] = [
-      {
-        role: 'system',
-        content: memoryRecall.length > 0 ? `${memoryRecall}\n\n${systemContent}` : systemContent,
-      },
+      { role: 'system', content: systemMessageContent },
       ...priorMessages,
       { role: 'user', content: toOpenAIChatContent(req.prompt) },
     ]
@@ -672,7 +684,12 @@ async function runAgentLoop(
             publishMcpToolDenied(ctx, tc.function.name, toolDecision.reason)
             result = { content: `Permission denied: ${toolDecision.reason}`, isError: true }
           } else {
+            // Mirror McpHost's publishToolCall/publishToolResult so native
+            // built-in tool dispatch is replayable and audited like MCP tools.
+            const startedAt = Date.now()
+            publishBuiltinToolCall(ctx, tc.function.name, parsedArgs, startedAt)
             result = await builtinTool.handler(parsedArgs, toolCtx)
+            publishBuiltinToolResult(ctx, tc.function.name, result, startedAt)
           }
         } else if (mcpHost) {
           try {
@@ -723,6 +740,42 @@ async function runAgentLoop(
     }
     if (ownMcpHost !== undefined) await ownMcpHost.dispose()
   }
+}
+
+function publishBuiltinToolCall(
+  ctx: BackendContext,
+  tool: string,
+  args: unknown,
+  at: number,
+): void {
+  if (ctx.events === undefined || ctx.runId === undefined || ctx.stepId === undefined) return
+  ctx.events.publish({
+    type: 'tool.call',
+    runId: ctx.runId,
+    stepId: ctx.stepId,
+    tool,
+    arguments: args,
+    at,
+  })
+}
+
+function publishBuiltinToolResult(
+  ctx: BackendContext,
+  tool: string,
+  result: ToolResult,
+  startedAt: number,
+): void {
+  if (ctx.events === undefined || ctx.runId === undefined || ctx.stepId === undefined) return
+  const completedAt = Date.now()
+  ctx.events.publish({
+    type: 'tool.result',
+    runId: ctx.runId,
+    stepId: ctx.stepId,
+    tool,
+    result: { content: result.content, ...(result.isError === true && { isError: true }) },
+    durationMs: completedAt - startedAt,
+    at: completedAt,
+  })
 }
 
 function publishMcpToolDenied(ctx: BackendContext, tool: string, reason: string): void {
@@ -922,6 +975,7 @@ export function createSkelmAgentBackend(opts: SkelmAgentOptions): SkelmBackend {
         maxTokens: perCallMax,
         ...(opts.sessionStore !== undefined && { sessionStore: opts.sessionStore }),
         ...(req.sessionId !== undefined && { persistSessionId: req.sessionId }),
+        ...(opts.onPromptAssembled !== undefined && { onPromptAssembled: opts.onPromptAssembled }),
       })
 
       let structured: unknown | undefined

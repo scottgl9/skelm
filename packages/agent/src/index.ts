@@ -45,6 +45,12 @@ export type {
   SessionPromptResult,
   Unsubscribe,
 } from './session/events.js'
+export {
+  assertSerializedSession,
+  exportSession,
+  forkSession,
+  importSession,
+} from './session/lifecycle.js'
 export type { MessageRole, SessionMessage, SessionToolCall } from './session/messages.js'
 export { FileSessionStore } from './session/store/file-store.js'
 export { InMemorySessionStore } from './session/store/in-memory.js'
