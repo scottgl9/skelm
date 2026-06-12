@@ -115,14 +115,19 @@ export class FileWatchTrigger {
   }
 
   private async captureSnapshot(): Promise<Map<string, string>> {
-    const snapshot = new Map<string, string>()
-    if (this.watchedIsFile) {
-      const info = await stat(this.watchedPath)
-      snapshot.set(this.watchedPath, `${info.mtimeMs}:${info.size}`)
+    try {
+      const snapshot = new Map<string, string>()
+      if (this.watchedIsFile) {
+        const info = await stat(this.watchedPath)
+        snapshot.set(this.watchedPath, snapshotStamp(info.isDirectory(), info.mtimeMs, info.size))
+        return snapshot
+      }
+      await walkDirectory(this.watchedPath, snapshot)
       return snapshot
+    } catch (err) {
+      if (isMissingPathError(err)) return new Map()
+      throw err
     }
-    await walkDirectory(this.watchedPath, snapshot)
-    return snapshot
   }
 
   stop(): void {
@@ -181,6 +186,8 @@ function mergeEvents(
 }
 
 async function walkDirectory(dir: string, snapshot: Map<string, string>): Promise<void> {
+  const dirInfo = await stat(dir)
+  snapshot.set(dir, snapshotStamp(true, dirInfo.mtimeMs, dirInfo.size))
   const entries = await readdir(dir, { withFileTypes: true })
   for (const entry of entries) {
     const path = resolve(dir, entry.name)
@@ -189,7 +196,7 @@ async function walkDirectory(dir: string, snapshot: Map<string, string>): Promis
       continue
     }
     const info = await stat(path)
-    snapshot.set(path, `${info.mtimeMs}:${info.size}`)
+    snapshot.set(path, snapshotStamp(false, info.mtimeMs, info.size))
   }
 }
 
@@ -197,7 +204,7 @@ function captureSnapshotSync(path: string, watchedIsFile: boolean): Map<string, 
   const snapshot = new Map<string, string>()
   if (watchedIsFile) {
     const info = statSync(path)
-    snapshot.set(path, `${info.mtimeMs}:${info.size}`)
+    snapshot.set(path, snapshotStamp(info.isDirectory(), info.mtimeMs, info.size))
     return snapshot
   }
   walkDirectorySync(path, snapshot)
@@ -205,7 +212,9 @@ function captureSnapshotSync(path: string, watchedIsFile: boolean): Map<string, 
 }
 
 function walkDirectorySync(dir: string, snapshot: Map<string, string>): void {
-  const entries = statSync(dir).isDirectory() ? readdirSync(dir, { withFileTypes: true }) : []
+  const dirInfo = statSync(dir)
+  snapshot.set(dir, snapshotStamp(true, dirInfo.mtimeMs, dirInfo.size))
+  const entries = dirInfo.isDirectory() ? readdirSync(dir, { withFileTypes: true }) : []
   for (const entry of entries) {
     const path = resolve(dir, entry.name)
     if (entry.isDirectory()) {
@@ -213,6 +222,14 @@ function walkDirectorySync(dir: string, snapshot: Map<string, string>): void {
       continue
     }
     const info = statSync(path)
-    snapshot.set(path, `${info.mtimeMs}:${info.size}`)
+    snapshot.set(path, snapshotStamp(false, info.mtimeMs, info.size))
   }
+}
+
+function snapshotStamp(isDirectory: boolean, mtimeMs: number, size: number): string {
+  return isDirectory ? `dir:${mtimeMs}` : `file:${mtimeMs}:${size}`
+}
+
+function isMissingPathError(err: unknown): err is NodeJS.ErrnoException {
+  return err instanceof Error && 'code' in err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')
 }

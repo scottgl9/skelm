@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, rm, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -28,6 +28,13 @@ async function waitFor<T>(fn: () => T | undefined, timeoutMs = 2_000): Promise<T
 
 async function waitForWatcherReady(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 100))
+}
+
+function forcePollingFallback(watcher: FileWatchTrigger): void {
+  const rawWatcher = (
+    watcher as unknown as { watcher?: { emit?: (event: string, err: Error) => void } }
+  ).watcher
+  rawWatcher?.emit?.('error', new Error('ENOSPC: System limit for number of file watchers reached'))
 }
 
 describe('file-watch trigger', () => {
@@ -198,16 +205,54 @@ describe('file-watch trigger', () => {
       },
     )
 
-    const rawWatcher = (
-      watcher as unknown as { watcher?: { emit?: (event: string, err: Error) => void } }
-    ).watcher
-    rawWatcher?.emit?.(
-      'error',
-      new Error('ENOSPC: System limit for number of file watchers reached'),
-    )
+    forcePollingFallback(watcher)
 
     expect(errors).toHaveLength(1)
     expect(errors[0]?.message).toMatch(/ENOSPC/)
     watcher.stop()
+  })
+
+  it('keeps delete and empty-directory events when ENOSPC forces polling fallback', async () => {
+    const seen: Array<{ path: string; event: string }> = []
+    const target = join(tempDir, 'single.txt')
+    await writeFile(target, 'orig')
+
+    const fileWatcher = new FileWatchTrigger({ path: target })
+    fileWatcher.start((payload) => {
+      seen.push({ path: payload.path, event: payload.event })
+    })
+
+    forcePollingFallback(fileWatcher)
+    await unlink(target)
+
+    const fileDelete = await waitFor(() =>
+      seen.find((payload) => payload.path === target && payload.event === 'delete'),
+    )
+    expect(fileDelete).toEqual({ path: target, event: 'delete' })
+
+    fileWatcher.stop()
+    seen.length = 0
+
+    const dirWatcher = new FileWatchTrigger({ path: tempDir })
+    dirWatcher.start((payload) => {
+      seen.push({ path: payload.path, event: payload.event })
+    })
+
+    forcePollingFallback(dirWatcher)
+
+    const emptyDir = join(tempDir, 'empty-dir')
+    await mkdir(emptyDir)
+    const dirCreate = await waitFor(() =>
+      seen.find((payload) => payload.path === emptyDir && payload.event === 'create'),
+    )
+    expect(dirCreate).toEqual({ path: emptyDir, event: 'create' })
+
+    await rm(emptyDir, { recursive: true, force: true })
+    const dirDelete = await waitFor(() =>
+      seen.find((payload) => payload.path === emptyDir && payload.event === 'delete'),
+    )
+    expect(dirDelete).toEqual({ path: emptyDir, event: 'delete' })
+
+    dirWatcher.stop()
   })
 })
