@@ -18,6 +18,7 @@ Usage:
   skelm init [<dir>] [--force]
   skelm builder [<dir>] [--force]
   skelm dashboard <init|start> [<dir>] [flags]
+  skelm package <install|list|info|remove|update> [args]
   skelm --version
   skelm --help
 
@@ -305,6 +306,17 @@ Validate flags:
     --json                                 Emit issues as JSON
   Exits 0 when the pipeline is clean, 2 (schema validation) when issues are
   found, 1 only for CLI-level argv errors. See exit codes below.
+`,
+  package: `Usage:
+  skelm package <install|list|info|remove|update> [args]
+
+Package flags:
+  skelm package install <dir | .tgz>            Install a workflow package from a local source
+  skelm package list [--json]                   List installed packages
+  skelm package info <name> [--json]            Show manifest, versions, integrity, source
+  skelm package remove <name> [--version <v>]   Remove a package (or one version)
+  skelm package update <name>                   Reinstall from the recorded lockfile source
+  Run an installed package with: skelm run @scope/name[@version][/entry]
 `,
   logs: `Usage:
   skelm logs [--lines <n>] [--since <iso>] [--level <lvl>] [--filter <s>] [--json]

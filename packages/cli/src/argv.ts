@@ -19,6 +19,7 @@ const COMMANDS = [
   'logs',
   'builder',
   'dashboard',
+  'package',
 ] as const
 
 type Subcommand = (typeof COMMANDS)[number]
