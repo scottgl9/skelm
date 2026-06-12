@@ -104,8 +104,68 @@ createSkelmAgentBackend({
   timeoutMs?: number     // LLM HTTP timeout (default 300_000)
   sessionStore?: SessionStore // persist run() conversations; see Session lifecycle
   onPromptAssembled?: (info) => void // debug hook: assembled system prompt + tool names
+  budget?: AgentBudget        // cumulative harness safety limits; see Budgets
+  outputValidators?: OutputValidator[] // post-run text checks; see Validators
+  toolValidators?: ToolValidator[]     // pre-dispatch tool checks; see Validators
 })
 ```
+
+## Budgets, validators, and metrics (harness safety limits)
+
+These are **agent-harness** safety controls for the `run()` loop. They are *not* permission dimensions and *not* skelm's core HITL / oversight — they never widen anything; they only observe and, where configured, abort a run deterministically. Defaults leave every dimension unset (unbounded, unchanged behavior).
+
+### Budgets
+
+`budget?: AgentBudget` sets cumulative ceilings tracked across **all** turns of one `run()`:
+
+| Field | Limits |
+|---|---|
+| `tokenBudget` | cumulative input + output tokens summed from each turn's `Usage` (distinct from the per-call `maxTokens` output cap and from `maxTurns`) |
+| `maxCostUsd` | cumulative estimated USD cost (see cost note below) |
+| `maxToolCalls` | total tool-call dispatches |
+| `maxWallClockMs` | wall-clock elapsed since loop start |
+
+When any ceiling is crossed the loop emits a `run.warning` (code `agent.budget.<dimension>`, observable in the event log) and then throws `AgentBudgetExceededError`, which carries `{ dimension, observed, limit }`. The check fires after each turn's usage is folded in and after each tool-call increment, so a runaway loop aborts promptly.
+
+**Cost.** Estimated cost is derived from the model registry entry's `ModelCost` (`input`/`output` USD per 1K tokens) when the backend routes through a `registry`. In single-endpoint mode there is no pricing, so cost falls back to any upstream-reported `Usage.costUsd` (0 when neither is known — a priceless run never trips the cost budget).
+
+```ts
+createSkelmAgentBackend({
+  registry,
+  defaultModel: { provider: 'openrouter', id: 'openai/gpt-5.2' },
+  budget: { tokenBudget: 200_000, maxCostUsd: 1.0, maxToolCalls: 40, maxWallClockMs: 120_000 },
+})
+```
+
+### Validators
+
+Validators are pure (sync or async) functions — **no LLM calls inside the harness**. Each returns `{ ok: true }` or `{ ok: false, reason, severity? }`. A **soft** failure (default) records a `run.warning` (code `agent.validator.<stage>`) and the run continues; a **hard** failure (`severity: 'hard'`) throws `AgentValidationError` (`{ stage, reason }`).
+
+- `outputValidators?: OutputValidator[]` run once on the final assistant text: `(text, ctx) => ValidationResult`, where `ctx` carries `stopReason` and parsed `structured` (when an `outputSchema` was requested).
+- `toolValidators?: ToolValidator[]` run before each tool dispatch — *after* the `TrustEnforcer` permission gate, as an extra harness check: `({ tool, args }) => ValidationResult`. A hard failure aborts before the tool executes.
+
+Validators are distinct from `outputSchema` validation: the **runtime** still validates the step result against any declared `outputSchema` and surfaces `SchemaValidationError` on mismatch. Validators add harness-level checks on top.
+
+```ts
+createSkelmAgentBackend({
+  baseUrl: 'http://localhost:8000',
+  outputValidators: [
+    (text) => (text.length > 0 ? { ok: true } : { ok: false, reason: 'empty answer', severity: 'hard' }),
+  ],
+  toolValidators: [
+    ({ tool }) => (tool === 'exec' ? { ok: false, reason: 'exec not allowed in this lane' } : { ok: true }),
+  ],
+})
+```
+
+### Metrics
+
+Every completed `run()` surfaces per-run token / cost / latency accounting:
+
+- On `AgentResponse.usage`: cumulative `costUsd` (when pricing is known) plus `extras.metricsTotalTokens` / `metricsToolCalls` / `metricsTurns` / `metricsWallClockMs`.
+- As a structured `run.warning` (code `agent.metrics`, exported as `AGENT_METRICS_WARNING_CODE`) when the run has an event sink, so dashboards and the `@skelm/metrics` collector can read per-run numbers from the event log without re-summing turns. The `message` is a JSON object `{ tokens, costUsd, toolCalls, turns, wallClockMs }`.
+
+`@skelm/metrics` consumes the run event stream; wiring these `run.warning` metrics into a dedicated Prometheus series is a follow-up in that package — the numbers are already on the result and in the event log today.
 
 Host roots such as `http://localhost:11434`, `/v1` bases such as `http://localhost:8000/v1`, nested bases such as `https://openrouter.ai/api/v1`, and exact URLs ending in `/chat/completions` are all accepted.
 
