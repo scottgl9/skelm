@@ -73,6 +73,12 @@ export interface AuditFilter {
   /** Inclusive upper bound on writer timestamp (ISO-8601). */
   readonly until?: string
   readonly limit?: number
+  /**
+   * Exclusive upper bound on sequence number — return only entries with
+   * `seq < before`. Cursor for backwards paging: pass the lowest `seq` from
+   * the previous page to fetch the next-older page.
+   */
+  readonly before?: number
 }
 
 export interface AuditLogReader<TEntry extends AuditEvent = AuditEvent> {

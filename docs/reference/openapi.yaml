@@ -192,6 +192,72 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Approval' }
 
+  /audit:
+    get:
+      summary: List hash-chained audit entries
+      description: >-
+        Filtered, bounded list of audit-log entries. The gateway streams the
+        append-only log line-by-line and never loads the whole file, so memory
+        stays bounded regardless of log size. Returns the most recent entries
+        (tail) by default.
+      parameters:
+        - in: query
+          name: runId
+          schema: { type: string }
+        - in: query
+          name: actor
+          schema: { type: string }
+        - in: query
+          name: action
+          schema: { type: string }
+        - in: query
+          name: since
+          schema: { type: string, format: date-time, description: 'Inclusive lower bound on timestamp (ISO-8601)' }
+        - in: query
+          name: until
+          schema: { type: string, format: date-time, description: 'Inclusive upper bound on timestamp (ISO-8601)' }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 500, minimum: 1, maximum: 5000 }
+        - in: query
+          name: before
+          schema: { type: integer, minimum: 1, description: 'Seq cursor for backwards paging; return entries with seq < before' }
+      responses:
+        '200':
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items: { type: object }
+                  nextBefore:
+                    type: integer
+                    nullable: true
+                    description: Lowest seq in this page; pass as `before` for the next-older page
+        '400': { description: Invalid query parameter }
+
+  /audit/verify:
+    get:
+      summary: Verify the audit hash-chain
+      description: Walk the chain and report the first integrity break, or success.
+      responses:
+        '200':
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  breach:
+                    type: object
+                    properties:
+                      seq: { type: integer }
+                      reason: { type: string }
+
   /triggers:
     get:
       summary: List triggers

@@ -31,6 +31,7 @@ const VALUE_FLAGS = [
   'actor',
   'approver',
   'at',
+  'before',
   'cron',
   'events',
   'every',

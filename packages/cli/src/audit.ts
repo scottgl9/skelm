@@ -10,6 +10,8 @@ export interface AuditQueryArgs {
   since?: string | undefined
   until?: string | undefined
   limit?: number | undefined
+  /** Seq cursor for backwards paging: return only entries with seq < before. */
+  before?: number | undefined
   json?: boolean | undefined
   /** Override the audit chain path (defaults to $SKELM_STATE_DIR or ~/.skelm). */
   path?: string | undefined
@@ -61,6 +63,7 @@ export async function auditCommand(args: AuditQueryArgs, io: MainIO): Promise<Ma
   if (args.since) qs.set('since', args.since)
   if (args.until) qs.set('until', args.until)
   if (args.limit !== undefined) qs.set('limit', String(args.limit))
+  if (args.before !== undefined) qs.set('before', String(args.before))
 
   const res = await fetchHttp(
     `${client.discovery.url}/audit?${qs.toString()}`,

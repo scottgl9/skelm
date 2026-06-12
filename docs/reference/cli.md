@@ -178,12 +178,18 @@ skelm approvals config approvers remove <id>
 
 ### `skelm audit query`
 
-Query the gateway's append-only audit log.
+Query the gateway's append-only audit log. Returns the most recent entries
+(tail) by default; the gateway streams the log so reads stay bounded no matter
+how large it grows.
 
 ```
 skelm audit query [--run <runId>] [--actor <name>] [--action <type>]
-                  [--since <ISO8601>] [--until <ISO8601>] [--limit <n>] [--json]
+                  [--since <ISO8601>] [--until <ISO8601>] [--limit <n>]
+                  [--before <seq>] [--json]
 ```
+
+`--limit` defaults to 500 (max 5000). `--before <seq>` pages backwards: pass the
+lowest `seq` from a page to fetch the next-older page.
 
 ### `skelm secrets <list|get|set>`
 

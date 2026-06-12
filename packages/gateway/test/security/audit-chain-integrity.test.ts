@@ -211,4 +211,55 @@ describe('ChainAuditWriter: adversarial integrity', () => {
     expect(breach?.seq).toBe(3)
     expect(breach?.reason).toMatch(/broken chain/i)
   })
+
+  it('reads and verifies a large chain with bounded memory (no full-file string)', async () => {
+    // Regression: list()/verify() must stream the log line-by-line. Reading a
+    // multi-hundred-thousand-line log as one string overflows V8's max-string
+    // limit and 500s the route. We synthesize a valid 50k-entry chain directly
+    // (per-entry writer syncs would dominate runtime) and exercise the reader.
+    const { createHash } = await import('node:crypto')
+    const canonicalize = (value: unknown): string => {
+      if (value === null || typeof value !== 'object') return JSON.stringify(value)
+      if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`
+      const obj = value as Record<string, unknown>
+      return `{${Object.keys(obj)
+        .sort()
+        .filter((k) => obj[k] !== undefined)
+        .map((k) => `${JSON.stringify(k)}:${canonicalize(obj[k])}`)
+        .join(',')}}`
+    }
+    const path = join(dir, 'large.jsonl')
+    const n = 50_000
+    let prevHash = '0'.repeat(64)
+    const chunks: string[] = []
+    for (let i = 1; i <= n; i++) {
+      const partial = {
+        actor: 'gateway',
+        action: `act-${i}`,
+        details: { i },
+        seq: i,
+        timestamp: new Date(1_700_000_000_000 + i).toISOString(),
+        prevHash,
+      }
+      const entryHash = createHash('sha256').update(canonicalize(partial)).digest('hex')
+      prevHash = entryHash
+      chunks.push(`${JSON.stringify({ ...partial, entryHash })}\n`)
+    }
+    await fs.writeFile(path, chunks.join(''))
+
+    const reader = new ChainAuditWriter(path)
+    const tail = await reader.list({ limit: 500 })
+    expect(tail).toHaveLength(500)
+    expect(tail[tail.length - 1]?.seq).toBe(n)
+    expect(tail[0]?.seq).toBe(n - 499)
+
+    const filtered = await reader.list({ action: 'act-42', limit: 500 })
+    expect(filtered).toHaveLength(1)
+    expect(filtered[0]?.seq).toBe(42)
+
+    const page = await reader.list({ limit: 10, before: 100 })
+    expect(page.map((e) => e.seq)).toEqual([90, 91, 92, 93, 94, 95, 96, 97, 98, 99])
+
+    expect(await reader.verify()).toBeNull()
+  })
 })
