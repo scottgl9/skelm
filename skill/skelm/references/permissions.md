@@ -12,6 +12,7 @@ interface AgentPermissions {
   allowedTools?: ToolMatcher                  // tools agent may call
   deniedTools?: ToolMatcher                   // tools explicitly blocked
   allowedExecutables?: readonly string[]      // binaries for exec/bash
+  executableProfiles?: readonly string[]      // named executable profiles expanded for this layer
   allowedMcpServers?: readonly string[]       // MCP server ids from config
   allowedSkills?: readonly string[]           // skill ids agent may load
   allowedSecrets?: readonly string[]          // secret names the step may resolve

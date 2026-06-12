@@ -128,6 +128,7 @@ export default pipeline({
       permissions: {
         allowedTools:       ['gh.*'],                      // GitHub CLI tools (prefix match)
         allowedExecutables: ['git'],
+        executableProfiles: [],
         allowedMcpServers:  ['github'],
         allowedSkills:      [],
         fsRead:             ['./'],
@@ -155,6 +156,7 @@ The permission model has these dimensions. Every field is optional and defaults 
 | Profile     | `profile`                          | Named profile from `skelm.config.ts` to apply first  |
 | Tool        | `allowedTools` / `deniedTools`     | Tool ids; `'gh.*'` is sugar for prefix match; `'*'` allows everything |
 | Executable  | `allowedExecutables`               | Binaries allowed for any exec/bash tool              |
+| Exec. Profile | `executableProfiles`               | Named executable profiles from `skelm.config.ts` expanded for this layer |
 | MCP server  | `allowedMcpServers`                | MCP server ids the agent may attach                  |
 | Skill       | `allowedSkills`                    | Skill ids the agent may load                         |
 | Secret      | `allowedSecrets`                   | Secret names the step may resolve via `SecretResolver` |
