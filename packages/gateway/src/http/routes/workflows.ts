@@ -1,6 +1,6 @@
 import { mkdir, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { type RunStatus, type RunSummary, describePipeline } from '@skelm/core'
+import { type RunStatus, type RunSummary, deriveWorkflowGraph, describePipeline } from '@skelm/core'
 import {
   type H3Event,
   type MultiPartData,
@@ -18,7 +18,12 @@ import {
   WorkflowRegistrationError,
   type WorkflowRegistrationService,
 } from '../../workflows/workflow-registration-service.js'
-import { decodeMaybe, loadPipelineFromPath, tryToJsonSchema } from './utils.js'
+import {
+  decodeMaybe,
+  loadPipelineFromPath,
+  loadWorkflowForGraph,
+  tryToJsonSchema,
+} from './utils.js'
 
 interface RegisterBody {
   id?: unknown
@@ -85,6 +90,46 @@ export function registerWorkflowRoutes(router: Router, gateway: GatewayContext):
           preloaded,
         ),
       }
+    }),
+  )
+
+  router.get(
+    '/v1/workflows/:id/graph',
+    eventHandler(async (event) => {
+      const id = decodeMaybe(event.context.params?.id)
+      if (id === undefined || id.length === 0) {
+        throw createError({ statusCode: 400, message: 'workflow id is required' })
+      }
+      const loader = gateway.getWorkflowLoader()
+      if (loader === undefined) {
+        throw createError({ statusCode: 501, message: 'gateway has no workflow loader' })
+      }
+      // Resolve by registry id first; fall back to scanning for a workflow
+      // whose declared id matches — mirrors GET /pipelines/:id so callers can
+      // pass either the registry id or the authored workflow id.
+      let entry = gateway.registries.workflows.get(id)
+      let workflow: Awaited<ReturnType<typeof loadWorkflowForGraph>> | undefined
+      if (entry === undefined) {
+        for (const candidate of gateway.registries.workflows.list()) {
+          try {
+            const w = await loadWorkflowForGraph(loader, candidate.id, candidate.path)
+            if (w.id === id) {
+              entry = candidate
+              workflow = w
+              break
+            }
+          } catch {
+            // skip workflows that fail to load
+          }
+        }
+      }
+      if (entry === undefined) {
+        throw createError({ statusCode: 404, message: 'workflow not found' })
+      }
+      if (workflow === undefined) {
+        workflow = await loadWorkflowForGraph(loader, entry.id, entry.path)
+      }
+      return deriveWorkflowGraph(workflow)
     }),
   )
 

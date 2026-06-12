@@ -144,6 +144,7 @@ value:defaultReplyOf
 value:defineConfig
 value:defineGatewayConfig
 value:defineWorkflowConfig
+value:deriveWorkflowGraph
 value:describePipeline
 value:describeStep
 value:encodePackageDirName
@@ -206,6 +207,7 @@ type:AgentDefinition
 type:AgentMemoryRecord
 type:AgentMessage
 type:AgentPermissions
+type:AgentPermissionsSummary
 type:AgentPlugin
 type:AgentProvider
 type:AgentProviderConfig
@@ -282,6 +284,9 @@ type:GitHubPullRequestEvent
 type:GitHubPushEvent
 type:GitHubTriggerConfig
 type:GitHubWebhookEvent
+type:GraphEdge
+type:GraphNode
+type:GraphNodeKind
 type:InferStep
 type:InferenceRequest
 type:InferenceResponse
@@ -429,6 +434,7 @@ type:WebhookTriggerConfig
 type:WhenPredicate
 type:WorkflowFanoutOptions
 type:WorkflowFanoutResult
+type:WorkflowGraph
 type:WorkflowInvocation
 type:WorkflowInvokeOptions
 type:WorkflowInvokeResult
