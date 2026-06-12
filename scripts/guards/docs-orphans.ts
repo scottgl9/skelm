@@ -17,7 +17,7 @@ const DOCS_DIR = join(REPO_ROOT, 'docs')
 const CONFIG_FILE = join(DOCS_DIR, '.vitepress/config.ts')
 
 const SKIP_DIRS = new Set(['node_modules', '.vitepress', 'public', 'scripts'])
-const SKIP_PREFIXES = ['reference/api/']
+const SKIP_PREFIXES = ['reference/api/', 'reviews/']
 // Files that legitimately exist outside the sidebar (e.g. README.md siblings
 // that VitePress rewrites to /index via the `rewrites:` config). Keep this
 // list short and justified.

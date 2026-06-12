@@ -497,6 +497,9 @@ describe('wait()', () => {
   })
 
   it('rejects wait() nested transitively (via branch) inside parallel()', () => {
+    // parallel() has concurrent arms — two waits could race to claim the
+    // single-slot waitForInput entry. The error is attributed to parallel(),
+    // even though the wait lives inside a branch child.
     expect(() =>
       parallel({
         id: 'gather',
@@ -509,17 +512,24 @@ describe('wait()', () => {
           }),
         ],
       }),
-    ).toThrow(/wait\(pause\) is not allowed inside branch/)
+    ).toThrow(/wait\(pause\) is not allowed inside parallel/)
   })
 
-  it('rejects wait() nested directly inside branch() at build time', () => {
+  it('allows wait() nested directly inside branch() at build time', () => {
+    // branch() is safe: only one case executes, and the on() selector is
+    // deterministic given the same input — after restart the runner takes the
+    // same branch and reaches the same wait() without replaying side-effects
+    // from other cases.
     expect(() =>
       branch({
         id: 'route',
-        on: () => 'risky',
-        cases: { risky: wait({ id: 'human-approval' }) },
+        on: () => 'needs-review',
+        cases: {
+          'needs-review': wait({ id: 'human-approval' }),
+          auto: code({ id: 'skip', run: () => ({}) }),
+        },
       }),
-    ).toThrow(/wait\(human-approval\) is not allowed inside branch/)
+    ).not.toThrow()
   })
 
   it('rejects wait() nested directly inside loop() at build time', () => {
