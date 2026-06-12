@@ -1,4 +1,10 @@
-import { accessSync, createReadStream, createWriteStream, constants as fsConstants } from 'node:fs'
+import {
+  accessSync,
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  constants as fsConstants,
+} from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { createInterface } from 'node:readline/promises'
@@ -74,40 +80,65 @@ export async function runCommand(
     return { exitCode: EXIT.CLI_ERROR }
   }
 
-  let input: unknown
-  let absPath: string
-  try {
-    // A triggered/persistent project directory is activated on the gateway and
-    // owned there; the CLI prints a summary and exits. A file (or a plain
-    // pipeline directory) is a one-shot run the CLI streams and waits on.
-    const target = await classifyRunTarget(workflowPath)
-    if (target.mode === 'activate') {
-      return activateProject(target.dir, io as MainIO)
-    }
-    if (target.mode === 'tui') {
-      return tuiCommand(
-        {
-          dir: target.dir,
-          sourceId: target.sourceId,
-          ...(target.frontend !== undefined && { frontend: target.frontend }),
-        },
-        io as MainIO,
-      )
-    }
-    input = await resolveInput(args, io.stdin)
-    absPath = target.file
-  } catch (err) {
-    if (err instanceof CliError) {
-      io.stderr.write(`error: ${err.message}\n`)
-      return { exitCode: EXIT.CLI_ERROR }
-    }
-    throw err
-  }
-
   const eventMode: 'human' | 'json' | 'none' = args.events ?? 'human'
+
+  // A workflow-package run spec (`@scope/name[@version][/entry]`) is resolved
+  // to its installed entry file by the gateway; everything else is classified
+  // locally first (so a directory/file error surfaces before any gateway
+  // contact, matching the long-standing path-resolution contract).
+  const isSpec = isPackageSpec(workflowPath)
+
+  let input: unknown
+  let absPath: string | undefined
+  if (!isSpec) {
+    try {
+      // A triggered/persistent project directory is activated on the gateway and
+      // owned there; the CLI prints a summary and exits. A file (or a plain
+      // pipeline directory) is a one-shot run the CLI streams and waits on.
+      const target = await classifyRunTarget(workflowPath)
+      if (target.mode === 'activate') {
+        return activateProject(target.dir, io as MainIO)
+      }
+      if (target.mode === 'tui') {
+        return tuiCommand(
+          {
+            dir: target.dir,
+            sourceId: target.sourceId,
+            ...(target.frontend !== undefined && { frontend: target.frontend }),
+          },
+          io as MainIO,
+        )
+      }
+      input = await resolveInput(args, io.stdin)
+      absPath = target.file
+    } catch (err) {
+      if (err instanceof CliError) {
+        io.stderr.write(`error: ${err.message}\n`)
+        return { exitCode: EXIT.CLI_ERROR }
+      }
+      throw err
+    }
+  }
 
   const client = await requireGateway(io as MainIO)
   if (client === null) return { exitCode: EXIT.CLI_ERROR }
+
+  if (isSpec) {
+    try {
+      const resolved = await resolvePackageSpec(workflowPath, client, io as MainIO)
+      if (resolved === null) return { exitCode: EXIT.CLI_ERROR }
+      input = await resolveInput(args, io.stdin)
+      absPath = resolved
+    } catch (err) {
+      if (err instanceof CliError) {
+        io.stderr.write(`error: ${err.message}\n`)
+        return { exitCode: EXIT.CLI_ERROR }
+      }
+      throw err
+    }
+  }
+  // absPath is always set on either branch above.
+  if (absPath === undefined) return { exitCode: EXIT.CLI_ERROR }
 
   // SIGINT cancels the remote run if we know its id.
   let activeRunId: string | undefined
@@ -337,6 +368,42 @@ export async function runCommand(
     process.off('SIGINT', onSig)
     process.off('SIGTERM', onSig)
   }
+}
+
+/**
+ * True when the run argument is a workflow-package spec rather than a file
+ * path. A scoped name (`@scope/...`) is always a spec. An unscoped argument
+ * is a spec only when it has a package-spec shape (`name`, `name@version`,
+ * `name/entry`) AND no such path exists on disk, so real files and
+ * directories keep the existing path-based behaviour.
+ */
+export function isPackageSpec(arg: string): boolean {
+  if (arg.startsWith('@')) return true
+  if (existsSync(arg)) return false
+  if (/[/\\]/.test(arg) || /\.(?:m?[tj]s|c[tj]s|tsx?)$/.test(arg)) return false
+  // Bare `name` or `name@version` with no slash and no extension: treat as a
+  // package spec only when it carries a version, to avoid swallowing a typo'd
+  // file name. (`@scope` forms and `name/entry` are handled above.)
+  return /@/.test(arg)
+}
+
+async function resolvePackageSpec(
+  spec: string,
+  client: { discovery: { url: string }; headers: Record<string, string> },
+  io: MainIO,
+): Promise<string | null> {
+  const res = await fetchHttp(
+    `${client.discovery.url}/v1/packages/resolve`,
+    { method: 'POST', headers: client.headers, body: JSON.stringify({ spec }) },
+    io,
+  )
+  if (res === null) return null
+  if (!res.ok) {
+    await httpError(res, io)
+    return null
+  }
+  const body = (await res.json()) as { file: string }
+  return body.file
 }
 
 /**

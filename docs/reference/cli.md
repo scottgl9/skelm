@@ -73,8 +73,17 @@ When the argument is a **directory**, `skelm run` behaves one of two ways:
   If a directory has neither a declared entrypoint nor an unambiguous workflow
   file, `skelm run` exits `1` (CLI error).
 
+When the argument is a **workflow-package spec** (`@scope/name`,
+`@scope/name@1.2.3`, or `@scope/name/entry`), `skelm run` resolves it through the
+gateway's installed-package store (`POST /v1/packages/resolve`) to the package's
+entry file and runs it exactly like a file. The entry id defaults to `default`.
+See [`skelm package`](#skelm-package-installlistinforemoveupdate) and
+[workflow packages](./workflow-packages.md).
+
 ```bash
 skelm run examples/hello        # resolves the directory to its single workflow file
+skelm run @skelm/hello          # runs the installed package's `default` workflow
+skelm run @skelm/hello/report   # runs the `report` workflow from the package
 ```
 
 ### `skelm list [--all] [--json]`
@@ -278,6 +287,29 @@ server-side and is not stored in the browser.
 
 The default dashboard port is `14740`; the default gateway URL is
 `http://127.0.0.1:14738`. Port `14739` is reserved for the gateway egress proxy.
+
+### `skelm package <install|list|info|remove|update>`
+
+Manage installed workflow packages. A thin client over the gateway's package
+API (`/v1/packages/*`); the store and `skelm.lock.json` are owned by the
+gateway. See [workflow packages](./workflow-packages.md) for the format.
+
+```
+skelm package install <dir | .tgz>            Install from a local directory or .tgz
+skelm package list [--json]                   List installed packages
+skelm package info <name> [--json]            Manifest, versions, integrity, source
+skelm package remove <name> [--version <v>]   Remove a package (or one version)
+skelm package update <name>                   Reinstall from the recorded lockfile source
+```
+
+Install accepts a **local directory** or a **local `.tgz` tarball** only; remote
+npm-registry installs are planned but not yet supported. The manifest is
+validated before any file is copied, and a tarball entry that escapes the
+package root (absolute path or `..`) is rejected. Run an installed package with
+`skelm run @scope/name[@version][/entry]`.
+
+Exit codes: `0` on success; `1` for a CLI/gateway error (unknown package or
+entry, invalid manifest, gateway unreachable).
 
 ### `skelm validate <pipeline.ts>`
 

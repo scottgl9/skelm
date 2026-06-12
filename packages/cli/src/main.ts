@@ -18,6 +18,7 @@ import { initCommand } from './init.js'
 import { listCommand } from './list.js'
 import { CliError } from './load-workflow.js'
 import { logsCommand } from './logs.js'
+import { packageCommand } from './package.js'
 import { runCommand } from './run.js'
 import { scheduleCommand } from './schedule.js'
 import { sessionsCommand } from './sessions.js'
@@ -452,6 +453,29 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
           return { exitCode: EXIT.CLI_ERROR }
         }
         const result = await validateCommand({ path, json: parsed.flags.json === true }, io)
+        return { exitCode: result.exitCode }
+      }
+      case 'package': {
+        const sub = parsed.positional[0]
+        if (
+          sub !== 'install' &&
+          sub !== 'list' &&
+          sub !== 'info' &&
+          sub !== 'remove' &&
+          sub !== 'update'
+        ) {
+          io.stderr.write('error: package requires install | list | info | remove | update\n')
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        const result = await packageCommand(
+          {
+            subcommand: sub,
+            ...(typeof parsed.positional[1] === 'string' && { target: parsed.positional[1] }),
+            ...(typeof parsed.flags.version === 'string' && { version: parsed.flags.version }),
+            ...(parsed.flags.json === true && { json: true }),
+          },
+          io,
+        )
         return { exitCode: result.exitCode }
       }
       case 'logs': {

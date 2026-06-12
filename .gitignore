@@ -157,6 +157,9 @@ packages/*/src/**/*.js.map
 packages/*/src/**/*.d.ts
 packages/*/src/**/*.d.ts.map
 
+# in-repo temp project roots created by package CLI tests (cleaned up in afterAll)
+packages/cli/test/.tmp-pkg-proj-*/
+
 # graphify knowledge graph output
 graphify-out/
 
