@@ -156,11 +156,13 @@ async function createBackend(
     }
     case 'copilot-acp': {
       const cwd = readString(entry.cwd)
+      const permissionMode = readAcpPermissionMode(entry.permissionMode)
       return createAcpBackend({
         id: backendId,
         command: readString(entry.command) ?? 'copilot',
         args: readStringArray(entry.args) ?? ['--acp'],
         ...(cwd !== undefined && { cwd }),
+        ...(permissionMode !== undefined && { permissionMode }),
       })
     }
     case 'acp': {
@@ -169,11 +171,13 @@ async function createBackend(
       if (!cmd) throw new Error(`ACP backend '${backendId}' requires a 'command' field in config`)
       const acpCwd = readString(entry.cwd)
       const acpArgs = readStringArray(entry.args)
+      const permissionMode = readAcpPermissionMode(entry.permissionMode)
       return createAcpBackend({
         id: backendId,
         command: cmd,
         ...(acpArgs !== undefined && { args: acpArgs }),
         ...(acpCwd !== undefined && { cwd: acpCwd }),
+        ...(permissionMode !== undefined && { permissionMode }),
       })
     }
     case 'anthropic': {
@@ -336,6 +340,12 @@ function resolveSecret(value: unknown): string | undefined {
 
 function readString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined
+}
+
+function readAcpPermissionMode(value: unknown): 'strict' | 'advisory' | undefined {
+  if (value === undefined) return undefined
+  if (value === 'strict' || value === 'advisory') return value
+  throw new Error("ACP permissionMode must be 'strict' or 'advisory'")
 }
 
 function readStringArray(value: unknown): readonly string[] | undefined {

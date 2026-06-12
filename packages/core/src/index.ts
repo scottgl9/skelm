@@ -305,13 +305,18 @@ export type {
   ArtifactStore,
   ArtifactStoreHandle,
   AuditEntry,
+  AuditFilter,
+  AuditLogReader,
+  DurableAgentMemory,
   ExecutionStore,
+  AgentMemoryRecord,
   RunFilter,
   RunPatch,
   RunStore,
   RunSummary,
   SqliteRunStoreOptions,
   StateStore,
+  WorkflowStateStore,
 } from './run-store.js'
 export { NotImplementedError, PostgresRunStore } from './run-store-postgres.js'
 export type { PostgresRunStoreOptions } from './run-store-postgres.js'

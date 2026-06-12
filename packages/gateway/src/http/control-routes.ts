@@ -15,6 +15,7 @@ import {
 } from 'h3'
 import type { GatewayContext } from '../lifecycle/gateway-types.js'
 import { DEFAULT_WEBHOOK_DEDUPE_TTL_MS } from '../triggers/dedupe-store.js'
+import { registerAgentmemoryRoutes } from './routes/agentmemory.js'
 import { registerApprovalRoutes } from './routes/approvals.js'
 import { registerAuditRoutes } from './routes/audit.js'
 import { registerBatchRoutes } from './routes/batch.js'
@@ -29,9 +30,11 @@ import { registerOpenAIRoutes } from './routes/openai.js'
 import { registerPipelineRoutes } from './routes/pipelines.js'
 import { registerProjectRoutes } from './routes/projects.js'
 import { registerRunRoutes } from './routes/runs.js'
+import { registerRuntimeRoutes } from './routes/runtime.js'
 import { registerScheduleRoutes } from './routes/schedules.js'
 import { registerSecretRoutes } from './routes/secrets.js'
 import { registerSessionRoutes } from './routes/sessions.js'
+import { registerStateRoutes } from './routes/state.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
 import { registerWorkspaceRoutes } from './routes/workspaces.js'
 
@@ -55,6 +58,9 @@ export function mountControlRoutes(app: App, gateway: GatewayContext): void {
   registerApprovalRoutes(router, gateway)
   registerSessionRoutes(router, gateway)
   registerRunRoutes(router, gateway)
+  registerStateRoutes(router, gateway)
+  registerAgentmemoryRoutes(router, gateway)
+  registerRuntimeRoutes(router, gateway)
   registerPipelineRoutes(router, gateway)
   registerProjectRoutes(router, gateway)
   registerChatRoutes(router, gateway)

@@ -73,6 +73,15 @@ type RunEventBody =
       at: number
     }
   | {
+      type: 'permission.advisory'
+      runId: RunId
+      stepId: StepId
+      backendId: string
+      dimensions: readonly PermissionDimension[]
+      detail: string
+      at: number
+    }
+  | {
       type: 'backend.failover'
       runId: RunId
       stepId: StepId

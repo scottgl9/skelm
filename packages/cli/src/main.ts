@@ -6,6 +6,7 @@ import { approvalsCommand } from './approvals.js'
 import { ArgvParseError, parseArgv } from './argv.js'
 import { auditCommand, secretsCommand } from './audit.js'
 import { builderCommand } from './builder.js'
+import { dashboardCommand } from './dashboard.js'
 import { debugCommand } from './debug.js'
 import { describeCommand } from './describe.js'
 import { EXIT, type ExitCode } from './exit-codes.js'
@@ -361,6 +362,30 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
           {
             ...(typeof parsed.positional[0] === 'string' && { dir: parsed.positional[0] }),
             force: parsed.flags.force === true,
+          },
+          io,
+        )
+        return { exitCode: result.exitCode }
+      }
+      case 'dashboard': {
+        const subcommand = parsed.positional[0]
+        if (subcommand !== 'init' && subcommand !== 'start') {
+          io.stderr.write('error: dashboard requires init or start\n')
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        const result = await dashboardCommand(
+          {
+            subcommand,
+            ...(typeof parsed.positional[1] === 'string' && { dir: parsed.positional[1] }),
+            ...(parsed.flags.force === true && { force: true }),
+            ...(typeof parsed.flags.host === 'string' && { host: parsed.flags.host }),
+            ...(typeof parsed.flags.port === 'string' && {
+              port: portFlag(parsed.flags.port, 'port'),
+            }),
+            ...(typeof parsed.flags['gateway-url'] === 'string' && {
+              gatewayUrl: parsed.flags['gateway-url'],
+            }),
+            ...(typeof parsed.flags.token === 'string' && { token: parsed.flags.token }),
           },
           io,
         )

@@ -1,0 +1,14 @@
+# skelm dashboard
+
+This is a local operations dashboard scaffolded by `skelm dashboard init`.
+
+```sh
+skelm gateway start --foreground
+skelm dashboard start
+```
+
+Configuration lives in `dashboard.config.mts`. For bearer-auth gateways, set
+`SKELM_DASHBOARD_TOKEN` or pass `--token` to `skelm dashboard start`.
+
+The dashboard server proxies `/api/*` to the configured gateway URL, so the
+browser never stores the gateway bearer token.

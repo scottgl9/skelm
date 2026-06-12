@@ -1,4 +1,5 @@
 import type { ArtifactDescriptor, ArtifactRef } from '../artifact-types.js'
+import type { AuditEvent } from '../enforcement/audit-writer.js'
 import type { RunEvent } from '../events.js'
 import type { RunId, RunStatus } from '../types-base.js'
 import type { Run, StateEntry, StateReadOptions, StateSetOptions } from '../types.js'
@@ -63,6 +64,52 @@ export interface AuditEntry {
   readonly at: number
 }
 
+export interface AuditFilter {
+  readonly runId?: RunId
+  readonly actor?: string
+  readonly action?: string
+  /** Inclusive lower bound on writer timestamp (ISO-8601). */
+  readonly since?: string
+  /** Inclusive upper bound on writer timestamp (ISO-8601). */
+  readonly until?: string
+  readonly limit?: number
+}
+
+export interface AuditLogReader<TEntry extends AuditEvent = AuditEvent> {
+  list(filter?: AuditFilter): Promise<readonly TEntry[]>
+  verify?(): Promise<{ seq: number; reason: string } | null>
+}
+
+export interface WorkflowStateStore {
+  getState<T>(namespace: string, key: string): Promise<T | undefined>
+  setState<T>(namespace: string, key: string, value: T, opts?: StateSetOptions): Promise<void>
+  deleteState(namespace: string, key: string): Promise<void>
+  listState(namespace: string, prefix?: string): AsyncIterable<StateEntry>
+  casState<T>(namespace: string, key: string, expected: T | undefined, next: T): Promise<boolean>
+  appendState(namespace: string, stream: string, entry: unknown): Promise<void>
+  readState(namespace: string, stream: string, opts?: StateReadOptions): AsyncIterable<unknown>
+}
+
+export interface AgentMemoryRecord {
+  readonly id: string
+  readonly scope: string
+  readonly content: unknown
+  readonly metadata?: Readonly<Record<string, unknown>>
+  readonly createdAt: number
+  readonly updatedAt: number
+}
+
+export interface DurableAgentMemory {
+  put(record: AgentMemoryRecord): Promise<void>
+  get(id: string): Promise<AgentMemoryRecord | null>
+  query(opts?: {
+    readonly scope?: string
+    readonly text?: string
+    readonly limit?: number
+  }): AsyncIterable<AgentMemoryRecord>
+  delete(id: string): Promise<boolean>
+}
+
 // Artifact handle shapes live in a leaf module to keep types.ts from
 // inline-importing this file (which would close a types ↔ run-store
 // cycle). Re-exported here for back-compat.
@@ -119,15 +166,7 @@ export interface ExecutionStore {
 }
 
 /** Key-value, compare-and-swap, and append-log state accessible via ctx.state. */
-export interface StateStore {
-  getState<T>(namespace: string, key: string): Promise<T | undefined>
-  setState<T>(namespace: string, key: string, value: T, opts?: StateSetOptions): Promise<void>
-  deleteState(namespace: string, key: string): Promise<void>
-  listState(namespace: string, prefix?: string): AsyncIterable<StateEntry>
-  casState<T>(namespace: string, key: string, expected: T | undefined, next: T): Promise<boolean>
-  appendState(namespace: string, stream: string, entry: unknown): Promise<void>
-  readState(namespace: string, stream: string, opts?: StateReadOptions): AsyncIterable<unknown>
-}
+export interface StateStore extends WorkflowStateStore {}
 
 /** Combined store used by implementations that back both APIs with a single driver. */
 export type RunStore = ExecutionStore & StateStore & ArtifactStore

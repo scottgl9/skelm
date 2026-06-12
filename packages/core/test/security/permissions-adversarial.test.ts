@@ -346,6 +346,110 @@ describe('permission enforcement — adversarial', () => {
     expect(run.status).toBe('failed')
     expect(run.error?.name).toBe('BackendCapabilityError')
   })
+
+  it('allows explicit advisory backends while emitting operator-visible advisory events', async () => {
+    const registry = new BackendRegistry()
+    let ran = false
+    const backend: SkelmBackend = {
+      id: 'acp-advisory',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'advisory',
+      },
+      async run() {
+        ran = true
+        return { text: 'ok' }
+      },
+    }
+    registry.register(backend)
+    const events = new EventBus()
+    const seen: RunEvent[] = []
+    events.subscribe((event) => seen.push(event))
+
+    const run = await runPipeline(
+      pipeline({
+        id: 'advisory-permissions',
+        steps: [
+          agent({
+            id: 'step',
+            backend: 'acp-advisory',
+            prompt: 'go',
+            permissions: {
+              allowedTools: ['fs.read'],
+              allowedExecutables: ['git'],
+              fsRead: ['./'],
+              networkEgress: 'allow',
+            },
+          }),
+        ],
+      }),
+      undefined,
+      {
+        backends: registry,
+        events,
+        registerEgressToken: () => 'tok',
+        getProxyEnv: () => ({ HTTP_PROXY: 'http://127.0.0.1:1' }),
+      },
+    )
+
+    expect(run.status).toBe('completed')
+    expect(ran).toBe(true)
+    expect(seen).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'permission.advisory',
+          stepId: 'step',
+          backendId: 'acp-advisory',
+          dimensions: expect.arrayContaining(['tool', 'executable', 'fs.read']),
+        }),
+      ]),
+    )
+  })
+
+  it('still fails closed for advisory network permissions without the gateway egress proxy', async () => {
+    const registry = new BackendRegistry()
+    const backend: SkelmBackend = {
+      id: 'acp-advisory',
+      capabilities: {
+        prompt: false,
+        streaming: false,
+        sessionLifecycle: false,
+        mcp: false,
+        skills: false,
+        modelSelection: false,
+        toolPermissions: 'advisory',
+      },
+      async run() {
+        return { text: 'should not reach' }
+      },
+    }
+    registry.register(backend)
+
+    const run = await runPipeline(
+      pipeline({
+        id: 'advisory-network-no-proxy',
+        steps: [
+          agent({
+            id: 'step',
+            backend: 'acp-advisory',
+            prompt: 'go',
+            permissions: { networkEgress: 'allow' },
+          }),
+        ],
+      }),
+      undefined,
+      { backends: registry },
+    )
+
+    expect(run.status).toBe('failed')
+    expect(run.error?.name).toBe('BackendCapabilityError')
+    expect(run.error?.message).toMatch(/without the gateway egress proxy/)
+  })
 })
 
 function workflow(prompt: string) {
