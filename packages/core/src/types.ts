@@ -242,6 +242,24 @@ export interface Context<TInput = unknown> {
    * `SqliteRunStore`).
    */
   readonly artifacts?: import('./artifact-types.js').ArtifactStoreHandle
+  /**
+   * In-workflow orchestration: invoke a child workflow synchronously or fan
+   * out across many. Every child runs under the delegation ceiling — its
+   * resolved policy is intersected with this step's resolved policy, so a
+   * child can never exceed the parent. Targets must be granted by the step's
+   * `permissions.delegation` allowlist (default-deny). Present inside
+   * `code()` steps when the runtime has a pipeline registry wired.
+   */
+  readonly workflows?: import('./orchestration-types.js').WorkflowsHandle
+  /**
+   * Detached-task orchestration: spawn a registered workflow as a tracked
+   * `TaskRecord` (with `parentRunId`/`parentStepId` lineage), then
+   * wait/cancel/stream it. The detached child is still bounded by this
+   * step's resolved policy — detachment is not a permission escape hatch.
+   * Present inside `code()` steps when the runtime has both a pipeline
+   * registry and a task-capable run store wired.
+   */
+  readonly tasks?: import('./orchestration-types.js').TasksHandle
 }
 
 /** Execution request accepted by `ctx.exec`. */

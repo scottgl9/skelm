@@ -1,3 +1,4 @@
+import type { WorkflowInvokeResult } from './orchestration-types.js'
 import type { SerializedError } from './types-base.js'
 
 /** Thrown when a step handler throws an error not otherwise typed. */
@@ -176,6 +177,36 @@ export class DelegationDepthError extends Error {
     this.depth = depth
     this.maxDepth = maxDepth
   }
+}
+
+/** Thrown when ctx.workflows.fanout receives an invalid option combination. */
+export class FanoutConfigError extends Error {
+  override readonly name = 'FanoutConfigError'
+}
+
+/**
+ * Thrown when a fanout strategy's success condition cannot be met (`wait-all`
+ * without `continueOnError`, `fail-fast`, an unreachable `quorum`, or
+ * `first-success` with no completed child). Carries the per-child results
+ * gathered so far, index-aligned with the child list (`undefined` for
+ * children cancelled before they started).
+ */
+export class FanoutFailedError extends Error {
+  override readonly name = 'FanoutFailedError'
+  readonly results: readonly (WorkflowInvokeResult | undefined)[]
+  constructor(message: string, results: readonly (WorkflowInvokeResult | undefined)[]) {
+    super(message)
+    this.results = results
+  }
+}
+
+/**
+ * Thrown for ctx.tasks misuse: spawning without a task-capable run store, or
+ * waiting on / cancelling / streaming a task this step did not spawn and the
+ * store does not know.
+ */
+export class TaskOrchestrationError extends Error {
+  override readonly name = 'TaskOrchestrationError'
 }
 
 /** Thrown when a workflow package manifest (skelm.package.json) is missing, malformed, or invalid. */

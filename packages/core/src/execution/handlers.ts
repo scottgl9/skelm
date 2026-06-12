@@ -15,9 +15,6 @@ import { type ApprovalGate, EnvSecretResolver } from '../enforcement/index.js'
 import {
   ApprovalDeniedError,
   BranchExhaustionError,
-  DEFAULT_MAX_DELEGATION_DEPTH,
-  DelegationCycleError,
-  DelegationDepthError,
   InvokePipelineNotFoundError,
   PermissionDeniedError,
   RunCancelledError,
@@ -79,6 +76,7 @@ import {
   resolveDeclaredSecrets,
 } from './helpers.js'
 import { createSecretsAccessor, resolveValueOrFn, resolveValueOrFnAsync } from './internal.js'
+import { createTasksHandle, createWorkflowsHandle, runBoundedChild } from './orchestration.js'
 import type { ExecutionRuntime } from './runtime.js'
 
 const defaultStateStore = new MemoryRunStore()
@@ -247,7 +245,7 @@ async function runStep(
   }
   switch (step.kind) {
     case 'code':
-      return await runCodeStep(step, ctx, events, runtime)
+      return await runCodeStep(step, ctx, backends, events, runtime)
     case 'infer':
       return await runInferStep(step, ctx, backends, events, runtime)
     case 'agent':
@@ -278,6 +276,7 @@ async function runStep(
 async function runCodeStep(
   step: Extract<Step, { kind: 'code' }>,
   ctx: Context,
+  backends: BackendRegistry | undefined,
   events: EventBus | undefined,
   runtime?: ExecutionRuntime,
 ): Promise<unknown> {
@@ -369,11 +368,30 @@ async function runCodeStep(
       runId: ctx.run.runId,
       stepId: step.id,
     })
+    // Orchestration handles mirror the agent step's `delegate` wiring: present
+    // only when the runtime can resolve pipelines. Children are bounded by
+    // this step's resolved `policy` (the delegation ceiling).
+    const orchestration =
+      runtime?.pipelineRegistry !== undefined
+        ? {
+            caller: { runId: ctx.run.runId, stepId: step.id, signal: stepSignal, policy },
+            runtime,
+            ...(backends !== undefined && { backends }),
+            ...(events !== undefined && { events }),
+          }
+        : undefined
+    const workflows = orchestration === undefined ? undefined : createWorkflowsHandle(orchestration)
+    const tasks =
+      orchestration === undefined || runtime?.store === undefined
+        ? undefined
+        : createTasksHandle(orchestration)
     const stepCtx = freezeContext({
       ...workspaceCtx,
       signal: stepSignal,
       ...(secretsAccessor !== undefined && { secrets: secretsAccessor }),
       exec,
+      ...(workflows !== undefined && { workflows }),
+      ...(tasks !== undefined && { tasks }),
     })
 
     const runFn = await resolveCodeRun(step, runtime?.pipelineBaseDir)
@@ -1756,62 +1774,18 @@ export async function runDelegation(
   backends: BackendRegistry | undefined,
   events?: EventBus,
 ): Promise<DelegateResult> {
-  // Authoritative permission gate: enforce the caller's `delegation` allowlist
-  // here, not only in the native agent's tool. Any backend that calls
-  // ctx.delegate routes through this helper, so the allowlist binds regardless
-  // of which backend (or tool) initiated the hand-off — defense in depth.
-  const decision = new TrustEnforcer(caller.ceiling).canDelegate(agentId)
-  if (!decision.allow) {
-    events?.publish({
-      type: 'permission.denied',
-      runId: caller.runId,
-      stepId: caller.stepId,
-      dimension: 'delegation',
-      detail: `delegate denied: ${agentId} — ${decision.reason}`,
-      at: Date.now(),
-    })
-    throw new PermissionDeniedError(`delegation to "${agentId}" denied (${decision.reason})`)
-  }
-  const stack = runtime.delegationStack ?? []
-  const depth = runtime.delegationDepth ?? 0
-  const maxDepth = runtime.maxDelegationDepth ?? DEFAULT_MAX_DELEGATION_DEPTH
-  if (depth + 1 > maxDepth) {
-    throw new DelegationDepthError(agentId, depth + 1, maxDepth)
-  }
-  if (stack.includes(agentId)) {
-    throw new DelegationCycleError(agentId, stack)
-  }
-  const pipeline = await runtime.pipelineRegistry?.(agentId)
-  if (pipeline === undefined) {
-    throw new InvokePipelineNotFoundError(agentId, caller.stepId)
-  }
-  const nestedRun = await runPipeline(pipeline, input, {
-    signal: caller.signal,
-    ...(events !== undefined && { events }),
-    ...(backends !== undefined && { backends }),
-    ...(runtime.store !== undefined && { store: runtime.store }),
-    ...(runtime.stateStore !== undefined && { stateStore: runtime.stateStore }),
-    ...(runtime.defaultPermissions !== undefined && {
-      defaultPermissions: runtime.defaultPermissions,
-    }),
-    ...(runtime.permissionProfiles !== undefined && {
-      permissionProfiles: runtime.permissionProfiles,
-    }),
-    ...(runtime.executableProfiles !== undefined && {
-      executableProfiles: runtime.executableProfiles,
-    }),
-    ...(runtime.unrestrictedGrant !== undefined && {
-      unrestrictedGrant: runtime.unrestrictedGrant,
-    }),
-    ...(runtime.workspaceManager !== undefined && { workspaceManager: runtime.workspaceManager }),
-    ...(runtime.skillSource !== undefined && { skillSource: runtime.skillSource }),
-    ...(runtime.secretResolver !== undefined && { secretResolver: runtime.secretResolver }),
-    ...(runtime.pipelineRegistry !== undefined && { pipelineRegistry: runtime.pipelineRegistry }),
-    delegationCeiling: caller.ceiling,
-    delegationStack: [...stack, agentId],
-    delegationDepth: depth + 1,
-    maxDelegationDepth: maxDepth,
-  })
+  // Authoritative permission gate: runBoundedChild enforces the caller's
+  // `delegation` allowlist (not only the native agent's tool), so the
+  // allowlist binds regardless of which backend initiated the hand-off —
+  // defense in depth. The same shared path serves ctx.workflows / ctx.tasks.
+  const nestedRun = await runBoundedChild(
+    agentId,
+    input,
+    { runId: caller.runId, stepId: caller.stepId, signal: caller.signal, policy: caller.ceiling },
+    runtime,
+    backends,
+    events,
+  )
   if (nestedRun.status === 'completed') {
     return { status: 'completed', runId: nestedRun.runId, output: nestedRun.output }
   }
