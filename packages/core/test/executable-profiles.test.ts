@@ -1,0 +1,169 @@
+import { describe, expect, it } from 'vitest'
+import { PermissionResolver } from '../src/enforcement/permission-resolver.js'
+import { UnknownExecutableProfileError } from '../src/errors.js'
+import {
+  type ExecutableProfileDefinition,
+  intersectResolvedPolicies,
+  resolvePermissions,
+} from '../src/permissions.js'
+
+const DEFINITIONS: Readonly<Record<string, ExecutableProfileDefinition>> = {
+  linuxReadOnly: {
+    description: 'read-only shell utilities',
+    executables: ['ls', 'cat', 'rg'],
+    tags: ['read-only'],
+  },
+  gitReadOnly: { executables: ['git'] },
+  nodeBuild: { executables: ['node', 'pnpm'] },
+}
+
+describe('resolvePermissions — executable profile expansion', () => {
+  it('expands a single profile to its executables', () => {
+    const policy = resolvePermissions(
+      undefined,
+      { executableProfiles: ['gitReadOnly'] },
+      {},
+      { executableProfiles: DEFINITIONS },
+    )
+    expect([...policy.allowedExecutables].sort()).toEqual(['git'])
+  })
+
+  it('expands multiple profiles to the union of their executables', () => {
+    const policy = resolvePermissions(
+      undefined,
+      { executableProfiles: ['gitReadOnly', 'nodeBuild'] },
+      {},
+      { executableProfiles: DEFINITIONS },
+    )
+    expect([...policy.allowedExecutables].sort()).toEqual(['git', 'node', 'pnpm'])
+  })
+
+  it('deduplicates executables shared by referenced profiles', () => {
+    const policy = resolvePermissions(
+      undefined,
+      { executableProfiles: ['linuxReadOnly', 'linuxReadOnly'] },
+      {},
+      { executableProfiles: DEFINITIONS },
+    )
+    expect([...policy.allowedExecutables].sort()).toEqual(['cat', 'ls', 'rg'])
+  })
+
+  it('leaves allowedExecutables-only layers unchanged', () => {
+    const policy = resolvePermissions(
+      undefined,
+      { allowedExecutables: ['jq'] },
+      {},
+      { executableProfiles: DEFINITIONS },
+    )
+    expect([...policy.allowedExecutables]).toEqual(['jq'])
+    expect(policy.executableProfileNames?.size).toBe(0)
+  })
+
+  it('applies path/basename intersection rules between expansion and explicit list', () => {
+    const policy = resolvePermissions(
+      undefined,
+      { executableProfiles: ['gitReadOnly'], allowedExecutables: ['/usr/bin/git'] },
+      {},
+      { executableProfiles: DEFINITIONS },
+    )
+    // Profile grants the bare name; the explicit path is the narrower entry.
+    expect([...policy.allowedExecutables]).toEqual(['/usr/bin/git'])
+  })
+
+  it('expands profiles referenced from a named permission profile layer', () => {
+    const policy = resolvePermissions(
+      undefined,
+      { profile: 'analyst' },
+      { analyst: { executableProfiles: ['linuxReadOnly'] } },
+      { executableProfiles: DEFINITIONS },
+    )
+    expect([...policy.allowedExecutables].sort()).toEqual(['cat', 'ls', 'rg'])
+    expect(policy.executableProfileNames).toEqual(new Set(['linuxReadOnly']))
+  })
+})
+
+describe('resolvePermissions — executableProfileNames metadata', () => {
+  it('records every profile name applied across layers', () => {
+    const policy = resolvePermissions(
+      { executableProfiles: ['linuxReadOnly'] },
+      { executableProfiles: ['gitReadOnly'] },
+      {},
+      { executableProfiles: DEFINITIONS },
+    )
+    expect(policy.executableProfileNames).toEqual(new Set(['linuxReadOnly', 'gitReadOnly']))
+  })
+
+  it('is empty when no layer references a profile', () => {
+    const policy = resolvePermissions({ allowedExecutables: ['git'] }, undefined)
+    expect(policy.executableProfileNames?.size).toBe(0)
+  })
+})
+
+describe('intersectResolvedPolicies — executable profile metadata', () => {
+  it('unions profile names while intersecting the executable sets', () => {
+    const ceiling = resolvePermissions(
+      undefined,
+      { executableProfiles: ['linuxReadOnly'] },
+      {},
+      { executableProfiles: DEFINITIONS },
+    )
+    const child = resolvePermissions(
+      undefined,
+      { executableProfiles: ['gitReadOnly', 'linuxReadOnly'], allowedExecutables: ['rg', 'git'] },
+      {},
+      { executableProfiles: DEFINITIONS },
+    )
+    const bounded = intersectResolvedPolicies(ceiling, child)
+    expect([...bounded.allowedExecutables]).toEqual(['rg'])
+    expect(bounded.executableProfileNames).toEqual(new Set(['linuxReadOnly', 'gitReadOnly']))
+  })
+
+  it('keeps the child names under an unrestricted ceiling', () => {
+    const ceiling = resolvePermissions(
+      { requestUnrestricted: true },
+      undefined,
+      {},
+      { grantUnrestricted: true },
+    )
+    const child = resolvePermissions(
+      undefined,
+      { executableProfiles: ['nodeBuild'] },
+      {},
+      { executableProfiles: DEFINITIONS },
+    )
+    const bounded = intersectResolvedPolicies(ceiling, child)
+    expect(bounded.unrestricted).toBe(true)
+    expect(bounded.executableProfileNames).toEqual(new Set(['nodeBuild']))
+  })
+
+  it('tolerates hand-built policies without the metadata field', () => {
+    const withNames = resolvePermissions(
+      undefined,
+      { executableProfiles: ['gitReadOnly'] },
+      {},
+      { executableProfiles: DEFINITIONS },
+    )
+    const { executableProfileNames: _drop, ...handBuilt } = withNames
+    const bounded = intersectResolvedPolicies(handBuilt, withNames)
+    expect(bounded.executableProfileNames).toEqual(new Set(['gitReadOnly']))
+    const neither = intersectResolvedPolicies(handBuilt, handBuilt)
+    expect(neither.executableProfileNames).toBeUndefined()
+  })
+})
+
+describe('PermissionResolver — executable profile definitions', () => {
+  it('threads configured definitions into resolution', () => {
+    const resolver = new PermissionResolver({
+      executableProfiles: DEFINITIONS,
+    })
+    const policy = resolver.resolve({ executableProfiles: ['nodeBuild'] })
+    expect([...policy.allowedExecutables].sort()).toEqual(['node', 'pnpm'])
+  })
+
+  it('throws the typed error for unknown references', () => {
+    const resolver = new PermissionResolver({ executableProfiles: DEFINITIONS })
+    expect(() => resolver.resolve({ executableProfiles: ['nope'] })).toThrow(
+      UnknownExecutableProfileError,
+    )
+  })
+})

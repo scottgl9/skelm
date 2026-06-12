@@ -47,6 +47,16 @@ export class PermissionDeniedError extends Error {
   override readonly name = 'PermissionDeniedError'
 }
 
+/** Thrown when permissions reference an executable profile the config does not define. */
+export class UnknownExecutableProfileError extends Error {
+  override readonly name = 'UnknownExecutableProfileError'
+  readonly profileName: string
+  constructor(profileName: string) {
+    super(`unknown executable profile: ${profileName}`)
+    this.profileName = profileName
+  }
+}
+
 /** Thrown when an agent step's approval gate rejects the run. */
 export class ApprovalDeniedError extends Error {
   constructor(

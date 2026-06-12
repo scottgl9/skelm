@@ -103,6 +103,9 @@ function summarizePermissions(permissions: import('./permissions.js').AgentPermi
   if (permissions.allowedExecutables?.length) {
     parts.push(`exec=${permissions.allowedExecutables.join(',')}`)
   }
+  if (permissions.executableProfiles?.length) {
+    parts.push(`execProfiles=${permissions.executableProfiles.join(',')}`)
+  }
   if (permissions.allowedMcpServers?.length) {
     parts.push(`mcp=${permissions.allowedMcpServers.join(',')}`)
   }
