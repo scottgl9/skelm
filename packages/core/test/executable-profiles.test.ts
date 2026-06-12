@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { code, pipeline } from '../src/builders.js'
+import {
+  branch,
+  code,
+  idempotent,
+  loop,
+  parallel,
+  pipeline,
+  pipelineStep,
+} from '../src/builders.js'
 import { PermissionResolver } from '../src/enforcement/permission-resolver.js'
 import { UnknownExecutableProfileError } from '../src/errors.js'
 import { EventBus } from '../src/events.js'
@@ -150,6 +158,8 @@ describe('intersectResolvedPolicies — executable profile metadata', () => {
     const { executableProfileNames: _drop, ...handBuilt } = withNames
     const bounded = intersectResolvedPolicies(handBuilt, withNames)
     expect(bounded.executableProfileNames).toEqual(new Set(['gitReadOnly']))
+    const reversed = intersectResolvedPolicies(withNames, handBuilt)
+    expect(reversed.executableProfileNames).toEqual(new Set(['gitReadOnly']))
     const neither = intersectResolvedPolicies(handBuilt, handBuilt)
     expect(neither.executableProfileNames).toBeUndefined()
   })
@@ -222,6 +232,42 @@ describe('run-start validation of executable profile references', () => {
         permissionProfiles: { analyst: { executableProfiles: ['notDefined'] } },
         executableProfiles: DEFINITIONS,
       }),
+    ).rejects.toBeInstanceOf(UnknownExecutableProfileError)
+  })
+
+  it('walks nested structural steps when validating references', async () => {
+    const offending = code({
+      id: 'deep',
+      permissions: { executableProfiles: ['notDefined'] },
+      run: () => 1,
+    })
+    const wf = pipeline({
+      id: 'wf-nested',
+      steps: [
+        parallel({
+          id: 'par',
+          steps: [
+            branch({
+              id: 'br',
+              on: () => 'a',
+              cases: {
+                a: loop({ id: 'lp', while: () => false, maxIterations: 1, step: offending }),
+              },
+              default: code({ id: 'noop', run: () => 1 }),
+            }),
+          ],
+        }),
+        pipelineStep({
+          id: 'nested-pipe',
+          pipeline: pipeline({
+            id: 'inner',
+            steps: [idempotent({ key: 'k', step: code({ id: 'idem', run: () => 1 }) })],
+          }),
+        }),
+      ],
+    })
+    await expect(
+      runPipeline(wf, undefined, { executableProfiles: DEFINITIONS }),
     ).rejects.toBeInstanceOf(UnknownExecutableProfileError)
   })
 
