@@ -42,6 +42,8 @@ value:DiscordTrigger
 value:EnvSecretResolver
 value:EventBus
 value:ExecConfigError
+value:FanoutConfigError
+value:FanoutFailedError
 value:GATEWAY_CONFIG_FILENAMES
 value:GitHubTrigger
 value:InvokePipelineNotFoundError
@@ -92,6 +94,7 @@ value:SqliteRunStore
 value:StateConfigError
 value:StepError
 value:StepTimeoutError
+value:TaskOrchestrationError
 value:TriggerError
 value:TriggerInitializationError
 value:TriggerPluginBase
@@ -271,6 +274,8 @@ type:ExecRequest
 type:ExecResult
 type:ExecutableProfileDefinition
 type:ExecutionStore
+type:FanoutChildSpec
+type:FanoutStrategy
 type:ForEachStep
 type:GitHubIssueCommentEvent
 type:GitHubPullRequestEvent
@@ -383,6 +388,7 @@ type:SlackBlockAction
 type:SlackCommand
 type:SlackEvent
 type:SlackTriggerConfig
+type:SpawnedTaskHandle
 type:SqliteRunStoreOptions
 type:StateStore
 type:Step
@@ -397,8 +403,10 @@ type:TaskFilter
 type:TaskPatch
 type:TaskRecord
 type:TaskRequirements
+type:TaskSpawnOptions
 type:TaskStatus
 type:TaskStore
+type:TasksHandle
 type:TestResult
 type:Thread
 type:ThreadHost
@@ -419,7 +427,12 @@ type:WaitRequest
 type:WaitStep
 type:WebhookTriggerConfig
 type:WhenPredicate
+type:WorkflowFanoutOptions
+type:WorkflowFanoutResult
 type:WorkflowInvocation
+type:WorkflowInvokeOptions
+type:WorkflowInvokeResult
+type:WorkflowInvokeStatus
 type:WorkflowPackageManifest
 type:WorkflowPackageSecretRef
 type:WorkflowPackageSelfTest
@@ -428,6 +441,7 @@ type:WorkflowPackageTrigger
 type:WorkflowPackageWorkflowEntry
 type:WorkflowPlugin
 type:WorkflowStateStore
+type:WorkflowsHandle
 type:WorkspaceManagerOptions
 type:WorkspaceMetadata
 type:WorkspaceSummary
