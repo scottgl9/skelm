@@ -155,6 +155,10 @@ export default defineConfig({
           ],
         },
         {
+          text: 'Integrations',
+          items: [{ text: 'Google Sheets', link: '/integrations/google-sheets' }],
+        },
+        {
           text: 'Generated API',
           collapsed: true,
           items: typedocSidebar as { text: string; link: string }[],
