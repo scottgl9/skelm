@@ -198,6 +198,19 @@ export interface Context<TInput = unknown> {
   readonly threads: import('./threads.js').ThreadHost
   readonly workspace?: WorkspaceHandle
   /**
+   * Values collected by `beforeRun` human-in-the-loop gates on this step,
+   * keyed by gate kind (`input` / `choose`). Populated by the runtime before
+   * the step body runs when a `beforeRun` gate resolved with a value. Absent
+   * when the step declared no value-producing beforeRun gate.
+   *
+   *   const answer = ctx.hitl?.input
+   *   const picked = ctx.hitl?.choose
+   */
+  readonly hitl?: {
+    readonly input?: unknown
+    readonly choose?: readonly string[]
+  }
+  /**
    * Current item when inside a `forEach` step. Undefined outside forEach.
    * Typed as `unknown`; cast to your item type in the step's `run` function.
    */
@@ -332,6 +345,7 @@ export interface StepResult<TOutput = unknown> {
 export interface CodeStep<TOutput = unknown> {
   readonly kind: 'code'
   readonly id: StepId
+  readonly humanInLoop?: import('./hitl.js').HumanInLoop
   /**
    * Inline run function. Mutually exclusive with `module`: exactly one must
    * be supplied to `code()`. When `module` is set, the runner loads the file
@@ -382,6 +396,7 @@ export interface CodeStep<TOutput = unknown> {
 export interface InferStep<TOutput = unknown> {
   readonly kind: 'infer'
   readonly id: StepId
+  readonly humanInLoop?: import('./hitl.js').HumanInLoop
   readonly backend?: string | readonly string[]
   readonly model?: string
   readonly system?: string | ((ctx: Context) => string | Promise<string>)
@@ -415,6 +430,7 @@ export interface InferStep<TOutput = unknown> {
 export interface AgentStep<TOutput = unknown> {
   readonly kind: 'agent'
   readonly id: StepId
+  readonly humanInLoop?: import('./hitl.js').HumanInLoop
   readonly backend?: string | readonly string[]
   readonly agentDef?: string
   readonly prompt:
@@ -484,6 +500,7 @@ export interface AgentStep<TOutput = unknown> {
 export interface IdempotentStep<TOutput = unknown> {
   readonly kind: 'idempotent'
   readonly id: StepId
+  readonly humanInLoop?: import('./hitl.js').HumanInLoop
   readonly key: string | ((ctx: Context) => string)
   readonly step: Step
   readonly ttlMs?: number
@@ -507,6 +524,7 @@ export type ParallelOnError = 'fail' | 'continue' | 'partial'
 export interface ParallelStep {
   readonly kind: 'parallel'
   readonly id: StepId
+  readonly humanInLoop?: import('./hitl.js').HumanInLoop
   readonly steps: readonly Step[]
   readonly waitFor?: ParallelWaitFor
   readonly onError?: ParallelOnError
@@ -527,6 +545,7 @@ export interface ParallelStep {
 export interface ForEachStep {
   readonly kind: 'forEach'
   readonly id: StepId
+  readonly humanInLoop?: import('./hitl.js').HumanInLoop
   readonly items: (ctx: Context) => readonly unknown[]
   readonly concurrency?: number
   readonly step: (item: unknown, index: number) => Step
@@ -547,6 +566,7 @@ export interface ForEachStep {
 export interface BranchStep {
   readonly kind: 'branch'
   readonly id: StepId
+  readonly humanInLoop?: import('./hitl.js').HumanInLoop
   readonly on: (ctx: Context) => string
   readonly cases: Readonly<Record<string, Step>>
   readonly default?: Step
@@ -567,6 +587,7 @@ export interface BranchStep {
 export interface LoopStep {
   readonly kind: 'loop'
   readonly id: StepId
+  readonly humanInLoop?: import('./hitl.js').HumanInLoop
   readonly while: (ctx: Context) => boolean | Promise<boolean>
   readonly maxIterations: number
   readonly step: Step
@@ -587,6 +608,7 @@ export interface LoopStep {
 export interface WaitStep<TOutput = unknown> {
   readonly kind: 'wait'
   readonly id: StepId
+  readonly humanInLoop?: import('./hitl.js').HumanInLoop
   readonly message?: string | ((ctx: Context) => string)
   readonly timeoutMs?: number
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
@@ -607,6 +629,7 @@ export interface WaitStep<TOutput = unknown> {
 export interface PipelineStep<TInput = unknown, TOutput = unknown> {
   readonly kind: 'pipelineStep'
   readonly id: StepId
+  readonly humanInLoop?: import('./hitl.js').HumanInLoop
   readonly pipeline: Pipeline<TInput, TOutput>
   readonly input?: TInput | ((ctx: Context) => TInput)
   readonly state?: StateConfig
@@ -626,6 +649,7 @@ export interface PipelineStep<TInput = unknown, TOutput = unknown> {
 export interface InvokeStep<TInput = unknown, TOutput = unknown> {
   readonly kind: 'invoke'
   readonly id: StepId
+  readonly humanInLoop?: import('./hitl.js').HumanInLoop
   /** The ID of the pipeline to invoke (as registered in the gateway's workflow registry). */
   readonly pipelineId: string
   /** Input to pass to the invoked pipeline. Defaults to the current pipeline's input. */
@@ -835,6 +859,12 @@ export interface Pipeline<TInput = unknown, TOutput = unknown> {
    * `runPipeline()` or `skelm run` ignore this field.
    */
   readonly triggers?: readonly PipelineTrigger[]
+  /**
+   * Workflow-level default human-in-the-loop gates. A step's own
+   * `humanInLoop` narrows/overrides this per phase (step wins). The runtime
+   * resolves the effective gate per step + phase before executing the body.
+   */
+  readonly humanInLoop?: import('./hitl.js').HumanInLoop
   /** Phantom marker for the pipeline's input type; carried for inference. */
   readonly _input?: TInput
   /** Phantom marker for the pipeline's output type. */
@@ -856,6 +886,13 @@ export interface RunWaiting {
   readonly timeoutMs?: number
   /** Wall-clock ms at which the wait() step began parking. */
   readonly since: number
+  /**
+   * Present when the run is parked at a human-in-the-loop gate rather than a
+   * plain wait() step. Persisted so a pending gate survives gateway restart
+   * and the gateway list/get/resolve API can describe it without the event
+   * log. See `hitl.ts` (`HitlPending`).
+   */
+  readonly hitl?: import('./hitl.js').HitlPending
 }
 
 /** Final record of a completed (or failed / cancelled) run. */

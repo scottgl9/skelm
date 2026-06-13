@@ -241,6 +241,14 @@ export class Gateway implements GatewayContext {
     return this.backendsInternal
   }
 
+  get hitlPolicy(): import('@skelm/core').HitlPolicy | undefined {
+    return this.options.hitlPolicy
+  }
+
+  get hitlEnvironment(): string | undefined {
+    return this.options.hitlEnvironment
+  }
+
   /**
    * Absorb the backends from a runtime-activated project's registry into this
    * gateway's registry, idempotently. A backend whose id is already registered
@@ -499,6 +507,13 @@ export class Gateway implements GatewayContext {
     agentmemoryHandleFactory?: import('@skelm/core').AgentmemoryHandleFactory
   } {
     return this.runtimeInternal.agentmemoryRunOptions()
+  }
+
+  hitlRunOptions(): {
+    hitlPolicy?: import('@skelm/core').HitlPolicy
+    hitlEnvironment?: string
+  } {
+    return this.runtimeInternal.hitlRunOptions()
   }
 
   defaultPermissionRunOptions(workflowId?: string): {

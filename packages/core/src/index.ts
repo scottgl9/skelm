@@ -233,6 +233,8 @@ export {
   ExecConfigError,
   FanoutConfigError,
   FanoutFailedError,
+  HitlConfigError,
+  HitlDeniedError,
   InvokePipelineNotFoundError,
   PackageIntegrityError,
   PackageManifestError,
@@ -490,6 +492,26 @@ export type {
   WhenPredicate,
   ExecFn,
 } from './types.js'
+export { hitlTimeoutAction, toHitlPending } from './hitl.js'
+export type {
+  HitlApprovalGate,
+  HitlChooseGate,
+  HitlDecision,
+  HitlEditGate,
+  HitlEscalation,
+  HitlGate,
+  HitlGateKind,
+  HitlInputGate,
+  HitlOption,
+  HitlPending,
+  HitlPhase,
+  HitlPolicy,
+  HitlPolicyContext,
+  HitlRetrySkipAbortGate,
+  HitlTimeoutAction,
+  HitlValidateGate,
+  HumanInLoop,
+} from './hitl.js'
 export { createThreadHost } from './threads.js'
 export type { Thread, ThreadHost, ThreadRef } from './threads.js'
 export type {

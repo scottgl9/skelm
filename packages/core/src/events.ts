@@ -117,6 +117,8 @@ type RunEventBody =
       stepId: StepId
       message?: string
       timeoutMs?: number
+      /** Present when the pause is a human-in-the-loop gate (see hitl.ts). */
+      hitl?: import('./hitl.js').HitlPending
       at: number
     }
   | {

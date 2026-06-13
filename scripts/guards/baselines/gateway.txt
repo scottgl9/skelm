@@ -9,6 +9,7 @@ value:FileSecretResolver
 value:FsWatcher
 value:GATEWAY_PACKAGE_VERSION
 value:Gateway
+value:HitlResolutionError
 value:InMemoryQueueDriver
 value:LockfileError
 value:McpServerManager
@@ -22,11 +23,16 @@ value:VaultNotImplementedError
 value:VaultSecretResolver
 value:WorkflowRegistry
 value:acquireLockfile
+value:auditHitl
+value:buildDecision
 value:createServer
 value:createSkillSource
 value:createTriggerDispatcher
 value:defaultAcpSessionStorePath
+value:getPendingHitl
+value:hitlAuditEvent
 value:isProcessAlive
+value:listPendingHitl
 value:pipelineTriggerToSpec
 value:readDiscovery
 value:readLockfile
@@ -58,6 +64,7 @@ type:GatewayOptions
 type:GatewayRegistries
 type:GatewayState
 type:GatewayTriggerRegistration
+type:HitlResolution
 type:LockfileContents
 type:LogEntry
 type:LogSink
@@ -69,6 +76,7 @@ type:McpServerStatus
 type:OverlapPolicy
 type:PausedRun
 type:PendingApproval
+type:PendingHitlGate
 type:PollDedupeKeyFn
 type:PollSourceFn
 type:QueueDriver

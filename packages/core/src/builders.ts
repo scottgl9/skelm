@@ -1,5 +1,6 @@
 import type { McpServerConfig } from './backend.js'
 import { parseDuration } from './duration.js'
+import type { HumanInLoop } from './hitl.js'
 import type { AgentPermissions } from './permissions.js'
 import type { SkelmSchema } from './schema.js'
 import type {
@@ -67,6 +68,8 @@ export function pipeline<TInput, TOutput>(def: {
    * authors only set this when constructing a pipeline programmatically.
    */
   baseDir?: string
+  /** Workflow-level default human-in-the-loop gates; a step's own gate wins per phase. */
+  humanInLoop?: HumanInLoop
 }): Pipeline<TInput, TOutput> {
   if (!def.id) {
     throw new Error('pipeline(): id is required')
@@ -90,6 +93,7 @@ export function pipeline<TInput, TOutput>(def: {
       ),
     }),
     ...(def.baseDir !== undefined && { baseDir: def.baseDir }),
+    ...(def.humanInLoop !== undefined && { humanInLoop: def.humanInLoop }),
   }
   return Object.freeze(out)
 }
@@ -119,6 +123,7 @@ export function code<TOutput>(def: {
   workspace?: WorkspaceConfig | ((ctx: Context) => WorkspaceConfig)
   when?: WhenPredicate
   continueOnError?: boolean
+  humanInLoop?: HumanInLoop
 }): CodeStep<TOutput> {
   if (!def.id) {
     throw new Error('code(): id is required')
@@ -150,6 +155,7 @@ export function code<TOutput>(def: {
     ...(def.workspace !== undefined && { workspace: def.workspace }),
     ...(def.when !== undefined && { when: def.when }),
     ...(def.continueOnError !== undefined && { continueOnError: def.continueOnError }),
+    ...(def.humanInLoop !== undefined && { humanInLoop: def.humanInLoop }),
   })
 }
 
@@ -181,6 +187,7 @@ export function infer<TOutput>(def: {
   retry?: RetryPolicy
   when?: WhenPredicate
   continueOnError?: boolean
+  humanInLoop?: HumanInLoop
 }): InferStep<TOutput> {
   if (!def.id) {
     throw new Error('infer(): id is required')
@@ -204,6 +211,7 @@ export function infer<TOutput>(def: {
     ...(def.retry !== undefined && { retry: def.retry }),
     ...(def.when !== undefined && { when: def.when }),
     ...(def.continueOnError !== undefined && { continueOnError: def.continueOnError }),
+    ...(def.humanInLoop !== undefined && { humanInLoop: def.humanInLoop }),
   })
 }
 
@@ -241,6 +249,7 @@ export function agent<TOutput>(def: {
   retry?: RetryPolicy
   when?: WhenPredicate
   continueOnError?: boolean
+  humanInLoop?: HumanInLoop
 }): AgentStep<TOutput> {
   if (!def.id) {
     throw new Error('agent(): id is required')
@@ -275,6 +284,7 @@ export function agent<TOutput>(def: {
     ...(def.retry !== undefined && { retry: def.retry }),
     ...(def.when !== undefined && { when: def.when }),
     ...(def.continueOnError !== undefined && { continueOnError: def.continueOnError }),
+    ...(def.humanInLoop !== undefined && { humanInLoop: def.humanInLoop }),
   })
 }
 
@@ -361,6 +371,7 @@ export function parallel(def: {
   retry?: RetryPolicy
   when?: WhenPredicate
   continueOnError?: boolean
+  humanInLoop?: HumanInLoop
 }): ParallelStep {
   if (!def.id) throw new Error('parallel(): id is required')
   if (!def.steps || def.steps.length === 0) {
@@ -389,6 +400,7 @@ export function parallel(def: {
     ...(def.retry !== undefined && { retry: def.retry }),
     ...(def.when !== undefined && { when: def.when }),
     ...(def.continueOnError !== undefined && { continueOnError: def.continueOnError }),
+    ...(def.humanInLoop !== undefined && { humanInLoop: def.humanInLoop }),
   })
 }
 
@@ -409,6 +421,7 @@ export function forEach(def: {
   retry?: RetryPolicy
   when?: WhenPredicate
   continueOnError?: boolean
+  humanInLoop?: HumanInLoop
 }): ForEachStep {
   if (!def.id) throw new Error('forEach(): id is required')
   if (typeof def.items !== 'function') {
@@ -435,6 +448,7 @@ export function forEach(def: {
     ...(def.retry !== undefined && { retry: def.retry }),
     ...(def.when !== undefined && { when: def.when }),
     ...(def.continueOnError !== undefined && { continueOnError: def.continueOnError }),
+    ...(def.humanInLoop !== undefined && { humanInLoop: def.humanInLoop }),
   })
 }
 
@@ -448,6 +462,7 @@ export function branch(def: {
   retry?: RetryPolicy
   when?: WhenPredicate
   continueOnError?: boolean
+  humanInLoop?: HumanInLoop
 }): BranchStep {
   if (!def.id) throw new Error('branch(): id is required')
   if (typeof def.on !== 'function') {
@@ -471,6 +486,7 @@ export function branch(def: {
     ...(def.retry !== undefined && { retry: def.retry }),
     ...(def.when !== undefined && { when: def.when }),
     ...(def.continueOnError !== undefined && { continueOnError: def.continueOnError }),
+    ...(def.humanInLoop !== undefined && { humanInLoop: def.humanInLoop }),
   })
 }
 
@@ -493,6 +509,7 @@ export function loop(def: {
   retry?: RetryPolicy
   when?: WhenPredicate
   continueOnError?: boolean
+  humanInLoop?: HumanInLoop
 }): LoopStep {
   if (!def.id) throw new Error('loop(): id is required')
   if (typeof def.while !== 'function') {
@@ -513,6 +530,7 @@ export function loop(def: {
     ...(def.retry !== undefined && { retry: def.retry }),
     ...(def.when !== undefined && { when: def.when }),
     ...(def.continueOnError !== undefined && { continueOnError: def.continueOnError }),
+    ...(def.humanInLoop !== undefined && { humanInLoop: def.humanInLoop }),
   })
 }
 
@@ -526,6 +544,7 @@ export function wait<TOutput>(def: {
   retry?: RetryPolicy
   when?: WhenPredicate
   continueOnError?: boolean
+  humanInLoop?: HumanInLoop
 }): WaitStep<TOutput> {
   if (!def.id) throw new Error('wait(): id is required')
   if (def.timeoutMs !== undefined && def.timeoutMs < 1) {
@@ -542,6 +561,7 @@ export function wait<TOutput>(def: {
     ...(def.retry !== undefined && { retry: def.retry }),
     ...(def.when !== undefined && { when: def.when }),
     ...(def.continueOnError !== undefined && { continueOnError: def.continueOnError }),
+    ...(def.humanInLoop !== undefined && { humanInLoop: def.humanInLoop }),
   })
 }
 
@@ -554,6 +574,7 @@ export function pipelineStep<TInput, TOutput>(def: {
   retry?: RetryPolicy
   when?: WhenPredicate
   continueOnError?: boolean
+  humanInLoop?: HumanInLoop
 }): PipelineStep<TInput, TOutput> {
   if (!def.id) throw new Error('pipelineStep(): id is required')
   if (!def.pipeline) {
@@ -572,6 +593,7 @@ export function pipelineStep<TInput, TOutput>(def: {
     ...(def.retry !== undefined && { retry: def.retry }),
     ...(def.when !== undefined && { when: def.when }),
     ...(def.continueOnError !== undefined && { continueOnError: def.continueOnError }),
+    ...(def.humanInLoop !== undefined && { humanInLoop: def.humanInLoop }),
   })
 }
 
@@ -584,6 +606,7 @@ export function invoke<TOutput>(def: {
   retry?: RetryPolicy
   when?: WhenPredicate
   continueOnError?: boolean
+  humanInLoop?: HumanInLoop
 }): InvokeStep<unknown, TOutput> {
   if (!def.id) throw new Error('invoke(): id is required')
   if (!def.pipelineId) {
@@ -599,6 +622,7 @@ export function invoke<TOutput>(def: {
     ...(def.retry !== undefined && { retry: def.retry }),
     ...(def.when !== undefined && { when: def.when }),
     ...(def.continueOnError !== undefined && { continueOnError: def.continueOnError }),
+    ...(def.humanInLoop !== undefined && { humanInLoop: def.humanInLoop }),
   })
 }
 
@@ -616,6 +640,7 @@ export function idempotent<TOutput>(def: {
   retry?: RetryPolicy
   when?: WhenPredicate
   continueOnError?: boolean
+  humanInLoop?: HumanInLoop
 }): IdempotentStep<TOutput> {
   if (!def.step) {
     throw new Error('idempotent(): step is required')
@@ -633,6 +658,7 @@ export function idempotent<TOutput>(def: {
     ...(def.retry !== undefined && { retry: def.retry }),
     ...(def.when !== undefined && { when: def.when }),
     ...(def.continueOnError !== undefined && { continueOnError: def.continueOnError }),
+    ...(def.humanInLoop !== undefined && { humanInLoop: def.humanInLoop }),
   })
 }
 

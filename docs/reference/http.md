@@ -56,6 +56,23 @@ The `:id` path segment is the workflow-registry id — by default this is the fi
 | POST   | `/runs/:runId/approve`        | Approve a paused approval gate; body `{ stepId, approver?, reason? }` |
 | POST   | `/runs/:runId/deny`           | Deny a paused approval gate; body `{ stepId, approver?, reason? }` |
 
+## Human-in-the-loop gates (`/v1/hitl`)
+
+Durable gates that pause a run awaiting a typed human decision. See
+[`concepts/human-in-the-loop`](../concepts/human-in-the-loop). Each resolution
+is audited as `hitl.<decision>`; submitted input/edit values are never audited.
+
+| Method | Path                          | Description                                      |
+| ------ | ----------------------------- | ------------------------------------------------ |
+| GET    | `/v1/hitl`                    | List pending HITL gates (`{ pending: [...] }`)   |
+| GET    | `/v1/hitl/:runId`             | The pending gate for a run (404 if none)         |
+| POST   | `/v1/hitl/:runId/resolve`     | Resolve a gate; body `{ decision, actor?, reason?, value?, selected? }` |
+
+`decision` must match the gate kind: `approve`/`deny` (approval, validate),
+`submit-input` (input), `submit-edit` (edit), `choose` (choose),
+`retry`/`skip`/`abort` (retry-skip-abort). A mismatched verb is `400` and the
+run stays parked. After a gateway restart the resolve rehydrates the run.
+
 ## Audit
 
 | Method | Path            | Description |

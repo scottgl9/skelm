@@ -15,6 +15,7 @@ import { type ApprovalGate, EnvSecretResolver } from '../enforcement/index.js'
 import {
   ApprovalDeniedError,
   BranchExhaustionError,
+  HitlDeniedError,
   InvokePipelineNotFoundError,
   PermissionDeniedError,
   RunCancelledError,
@@ -75,6 +76,7 @@ import {
   makeSkillLoader,
   resolveDeclaredSecrets,
 } from './helpers.js'
+import { applyAfterOutput, applyBeforeRun, stepHasHitl } from './hitl-runtime.js'
 import { createSecretsAccessor, resolveValueOrFn, resolveValueOrFnAsync } from './internal.js'
 import { createTasksHandle, createWorkflowsHandle, runBoundedChild } from './orchestration.js'
 import type { ExecutionRuntime } from './runtime.js'
@@ -177,11 +179,16 @@ export async function runStepWithRetry(
   const maxAttempts = step.retry?.maxAttempts ?? 1
   let abortedOriginal: unknown
 
+  const runWithGates = stepHasHitl(step, runtime)
+    ? async (): Promise<unknown> =>
+        runStepWithHitl(step, ctx, backends, waitForInput, events, runtime)
+    : async (): Promise<unknown> => runStep(step, ctx, backends, waitForInput, events, runtime)
+
   try {
     return await pRetry(
       async () => {
         try {
-          return await runStep(step, ctx, backends, waitForInput, events, runtime)
+          return await runWithGates()
         } catch (err) {
           if (!isRetryableError(err)) {
             abortedOriginal = err
@@ -217,6 +224,43 @@ export async function runStepWithRetry(
     throw err
   }
 }
+
+/** Cap on afterOutput-gate re-runs so a validate/retry loop can't spin forever. */
+const HITL_MAX_AFTER_OUTPUT_RERUNS = 16
+
+/**
+ * Run a step's body wrapped in its human-in-the-loop gates. The `beforeRun`
+ * gate may approve/deny/skip the body or inject input; the `afterOutput` gate
+ * may approve/edit/validate the output (a validate-reject or retry-skip-abort
+ * "retry" re-runs the body, bounded). All pauses go through the same durable
+ * wait/resume path as `wait()`.
+ */
+async function runStepWithHitl(
+  step: Step,
+  ctx: Context,
+  backends: BackendRegistry | undefined,
+  waitForInput: RunOptions['waitForInput'],
+  events: EventBus | undefined,
+  runtime: ExecutionRuntime,
+): Promise<unknown> {
+  const before = await applyBeforeRun(step, ctx, runtime, waitForInput, events)
+  if (!before.proceed) return undefined
+  const bodyCtx = before.ctx
+  for (let attempt = 0; attempt <= HITL_MAX_AFTER_OUTPUT_RERUNS; attempt++) {
+    const output = await runStep(step, bodyCtx, backends, waitForInput, events, runtime)
+    const after = await applyAfterOutput(step, bodyCtx, output, runtime, waitForInput, events)
+    if (after.retry !== true) return after.output
+    // Re-run the body. A `beforeRun` input/choose injection persists across
+    // re-runs via bodyCtx so the human's earlier answer isn't lost.
+  }
+  throw new HitlDeniedError(
+    step.id,
+    'validate',
+    undefined,
+    `afterOutput gate exceeded ${HITL_MAX_AFTER_OUTPUT_RERUNS} re-runs`,
+  )
+}
+
 async function runStep(
   step: Step,
   ctx: Context,

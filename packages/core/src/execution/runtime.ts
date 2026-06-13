@@ -49,6 +49,17 @@ export interface ExecutionRuntime {
    */
   readonly unrestrictedGrant?: boolean
   readonly approvalGate?: ApprovalGate
+  /**
+   * Policy hook that may REQUIRE a human-in-the-loop gate for a risky step
+   * (risky tool, broad executable profile, network egress, package install,
+   * production env, external write, budget overrun). Supplied only by the
+   * trust boundary; an injected gate cannot be bypassed. See `hitl.ts`.
+   */
+  readonly hitlPolicy?: import('../hitl.js').HitlPolicy
+  /** Operator environment label threaded to the HITL policy hook (e.g. 'production'). */
+  readonly hitlEnvironment?: string
+  /** Workflow-level default human-in-the-loop gates; a step's own gate wins per phase. */
+  readonly pipelineHumanInLoop?: import('../hitl.js').HumanInLoop
   readonly skillSource?: (skillId: string) => Promise<Skill | null>
   readonly secretResolver?: SecretResolver
   readonly registerEgressToken?: (runId: string, stepId: string, policy: NetworkPolicy) => string
