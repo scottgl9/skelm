@@ -1,0 +1,28 @@
+{
+  "name": "@skelm/audit-fixture",
+  "version": "0.0.1",
+  "description": "Fixture workflow package exercised by the security-auditor tests.",
+  "license": "MIT",
+  "skelm": {
+    "apiVersion": 1,
+    "workflows": [
+      {
+        "id": "clean",
+        "entry": "workflows/clean.workflow.ts",
+        "kind": "pipeline",
+        "description": "No security findings."
+      },
+      {
+        "id": "risky",
+        "entry": "workflows/risky.workflow.ts",
+        "kind": "pipeline",
+        "description": "Broad fs-write plus a privileged executable.",
+        "permissions": {
+          "fsWrite": ["/"],
+          "allowedExecutables": ["bash"],
+          "allowedSecrets": ["UNUSED_SECRET"]
+        }
+      }
+    ]
+  }
+}
