@@ -18,7 +18,12 @@ import {
   paginate,
   withRetry,
 } from '@skelm/integration-sdk'
-import { HttpClientError, HttpNetworkError, HttpServerError } from './errors.js'
+import {
+  HttpClientError,
+  HttpEgressDeniedError,
+  HttpNetworkError,
+  HttpServerError,
+} from './errors.js'
 import { redactHeaders, redactUrl } from './redact.js'
 
 // ---------------------------------------------------------------------------
@@ -127,6 +132,24 @@ function collectHeaders(res: Response): Readonly<Record<string, string>> {
 
 async function executeRequest(input: RequestInput): Promise<RequestOutput> {
   const url = buildUrl(input.url, input.query)
+
+  // Enforce egress here so a denial surfaces as this package's documented
+  // typed error. The SDK's httpRequest re-checks the same policy and throws an
+  // untyped IntegrationSdkError; pre-checking lets callers catch the typed
+  // HttpEgressDeniedError instead. The check is deterministic, so it runs once
+  // (not per retry attempt).
+  let host: string
+  try {
+    host = new URL(url).hostname
+  } catch {
+    throw new HttpNetworkError(`Invalid URL: ${redactUrl(url)}`)
+  }
+  const decision = input.egress(host)
+  if (!decision.allow) {
+    throw new HttpEgressDeniedError(
+      `Egress denied for host "${host}"${decision.reason ? `: ${decision.reason}` : ''}`,
+    )
+  }
 
   const doOnce = async (): Promise<RequestOutput> => {
     if (input.rateLimiter && !input.rateLimiter.tryAcquire()) {

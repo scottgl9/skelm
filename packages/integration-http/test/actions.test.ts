@@ -2,7 +2,12 @@ import { IntegrationSdkError } from '@skelm/integration-sdk'
 import type { EgressPolicy } from '@skelm/integration-sdk'
 import { describe, expect, it, vi } from 'vitest'
 import { auditDescriptor, get, paginateAll, post, request } from '../src/actions.js'
-import { HttpClientError, HttpNetworkError, HttpServerError } from '../src/errors.js'
+import {
+  HttpClientError,
+  HttpEgressDeniedError,
+  HttpNetworkError,
+  HttpServerError,
+} from '../src/errors.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -151,7 +156,7 @@ describe('credential-ref / Authorization header', () => {
 // ---------------------------------------------------------------------------
 
 describe('egress policy', () => {
-  it('throws IntegrationSdkError when the policy denies the host', async () => {
+  it('throws the typed HttpEgressDeniedError when the policy denies the host', async () => {
     const fetchImpl = vi.fn() as unknown as typeof fetch
     let caught: unknown
     try {
@@ -164,8 +169,13 @@ describe('egress policy', () => {
     } catch (e) {
       caught = e
     }
+    // The documented typed error — not just the SDK supertype — so callers can
+    // catch egress denials specifically.
+    expect(caught).toBeInstanceOf(HttpEgressDeniedError)
     expect(caught).toBeInstanceOf(IntegrationSdkError)
     expect((caught as Error).message).toContain('blocked.example.com')
+    // the policy's reason is surfaced
+    expect((caught as Error).message).toContain('blocked: blocked.example.com')
     // fetch should never have been called
     expect(fetchImpl).not.toHaveBeenCalled()
   })
