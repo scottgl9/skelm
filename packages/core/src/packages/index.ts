@@ -28,6 +28,7 @@ export type { SkelmLockfile, SkelmLockfileEntry } from './lockfile.js'
 export {
   ALL_PACKAGE_TRUST_LEVELS,
   DEFAULT_PACKAGE_TRUST_POLICY,
+  EMPTY_PACKAGE_PERMISSION_SUMMARY,
   derivePackageTrustLevel,
   diffPackagePermissions,
   evaluatePackageTrust,

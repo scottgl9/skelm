@@ -467,6 +467,97 @@ describe('/v1/packages', () => {
     }
   })
 
+  it('fails closed when the lock baseline version was evicted from the cache', async () => {
+    // Adversarial: the lockfile records a version whose cached manifest is gone,
+    // so the update diff has no baseline. The gate must still fire (diff against
+    // the empty surface) rather than silently widening permissions.
+    const mkPkg = async (version: string, perms?: Record<string, unknown>): Promise<string> => {
+      const dir = await mkdtemp(join(tmpdir(), `skelm-pkg-${version}-`))
+      await mkdir(join(dir, 'workflows'), { recursive: true })
+      await writeFile(
+        join(dir, 'skelm.package.json'),
+        JSON.stringify({
+          name: '@skelm/grow',
+          version,
+          skelm: {
+            apiVersion: 1,
+            workflows: [
+              {
+                id: 'default',
+                entry: 'workflows/main.ts',
+                ...(perms ? { permissions: perms } : {}),
+              },
+            ],
+          },
+        }),
+      )
+      await writeFile(join(dir, 'workflows', 'main.ts'), HELLO_WORKFLOW)
+      return dir
+    }
+    const v1 = await mkPkg('1.0.0')
+    const v2 = await mkPkg('2.0.0', { allowedExecutables: ['sh'], networkEgress: 'allow' })
+    const v3 = await mkPkg('3.0.0', { allowedExecutables: ['bash'], networkEgress: 'allow' })
+    try {
+      // Install v1 (no perms), then approve v2 (broad). Lock now records 2.0.0;
+      // cache holds both 1.0.0 and 2.0.0.
+      expect(
+        (
+          await fetch(`${base}/v1/packages/install`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ source: v1 }),
+          })
+        ).status,
+      ).toBe(200)
+      expect(
+        (
+          await fetch(`${base}/v1/packages/install`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ source: v2, approve: true }),
+          })
+        ).status,
+      ).toBe(200)
+
+      // Evict the lock-recorded version's cache files. 1.0.0 remains installed,
+      // so the lockfile entry is KEPT — still pointing at the now-absent 2.0.0.
+      const del = await fetch(
+        `${base}/v1/packages/${encodeURIComponent('@skelm/grow')}?version=2.0.0`,
+        { method: 'DELETE' },
+      )
+      expect(del.status).toBe(200)
+
+      // The expanding update must be held even though its baseline is gone.
+      const flagged = await fetch(`${base}/v1/packages/install`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: v3 }),
+      })
+      expect(flagged.status).toBe(409)
+      expect((await flagged.json()).message).toMatch(/expands its requested permissions/i)
+      const flagEntries = (
+        await (await fetch(`${base}/audit?action=package.update.flagged`)).json()
+      ).entries
+      expect(flagEntries.at(-1).details.baselineKnown).toBe(false)
+      expect(flagEntries.at(-1).details.expansion.executables).toContain('bash')
+
+      // With approve it proceeds.
+      expect(
+        (
+          await fetch(`${base}/v1/packages/install`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ source: v3, approve: true }),
+          })
+        ).status,
+      ).toBe(200)
+    } finally {
+      await rm(v1, { recursive: true, force: true })
+      await rm(v2, { recursive: true, force: true })
+      await rm(v3, { recursive: true, force: true })
+    }
+  })
+
   it('does NOT flag a same-or-narrower update', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'skelm-pkg-same-'))
     await mkdir(join(dir, 'workflows'), { recursive: true })

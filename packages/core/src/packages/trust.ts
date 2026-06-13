@@ -124,6 +124,26 @@ export interface PackagePermissionSummary {
   triggers: readonly string[]
 }
 
+/**
+ * The empty permission surface: nothing granted. Use as the diff baseline when
+ * the previously-installed permissions are unknown (e.g. the lockfile records a
+ * version whose cached manifest is gone), so any requested permission counts as
+ * an expansion and the update gate fails closed rather than silently widening.
+ */
+export const EMPTY_PACKAGE_PERMISSION_SUMMARY: PackagePermissionSummary = {
+  tools: [],
+  executables: [],
+  executableProfiles: [],
+  mcpServers: [],
+  skills: [],
+  secrets: [],
+  fsRead: [],
+  fsWrite: [],
+  networkAny: false,
+  networkHosts: [],
+  triggers: [],
+}
+
 function sorted(values: Iterable<string>): readonly string[] {
   return [...new Set(values)].sort()
 }
