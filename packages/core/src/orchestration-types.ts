@@ -16,6 +16,8 @@ export type WorkflowInvokeStatus = 'completed' | 'failed' | 'cancelled'
 /** Typed result envelope returned by `ctx.workflows.invoke` and per fanout child. */
 export interface WorkflowInvokeResult<TOutput = unknown> {
   readonly status: WorkflowInvokeStatus
+  /** The child workflow id that produced this run. */
+  readonly workflowId: string
   /** The child run id, for correlation in events / lineage queries. */
   readonly runId: string
   /** The child's final output (present when `status === 'completed'`). */

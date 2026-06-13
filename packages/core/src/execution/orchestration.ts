@@ -208,12 +208,18 @@ function makeCeilingResolver(
   }
 }
 
-function toInvokeResult<TOutput>(run: Run): WorkflowInvokeResult<TOutput> {
+function toInvokeResult<TOutput>(run: Run, workflowId: string): WorkflowInvokeResult<TOutput> {
   if (run.status === 'completed') {
-    return { status: 'completed', runId: run.runId, output: run.output as TOutput }
+    return {
+      status: 'completed',
+      workflowId,
+      runId: run.runId,
+      output: run.output as TOutput,
+    }
   }
   return {
     status: run.status === 'cancelled' ? 'cancelled' : 'failed',
+    workflowId,
     runId: run.runId,
     ...(run.error !== undefined && { error: run.error }),
   }
@@ -234,7 +240,7 @@ export function createWorkflowsHandle(wiring: OrchestrationWiring): WorkflowsHan
         wiring.events,
         { childCeiling: resolveCeiling(opts.ceiling) },
       )
-      return toInvokeResult<TOutput>(run)
+      return toInvokeResult<TOutput>(run, opts.pipelineId)
     },
     fanout<TOutput = unknown>(opts: WorkflowFanoutOptions): Promise<WorkflowFanoutResult<TOutput>> {
       return runFanout<TOutput>(opts, wiring, resolveCeiling)
@@ -332,7 +338,7 @@ async function runFanout<TOutput>(
         wiring.events,
         { childCeiling, signal: controller.signal },
       )
-      const result = toInvokeResult<TOutput>(run)
+      const result = toInvokeResult<TOutput>(run, child.pipelineId)
       results[index] = result
       if (result.status === 'completed') {
         successCount++

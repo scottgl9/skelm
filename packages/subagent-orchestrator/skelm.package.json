@@ -1,0 +1,26 @@
+{
+  "name": "@skelm/subagent-orchestrator",
+  "version": "0.4.8",
+  "description": "Fan out child agent/research/review tasks with bounded budgets, lineage, and typed merge.",
+  "license": "MIT",
+  "skelm": {
+    "apiVersion": 1,
+    "requiredSkelmVersion": ">=0.4.0",
+    "workflows": [
+      {
+        "id": "default",
+        "entry": "workflows/selftest.workflow.ts",
+        "kind": "pipeline",
+        "description": "Fans research subagents out end-to-end and ranks the merged results.",
+        "permissions": { "delegation": ["subagent-orchestrator-selftest-child"] }
+      },
+      {
+        "id": "child",
+        "entry": "workflows/child.workflow.ts",
+        "kind": "pipeline",
+        "description": "Deterministic self-test subagent that scores its input."
+      }
+    ],
+    "selfTest": { "entry": "workflows/selftest.workflow.ts" }
+  }
+}
