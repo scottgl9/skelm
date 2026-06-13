@@ -145,6 +145,16 @@ export function createTriggerDispatcher(opts: CreateDispatcherOptions): RunCallb
         opts.gateway.attachOtelBus(runner.events)
         opts.gateway.metrics?.recordTriggerFire(ctx.triggerId)
         const controller = new AbortController()
+        // When the coordinator's overlap: 'cancel' policy aborts this fire's
+        // signal (newest-wins), abort the run through the same channel the
+        // run-cancel API uses so the in-flight run actually stops.
+        if (ctx.signal !== undefined) {
+          if (ctx.signal.aborted) controller.abort(ctx.signal.reason)
+          else
+            ctx.signal.addEventListener('abort', () => controller.abort(ctx.signal?.reason), {
+              once: true,
+            })
+        }
         runId = crypto.randomUUID()
         opts.gateway.registerRun(runId, controller, runner)
         const breakpoints = opts.gateway.breakpoints

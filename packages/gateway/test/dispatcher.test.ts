@@ -33,10 +33,10 @@ afterEach(async () => {
   await rm(stateDir, { recursive: true, force: true })
 })
 
-async function waitFor(check: () => boolean): Promise<void> {
+async function waitFor(check: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 1000
   while (Date.now() < deadline) {
-    if (check()) return
+    if (await check()) return
     await new Promise((r) => setTimeout(r, 10))
   }
   throw new Error('condition was not met before timeout')
@@ -302,6 +302,88 @@ describe('createTriggerDispatcher', () => {
     expect(reg?.lastOutcome).toBe('failed')
     expect(reg?.lastErrorAt).toBeDefined()
     expect(reg?.lastError).toMatch(/pipeline step failed deliberately/)
+    await coordinator.stop()
+    await gw.stop()
+  })
+
+  it("overlap: 'cancel' aborts the in-flight run through the real cancel channel and runs the new fire", async () => {
+    const gw = new Gateway({
+      stateDir,
+      projectRoot,
+      watchRegistries: false,
+      config: { registries: { workflows: { glob: 'workflows/**/*.workflow.{mts,ts}' } } },
+    })
+    await gw.start()
+
+    // Abort-aware workload: the step blocks until its run signal aborts (so the
+    // first fire is reliably in-flight) or until the test releases it (so the
+    // second, un-cancelled fire can complete deterministically).
+    let releaseSecond: (() => void) | null = null
+    let startCount = 0
+    const waitPipeline = pipeline({
+      id: 'abortable',
+      steps: [
+        code({
+          id: 'wait',
+          run: async (ctx) => {
+            startCount += 1
+            const isSecond = startCount === 2
+            await new Promise<void>((resolve, reject) => {
+              if (ctx.signal.aborted) {
+                reject(new Error('aborted'))
+                return
+              }
+              ctx.signal.addEventListener('abort', () => reject(new Error('aborted')), {
+                once: true,
+              })
+              if (isSecond) releaseSecond = () => resolve()
+            })
+            return {}
+          },
+        }),
+      ],
+    })
+
+    const dispatcher = createTriggerDispatcher({
+      gateway: gw,
+      loadWorkflow: async () => ({ default: waitPipeline }),
+      onError: () => {},
+    })
+    const coordinator = new TriggerCoordinator({ defaultOverlap: 'cancel', onFire: dispatcher })
+    coordinator.register({ kind: 'manual', id: 'm', workflowId: 'workflows/hello.workflow.mts' })
+
+    void coordinator.fire('m')
+    await waitFor(() => startCount === 1) // first run reached the step
+
+    // Newest-wins: cancel the in-flight run, dispatch the new one.
+    const decision = await coordinator.fire('m')
+    expect(decision).toBe('cancelled')
+
+    // The OLD run is actually cancelled via the run-cancel signal path.
+    await waitFor(async () => {
+      for await (const r of gw.runStore.listRuns()) {
+        if (r.status === 'cancelled') return true
+      }
+      return false
+    })
+    await waitFor(() => releaseSecond !== null)
+    releaseSecond?.()
+
+    await waitFor(async () => {
+      let cancelled = 0
+      let completed = 0
+      for await (const r of gw.runStore.listRuns()) {
+        if (r.status === 'cancelled') cancelled += 1
+        if (r.status === 'completed') completed += 1
+      }
+      return cancelled === 1 && completed === 1
+    })
+
+    const statuses: string[] = []
+    for await (const r of gw.runStore.listRuns()) statuses.push(r.status)
+    expect(statuses.filter((s) => s === 'cancelled')).toHaveLength(1)
+    expect(statuses.filter((s) => s === 'completed')).toHaveLength(1)
+
     await coordinator.stop()
     await gw.stop()
   })

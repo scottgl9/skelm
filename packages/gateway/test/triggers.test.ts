@@ -115,6 +115,93 @@ describe('TriggerCoordinator', () => {
     await c.stop()
   })
 
+  it("'cancel' overlap aborts the in-flight run and dispatches the new fire (newest-wins)", async () => {
+    // Abort-aware workload: each fire resolves only when its own signal aborts
+    // or when the test releases it, so the in-flight run is deterministically
+    // pending when the second fire arrives.
+    const started: string[] = []
+    const aborted: string[] = []
+    const completed: string[] = []
+    let releaseSecond: (() => void) | null = null
+    const c = new TriggerCoordinator({
+      defaultOverlap: 'cancel',
+      onFire: async (ctx) => {
+        const tag = ctx.firedAt
+        started.push(tag)
+        await new Promise<void>((resolve, reject) => {
+          if (ctx.signal?.aborted === true) {
+            aborted.push(tag)
+            reject(new Error('aborted'))
+            return
+          }
+          ctx.signal?.addEventListener(
+            'abort',
+            () => {
+              aborted.push(tag)
+              reject(new Error('aborted'))
+            },
+            { once: true },
+          )
+          // The second (newest) fire has no one to cancel it; let the test
+          // release it so we can assert it completed.
+          if (started.length === 2) releaseSecond = () => resolve()
+        }).then(() => void completed.push(tag))
+      },
+    })
+    c.register({ kind: 'manual', id: 't', workflowId: 'wf' })
+
+    const first = c.fire('t')
+    await new Promise((r) => setTimeout(r, 5))
+    expect(started).toHaveLength(1)
+    const firstTag = started[0]
+
+    // Newest-wins: the in-flight run must be cancelled, the new fire dispatched.
+    const decision = await c.fire('t')
+    expect(decision).toBe('cancelled')
+    await new Promise((r) => setTimeout(r, 5))
+
+    // The OLD run was actually cancelled — its signal aborted — not merely
+    // the new fire skipped.
+    expect(aborted).toEqual([firstTag])
+    expect(started).toHaveLength(2)
+    const secondTag = started[1]
+    expect(secondTag).not.toBe(firstTag)
+
+    releaseSecond?.()
+    await new Promise((r) => setTimeout(r, 5))
+    await first
+    expect(completed).toEqual([secondTag])
+    expect(aborted).not.toContain(secondTag)
+    await c.stop()
+  })
+
+  it("'cancel' overlap leaves the trigger ready for the next serial fire", async () => {
+    const started: string[] = []
+    let release: (() => void) | null = null
+    const c = new TriggerCoordinator({
+      defaultOverlap: 'cancel',
+      onFire: async (ctx) => {
+        started.push(ctx.firedAt)
+        await new Promise<void>((resolve, reject) => {
+          ctx.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+          release = () => resolve()
+        }).catch(() => {})
+      },
+    })
+    c.register({ kind: 'manual', id: 't', workflowId: 'wf' })
+    const first = c.fire('t')
+    await new Promise((r) => setTimeout(r, 5))
+    await c.fire('t') // cancels first, dispatches second
+    await new Promise((r) => setTimeout(r, 5))
+    release?.()
+    await first
+    await new Promise((r) => setTimeout(r, 5))
+    // inflight cleared after the drain; not a 'cancelled' loop hang.
+    expect(c.get('t')?.inflight).toBe(false)
+    expect(started).toHaveLength(2)
+    await c.stop()
+  })
+
   it("'queue' overlap drops fires past maxQueueDepth and counts them", async () => {
     let resolveBlock: (() => void) | null = null
     const block = new Promise<void>((r) => {
