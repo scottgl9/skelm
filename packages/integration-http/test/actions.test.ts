@@ -246,6 +246,36 @@ describe('retry', () => {
     expect(calls).toBe(1)
   })
 
+  it('retries HTTP 429 responses and succeeds on a later attempt', async () => {
+    let calls = 0
+    const sleep = vi.fn(async () => {})
+    const fetchImpl = vi.fn(async () => {
+      calls++
+      if (calls === 1) {
+        return new Response(JSON.stringify({ error: 'rate limited' }), {
+          status: 429,
+          headers: new Headers({ 'content-type': 'application/json' }),
+        })
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+      })
+    }) as unknown as typeof fetch
+
+    const result = await request({
+      method: 'GET',
+      url: 'https://api.example.com/rate-limited',
+      egress: ALLOW_ALL,
+      fetchImpl,
+      retry: { maxAttempts: 3, sleep },
+    })
+
+    expect(result.status).toBe(200)
+    expect(calls).toBe(2)
+    expect(sleep).toHaveBeenCalledTimes(1)
+  })
+
   it('retries on network errors', async () => {
     let calls = 0
     const fetchImpl = vi.fn(async () => {
@@ -323,10 +353,16 @@ describe('rate limiter', () => {
 
 describe('error classification', () => {
   it('classifies 4xx as HttpClientError', async () => {
-    for (const status of [400, 401, 403, 404, 422]) {
+    for (const status of [400, 401, 403, 404, 422, 429]) {
       const fetchImpl = makeFetch(status, {})
       await expect(
-        request({ method: 'GET', url: 'https://api.example.com/x', egress: ALLOW_ALL, fetchImpl }),
+        request({
+          method: 'GET',
+          url: 'https://api.example.com/x',
+          egress: ALLOW_ALL,
+          fetchImpl,
+          retry: { maxAttempts: 1 },
+        }),
       ).rejects.toBeInstanceOf(HttpClientError)
     }
   })

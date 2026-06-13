@@ -133,8 +133,9 @@ const result = await request({
 })
 ```
 
-5xx responses and network errors are retried with exponential backoff. 4xx
-responses are not retried — they throw `HttpClientError` immediately.
+5xx responses, network errors, and HTTP 429 rate-limit responses are retried
+with exponential backoff. Other 4xx responses are not retried — they throw
+`HttpClientError` immediately.
 
 ---
 

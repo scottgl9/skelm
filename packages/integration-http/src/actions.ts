@@ -174,6 +174,7 @@ async function executeRequest(input: RequestInput): Promise<RequestOutput> {
     ...(input.retry ?? {}),
     isRetryable: (err: unknown) => {
       if (err instanceof HttpServerError && isRetryableStatus(err.statusCode)) return true
+      if (err instanceof HttpClientError && err.statusCode === 429) return true
       if (err instanceof HttpNetworkError) return true
       return false
     },

@@ -119,7 +119,8 @@ const result = await request({
 })
 ```
 
-5xx responses and network errors are retried; 4xx errors are not.
+5xx responses, network errors, and HTTP 429 rate-limit responses are retried;
+other 4xx errors are not.
 
 ## Health check
 
