@@ -153,6 +153,7 @@ export default defineConfig({
             { text: 'Integration Primitives', link: '/reference/integration-primitives' },
             { text: 'integration-http', link: '/reference/integration-http' },
             { text: 'Webhook Trigger', link: '/reference/integration-webhook' },
+            { text: 'Email Integration', link: '/integrations/email' },
             { text: 'OpenAPI', link: '/reference/openapi' },
           ],
         },
