@@ -1310,6 +1310,31 @@ components:
           properties:
             message: { type: string }
             code: { type: string }
+        guardrail:
+          type: object
+          description: >
+            Run-level guardrail evaluation summary, present when a guardrails
+            config applied. `failed` is true when a hard pre/post check failed
+            or an intervention terminated the run.
+          properties:
+            failed: { type: boolean }
+            results:
+              type: array
+              items:
+                type: object
+                properties:
+                  check: { type: string }
+                  status: { type: string, enum: [pass, warn, fail] }
+                  message: { type: string }
+                  score: { type: number }
+            interventions:
+              type: array
+              items:
+                type: object
+                properties:
+                  action: { type: string, enum: [pause, escalate, terminate] }
+                  source: { type: string, enum: [budget, watchdog, supervisor] }
+                  reason: { type: string }
     Approval:
       type: object
       properties:

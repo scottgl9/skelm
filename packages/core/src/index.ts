@@ -237,6 +237,8 @@ export {
   ExecConfigError,
   FanoutConfigError,
   FanoutFailedError,
+  GuardrailBlockedError,
+  GuardrailTerminatedError,
   HitlConfigError,
   HitlDeniedError,
   InvokePipelineNotFoundError,
@@ -494,6 +496,7 @@ export type {
   PipelineTrigger,
   RetryPolicy,
   Run,
+  RunGuardrailReport,
   RunId,
   RunMetadata,
   RunStatus,
@@ -529,6 +532,34 @@ export type {
   HitlValidateGate,
   HumanInLoop,
 } from './hitl.js'
+export {
+  type AgentBudget,
+  type AgentBudgetDimension,
+  AgentBudgetExceededError,
+  BudgetTracker,
+  computeTurnCost,
+  type TokenCost,
+} from './budgets.js'
+export {
+  type BudgetOnBreach,
+  type GuardrailPhase,
+  type GuardrailResult,
+  type GuardrailsConfig,
+  type GuardrailsPolicy,
+  type GuardrailStatus,
+  type InterventionAction,
+  type InterventionRequest,
+  type PostRunContext,
+  type PostRunValidator,
+  type PreRunContext,
+  type PreRunValidator,
+  postRunSeverity,
+  preRunSeverity,
+  resolveGuardrails,
+  type SupervisorContext,
+  type SupervisorHook,
+  type WatchdogConfig,
+} from './guardrails.js'
 export { createThreadHost } from './threads.js'
 export type { Thread, ThreadHost, ThreadRef } from './threads.js'
 export type {

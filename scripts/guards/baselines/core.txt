@@ -3,6 +3,7 @@ value:ALL_PACKAGE_TRUST_LEVELS
 value:ALL_PERMISSION_DIMENSIONS
 value:AcpClient
 value:AcpProtocolError
+value:AgentBudgetExceededError
 value:AgentDefinitionError
 value:AgentMaxTurnsError
 value:AgentProviderBase
@@ -28,6 +29,7 @@ value:BackendSessionError
 value:BackendTimeoutError
 value:BackendUnavailableError
 value:BackendUpstreamError
+value:BudgetTracker
 value:CONFIG_FILENAMES
 value:CRON_LOOKAHEAD_MS
 value:ConfigError
@@ -48,6 +50,8 @@ value:FanoutConfigError
 value:FanoutFailedError
 value:GATEWAY_CONFIG_FILENAMES
 value:GitHubTrigger
+value:GuardrailBlockedError
+value:GuardrailTerminatedError
 value:HitlConfigError
 value:HitlDeniedError
 value:InvokePipelineNotFoundError
@@ -128,6 +132,7 @@ value:clearTsModuleCache
 value:code
 value:combineSignals
 value:computePackageIntegrity
+value:computeTurnCost
 value:createAcpBackend
 value:createAnthropicBackend
 value:createConcurrencySemaphore
@@ -190,9 +195,12 @@ value:persistentWorkflow
 value:pickExport
 value:pipeline
 value:pipelineStep
+value:postRunSeverity
+value:preRunSeverity
 value:readLockfile
 value:releaseSession
 value:removeLockfileEntry
+value:resolveGuardrails
 value:resolvePermissions
 value:runPipeline
 value:saveSession
@@ -214,6 +222,8 @@ value:writeLockfile
 type:AcpBackendOptions
 type:AcpPromptResult
 type:AcpSpawnOptions
+type:AgentBudget
+type:AgentBudgetDimension
 type:AgentCapabilities
 type:AgentDefinition
 type:AgentMemoryRecord
@@ -264,6 +274,7 @@ type:BackendCapabilities
 type:BackendContext
 type:BackendId
 type:BranchStep
+type:BudgetOnBreach
 type:BuildFromRequestContext
 type:ChatMessage
 type:ClientCapabilities
@@ -305,6 +316,11 @@ type:GraphEditResult
 type:GraphEditValue
 type:GraphNode
 type:GraphNodeKind
+type:GuardrailPhase
+type:GuardrailResult
+type:GuardrailStatus
+type:GuardrailsConfig
+type:GuardrailsPolicy
 type:HitlApprovalGate
 type:HitlChooseGate
 type:HitlDecision
@@ -328,6 +344,8 @@ type:InferenceResponse
 type:InitializeRequest
 type:InitializeResponse
 type:InstalledWorkflowPackage
+type:InterventionAction
+type:InterventionRequest
 type:InvokeStep
 type:JsonRpcNotification
 type:JsonRpcRequest
@@ -374,7 +392,11 @@ type:PluginHealthStatus
 type:PluginLifecycle
 type:PluginMetadata
 type:PluginType
+type:PostRunContext
+type:PostRunValidator
 type:PostgresRunStoreOptions
+type:PreRunContext
+type:PreRunValidator
 type:PreparedWorkspace
 type:PromptMessage
 type:ProviderCapabilities
@@ -392,6 +414,7 @@ type:Run
 type:RunEvent
 type:RunEventType
 type:RunFilter
+type:RunGuardrailReport
 type:RunHandle
 type:RunId
 type:RunMetadata
@@ -447,6 +470,8 @@ type:StepResult
 type:StepStatus
 type:StopReason
 type:StoredWorkflowPackage
+type:SupervisorContext
+type:SupervisorHook
 type:SystemPromptInput
 type:TaskFilter
 type:TaskPatch
@@ -460,6 +485,7 @@ type:TestResult
 type:Thread
 type:ThreadHost
 type:ThreadRef
+type:TokenCost
 type:ToolCallResponse
 type:ToolContent
 type:ToolDefinition
@@ -474,6 +500,7 @@ type:TriggerType
 type:Usage
 type:WaitRequest
 type:WaitStep
+type:WatchdogConfig
 type:WebhookTriggerConfig
 type:WhenPredicate
 type:WorkflowFanoutOptions

@@ -72,6 +72,7 @@ export async function runPipelineSync(
       ...gateway.egressRunOptions(),
       ...gateway.agentmemoryRunOptions(),
       ...gateway.hitlRunOptions(),
+      ...gateway.guardrailsRunOptions(),
     })
     const final = await handle.wait()
     return {

@@ -865,6 +865,13 @@ export interface Pipeline<TInput = unknown, TOutput = unknown> {
    * resolves the effective gate per step + phase before executing the body.
    */
   readonly humanInLoop?: import('./hitl.js').HumanInLoop
+  /**
+   * Run-level guardrail & oversight config: pre-run validators, in-run budgets
+   * / watchdog / supervisor, and post-run validators. Realized by the runtime
+   * above the per-step agent-harness checks. The trust boundary may overlay or
+   * override this via a `GuardrailsPolicy`. See `guardrails.ts`.
+   */
+  readonly guardrails?: import('./guardrails.js').GuardrailsConfig
   /** Phantom marker for the pipeline's input type; carried for inference. */
   readonly _input?: TInput
   /** Phantom marker for the pipeline's output type. */
@@ -941,4 +948,26 @@ export interface Run<TInput = unknown, TOutput = unknown> {
    * Absent for runs that never reach a wait() step.
    */
   readonly waiting?: RunWaiting
+  /**
+   * Summary of guardrail evaluation for this run, when a guardrails config
+   * applied. `failed` is true when any HARD pre/post check failed (or the run
+   * was guardrail-terminated); the run's overall `status` is `'failed'` in that
+   * case. `results` carries every pre/post check result for the dashboard run
+   * inspector. Absent for runs with no guardrails.
+   */
+  readonly guardrail?: RunGuardrailReport
+}
+
+/** Per-run summary of guardrail evaluation, persisted on the Run record. */
+export interface RunGuardrailReport {
+  /** True when a HARD pre/post check failed or an intervention terminated the run. */
+  readonly failed: boolean
+  /** Every pre/post guardrail check result, in evaluation order. */
+  readonly results: readonly import('./guardrails.js').GuardrailResult[]
+  /** Oversight interventions raised during the run, in order. */
+  readonly interventions?: readonly {
+    readonly action: import('./guardrails.js').InterventionAction
+    readonly source: 'budget' | 'watchdog' | 'supervisor'
+    readonly reason: string
+  }[]
 }

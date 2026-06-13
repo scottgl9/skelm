@@ -183,6 +183,41 @@ export class HitlUnsupportedGatePhaseError extends Error {
 }
 
 /**
+ * Thrown when a HARD pre-run guardrail check fails, blocking the run before any
+ * step body executes (fail closed). Carries the failing check ids so the
+ * blocked start is diagnosable; never carries secret values.
+ */
+export class GuardrailBlockedError extends Error {
+  override readonly name = 'GuardrailBlockedError'
+  constructor(
+    readonly runId: string,
+    readonly failedChecks: readonly string[],
+  ) {
+    super(
+      `run "${runId}" blocked by pre-run guardrail${
+        failedChecks.length > 0 ? `: ${failedChecks.join(', ')}` : ''
+      }`,
+    )
+  }
+}
+
+/**
+ * Thrown when an oversight intervention terminates an in-flight run (a budget
+ * breach, watchdog breach, or supervisor request whose action is 'terminate').
+ * Surfaced as the run's failure cause; the run status is `'cancelled'`.
+ */
+export class GuardrailTerminatedError extends Error {
+  override readonly name = 'GuardrailTerminatedError'
+  constructor(
+    readonly runId: string,
+    readonly source: 'budget' | 'watchdog' | 'supervisor',
+    readonly reason: string,
+  ) {
+    super(`run "${runId}" terminated by ${source} oversight: ${reason}`)
+  }
+}
+
+/**
  * Default cap on how deep a chain of agent-to-agent delegations may go before
  * the runtime refuses further hand-offs. Bounds resource use on a runaway
  * router; gateways may override via config.

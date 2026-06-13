@@ -53,6 +53,7 @@ export interface GatewayRuntimeContext {
   getConfig(): SkelmConfig
   readonly hitlPolicy: import('@skelm/core').HitlPolicy | undefined
   readonly hitlEnvironment: string | undefined
+  readonly guardrailsPolicy: import('@skelm/core').GuardrailsPolicy | undefined
   getWorkflowLoader(): ((registryId: string, absolutePath: string) => Promise<unknown>) | undefined
   attachMetricsBus(bus: EventBus): void
   attachOtelBus(bus: EventBus): void
@@ -241,6 +242,7 @@ export class GatewayRuntime {
         ...this.egressRunOptions(),
         ...this.agentmemoryRunOptions(),
         ...this.hitlRunOptions(),
+        ...this.guardrailsRunOptions(),
         resumeFromWaiting: { run: stored, resumeValue },
         workflowPath: stored.workflowPath,
         ...(stored.triggerId !== undefined && { triggerId: stored.triggerId }),
@@ -293,6 +295,19 @@ export class GatewayRuntime {
     return {
       ...(this.ctx.hitlPolicy !== undefined && { hitlPolicy: this.ctx.hitlPolicy }),
       ...(this.ctx.hitlEnvironment !== undefined && { hitlEnvironment: this.ctx.hitlEnvironment }),
+    }
+  }
+
+  /**
+   * Guardrails run-options block. Spread into every `runner.start(...)` so the
+   * trust boundary's guardrails policy overlay applies to all gateway-driven
+   * runs. Empty when no policy is configured. See `@skelm/core` GuardrailsPolicy.
+   */
+  guardrailsRunOptions(): { guardrailsPolicy?: import('@skelm/core').GuardrailsPolicy } {
+    return {
+      ...(this.ctx.guardrailsPolicy !== undefined && {
+        guardrailsPolicy: this.ctx.guardrailsPolicy,
+      }),
     }
   }
 
@@ -499,6 +514,7 @@ export class GatewayRuntime {
         ...this.egressRunOptions(),
         ...this.agentmemoryRunOptions(),
         ...this.hitlRunOptions(),
+        ...this.guardrailsRunOptions(),
         ...(lineage?.parentRunId !== undefined && { parentRunId: lineage.parentRunId }),
         ...(lineage?.parentStepId !== undefined && { parentStepId: lineage.parentStepId }),
         ...(lineage?.taskId !== undefined && { taskId: lineage.taskId }),
