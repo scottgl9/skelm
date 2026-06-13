@@ -1,0 +1,47 @@
+{
+  "name": "@skelm/ollama",
+  "version": "0.0.1",
+  "description": "Ollama / OpenAI-compatible local-model backend for skelm",
+  "license": "MIT",
+  "author": "Scott Glover <scottgl@gmail.com>",
+  "homepage": "https://github.com/scottgl9/skelm#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scottgl9/skelm.git",
+    "directory": "packages/ollama"
+  },
+  "bugs": {
+    "url": "https://github.com/scottgl9/skelm/issues"
+  },
+  "keywords": ["skelm", "ollama", "local", "backend", "llm"],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@skelm/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@skelm/core": "workspace:*",
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0"
+  }
+}
