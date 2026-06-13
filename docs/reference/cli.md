@@ -194,6 +194,36 @@ skelm audit query [--run <runId>] [--actor <name>] [--action <type>]
 `--limit` defaults to 500 (max 5000). `--before <seq>` pages backwards: pass the
 lowest `seq` from a page to fetch the next-older page.
 
+### `skelm audit export`
+
+Stream the filtered audit log to stdout or a file for archival or SIEM
+ingestion. No tail limit — the full filtered history — streamed line-by-line so
+memory stays bounded.
+
+```
+skelm audit export [--format jsonl|csv] [--run <runId>] [--actor <name>]
+                   [--action <type>] [--since <ISO8601>] [--until <ISO8601>]
+                   [--before <seq>] [--out <file>]
+```
+
+`--format` defaults to `jsonl`. `csv` emits a header plus one row per entry with
+a stable column order and RFC-4180 escaping. No column ever holds a secret
+value. Without `--out`, the stream goes to stdout.
+
+### `skelm audit prune`
+
+Archive the head of the log and keep a verifiable tail. Destructive — refuses
+without `--confirm`.
+
+```
+skelm audit prune --before <seq> --confirm [--json]
+```
+
+Entries with `seq <= before` are moved to a sibling archive segment; the live log
+is rewritten to the retained tail, and a boundary file records the cut so the
+tail still verifies. The archived head and retained tail verify separately, not
+as one chain. See the [audit guide](/guides/audit) for the full retention model.
+
 ### `skelm secrets <list|get|set>`
 
 Manage secret names through the gateway-mediated resolver. Values never round

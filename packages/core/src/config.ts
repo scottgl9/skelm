@@ -49,6 +49,47 @@ export interface SkelmConfigSecrets {
   file?: string
 }
 
+/**
+ * Audit log forwarding (SIEM / log-streaming). The gateway tees every audit
+ * record the single chain writer commits to these sinks as a best-effort,
+ * read-side forwarder — it never replaces or precedes the canonical write, and
+ * a sink failure never breaks the audit write or the gateway loop.
+ *
+ * No secret value is ever forwarded: audit rows carry names + non-secret
+ * metadata only, and the sink credential is referenced by name
+ * (`headerSecretName`), resolved gateway-side, never written in config.
+ */
+export interface SkelmConfigAuditForwarding {
+  /** When false (or omitted), no forwarder is wired. */
+  enabled?: boolean
+  /** One or more sinks to fan audit records out to. */
+  sinks?: readonly SkelmConfigAuditSink[]
+}
+
+export type SkelmConfigAuditSink = SkelmConfigAuditHttpSink | SkelmConfigAuditFileSink
+
+export interface SkelmConfigAuditHttpSink {
+  kind: 'http'
+  /** Destination URL; the JSON audit record is POSTed as the body. */
+  url: string
+  /** Static, non-secret headers (e.g. content-type, a tenant id). */
+  headers?: Readonly<Record<string, string>>
+  /**
+   * Name of a secret resolved through the gateway's `SecretResolver` and sent
+   * as `Authorization: Bearer <value>`. The value never appears in config,
+   * logs, or audit.
+   */
+  headerSecretName?: string
+  /** Per-request timeout in milliseconds. Defaults to 3000. */
+  timeoutMs?: number
+}
+
+export interface SkelmConfigAuditFileSink {
+  kind: 'file'
+  /** Append-only JSON-Lines file the audit records are streamed to. */
+  path: string
+}
+
 export interface SkelmConfigRunsStorage {
   driver?: 'sqlite' | 'memory' | 'postgres'
   /** Local sqlite file path; ignored for non-sqlite drivers. */
@@ -231,6 +272,8 @@ export interface SkelmGatewayConfig extends SkelmConfigBase {
     unrestrictedGrants?: readonly string[]
   }
   secrets?: SkelmConfigSecrets
+  /** Audit log forwarding to external SIEM / log-streaming sinks. */
+  auditForwarding?: SkelmConfigAuditForwarding
   storage?: SkelmConfigStorage
   server?: SkelmConfigServer
   /** Plugin package names loaded at gateway startup. */

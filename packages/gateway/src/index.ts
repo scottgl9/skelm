@@ -30,7 +30,19 @@ export {
 
 // Audit + secrets
 export { ChainAuditWriter } from './audit/chain.js'
-export type { ChainEntry } from './audit/chain.js'
+export type {
+  AuditExportFormat,
+  ChainEntry,
+  PruneBoundary,
+  PruneResult,
+} from './audit/chain.js'
+export {
+  FileAuditSink,
+  ForwardingAuditWriter,
+  HttpAuditSink,
+  buildAuditSinks,
+} from './audit/forwarder.js'
+export type { AuditSink } from './audit/forwarder.js'
 
 // Operational logs (distinct from audit + run events)
 export { FileLogSink, RingBufferLogSink, TeeLogSink, redact } from './logs/sink.js'

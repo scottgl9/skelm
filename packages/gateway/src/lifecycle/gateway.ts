@@ -25,6 +25,7 @@ import {
 } from '@skelm/core'
 import { SuspendApprovalGate } from '../approvals/suspend-gate.js'
 import { ChainAuditWriter } from '../audit/chain.js'
+import { ForwardingAuditWriter, buildAuditSinks } from '../audit/forwarder.js'
 import { BreakpointRegistry } from '../debug/breakpoint-registry.js'
 import { GatewayRuntime } from '../execution/gateway-runtime.js'
 import { AcpSessionManager, defaultAcpSessionStorePath } from '../managers/acp-session-manager.js'
@@ -87,6 +88,7 @@ export class Gateway implements GatewayContext {
   private config: SkelmConfig
   private registriesInternal: GatewayRegistries | null = null
   private enforcementInternal: GatewayEnforcement | null = null
+  private auditForwarderInternal: ForwardingAuditWriter | null = null
   private managersInternal: GatewayManagers | null = null
   private runStoreInternal: RunStore | null = null
   private workspaceManagerInternal: WorkspaceManager | null = null
@@ -661,6 +663,7 @@ export class Gateway implements GatewayContext {
         const gate = this.enforcementInternal.approvalGate
         if (gate instanceof SuspendApprovalGate) await gate.load()
       }
+      await this.wireAuditForwarding()
       this.registriesInternal = await this.buildRegistries()
       this.managersInternal = await this.buildManagers()
       this.dynamicScheduleStoreInternal = new DynamicScheduleStore(this.stateDir)
@@ -729,6 +732,7 @@ export class Gateway implements GatewayContext {
       this.discovery = null
       this.registriesInternal = null
       this.enforcementInternal = null
+      this.auditForwarderInternal = null
       this.managersInternal = null
       this.runStoreInternal = null
       this.egressProxy = null
@@ -797,6 +801,7 @@ export class Gateway implements GatewayContext {
       this.enforcementInternal = this.buildEnforcement()
       const gate = this.enforcementInternal.approvalGate
       if (gate instanceof SuspendApprovalGate) await gate.load()
+      await this.wireAuditForwarding()
     }
     if (this.registriesInternal !== null) {
       const r = this.registriesInternal
@@ -867,11 +872,15 @@ export class Gateway implements GatewayContext {
       this.tasksInternal?.stop()
       this.tasksInternal = null
       this.observability.dispose()
+      if (this.auditForwarderInternal !== null) {
+        await this.auditForwarderInternal.close().catch(() => {})
+      }
       this.state = 'stopped'
       this.lockfile = null
       this.discovery = null
       this.registriesInternal = null
       this.enforcementInternal = null
+      this.auditForwarderInternal = null
       this.managersInternal = null
       this.runStoreInternal = null
       this.egressProxy = null
@@ -1102,6 +1111,41 @@ export class Gateway implements GatewayContext {
       auditWriter,
       secretResolver,
       approvalGate,
+    }
+  }
+
+  /**
+   * Wrap the canonical audit writer with the SIEM/log-streaming forwarder when
+   * `auditForwarding` is enabled. The forwarder is a read-side tee — it does
+   * not become a second audit writer — and resolves each HTTP sink's bearer
+   * credential through the gateway secret resolver. Best-effort: build failures
+   * are logged and leave the unwrapped writer in place so audit never breaks.
+   */
+  private async wireAuditForwarding(): Promise<void> {
+    if (this.enforcementInternal === null) return
+    this.auditForwarderInternal = null
+    const cfg = this.config.auditForwarding
+    if (cfg?.enabled !== true || cfg.sinks === undefined || cfg.sinks.length === 0) return
+    try {
+      const sinks = await buildAuditSinks(cfg.sinks, this.enforcementInternal.secretResolver)
+      if (sinks.length === 0) return
+      const forwarder = new ForwardingAuditWriter(
+        this.enforcementInternal.auditWriter,
+        sinks,
+        (err, _sink) => {
+          console.warn(
+            `gateway: audit forward failed: ${err instanceof Error ? err.message : String(err)}`,
+          )
+        },
+      )
+      this.auditForwarderInternal = forwarder
+      this.enforcementInternal = { ...this.enforcementInternal, auditWriter: forwarder }
+    } catch (err) {
+      console.warn(
+        `gateway: audit forwarding setup failed; continuing without it: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
     }
   }
 

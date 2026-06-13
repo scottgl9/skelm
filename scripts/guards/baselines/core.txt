@@ -400,6 +400,10 @@ type:SkelmBackend
 type:SkelmConfig
 type:SkelmConfigAgentEntry
 type:SkelmConfigAgentmemory
+type:SkelmConfigAuditFileSink
+type:SkelmConfigAuditForwarding
+type:SkelmConfigAuditHttpSink
+type:SkelmConfigAuditSink
 type:SkelmConfigBackendEntry
 type:SkelmConfigBackends
 type:SkelmConfigMcpServerEntry

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { approvalsConfigCommand } from './approvals-config.js'
 import { approvalsCommand } from './approvals.js'
 import { ArgvParseError, parseArgv } from './argv.js'
-import { auditCommand, secretsCommand } from './audit.js'
+import { auditCommand, auditExportCommand, auditPruneCommand, secretsCommand } from './audit.js'
 import { builderCommand } from './builder.js'
 import { dashboardCommand } from './dashboard.js'
 import { debugCommand } from './debug.js'
@@ -313,21 +313,58 @@ export async function main(argv: readonly string[], io: MainIO): Promise<MainRes
       }
       case 'audit': {
         const subcommand = parsed.positional[0]
-        if (subcommand !== 'query') {
-          io.stderr.write('error: audit requires query subcommand\n')
-          return { exitCode: EXIT.CLI_ERROR }
-        }
         const sinceFlag = parsed.flags.since
         const untilFlag = parsed.flags.until
-        const limit = integerFlag(parsed.flags.limit, 'limit')
+        const runId = typeof parsed.flags.run === 'string' ? parsed.flags.run : undefined
+        const actor = typeof parsed.flags.actor === 'string' ? parsed.flags.actor : undefined
+        const action = typeof parsed.flags.action === 'string' ? parsed.flags.action : undefined
+        const since = typeof sinceFlag === 'string' ? sinceFlag : undefined
+        const until = typeof untilFlag === 'string' ? untilFlag : undefined
         const before = integerFlag(parsed.flags.before, 'before')
+        if (subcommand === 'export') {
+          const formatFlag = parsed.flags.format
+          if (formatFlag !== undefined && formatFlag !== 'jsonl' && formatFlag !== 'csv') {
+            io.stderr.write('error: audit export --format must be jsonl or csv\n')
+            return { exitCode: EXIT.CLI_ERROR }
+          }
+          const result = await auditExportCommand(
+            {
+              ...(formatFlag === 'jsonl' || formatFlag === 'csv' ? { format: formatFlag } : {}),
+              ...(runId !== undefined && { runId }),
+              ...(actor !== undefined && { actor }),
+              ...(action !== undefined && { action }),
+              ...(since !== undefined && { since }),
+              ...(until !== undefined && { until }),
+              ...(before !== undefined && { before }),
+              ...(typeof parsed.flags.out === 'string' && { out: parsed.flags.out }),
+            },
+            io,
+          )
+          return { exitCode: result.exitCode }
+        }
+        if (subcommand === 'prune') {
+          const result = await auditPruneCommand(
+            {
+              ...(before !== undefined && { before }),
+              confirm: parsed.flags.confirm === true,
+              json: parsed.flags.json === true,
+            },
+            io,
+          )
+          return { exitCode: result.exitCode }
+        }
+        if (subcommand !== 'query') {
+          io.stderr.write('error: audit requires query, export, or prune subcommand\n')
+          return { exitCode: EXIT.CLI_ERROR }
+        }
+        const limit = integerFlag(parsed.flags.limit, 'limit')
         const result = await auditCommand(
           {
-            runId: typeof parsed.flags.run === 'string' ? parsed.flags.run : undefined,
-            actor: typeof parsed.flags.actor === 'string' ? parsed.flags.actor : undefined,
-            action: typeof parsed.flags.action === 'string' ? parsed.flags.action : undefined,
-            since: typeof sinceFlag === 'string' ? sinceFlag : undefined,
-            until: typeof untilFlag === 'string' ? untilFlag : undefined,
+            ...(runId !== undefined && { runId }),
+            ...(actor !== undefined && { actor }),
+            ...(action !== undefined && { action }),
+            since,
+            until,
             ...(limit !== undefined && { limit }),
             ...(before !== undefined && { before }),
             json: parsed.flags.json === true,

@@ -248,12 +248,21 @@ Approvals config flags:
   (Reads / writes $SKELM_APPROVALS_CONFIG, defaulting to ~/.skelm/approvals.config.json)
 `,
   audit: `Usage:
-  skelm audit query [flags]
+  skelm audit <query|export|prune> [flags]
 
 Audit flags:
   skelm audit query [--run <runId>] [--actor <name>] [--action <type>]
                     [--since <ISO8601>] [--until <ISO8601>] [--limit <n>]
                     [--before <seq>] [--json]
+  skelm audit export [--format jsonl|csv] [--run <runId>] [--actor <name>]
+                     [--action <type>] [--since <ISO8601>] [--until <ISO8601>]
+                     [--before <seq>] [--out <file>]
+                     Stream the filtered log (default jsonl) to stdout or --out.
+  skelm audit prune --before <seq> --confirm [--json]
+                     Archive entries with seq <= before to a sibling segment and
+                     rewrite the live log to the retained tail. Destructive:
+                     refuses without --confirm. The archived head and retained
+                     tail verify separately, not as one chain.
 `,
   secrets: `Usage:
   skelm secrets <get|set|list> [args]
