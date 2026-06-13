@@ -226,6 +226,25 @@ importers:
         specifier: ^4.1.0
         version: 4.1.8(@types/node@20.19.39)(vite@8.0.16)
 
+  packages/coding-agent:
+    dependencies:
+      '@skelm/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^2.0.0
+        version: 2.4.15
+      '@skelm/agent':
+        specifier: workspace:*
+        version: link:../agent
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.0
+        version: 4.1.8(@types/node@22.19.17)(vite@8.0.16)
+
   packages/core:
     dependencies:
       '@standard-schema/spec':
