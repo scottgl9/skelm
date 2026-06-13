@@ -1,0 +1,15 @@
+value:fanOut
+value:quorum
+value:rankedMerge
+value:retrySubagents
+value:runSubagents
+value:spawnSubagent
+type:DetachedSubagent
+type:FanOutOptions
+type:FanOutResult
+type:RunSubagentsOptions
+type:SubagentInput
+type:SubagentLineage
+type:SubagentRole
+type:SubagentSpec
+type:SubagentTask

@@ -91,6 +91,7 @@ export default defineConfig({
             { text: 'Ticket to PR', link: '/recipes/ticket-to-pr' },
             { text: 'Email Triage', link: '/recipes/email-triage' },
             { text: 'HTTP Enrichment', link: '/recipes/http-enrichment' },
+            { text: 'Subagent Orchestration', link: '/recipes/subagent-orchestration' },
             { text: 'OpenTelemetry', link: '/recipes/otel-exporter' },
           ],
         },

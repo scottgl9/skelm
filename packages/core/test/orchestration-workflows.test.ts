@@ -71,6 +71,7 @@ describe('ctx.workflows.invoke', () => {
     expect(run.status).toBe('completed')
     const envelope = run.output as WorkflowInvokeResult<{ echoed: number }>
     expect(envelope.status).toBe('completed')
+    expect(envelope.workflowId).toBe('echo')
     expect(envelope.output).toEqual({ echoed: 41 })
     expect(envelope.runId).toBeTruthy()
     const childRun = await store.getRun(envelope.runId)
@@ -84,6 +85,7 @@ describe('ctx.workflows.invoke', () => {
     expect(run.status).toBe('completed')
     const envelope = run.output as WorkflowInvokeResult
     expect(envelope.status).toBe('failed')
+    expect(envelope.workflowId).toBe('boom')
     expect(envelope.error?.message).toContain('boom')
   })
 
@@ -286,19 +288,25 @@ describe('ctx.workflows.fanout strategies', () => {
   it('ranked-merge: orders all settled results with the rank comparator', async () => {
     const parent = orchestrator((ctx) =>
       ctx.workflows?.fanout({
-        pipelineId: 'echo',
-        inputs: [2, 9, 5],
+        items: [
+          { pipelineId: 'echo-a', input: 2 },
+          { pipelineId: 'echo-b', input: 9 },
+          { pipelineId: 'echo-a', input: 5 },
+        ],
         strategy: 'ranked-merge',
         rank: (a, b) =>
           ((b.output as { echoed: number })?.echoed ?? 0) -
           ((a.output as { echoed: number })?.echoed ?? 0),
       }),
     )
-    const run = await runPipeline(parent, undefined, { pipelineRegistry: registryOf({ echo }) })
+    const run = await runPipeline(parent, undefined, {
+      pipelineRegistry: registryOf({ 'echo-a': echo, 'echo-b': echo }),
+    })
     expect(run.status).toBe('completed')
     const out = run.output as WorkflowFanoutResult<{ echoed: number }>
     expect(out.status).toBe('completed')
     expect(out.results.map((r) => r?.output?.echoed)).toEqual([9, 5, 2])
+    expect(out.results.map((r) => r?.workflowId)).toEqual(['echo-b', 'echo-a', 'echo-a'])
   })
 
   it('respects the concurrency bound', async () => {

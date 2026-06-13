@@ -1,0 +1,47 @@
+{
+  "name": "@skelm/subagent-orchestrator",
+  "version": "0.4.8",
+  "description": "Subagent orchestration workflows for skelm — fan out child agent/research/review tasks with bounded budgets, lineage, and typed merge",
+  "license": "MIT",
+  "author": "Scott Glover <scottgl@gmail.com>",
+  "homepage": "https://skelm.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scottgl9/skelm.git",
+    "directory": "packages/subagent-orchestrator"
+  },
+  "bugs": {
+    "url": "https://github.com/scottgl9/skelm/issues"
+  },
+  "keywords": ["skelm", "orchestration", "subagent", "fanout", "workflow"],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "workflows", "skelm.package.json", "README.md", "LICENSE"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@skelm/agent": "workspace:*",
+    "@skelm/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
