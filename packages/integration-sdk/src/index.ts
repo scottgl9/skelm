@@ -49,3 +49,91 @@ export {
   INTEGRATION_PLUGIN_BRAND,
 } from './factory.js'
 export type { DefineIntegrationOptions, IntegrationClass } from './factory.js'
+
+// Credential model (references only — never values)
+export {
+  isCredentialReference,
+  assertNoSecretValue,
+} from './credentials.js'
+export type {
+  CredentialFieldKind,
+  CredentialFieldSchema,
+  CredentialSchema,
+  CredentialReference,
+  Connection,
+} from './credentials.js'
+
+// Conversation adapter contract
+export { isCapabilityDescriptor } from './conversation.js'
+export type {
+  MediaKind,
+  MediaAttachment,
+  ConversationTarget,
+  InboundEvent,
+  OutboundEvent,
+  SentMessageRef,
+  ConversationTargetInfo,
+  CapabilityDescriptor,
+  Unsubscribe,
+  ConversationAdapter,
+} from './conversation.js'
+
+// Provider registry contracts
+export type {
+  ProviderCostMetadata,
+  ProviderBase,
+  ProviderCategory,
+  ModelProvider,
+  ToolProvider,
+  MediaProvider,
+  BrowserDriver,
+  BrowserProvider,
+  MemoryProvider,
+  SecretProvider,
+  AnyProvider,
+  ProviderRegistry,
+} from './providers.js'
+
+// Health + test contracts
+export { shouldRunLiveTest } from './testing.js'
+export type {
+  ProviderHealthCheck,
+  MockProviderFixture,
+  LiveTestDescriptor,
+} from './testing.js'
+
+// Delivery target (re-exported from @skelm/core — one canonical shape)
+export type { DeliveryTarget } from './delivery.js'
+
+// Universal action/trigger helpers
+export {
+  verifyHmacSignature,
+  normalizeWebhook,
+  IdempotencyTracker,
+  backoffDelay,
+  withRetry,
+  RateLimiter,
+  paginate,
+  httpRequest,
+} from './helpers.js'
+export type {
+  HmacAlgorithm,
+  VerifyHmacOptions,
+  EventEnvelope,
+  WebhookInput,
+  RetryOptions,
+  Page,
+  EgressPolicy,
+  HttpRequestOptions,
+} from './helpers.js'
+
+// Integration-package manifest extension
+export type {
+  ActionDefinition,
+  TriggerDefinition,
+  WebhookVerificationStrategy,
+  WebhookEndpointDescriptor,
+  AuditRedactionPolicy,
+  DashboardSetupMetadata,
+  IntegrationPackageManifest,
+} from './manifest.js'
