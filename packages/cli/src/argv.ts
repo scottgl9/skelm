@@ -50,6 +50,7 @@ const VALUE_FLAGS = [
   'limit',
   'lines',
   'older-than-ms',
+  'out',
   'overlap',
   'parent',
   'reason',
@@ -70,6 +71,7 @@ const VALUE_FLAGS = [
 const BOOLEAN_FLAGS = [
   'all',
   'cancel-inflight',
+  'confirm',
   'detach',
   'expired',
   'force',

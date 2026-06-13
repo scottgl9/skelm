@@ -75,10 +75,12 @@ run stays parked. After a gateway restart the resolve rehydrates the run.
 
 ## Audit
 
-| Method | Path            | Description |
-| ------ | --------------- | ----------- |
-| GET    | `/audit`        | Filtered, bounded list of hash-chained audit entries. Returns `{ entries, nextBefore }` |
-| GET    | `/audit/verify` | Walk the chain and report the first integrity break; returns `{ ok, breach? }` |
+| Method | Path                | Description |
+| ------ | ------------------- | ----------- |
+| GET    | `/audit`            | Filtered, bounded list of hash-chained audit entries. Returns `{ entries, nextBefore }` |
+| GET    | `/audit/verify`     | Walk the chain and report the first integrity break; returns `{ ok, breach? }` |
+| GET    | `/v1/audit/export`  | Stream the filtered log as JSONL or CSV (`format` query param). No tail limit |
+| POST   | `/v1/audit/prune`   | Archive the head (`seq <= before`) and rewrite the tail. Body `{ before, confirm: true }` |
 
 `GET /audit` streams the append-only `audit.jsonl` log line-by-line and never
 loads the whole file, so memory stays bounded regardless of log size. It
@@ -89,6 +91,17 @@ Query parameters: `runId`, `actor`, `action`, `since` (ISO-8601), `until`
 cursor for backwards paging. The response `nextBefore` is the lowest `seq` in
 the page (or `null` when empty); pass it as `before` to fetch the next-older
 page.
+
+`GET /v1/audit/export` honors the same filters (`runId`, `actor`, `action`,
+`since`, `until`, `before`) plus `format` (`jsonl` default, or `csv`), and
+streams the full filtered history line-by-line — no limit, never materialized.
+CSV uses a stable column order with RFC-4180 escaping; no column holds a secret
+value.
+
+`POST /v1/audit/prune` is destructive and requires `{ confirm: true }`. It moves
+entries with `seq <= before` to a sibling archive segment, rewrites the live log
+to the retained tail, and records a boundary so the tail still verifies (the
+archived head and retained tail verify separately, not as one chain).
 
 ## Triggers
 

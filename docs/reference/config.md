@@ -369,6 +369,18 @@ export default defineGatewayConfig({
     file?:   string,                         // path to JSON secrets file when driver === 'file'
   },
 
+  // ── Audit forwarding (SIEM / log streaming) ──────────────────────────
+  // Best-effort, read-side tee over the single audit writer. No secret value
+  // is ever forwarded; sink credentials are referenced by secret name.
+  auditForwarding?: {
+    enabled?: boolean,
+    sinks?: Array<
+      | { kind: 'http', url: string, headers?: Record<string, string>,
+          headerSecretName?: string, timeoutMs?: number }
+      | { kind: 'file', path: string }
+    >,
+  },
+
   // ── Plugins & integrations ───────────────────────────────────────────
   plugins?: readonly string[],               // package names imported at gateway startup
   agentmemory?: { enabled?: boolean, url?: string, secretName?: string, timeoutMs?: number },

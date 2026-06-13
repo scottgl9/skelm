@@ -329,6 +329,84 @@ paths:
                       seq: { type: integer }
                       reason: { type: string }
 
+  /v1/audit/export:
+    get:
+      summary: Stream the audit log as JSONL or CSV
+      description: >-
+        Stream the filtered audit log for archival or SIEM ingestion. Honors the
+        same filters as GET /audit but with no tail limit — the full filtered
+        history — streamed line-by-line so memory stays bounded. No column holds
+        a secret value.
+      parameters:
+        - in: query
+          name: format
+          schema: { type: string, enum: [jsonl, csv], default: jsonl }
+        - in: query
+          name: runId
+          schema: { type: string }
+        - in: query
+          name: actor
+          schema: { type: string }
+        - in: query
+          name: action
+          schema: { type: string }
+        - in: query
+          name: since
+          schema: { type: string, format: date-time }
+        - in: query
+          name: until
+          schema: { type: string, format: date-time }
+        - in: query
+          name: before
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Streamed audit log
+          content:
+            application/x-ndjson:
+              schema: { type: string }
+            text/csv:
+              schema: { type: string }
+        '400': { description: Invalid query parameter (e.g. unknown format) }
+
+  /v1/audit/prune:
+    post:
+      summary: Prune (archive) the head of the audit log
+      description: >-
+        Archive every entry with seq <= before to a sibling segment and rewrite
+        the live log to the retained tail. Destructive — requires confirm:true.
+        The archived head and retained tail verify separately, not as one chain;
+        a boundary file lets the retained tail be verified against the last
+        archived hash.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [before, confirm]
+              properties:
+                before: { type: integer, minimum: 1, description: 'Archive entries with seq <= before' }
+                confirm: { type: boolean, description: 'Must be true; the operation is destructive' }
+      responses:
+        '200':
+          description: Prune result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  archived: { type: integer }
+                  retained: { type: integer }
+                  boundary:
+                    type: object
+                    properties:
+                      prunedThroughSeq: { type: integer }
+                      boundaryHash: { type: string }
+                      archivePath: { type: string }
+                      prunedAt: { type: string, format: date-time }
+        '400': { description: Missing/invalid before, or confirm not true }
+
   /triggers:
     get:
       summary: List triggers

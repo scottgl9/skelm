@@ -106,3 +106,67 @@ describe('GET /audit/verify', () => {
     expect(body.ok).toBe(true)
   })
 })
+
+describe('GET /v1/audit/export', () => {
+  it('streams JSONL by default with all entries', async () => {
+    const res = await fetch(`${base}/v1/audit/export`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('application/x-ndjson')
+    const text = await res.text()
+    const lines = text.split('\n').filter((l) => l.length > 0)
+    expect(lines).toHaveLength(2)
+    expect((JSON.parse(lines[0] ?? '{}') as { action: string }).action).toBe('tool.dispatch')
+  })
+
+  it('emits CSV with a stable header and honors filters', async () => {
+    const res = await fetch(`${base}/v1/audit/export?format=csv&runId=run-2`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('text/csv')
+    const lines = (await res.text()).split('\n').filter((l) => l.length > 0)
+    expect(lines[0]).toBe('seq,timestamp,actor,action,runId,prevHash,entryHash,details')
+    expect(lines).toHaveLength(2)
+    expect(lines[1]).toContain('permission.denied')
+  })
+
+  it('rejects an unknown format with 400', async () => {
+    const res = await fetch(`${base}/v1/audit/export?format=xml`)
+    expect(res.status).toBe(400)
+  })
+
+  it('never includes a secret value in the export', async () => {
+    const both = await Promise.all([
+      fetch(`${base}/v1/audit/export`).then((r) => r.text()),
+      fetch(`${base}/v1/audit/export?format=csv`).then((r) => r.text()),
+    ])
+    for (const body of both) {
+      expect(body).not.toMatch(/sk-[A-Za-z0-9]{16,}/)
+      expect(body).not.toMatch(/Bearer\s+[A-Za-z0-9]/)
+    }
+  })
+})
+
+describe('POST /v1/audit/prune', () => {
+  it('refuses without confirm:true (400)', async () => {
+    const res = await fetch(`${base}/v1/audit/prune`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ before: 2 }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('prunes the head and the retained tail verifies via the boundary', async () => {
+    const res = await fetch(`${base}/v1/audit/prune`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ before: 1, confirm: true }),
+    })
+    expect(res.status).toBe(200)
+    const result = await res.json()
+    expect(result.archived).toBe(1)
+    expect(result.retained).toBe(1)
+
+    const reader = new ChainAuditWriter(join(stateDir, 'audit.jsonl'))
+    expect(await reader.verify({ boundary: result.boundary })).toBeNull()
+  })
+})

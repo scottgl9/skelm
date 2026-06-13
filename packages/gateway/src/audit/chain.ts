@@ -1,8 +1,49 @@
 import { createHash } from 'node:crypto'
-import { promises as fs, createReadStream } from 'node:fs'
+import { promises as fs, createReadStream, createWriteStream } from 'node:fs'
 import { dirname } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { AuditEvent, AuditFilter, AuditWriter } from '@skelm/core'
+
+/** Output formats for {@link ChainAuditWriter.export}. */
+export type AuditExportFormat = 'jsonl' | 'csv'
+
+/**
+ * Records where a prune cut the chain. Persisted next to the audit log so the
+ * retained tail can still be verified after its head was archived: the tail's
+ * first entry no longer chains from `'0'.repeat(64)`, it chains from the last
+ * archived entry's `entryHash`. Without this boundary a full-chain `verify()`
+ * of a pruned log would (correctly) report a broken chain.
+ */
+export interface PruneBoundary {
+  /** seq of the last entry that was archived (i.e. the retained tail starts at prunedThroughSeq + 1). */
+  prunedThroughSeq: number
+  /** entryHash of the last archived entry — the prevHash the retained tail must chain from. */
+  boundaryHash: string
+  /** Absolute path of the archive segment the pruned head was written to. */
+  archivePath: string
+  /** ISO-8601 timestamp the prune ran. */
+  prunedAt: string
+}
+
+export interface PruneResult {
+  /** Number of entries moved to the archive segment. */
+  archived: number
+  /** Number of entries kept in the live log. */
+  retained: number
+  boundary: PruneBoundary
+}
+
+/** Stable CSV column order for {@link ChainAuditWriter.export}. */
+const CSV_COLUMNS = [
+  'seq',
+  'timestamp',
+  'actor',
+  'action',
+  'runId',
+  'prevHash',
+  'entryHash',
+  'details',
+] as const
 
 /**
  * Append-only, hash-chained audit log written as JSON-Lines. Each entry
@@ -111,31 +152,122 @@ export class ChainAuditWriter implements AuditWriter {
     const limit = Math.max(1, Math.min(5000, filter.limit ?? 500))
     const window: ChainEntry[] = []
     for await (const entry of this.streamEntries()) {
-      if (filter.before !== undefined && entry.seq >= filter.before) continue
-      if (filter.runId !== undefined && entry.runId !== filter.runId) continue
-      if (filter.actor !== undefined && entry.actor !== filter.actor) continue
-      if (filter.action !== undefined && entry.action !== filter.action) continue
-      const ts = Date.parse(entry.timestamp)
-      if (sinceTs !== null && ts < sinceTs) continue
-      if (untilTs !== null && ts > untilTs) continue
+      if (!matchesFilter(entry, filter, sinceTs, untilTs)) continue
       window.push(entry)
       if (window.length > limit) window.shift()
     }
     return window
   }
 
-  /** Walk the chain, verifying every prevHash + entryHash. Returns null on success. */
-  async verify(): Promise<{ seq: number; reason: string } | null> {
-    let prev = '0'.repeat(64)
-    let i = 0
+  /**
+   * Stream the log to `sink` in the requested format, applying the same
+   * filters as {@link list} but WITHOUT a default/tail limit — export is the
+   * full filtered history. Each line is written as it streams past, so memory
+   * stays O(1) regardless of log size; the same streaming reader the bounded
+   * `list` uses backs this, so the no-materialize guarantee is preserved.
+   *
+   * Audit rows carry only names + structured non-secret metadata (the single
+   * writer never records secret values), so neither format can leak a secret.
+   */
+  async export(
+    filter: AuditFilter,
+    format: AuditExportFormat,
+    sink: (chunk: string) => void | Promise<void>,
+  ): Promise<void> {
+    const sinceTs = filter.since !== undefined ? Date.parse(filter.since) : null
+    const untilTs = filter.until !== undefined ? Date.parse(filter.until) : null
+    if (format === 'csv') {
+      await sink(`${CSV_COLUMNS.join(',')}\n`)
+    }
+    for await (const entry of this.streamEntries()) {
+      if (!matchesFilter(entry, filter, sinceTs, untilTs)) continue
+      await sink(format === 'csv' ? toCsvRow(entry) : `${JSON.stringify(entry)}\n`)
+    }
+  }
+
+  /**
+   * Drop the head of the log: archive every entry with `seq <= beforeSeq` to a
+   * sibling segment file, rewrite the live log to the retained tail, and
+   * persist a {@link PruneBoundary} so the tail still verifies.
+   *
+   * Chain-verify implication: after a prune, the retained tail's first entry
+   * chains from the last archived `entryHash`, not from `'0'.repeat(64)`. A
+   * full `verify()` would therefore report a broken chain — callers must pass
+   * the recorded boundary (`verify({ boundary })`) to verify the retained tail,
+   * and verify the archived segment separately. Pruning is destructive to the
+   * single end-to-end chain by design; the boundary keeps each half verifiable.
+   */
+  async prune(beforeSeq: number): Promise<PruneResult> {
+    await this.ensureInitialized()
+    const previous = this.writeQueue
+    let release!: () => void
+    this.writeQueue = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    try {
+      await previous.catch(() => {})
+      const prunedAt = new Date().toISOString()
+      const archivePath = `${this.path}.archive.${prunedAt.replace(/[:.]/g, '-')}.jsonl`
+      const tailPath = `${this.path}.prune-tail`
+      const archive = createWriteStream(archivePath, { mode: 0o600 })
+      const tail = createWriteStream(tailPath, { mode: 0o600 })
+      let archived = 0
+      let retained = 0
+      let boundaryHash = '0'.repeat(64)
+      try {
+        for await (const entry of this.streamEntries()) {
+          const line = `${JSON.stringify(entry)}\n`
+          if (entry.seq <= beforeSeq) {
+            if (!archive.write(line)) await drain(archive)
+            archived++
+            boundaryHash = entry.entryHash
+          } else {
+            if (!tail.write(line)) await drain(tail)
+            retained++
+          }
+        }
+      } finally {
+        await endStream(archive)
+        await endStream(tail)
+      }
+      await fs.rename(tailPath, this.path)
+      await fs.chmod(this.path, 0o600)
+      const boundary: PruneBoundary = {
+        prunedThroughSeq: beforeSeq,
+        boundaryHash,
+        archivePath,
+        prunedAt,
+      }
+      await fs.writeFile(`${this.path}.prune-boundary.json`, `${JSON.stringify(boundary)}\n`, {
+        mode: 0o600,
+      })
+      return { archived, retained, boundary }
+    } finally {
+      release()
+    }
+  }
+
+  /**
+   * Walk the chain, verifying every prevHash + entryHash. Returns null on
+   * success. Pass `boundary` to verify a retained tail whose head was pruned:
+   * the first entry then must carry `seq = prunedThroughSeq + 1` and chain from
+   * `boundary.boundaryHash` instead of the genesis zero hash.
+   */
+  async verify(opts: { boundary?: PruneBoundary } = {}): Promise<{
+    seq: number
+    reason: string
+  } | null> {
+    const boundary = opts.boundary
+    let prev = boundary?.boundaryHash ?? '0'.repeat(64)
+    let expectedSeq = boundary !== undefined ? boundary.prunedThroughSeq + 1 : 1
     for await (const e of this.streamEntries()) {
-      if (e.seq !== i + 1) return { seq: e.seq, reason: 'out-of-order seq' }
+      if (e.seq !== expectedSeq) return { seq: e.seq, reason: 'out-of-order seq' }
       if (e.prevHash !== prev) return { seq: e.seq, reason: 'broken chain' }
       const { entryHash, ...rest } = e
       const recomputed = hashCanonical(rest)
       if (recomputed !== entryHash) return { seq: e.seq, reason: 'tampered entry' }
       prev = entryHash
-      i++
+      expectedSeq++
     }
     return null
   }
@@ -199,6 +331,52 @@ export class ChainAuditWriter implements AuditWriter {
       await fh?.close()
     }
   }
+}
+
+function matchesFilter(
+  entry: ChainEntry,
+  filter: AuditFilter,
+  sinceTs: number | null,
+  untilTs: number | null,
+): boolean {
+  if (filter.before !== undefined && entry.seq >= filter.before) return false
+  if (filter.runId !== undefined && entry.runId !== filter.runId) return false
+  if (filter.actor !== undefined && entry.actor !== filter.actor) return false
+  if (filter.action !== undefined && entry.action !== filter.action) return false
+  const ts = Date.parse(entry.timestamp)
+  if (sinceTs !== null && ts < sinceTs) return false
+  if (untilTs !== null && ts > untilTs) return false
+  return true
+}
+
+function toCsvRow(entry: ChainEntry): string {
+  const cells = CSV_COLUMNS.map((col) => {
+    if (col === 'details') {
+      return entry.details === undefined ? '' : JSON.stringify(entry.details)
+    }
+    const value = (entry as unknown as Record<string, unknown>)[col]
+    return value === undefined ? '' : String(value)
+  })
+  return `${cells.map(csvEscape).join(',')}\n`
+}
+
+// RFC-4180 escaping: quote any field containing a comma, quote, or newline;
+// double embedded quotes. Always returns a plain string — the canonical CSV
+// shape every spreadsheet/SIEM importer accepts.
+function csvEscape(value: string): string {
+  if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`
+  return value
+}
+
+function drain(stream: import('node:fs').WriteStream): Promise<void> {
+  return new Promise((resolve) => stream.once('drain', resolve))
+}
+
+function endStream(stream: import('node:fs').WriteStream): Promise<void> {
+  return new Promise((resolve, reject) => {
+    stream.on('error', reject)
+    stream.end(() => resolve())
+  })
 }
 
 function hashCanonical(value: unknown): string {

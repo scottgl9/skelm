@@ -4,12 +4,15 @@ value:BaseRegistry
 value:BreakpointRegistry
 value:ChainAuditWriter
 value:CodingAgentManager
+value:FileAuditSink
 value:FileLogSink
 value:FileSecretResolver
+value:ForwardingAuditWriter
 value:FsWatcher
 value:GATEWAY_PACKAGE_VERSION
 value:Gateway
 value:HitlResolutionError
+value:HttpAuditSink
 value:InMemoryQueueDriver
 value:LockfileError
 value:McpServerManager
@@ -24,6 +27,7 @@ value:VaultSecretResolver
 value:WorkflowRegistry
 value:acquireLockfile
 value:auditHitl
+value:buildAuditSinks
 value:buildDecision
 value:createServer
 value:createSkillSource
@@ -46,6 +50,8 @@ type:AcpSessionManagerOptions
 type:AcpSessionState
 type:AgentEntry
 type:AgentRegistryOptions
+type:AuditExportFormat
+type:AuditSink
 type:AuthMode
 type:ChainEntry
 type:CodingAgentHandle
@@ -79,6 +85,8 @@ type:PendingApproval
 type:PendingHitlGate
 type:PollDedupeKeyFn
 type:PollSourceFn
+type:PruneBoundary
+type:PruneResult
 type:QueueDriver
 type:Registry
 type:RegistryChange
