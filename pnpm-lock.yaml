@@ -441,6 +441,28 @@ importers:
         specifier: ^4.1.0
         version: 4.1.8(@types/node@20.19.39)(vite@8.0.16)
 
+  packages/pr-review-agent:
+    dependencies:
+      '@skelm/core':
+        specifier: workspace:*
+        version: link:../core
+      '@skelm/integrations':
+        specifier: workspace:*
+        version: link:../integrations
+      zod:
+        specifier: ^4.4.2
+        version: 4.4.2
+    devDependencies:
+      '@skelm/agent':
+        specifier: workspace:*
+        version: link:../agent
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.0
+        version: 4.1.8(@types/node@22.19.17)(vite@8.0.16)
+
   packages/scheduler:
     dependencies:
       '@skelm/core':

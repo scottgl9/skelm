@@ -1,0 +1,51 @@
+{
+  "name": "@skelm/pr-review-agent",
+  "version": "0.1.0",
+  "description": "Project-agnostic PR review workflow package — fetch a PR, classify first-review vs follow-up, produce findings, and optionally post a gated review",
+  "license": "MIT",
+  "author": "Scott Glover <scottgl@gmail.com>",
+  "homepage": "https://skelm.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scottgl9/skelm.git",
+    "directory": "packages/pr-review-agent"
+  },
+  "bugs": {
+    "url": "https://github.com/scottgl9/skelm/issues"
+  },
+  "keywords": ["skelm", "pr-review", "github", "code-review", "workflow-package"],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "workflows", "self-test", "skelm.package.json", "README.md", "LICENSE"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "biome check src/",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@skelm/core": "workspace:*",
+    "@skelm/integrations": "workspace:*",
+    "zod": "^4.4.2"
+  },
+  "devDependencies": {
+    "@skelm/agent": "workspace:*",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
