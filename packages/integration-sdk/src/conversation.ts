@@ -15,6 +15,9 @@ import type { Connection } from './credentials.js'
 /** Normalized media kinds an adapter may send or receive. */
 export type MediaKind = 'image' | 'file' | 'voice' | 'audio' | 'video' | 'animation' | 'sticker'
 
+/** Which attachment payload forms an adapter can send for a media kind. */
+export type MediaSourceKind = 'url' | 'data'
+
 /**
  * A normalized media attachment. Binary payloads are referenced, never inlined
  * as resolved secrets; large payloads should be carried as an artifact ref or a
@@ -108,6 +111,12 @@ export interface CapabilityDescriptor {
   readonly slashCommands: boolean
   /** Media kinds the provider can send. Empty when none. */
   readonly media: readonly MediaKind[]
+  /**
+   * Which attachment payload forms the adapter's advertised media sends accept.
+   * Omit when `media` is empty. Defaults to `['url', 'data']` for descriptors
+   * authored before this field existed.
+   */
+  readonly mediaSources?: readonly MediaSourceKind[]
   /** Maximum outbound message length in characters, when the provider caps it. */
   readonly maxMessageLength?: number
   /** Provider-specific feature names surfaced for documentation/UX only. */
@@ -163,6 +172,7 @@ export function isCapabilityDescriptor(value: unknown): value is CapabilityDescr
     typeof d.reactions === 'boolean' &&
     typeof d.buttons === 'boolean' &&
     typeof d.slashCommands === 'boolean' &&
-    Array.isArray(d.media)
+    Array.isArray(d.media) &&
+    (d.mediaSources === undefined || Array.isArray(d.mediaSources))
   )
 }

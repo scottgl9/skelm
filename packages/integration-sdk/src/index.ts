@@ -67,6 +67,7 @@ export type {
 export { isCapabilityDescriptor } from './conversation.js'
 export type {
   MediaKind,
+  MediaSourceKind,
   MediaAttachment,
   ConversationTarget,
   InboundEvent,

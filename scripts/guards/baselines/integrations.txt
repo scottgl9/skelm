@@ -7,9 +7,12 @@ value:IntegrationConfigError
 value:IntegrationError
 value:IntegrationRegistry
 value:IntegrationStateError
+value:MatrixConversationAdapter
 value:MatrixIntegration
 value:MsGraphIntegration
+value:SlackConversationAdapter
 value:SlackIntegration
+value:TelegramConversationAdapter
 value:TelegramIntegration
 value:createIntegrationPlugin
 value:createRemoteTriggerSource
@@ -20,6 +23,9 @@ value:getMsGraphValidationToken
 value:githubFetch
 value:matrixSyncToInputs
 value:normalizeGitHubPrEvent
+value:normalizeMatrixInbound
+value:normalizeSlackInbound
+value:normalizeTelegramInbound
 value:postIssueComment
 value:postPullRequestReview
 value:registerGitHubPrTrigger
@@ -63,6 +69,7 @@ type:MatrixMessageInput
 type:MatrixMessageTrigger
 type:MatrixSendMessageOptions
 type:MatrixSyncOptions
+type:MatrixTransport
 type:MatrixTriggerSource
 type:MsGraphIntegrationType
 type:PostIssueCommentParams
@@ -73,12 +80,15 @@ type:RegisterWebhookParams
 type:RemoteChatUiTriggerSource
 type:RunInput
 type:SlackConfig
+type:SlackTransport
+type:SlackTransportResult
 type:SlackWebhookEvent
 type:TelegramConfig
 type:TelegramGetUpdatesOptions
 type:TelegramMessageInput
 type:TelegramMessageTrigger
 type:TelegramSendMessageOptions
+type:TelegramTransport
 type:TelegramTriggerSource
 type:TelegramWebhookEvent
 type:WebhookConfig

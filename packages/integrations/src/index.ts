@@ -79,6 +79,12 @@ export {
 } from './ms-graph.js'
 export { SlackIntegration, verifySlackSignature } from './slack.js'
 export {
+  SlackConversationAdapter,
+  normalizeSlackInbound,
+  type SlackTransport,
+  type SlackTransportResult,
+} from './slack-adapter.js'
+export {
   MatrixIntegration,
   matrixSyncToInputs,
   type CreateMatrixTriggerSourceOptions,
@@ -88,6 +94,11 @@ export {
   type MatrixTriggerSource,
 } from './matrix.js'
 export {
+  MatrixConversationAdapter,
+  normalizeMatrixInbound,
+  type MatrixTransport,
+} from './matrix-adapter.js'
+export {
   TelegramIntegration,
   telegramUpdateToInput,
   type CreateTelegramTriggerSourceOptions,
@@ -96,6 +107,11 @@ export {
   type TelegramSendMessageOptions,
   type TelegramTriggerSource,
 } from './telegram.js'
+export {
+  TelegramConversationAdapter,
+  normalizeTelegramInbound,
+  type TelegramTransport,
+} from './telegram-adapter.js'
 export {
   ChatUiIntegration,
   createRemoteTriggerSource,

@@ -292,6 +292,7 @@ describe('isCapabilityDescriptor', () => {
       buttons: true,
       slashCommands: true,
       media: ['image', 'file'],
+      mediaSources: ['url'],
     }
     expect(isCapabilityDescriptor(d)).toBe(true)
   })
