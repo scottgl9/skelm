@@ -1,0 +1,41 @@
+{
+  "name": "@skelm/coding-agent",
+  "version": "0.4.8",
+  "description": "Project-agnostic coding-agent workflow on the native @skelm/agent backend.",
+  "license": "MIT",
+  "homepage": "https://skelm.dev",
+  "skelm": {
+    "apiVersion": 1,
+    "requiredSkelmVersion": ">=0.4.0",
+    "workflows": [
+      {
+        "id": "default",
+        "entry": "workflows/coding-agent.workflow.ts",
+        "kind": "pipeline",
+        "description": "Read project instructions, edit code, run profile-gated validation.",
+        "permissions": {
+          "allowedTools": ["*"],
+          "fsRead": ["."],
+          "fsWrite": ["."],
+          "networkEgress": "deny",
+          "executableProfiles": ["gitReadOnly", "nodeBuild"]
+        }
+      }
+    ],
+    "config": {
+      "workspace": "absolute path to the repository the agent operates in",
+      "backend": "backend id of the native @skelm/agent backend (default: agent)",
+      "profile": "ProjectProfile: executableProfiles, prExecutableProfiles, allowedExecutables, validationCommands, branchPrefix, baseBranch, allowHosts",
+      "budget": "AgentBudget safety ceiling: tokenBudget, maxCostUsd, maxToolCalls, maxWallClockMs",
+      "pr": "PullRequestConfig: enabled (default false), titleTemplate, draft",
+      "maxTurns": "cap on agent tool-call turns (default 40)"
+    },
+    "secrets": [
+      {
+        "name": "GITHUB_TOKEN",
+        "description": "Only resolved when PR opening is enabled and granted; name only."
+      }
+    ],
+    "selfTest": { "entry": "workflows/self-test.workflow.ts" }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "@skelm/coding-agent",
+  "version": "0.4.8",
+  "description": "Project-agnostic coding-agent workflow package on the native @skelm/agent backend — reads project instructions, edits code, runs profile-gated validation, optionally opens a PR",
+  "homepage": "https://skelm.dev",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/scottgl9/skelm",
+    "directory": "packages/coding-agent"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "workflows", "skelm.package.json", "README.md", "LICENSE"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc -p tsconfig.typecheck.json",
+    "test": "vitest run",
+    "lint": "biome check src/"
+  },
+  "dependencies": {
+    "@skelm/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@skelm/agent": "workspace:*",
+    "typescript": "^5.8.2",
+    "vitest": "^4.1.0",
+    "@biomejs/biome": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

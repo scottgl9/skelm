@@ -1,0 +1,16 @@
+value:DEFAULT_BASE_BRANCH
+value:DEFAULT_MAX_TURNS
+value:INSTRUCTION_FILES
+value:buildAgentPermissions
+value:buildImplementPrompt
+value:createCodingAgentWorkflow
+value:readProjectInstructions
+value:resolveCodingAgentConfig
+type:BuildPromptInput
+type:CodingAgentBudget
+type:CodingAgentConfig
+type:CodingAgentInput
+type:CodingAgentOutput
+type:ProjectInstructions
+type:ProjectProfile
+type:PullRequestConfig
