@@ -10,7 +10,14 @@ import {
   Runner,
 } from '@skelm/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { ChainAuditWriter, Gateway, SuspendApprovalGate } from '../src/index.js'
+import {
+  AwsSecretsManagerResolver,
+  ChainAuditWriter,
+  Gateway,
+  SuspendApprovalGate,
+  VaultSecretResolver,
+} from '../src/index.js'
+import { FileSecretResolver } from '../src/secrets/file-driver.js'
 
 let stateDir: string
 
@@ -104,5 +111,54 @@ describe('Gateway.enforcement', () => {
     const r2 = gw.enforcement.permissionResolver
     expect(r2).not.toBe(r1)
     await gw.stop()
+  })
+})
+
+describe('Gateway secret-driver selection', () => {
+  it("selects FileSecretResolver when secrets.driver is 'file'", async () => {
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      config: { secrets: { driver: 'file' } },
+    })
+    await gw.start()
+    expect(gw.enforcement.secretResolver).toBeInstanceOf(FileSecretResolver)
+    await gw.stop()
+  })
+
+  it("selects VaultSecretResolver when secrets.driver is 'vault'", async () => {
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      config: {
+        secrets: { driver: 'vault', vault: { url: 'https://vault.test:8200', token: 't' } },
+      },
+    })
+    await gw.start()
+    expect(gw.enforcement.secretResolver).toBeInstanceOf(VaultSecretResolver)
+    await gw.stop()
+  })
+
+  it("selects AwsSecretsManagerResolver when secrets.driver is 'aws-secrets-manager'", async () => {
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      config: {
+        secrets: { driver: 'aws-secrets-manager', awsSecretsManager: { region: 'us-east-1' } },
+      },
+    })
+    await gw.start()
+    expect(gw.enforcement.secretResolver).toBeInstanceOf(AwsSecretsManagerResolver)
+    await gw.stop()
+  })
+
+  it("fails closed when secrets.driver is 'vault' without a url", async () => {
+    const gw = new Gateway({
+      stateDir,
+      watchRegistries: false,
+      config: { secrets: { driver: 'vault' } },
+    })
+    await expect(gw.start()).rejects.toThrow(/secrets\.vault\.url is required/)
+    await gw.stop().catch(() => {})
   })
 })

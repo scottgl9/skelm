@@ -44,9 +44,36 @@ export interface SkelmConfigBackends {
 }
 
 export interface SkelmConfigSecrets {
-  driver?: 'env' | 'file'
+  driver?: 'env' | 'file' | 'vault' | 'aws-secrets-manager'
   /** When driver is 'file', path to the JSON file with secrets. */
   file?: string
+  /** When driver is 'vault', the Vault KV v2 connection settings. */
+  vault?: {
+    /** Vault server URL, e.g. https://vault.internal:8200 */
+    url: string
+    /**
+     * Auth token. When omitted, read from the `VAULT_TOKEN` env var so the
+     * token never has to live in `skelm.config.ts`.
+     */
+    token?: string
+    /** KV v2 mount path; defaults to `secret`. */
+    mount?: string
+    /** Secret-name prefix applied before every lookup. */
+    prefix?: string
+    /** Which key inside the KV v2 `data` map to return; defaults to `value`. */
+    field?: string
+    /** Optional in-memory TTL cache in milliseconds. */
+    cacheTtlMs?: number
+  }
+  /** When driver is 'aws-secrets-manager', the AWS connection settings. */
+  awsSecretsManager?: {
+    /** AWS region; when omitted the SDK resolves it from the environment. */
+    region?: string
+    /** Secret-name prefix applied before every lookup. */
+    prefix?: string
+    /** Optional in-memory TTL cache in milliseconds. */
+    cacheTtlMs?: number
+  }
 }
 
 export interface SkelmConfigRunsStorage {

@@ -35,8 +35,20 @@ export type { ChainEntry } from './audit/chain.js'
 // Operational logs (distinct from audit + run events)
 export { FileLogSink, RingBufferLogSink, TeeLogSink, redact } from './logs/sink.js'
 export type { LogEntry, LogSink } from './logs/sink.js'
+export {
+  AwsSecretsManagerError,
+  AwsSecretsManagerResolver,
+} from './secrets/aws-secrets-manager-driver.js'
+export type {
+  AwsSecretsManagerResolverOptions,
+  SecretsManagerSendClient,
+} from './secrets/aws-secrets-manager-driver.js'
 export { FileSecretResolver } from './secrets/file-driver.js'
-export { VaultNotImplementedError, VaultSecretResolver } from './secrets/vault-driver.js'
+export {
+  VaultNotImplementedError,
+  VaultSecretError,
+  VaultSecretResolver,
+} from './secrets/vault-driver.js'
 export type { VaultSecretResolverOptions } from './secrets/vault-driver.js'
 
 // Approval gate

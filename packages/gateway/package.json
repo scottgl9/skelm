@@ -35,6 +35,7 @@
     "prepublishOnly": "node ../../scripts/guards/dist-invariants.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1068.0",
     "@rowanmanning/feed-parser": "^2.1.3",
     "@skelm/agentmemory": "workspace:*",
     "@skelm/core": "workspace:*",
