@@ -1,0 +1,167 @@
+import type { MappedNode, SkelmTriggerKind } from './types.js'
+
+/** Builder names referenced by a generated step, used to build the import. */
+function buildersFor(node: MappedNode): readonly string[] {
+  switch (node.kind) {
+    case 'branch':
+      return ['branch', 'code']
+    case 'parallel':
+      return ['parallel', 'code']
+    case 'invoke':
+      return ['invoke']
+    case 'infer':
+      return ['infer']
+    case 'agent':
+      return ['agent']
+    case 'trigger':
+      return []
+    default:
+      return ['code']
+  }
+}
+
+function jsString(value: string): string {
+  return JSON.stringify(value)
+}
+
+/** Emit a TODO header listing the source node so review context is preserved. */
+function todoHeader(node: MappedNode): string {
+  return `    // TODO(n8n): ${node.note}. Original node ${jsString(node.source.name)} (type ${jsString(node.source.type)}).`
+}
+
+function emitStep(node: MappedNode): string {
+  const id = jsString(node.stepId)
+  switch (node.kind) {
+    case 'code':
+      return [
+        todoHeader(node),
+        `    code({ id: ${id}, run: (ctx) => {`,
+        '      // TODO(n8n): port the node logic here.',
+        '      return ctx.input',
+        '    } }),',
+      ].join('\n')
+    case 'branch':
+      return [
+        todoHeader(node),
+        '    branch({',
+        `      id: ${id},`,
+        '      // TODO(n8n): replace with the real discriminator from the IF/Switch conditions.',
+        '      on: () => "default",',
+        `      cases: { true: code({ id: ${jsString(`${node.stepId}True`)}, run: (ctx) => ctx.input }) },`,
+        `      default: code({ id: ${jsString(`${node.stepId}False`)}, run: (ctx) => ctx.input }),`,
+        '    }),',
+      ].join('\n')
+    case 'parallel':
+      return [
+        todoHeader(node),
+        '    parallel({',
+        `      id: ${id},`,
+        '      // TODO(n8n): add one child step per Merge input branch.',
+        `      steps: [code({ id: ${jsString(`${node.stepId}A`)}, run: (ctx) => ctx.input })],`,
+        '    }),',
+      ].join('\n')
+    case 'invoke':
+      return [
+        todoHeader(node),
+        `    invoke({ id: ${id}, pipelineId: ${jsString(`TODO_${node.integration ?? 'integration'}`)} }),`,
+      ].join('\n')
+    case 'infer':
+      return [
+        todoHeader(node),
+        `    infer({ id: ${id}, prompt: "TODO: port the prompt from the n8n node" }),`,
+      ].join('\n')
+    case 'agent':
+      return [
+        todoHeader(node),
+        '    // TODO(n8n): declare permissions explicitly — default-deny applies until you do.',
+        `    agent({ id: ${id}, prompt: "TODO: port the agent instructions from the n8n node" }),`,
+      ].join('\n')
+    default:
+      // Unsupported enabled nodes are never dropped. Emit a code step that
+      // fails loudly plus a TODO so a human must address it before the
+      // workflow can run.
+      return [
+        `    // TODO(n8n): UNSUPPORTED node ${jsString(node.source.name)} (type ${jsString(node.source.type)}).`,
+        '    // No skelm mapping exists. Replace this placeholder with an equivalent step.',
+        `    code({ id: ${id}, run: () => {`,
+        `      throw new Error(${jsString(`Unsupported n8n node not migrated: ${node.source.name} (${node.source.type})`)})`,
+        '    } }),',
+      ].join('\n')
+  }
+}
+
+const TRIGGER_LINE: Record<SkelmTriggerKind, (id: string) => string> = {
+  webhook: (id) => `    { kind: "webhook", id: ${id} },`,
+  cron: (id) =>
+    `    { kind: "cron", id: ${id}, cron: "0 * * * *" }, // TODO(n8n): set the schedule`,
+  interval: (id) =>
+    `    { kind: "interval", id: ${id}, every: "1h" }, // TODO(n8n): set the interval`,
+}
+
+/**
+ * Generate a reviewable TypeScript workflow skeleton from mapped nodes.
+ *
+ * The output is a self-contained `pipeline(...)` module: triggers become
+ * `triggers:` entries, every non-trigger enabled node becomes a step
+ * (placeholder bodies marked TODO), and every unsupported enabled node becomes
+ * a loud placeholder step. Disabled n8n nodes are omitted so inert nodes do
+ * not become active during migration. The generated code is intended for human
+ * review, not auto-activation; the runtime never runs it until an operator has
+ * filled in the TODOs and explicitly registered it.
+ */
+export function generateSkeleton(pipelineId: string, nodes: readonly MappedNode[]): string {
+  const triggers = nodes.filter((n) => n.kind === 'trigger')
+  const steps = nodes.filter((n) => n.kind !== 'trigger')
+
+  const builders = new Set<string>(['pipeline'])
+  for (const node of steps) {
+    for (const b of buildersFor(node)) builders.add(b)
+  }
+  if (steps.length === 0) builders.add('code')
+  const importList = [...builders].sort().join(', ')
+
+  const integrations = [
+    ...new Set(nodes.map((n) => n.integration).filter((v): v is string => Boolean(v))),
+  ].sort()
+  const unsupported = nodes.filter((n) => n.unsupported)
+
+  const lines: string[] = []
+  lines.push('// GENERATED by @skelm/migration-n8n — FOR HUMAN REVIEW, NOT AUTO-ACTIVATION.')
+  lines.push('// Enabled n8n nodes below were mapped or flagged TODO.')
+  lines.push('// Disabled n8n nodes were omitted to preserve their inert behavior.')
+  lines.push('// Fill in the TODOs and review permissions before registering this workflow.')
+  if (integrations.length > 0) {
+    lines.push(`// Required integrations: ${integrations.join(', ')}`)
+  }
+  if (unsupported.length > 0) {
+    lines.push(
+      `// Unsupported nodes (flagged TODO below): ${unsupported.map((n) => n.source.name).join(', ')}`,
+    )
+  }
+  lines.push('')
+  lines.push(`import { ${importList} } from "@skelm/core"`)
+  lines.push('')
+  lines.push('export default pipeline({')
+  lines.push(`  id: ${jsString(pipelineId)},`)
+  if (triggers.length > 0) {
+    lines.push('  triggers: [')
+    for (const t of triggers) {
+      const kind = t.triggerKind ?? 'webhook'
+      lines.push(TRIGGER_LINE[kind](jsString(t.stepId)))
+    }
+    lines.push('  ],')
+  }
+  lines.push('  steps: [')
+  if (steps.length === 0) {
+    lines.push('    // TODO(n8n): this workflow had only trigger nodes; add at least one step.')
+    lines.push('    code({ id: "noop", run: (ctx) => ctx.input }),')
+  } else {
+    for (const node of steps) {
+      lines.push(emitStep(node))
+    }
+  }
+  lines.push('  ],')
+  lines.push('})')
+  lines.push('')
+  return lines.join('\n')
+}

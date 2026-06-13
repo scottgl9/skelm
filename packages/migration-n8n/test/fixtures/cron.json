@@ -1,0 +1,30 @@
+{
+  "name": "Nightly Report",
+  "nodes": [
+    {
+      "name": "Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": { "triggerTimes": { "item": [{ "mode": "everyDay", "hour": 2 }] } }
+    },
+    {
+      "name": "Build Report",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [220, 0],
+      "parameters": { "functionCode": "return items;" }
+    },
+    {
+      "name": "Notify Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [440, 0],
+      "parameters": { "channel": "#reports" }
+    }
+  ],
+  "connections": {
+    "Cron": { "main": [[{ "node": "Build Report", "type": "main", "index": 0 }]] },
+    "Build Report": { "main": [[{ "node": "Notify Slack", "type": "main", "index": 0 }]] }
+  }
+}
