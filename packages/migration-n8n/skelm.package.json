@@ -1,0 +1,25 @@
+{
+  "name": "@skelm/migration-n8n",
+  "version": "0.1.0",
+  "description": "Import n8n workflow JSON exports into reviewable skelm workflow skeletons.",
+  "license": "MIT",
+  "skelm": {
+    "apiVersion": 1,
+    "requiredSkelmVersion": ">=0.4.0",
+    "workflows": [
+      {
+        "id": "default",
+        "entry": "workflows/import.workflow.ts",
+        "kind": "pipeline",
+        "description": "Import an n8n workflow JSON export into a reviewable skelm skeleton."
+      }
+    ],
+    "config": {
+      "integrationOverrides": {
+        "type": "object",
+        "description": "Map n8n node type -> skelm integration package for nodes that would otherwise be unsupported."
+      }
+    },
+    "selfTest": { "entry": "self-test/self-test.workflow.ts" }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "Has Unsupported Node",
+  "nodes": [
+    {
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [0, 0],
+      "parameters": {}
+    },
+    {
+      "name": "Notion DB",
+      "type": "n8n-nodes-base.notion",
+      "position": [220, 0],
+      "parameters": { "resource": "databasePage" }
+    },
+    {
+      "name": "Quantum Flux",
+      "type": "@community/n8n-nodes-quantum.fluxCapacitor",
+      "position": [440, 0],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Notion DB", "type": "main", "index": 0 }]] },
+    "Notion DB": { "main": [[{ "node": "Quantum Flux", "type": "main", "index": 0 }]] }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "Simple HTTP Set IF",
+  "nodes": [
+    {
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": { "path": "incoming" }
+    },
+    {
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [220, 0],
+      "parameters": { "url": "https://example.com/api", "method": "GET" }
+    },
+    {
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [440, 0],
+      "parameters": { "values": { "string": [{ "name": "status", "value": "ok" }] } }
+    },
+    {
+      "name": "IF",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [660, 0],
+      "parameters": { "conditions": { "number": [{ "value1": 1, "value2": 2 }] } }
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "HTTP Request", "type": "main", "index": 0 }]] },
+    "HTTP Request": { "main": [[{ "node": "Set", "type": "main", "index": 0 }]] },
+    "Set": { "main": [[{ "node": "IF", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {
+    "Webhook": [{ "json": { "orderId": 42, "customer": "acme" } }]
+  }
+}

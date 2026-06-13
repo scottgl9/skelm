@@ -149,6 +149,7 @@ export default defineConfig({
             { text: 'Agent Step', link: '/reference/agent-step' },
             { text: 'Gateway', link: '/reference/gateway' },
             { text: 'Workflow Packages', link: '/reference/workflow-packages' },
+            { text: 'Migrating from n8n', link: '/reference/migration-n8n' },
             { text: 'Integration Primitives', link: '/reference/integration-primitives' },
             { text: 'integration-http', link: '/reference/integration-http' },
             { text: 'OpenAPI', link: '/reference/openapi' },

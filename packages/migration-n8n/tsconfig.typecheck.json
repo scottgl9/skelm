@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts", "workflows/**/*.ts", "self-test/**/*.ts", "test/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
+}
