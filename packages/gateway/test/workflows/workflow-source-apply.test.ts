@@ -104,14 +104,17 @@ async function bootGateway(opts: { auth?: boolean } = {}): Promise<void> {
 }
 
 async function registerFixture(
-  headers: Record<string, string> = {},
+  idOrHeaders: string | Record<string, string> = 'apply-fixture',
+  maybeHeaders: Record<string, string> = {},
 ): Promise<{ sourcePath: string }> {
+  const id = typeof idOrHeaders === 'string' ? idOrHeaders : 'apply-fixture'
+  const headers = typeof idOrHeaders === 'string' ? maybeHeaders : idOrHeaders
   await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
   await writeFile(wfPath, FIXTURE, 'utf8')
   const res = await fetch(`${base}/v1/workflows/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...headers },
-    body: JSON.stringify({ id: 'apply-fixture', source: { type: 'path', path: wfPath } }),
+    body: JSON.stringify({ id, source: { type: 'path', path: wfPath } }),
   })
   expect(res.status).toBe(200)
   const body = (await res.json()) as { workflow: { sourcePath: string; sourceKind: string } }
@@ -396,6 +399,47 @@ describe('POST /v1/workflows/:id/source/apply', () => {
     const details = (rows[0] as { details: Record<string, unknown> }).details
     expect(details.denied).toBe(true)
     expect(details.workflowId).toBe('workflows/apply.workflow.mts')
+  })
+
+  it('does not execute an out-of-roots symlink while resolving an authored workflow id', async () => {
+    await bootGateway()
+    const marker = join(outsideDir, 'executed.txt')
+    const aliasPath = join(projectRoot, 'manual', 'apply-source.mts')
+    await fs.mkdir(join(projectRoot, 'manual'), { recursive: true })
+    await writeFile(aliasPath, FIXTURE, 'utf8')
+    const reg = await fetch(`${base}/v1/workflows/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'managed-alias', source: { type: 'path', path: aliasPath } }),
+    })
+    expect(reg.status).toBe(200)
+    const { workflow } = (await reg.json()) as {
+      workflow: { sourcePath: string; sourceKind: string }
+    }
+    const sourcePath = workflow.sourcePath
+    const outsideFile = join(outsideDir, 'evil.workflow.mts')
+    await writeFile(
+      outsideFile,
+      `import { writeFileSync } from 'node:fs'
+
+writeFileSync(${JSON.stringify(marker)}, 'executed', 'utf8')
+
+const pipeline = (def) => def
+
+export default pipeline({
+  id: 'apply-fixture',
+  steps: [{ kind: 'wait', id: 'approval', message: 'ok?', timeoutMs: 60000 }],
+})
+`,
+      'utf8',
+    )
+    await rm(sourcePath)
+    await symlink(outsideFile, sourcePath)
+
+    const res = await postApply({ edits: [SET_TIMEOUT_EDIT], dryRun: false }, {}, 'apply-fixture')
+    expect(res.status).toBe(404)
+    await expect(readFile(marker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readFile(outsideFile, 'utf8')).toContain('writeFileSync(')
   })
 
   it('returns 401 without a bearer token under bearer auth', async () => {

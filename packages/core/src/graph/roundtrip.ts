@@ -223,6 +223,11 @@ interface WorkflowCall extends BuilderCall {
   stepsArray: tsNS.ArrayLiteralExpression | undefined
 }
 
+interface StepCallMatch {
+  step: BuilderCall
+  codeOwnedAncestor: BuilderCall | undefined
+}
+
 function walk(ts: TS, node: tsNS.Node, visit: (n: tsNS.Node) => void): void {
   visit(node)
   ts.forEachChild(node, (child) => walk(ts, child, visit))
@@ -287,6 +292,22 @@ function collectStepCalls(ts: TS, sf: tsNS.SourceFile): BuilderCall[] {
   return out
 }
 
+function collectStepMatches(
+  ts: TS,
+  node: tsNS.Node,
+  out: StepCallMatch[],
+  codeOwnedAncestor?: BuilderCall,
+): void {
+  const found = asBuilderCall(ts, node, STEP_BUILDERS)
+  if (found !== undefined) {
+    out.push({ step: found, codeOwnedAncestor })
+    const nextAncestor = codeOwnedAncestor ?? (isCodeOwnedStep(ts, found) ? found : undefined)
+    ts.forEachChild(node, (child) => collectStepMatches(ts, child, out, nextAncestor))
+    return
+  }
+  ts.forEachChild(node, (child) => collectStepMatches(ts, child, out, codeOwnedAncestor))
+}
+
 function collectWorkflowCalls(ts: TS, sf: tsNS.SourceFile): WorkflowCall[] {
   const out: WorkflowCall[] = []
   walk(ts, sf, (node) => {
@@ -307,14 +328,24 @@ function findStepCall(
   stepId: string,
   index: number,
 ): BuilderCall | Failure {
-  const matches = collectStepCalls(ts, sf).filter((c) => c.id === stepId)
-  if (matches.length === 0) {
+  const matches: StepCallMatch[] = []
+  collectStepMatches(ts, sf, matches)
+  const targeted = matches.filter((match) => match.step.id === stepId)
+  if (targeted.length === 0) {
     return fail('not-found', `edits[${index}]: no step builder call with id "${stepId}" was found`)
   }
-  if (matches.length > 1) {
+  const editable = targeted.filter((match) => match.codeOwnedAncestor === undefined)
+  if (editable.length === 0) {
+    const owner = targeted[0]?.codeOwnedAncestor
+    return fail(
+      'code-owned',
+      `edits[${index}]: step "${stepId}" is nested inside code-owned step "${owner?.id ?? owner?.name ?? 'unknown'}"; edit the TypeScript source manually`,
+    )
+  }
+  if (targeted.length > 1) {
     return fail('unsupported', `edits[${index}]: step id "${stepId}" is ambiguous in source`)
   }
-  return matches[0] as BuilderCall
+  return editable[0]?.step as BuilderCall
 }
 
 function containsFunction(ts: TS, node: tsNS.Node): boolean {
