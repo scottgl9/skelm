@@ -131,6 +131,35 @@ type RunEventBody =
   | { type: 'run.completed'; runId: RunId; output: unknown; durationMs: number; at: number }
   | { type: 'run.failed'; runId: RunId; error: SerializedError; at: number }
   | { type: 'run.cancelled'; runId: RunId; at: number }
+  | {
+      // A run-level guardrail check result. `phase` distinguishes pre/in/post;
+      // `status` is pass/warn/fail. Emitted for every check so the dashboard
+      // run inspector and the audit log can show guardrail status. See
+      // `guardrails.ts`.
+      type: 'guardrail.pre' | 'guardrail.post'
+      runId: RunId
+      check: string
+      status: import('./guardrails.js').GuardrailStatus
+      severity: 'hard' | 'soft'
+      message?: string
+      score?: number
+      details?: Readonly<Record<string, unknown>>
+      at: number
+    }
+  | {
+      // An oversight intervention (pause / escalate / terminate) raised by a
+      // budget breach, the watchdog, or the supervisor/critic. The pause/
+      // escalate paths are realized through the HITL gate primitive; terminate
+      // cancels the run.
+      type: 'guardrail.intervention'
+      runId: RunId
+      stepId?: StepId
+      action: import('./guardrails.js').InterventionAction
+      source: 'budget' | 'watchdog' | 'supervisor'
+      reason: string
+      details?: Readonly<Record<string, unknown>>
+      at: number
+    }
   | { type: 'secret.accessed'; runId: RunId; stepId: string; name: string; at: number }
   | { type: 'secret.not_found'; runId: RunId; stepId: string; name: string; at: number }
   | {

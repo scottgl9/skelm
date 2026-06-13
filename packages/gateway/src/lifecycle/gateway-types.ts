@@ -69,6 +69,14 @@ export interface GatewayOptions {
   /** Operator environment label passed to the HITL policy hook (e.g. 'production'). */
   hitlEnvironment?: string
   /**
+   * Optional trust-boundary guardrails policy overlay. Given a workflow's
+   * authored guardrails config it returns the config the runtime enforces,
+   * letting the operator inject mandatory pre/post validators, a budget
+   * ceiling, or a watchdog the author cannot remove. Threaded into every
+   * gateway-driven run. See `@skelm/core` GuardrailsPolicy.
+   */
+  guardrailsPolicy?: import('@skelm/core').GuardrailsPolicy
+  /**
    * When true, start the HTTP control surface alongside the rest of the
    * lifecycle. Defaults to false so unit tests don't bind a port; the CLI
    * sets this to true on `skelm gateway start --foreground`.
@@ -242,6 +250,9 @@ export interface GatewayContext {
   hitlRunOptions(): {
     hitlPolicy?: import('@skelm/core').HitlPolicy
     hitlEnvironment?: string
+  }
+  guardrailsRunOptions(): {
+    guardrailsPolicy?: import('@skelm/core').GuardrailsPolicy
   }
   defaultPermissionRunOptions(workflowId?: string): {
     defaultPermissions?: AgentPermissions

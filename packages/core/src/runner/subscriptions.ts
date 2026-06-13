@@ -195,6 +195,31 @@ export function subscribeAuditEvents(opts: {
           at: event.at,
         },
       })
+    } else if (event.type === 'guardrail.pre' || event.type === 'guardrail.post') {
+      queue({
+        action: event.type,
+        details: {
+          check: event.check,
+          status: event.status,
+          severity: event.severity,
+          ...(event.message !== undefined && { message: event.message }),
+          ...(event.score !== undefined && { score: event.score }),
+          ...(event.details !== undefined && { detail: event.details }),
+          at: event.at,
+        },
+      })
+    } else if (event.type === 'guardrail.intervention') {
+      queue({
+        action: 'guardrail.intervention',
+        details: {
+          ...(event.stepId !== undefined && { stepId: event.stepId }),
+          guardrailAction: event.action,
+          source: event.source,
+          reason: event.reason,
+          ...(event.details !== undefined && { detail: event.details }),
+          at: event.at,
+        },
+      })
     }
   })
 }

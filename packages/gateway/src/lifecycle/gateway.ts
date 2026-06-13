@@ -251,6 +251,10 @@ export class Gateway implements GatewayContext {
     return this.options.hitlEnvironment
   }
 
+  get guardrailsPolicy(): import('@skelm/core').GuardrailsPolicy | undefined {
+    return this.options.guardrailsPolicy
+  }
+
   /**
    * Absorb the backends from a runtime-activated project's registry into this
    * gateway's registry, idempotently. A backend whose id is already registered
@@ -516,6 +520,10 @@ export class Gateway implements GatewayContext {
     hitlEnvironment?: string
   } {
     return this.runtimeInternal.hitlRunOptions()
+  }
+
+  guardrailsRunOptions(): { guardrailsPolicy?: import('@skelm/core').GuardrailsPolicy } {
+    return this.runtimeInternal.guardrailsRunOptions()
   }
 
   defaultPermissionRunOptions(workflowId?: string): {

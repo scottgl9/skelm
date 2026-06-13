@@ -27,8 +27,16 @@ import {
 } from './errors.js'
 export { ApprovalDeniedError } from './errors.js'
 import { EventBus, type EventListener } from './events.js'
+import {
+  OversightController,
+  buildPreRunContext,
+  runPostRunGuardrails,
+  runPreRunGuardrails,
+} from './execution/guardrails-runtime.js'
 import { runStepWithRetry } from './execution/handlers.js'
 import type { ExecutionRuntime } from './execution/runtime.js'
+import { resolveGuardrails } from './guardrails.js'
+import type { GuardrailResult, GuardrailsConfig } from './guardrails.js'
 import { extractJsonFromText, tryParseJson } from './json-utils.js'
 import { createMcpHost } from './mcp/host.js'
 import type {
@@ -67,6 +75,7 @@ import type {
   Context,
   Pipeline,
   Run,
+  RunGuardrailReport,
   RunId,
   RunMetadata,
   RunStatus,
@@ -164,6 +173,19 @@ export interface RunOptions {
   hitlPolicy?: import('./hitl.js').HitlPolicy
   /** Operator environment label threaded to the HITL policy hook (e.g. 'production'). */
   hitlEnvironment?: string
+  /**
+   * Optional run-level guardrails config that overrides the one declared on the
+   * pipeline. Supplied by the gateway (e.g. resolved from project config).
+   * When omitted, `pipeline.guardrails` is used. See `guardrails.ts`.
+   */
+  guardrails?: import('./guardrails.js').GuardrailsConfig
+  /**
+   * Optional trust-boundary policy overlay for guardrails. Given the effective
+   * authored config it returns the config the runtime enforces — letting the
+   * gateway inject mandatory validators / budgets / watchdog the author cannot
+   * remove. Supplied only by the gateway. See `guardrails.ts`.
+   */
+  guardrailsPolicy?: import('./guardrails.js').GuardrailsPolicy
   /**
    * Optional hook invoked just before each step's body runs (after the
    * step.start event is published, before any retry/backend dispatch).
@@ -666,6 +688,103 @@ export async function runPipeline<TInput, TOutput>(
     }
   }
 
+  // Resolve the effective guardrails config (author config overridden by the
+  // gateway-supplied one, then the trust-boundary policy overlay wins).
+  const guardrailsConfig: GuardrailsConfig | undefined = resolveGuardrails(
+    options.guardrails ?? pipeline.guardrails,
+    options.guardrailsPolicy,
+    pipeline,
+  )
+  const preRunResults: GuardrailResult[] = []
+  // Pre-run guardrails run BEFORE the first step body — a hard failure blocks
+  // the run start (fail closed) so a guardrail can never be bypassed by a step
+  // that would otherwise execute. Skipped on a durable resume (the run already
+  // started and passed pre-run before parking).
+  if (
+    resumeFromWaiting === undefined &&
+    guardrailsConfig?.preRun !== undefined &&
+    guardrailsConfig.preRun.length > 0
+  ) {
+    try {
+      const results = await runPreRunGuardrails(
+        guardrailsConfig.preRun,
+        buildPreRunContext({
+          runId,
+          pipelineId: pipeline.id,
+          input: resolvedInput,
+          ...(options.hitlEnvironment !== undefined && { environment: options.hitlEnvironment }),
+        }),
+        events,
+      )
+      preRunResults.push(...results)
+    } catch (err) {
+      runStatus = 'failed'
+      runError = serializeError(err)
+      const completedAt = Date.now()
+      events.publish({ type: 'run.failed', runId, error: runError, at: completedAt })
+      return await finalizeStoredRun(
+        Object.freeze({
+          runId,
+          pipelineId: pipeline.id,
+          ...(options.workflowPath !== undefined && { workflowPath: options.workflowPath }),
+          ...(options.triggerId !== undefined && { triggerId: options.triggerId }),
+          ...(options.parentRunId !== undefined && { parentRunId: options.parentRunId }),
+          ...(options.parentStepId !== undefined && { parentStepId: options.parentStepId }),
+          ...(options.taskId !== undefined && { taskId: options.taskId }),
+          status: runStatus,
+          input: resolvedInput,
+          steps: Object.freeze(stepResults),
+          output: undefined,
+          error: runError,
+          startedAt,
+          completedAt,
+          guardrail: Object.freeze({ failed: true, results: Object.freeze([...preRunResults]) }),
+        }),
+        store,
+        storeWrites,
+        unsubscribeStore,
+        auditWrites,
+        unsubscribeAbort,
+        unsubscribeRunState,
+        unsubscribeAudit,
+        unsubscribeOnEvent,
+      )
+    }
+  }
+
+  // In-run oversight: budget tracking + watchdog + supervisor/critic, applied
+  // between steps. Created only when the config arms one of them.
+  const oversight =
+    guardrailsConfig !== undefined &&
+    (guardrailsConfig.budget !== undefined ||
+      guardrailsConfig.watchdog !== undefined ||
+      guardrailsConfig.supervisor !== undefined)
+      ? new OversightController(
+          guardrailsConfig,
+          runId,
+          pipeline.id,
+          events,
+          (reason) => controller.abort(reason),
+          options.waitForInput,
+          controller.signal,
+        )
+      : undefined
+
+  // Feed the run-level budget from live events: each tool.call counts toward
+  // maxToolCalls, and a backend-reported token usage (carried on step.complete
+  // output for agent steps) folds into the token/cost budget.
+  const unsubscribeOversight =
+    oversight === undefined
+      ? undefined
+      : events.forRun(runId, (event) => {
+          if (event.type === 'tool.call') {
+            oversight.addToolCall()
+          } else if (event.type === 'step.complete') {
+            const usage = extractUsage(event.output)
+            if (usage !== undefined) oversight.addUsage(usage)
+          }
+        })
+
   const resumedStepResults = resumeFromWaiting?.run.steps ?? []
   const resumedStepById = new Map(resumedStepResults.map((step) => [step.id, step]))
 
@@ -867,6 +986,27 @@ export async function runPipeline<TInput, TOutput>(
         durationMs: completedAt - stepStart,
         at: completedAt,
       })
+      if (oversight !== undefined && !controller.signal.aborted) {
+        const ctx: Context<TInput> = freezeContext({
+          input: resolvedInput,
+          steps: { ...stepOutputs },
+          run: runMeta,
+          signal: controller.signal,
+          state: createStateHandle(stateStore, { pipelineId: pipeline.id }),
+          assets: assetHost,
+          threads: threadHost,
+          workspace: currentWorkspace as WorkspaceHandle | undefined,
+          get<T = unknown>(stepId: StepId): T | undefined {
+            return stepOutputs[stepId] as T | undefined
+          },
+        } as Context<TInput>)
+        const action = await oversight.probe(ctx, step.id)
+        if (action === 'terminate') {
+          runStatus = 'cancelled'
+          runError = serializeError(new RunCancelledError())
+          break
+        }
+      }
     } catch (err) {
       const completedAt = Date.now()
       const runCancelled = err instanceof RunCancelledError || controller.signal.aborted
@@ -939,6 +1079,44 @@ export async function runPipeline<TInput, TOutput>(
     }
   }
 
+  unsubscribeOversight?.()
+
+  // Post-run guardrails: output-schema / expected-behavior / artifact / quality
+  // checks. A HARD failure on a completed run flips it to failed (guardrail
+  // report `failed: true`). Interventions recorded during the run are folded in.
+  let guardrailReport: RunGuardrailReport | undefined
+  if (
+    guardrailsConfig !== undefined &&
+    ((guardrailsConfig.postRun !== undefined && guardrailsConfig.postRun.length > 0) ||
+      preRunResults.length > 0 ||
+      oversight?.recordedInterventions !== undefined)
+  ) {
+    const interventions = oversight?.recordedInterventions
+    const provisionalRun = Object.freeze({
+      runId,
+      pipelineId: pipeline.id,
+      status: runStatus,
+      input: resolvedInput,
+      steps: Object.freeze([...stepResults]),
+      output: runStatus === 'completed' ? finalOutput : undefined,
+      error: runError,
+      startedAt,
+      completedAt: Date.now(),
+    }) as Run
+    guardrailReport = await runPostRunGuardrails(
+      guardrailsConfig.postRun ?? [],
+      { runId, pipelineId: pipeline.id, run: provisionalRun },
+      events,
+      preRunResults,
+      interventions,
+    )
+    if (guardrailReport.failed && runStatus === 'completed') {
+      runStatus = 'failed'
+      runError = serializeError(new Error('run failed post-run guardrail validation'))
+      finalOutput = undefined
+    }
+  }
+
   const completedAt = Date.now()
   await Promise.all(deferredWorkspaceFinalizers.map((finalizer) => finalizer(runStatus)))
   if (runStatus === 'completed') {
@@ -976,6 +1154,7 @@ export async function runPipeline<TInput, TOutput>(
       error: runError,
       startedAt,
       completedAt,
+      ...(guardrailReport !== undefined && { guardrail: guardrailReport }),
     }),
     store,
     storeWrites,
@@ -986,6 +1165,28 @@ export async function runPipeline<TInput, TOutput>(
     unsubscribeAudit,
     unsubscribeOnEvent,
   )
+}
+
+// Best-effort extraction of token usage from a step's output so the run-level
+// guardrail budget can fold it in. Agent backends carry `usage` on their
+// result; other step kinds report nothing and contribute zero tokens.
+function extractUsage(
+  output: unknown,
+): { inputTokens?: number; outputTokens?: number; costUsd?: number } | undefined {
+  if (output === null || typeof output !== 'object') return undefined
+  const usage = (output as { usage?: unknown }).usage
+  if (usage === null || typeof usage !== 'object') return undefined
+  const u = usage as { inputTokens?: unknown; outputTokens?: unknown; costUsd?: unknown }
+  const num = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined)
+  const input = num(u.inputTokens)
+  const output_ = num(u.outputTokens)
+  const cost = num(u.costUsd)
+  if (input === undefined && output_ === undefined && cost === undefined) return undefined
+  return {
+    ...(input !== undefined && { inputTokens: input }),
+    ...(output_ !== undefined && { outputTokens: output_ }),
+    ...(cost !== undefined && { costUsd: cost }),
+  }
 }
 
 // Validates every statically-declared executableProfiles reference — project

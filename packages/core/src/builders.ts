@@ -70,6 +70,8 @@ export function pipeline<TInput, TOutput>(def: {
   baseDir?: string
   /** Workflow-level default human-in-the-loop gates; a step's own gate wins per phase. */
   humanInLoop?: HumanInLoop
+  /** Run-level guardrails & oversight config (pre/in/post-run). See `guardrails.ts`. */
+  guardrails?: import('./guardrails.js').GuardrailsConfig
 }): Pipeline<TInput, TOutput> {
   if (!def.id) {
     throw new Error('pipeline(): id is required')
@@ -94,6 +96,7 @@ export function pipeline<TInput, TOutput>(def: {
     }),
     ...(def.baseDir !== undefined && { baseDir: def.baseDir }),
     ...(def.humanInLoop !== undefined && { humanInLoop: def.humanInLoop }),
+    ...(def.guardrails !== undefined && { guardrails: def.guardrails }),
   }
   return Object.freeze(out)
 }
