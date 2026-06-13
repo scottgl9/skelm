@@ -61,7 +61,7 @@ export class WorkflowArtifactService {
     const bytes = { total: 0 }
     try {
       await mkdir(parentDir, { recursive: true })
-      await copyTree(sourceRoot, staging, this.options.maxBytes, bytes)
+      await copyTree(sourceRoot, staging, this.options.maxBytes, bytes, sourceRoot, new Set())
       await symlinkNearestNodeModules(sourceRoot, staging)
       await rename(staging, artifactDir)
     } catch (err) {
@@ -97,16 +97,34 @@ async function copyTree(
   dest: string,
   maxBytes: number,
   bytes: { total: number },
+  sourceRoot: string,
+  visited: Set<string>,
 ): Promise<void> {
   const stat = await lstat(source)
   if (stat.isSymbolicLink()) {
-    throw new WorkflowRegistrationError(400, `workflow source contains symbolic link: ${source}`)
+    // A symlink is only safe if its target resolves inside the source root —
+    // otherwise it could smuggle external content into the gateway-owned
+    // artifact (path escape). We dereference an in-root target and copy its
+    // real content; an out-of-root or unresolvable target stays rejected.
+    let target: string
+    try {
+      target = await realpath(source)
+    } catch {
+      throw new WorkflowRegistrationError(
+        400,
+        `workflow source contains unresolvable symbolic link: ${source}`,
+      )
+    }
+    assertWithin(target, sourceRoot, `symbolic link target (${source})`)
+    if (visited.has(target)) return
+    await copyTree(target, dest, maxBytes, bytes, sourceRoot, new Set(visited).add(target))
+    return
   }
   if (stat.isDirectory()) {
     await mkdir(dest, { recursive: true })
     for (const name of await readdir(source)) {
       if (EXCLUDED_DIRS.has(name)) continue
-      await copyTree(join(source, name), join(dest, name), maxBytes, bytes)
+      await copyTree(join(source, name), join(dest, name), maxBytes, bytes, sourceRoot, visited)
     }
     return
   }
