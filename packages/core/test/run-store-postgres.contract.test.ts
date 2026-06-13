@@ -319,6 +319,29 @@ describeMaybe('PostgresRunStore contract', () => {
       await cleanup()
     }
   })
+
+  it('getChildRuns returns child runs by parentRunId with the lineage stamp', async () => {
+    const { store, cleanup } = await withSchemaStore()
+    try {
+      await store.putRun(sampleRun('pg-root'))
+      await store.putRun({ ...sampleRun('pg-kid-a'), parentRunId: 'pg-root', parentStepId: 'fan' })
+      await store.putRun({
+        ...sampleRun('pg-kid-b'),
+        parentRunId: 'pg-root',
+        parentStepId: 'fan',
+        taskId: 'pg-task-b',
+      })
+      await store.putRun({ ...sampleRun('pg-elsewhere'), parentRunId: 'pg-other' })
+
+      const kids = await store.getChildRuns('pg-root')
+      expect(kids.map((k) => k.runId)).toEqual(['pg-kid-a', 'pg-kid-b'])
+      expect(kids[0]).toMatchObject({ pipelineId: 'p', status: 'completed', parentStepId: 'fan' })
+      expect(kids[1]).toMatchObject({ parentStepId: 'fan', taskId: 'pg-task-b' })
+      await expect(store.getChildRuns('pg-nobody')).resolves.toEqual([])
+    } finally {
+      await cleanup()
+    }
+  })
 })
 
 async function withSchemaStore(

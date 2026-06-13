@@ -115,6 +115,10 @@ same ceiling intersection as `invoke`, and a denied target aborts the whole
 fanout regardless of strategy — merge strategies summarize child *run*
 outcomes, never a refused start.
 
+Synchronous `invoke` / `fanout` children stamp `parentRunId` / `parentStepId`
+on their child run (they create no `TaskRecord`), so `GET /v1/lineage/:runId`
+surfaces them as descendants alongside detached-task children.
+
 ## `ctx.tasks` — detached tasks with lineage
 
 `ctx.tasks.spawn` creates a [task](/reference/http) record and runs the

@@ -1198,7 +1198,15 @@ components:
         runId: { type: string }
         pipelineId: { type: string }
         status: { type: string }
-        taskId: { type: string }
+        taskId:
+          type: string
+          description: >
+            Present for runs started via a detached task (ctx.tasks.spawn).
+            Absent for synchronous orchestration children
+            (ctx.workflows.invoke / fanout).
+        parentStepId:
+          type: string
+          description: Step in the parent run that started this run, when known.
     LineageNode:
       allOf:
         - $ref: '#/components/schemas/RunRef'
