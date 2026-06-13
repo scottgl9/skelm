@@ -27,7 +27,7 @@ Applied when a fire arrives while a previous fire on the same trigger is still i
 |--------|----------|
 | `skip` (default) | New fire is dropped silently. |
 | `queue` | New fire enqueues and runs in arrival order. |
-| `cancel` | Currently behaves as `skip`; wired to true cancellation when the runner gains the right hook. |
+| `cancel` | Newest-wins: the in-flight run is aborted through the same cancel channel as the run-cancel API (its status becomes `cancelled`), then the new fire is dispatched. |
 
 ## Runtime metadata
 

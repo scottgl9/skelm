@@ -703,11 +703,19 @@ export class TriggerCoordinator {
           reg.lastOutcome = 'queued'
           return 'queued'
         }
-        case 'cancel':
-          // No real cancellation channel; treat as skip.
+        case 'cancel': {
+          // Newest-wins: abort the in-flight run via the signal handed to
+          // onFire, then hand this fire to the still-running dispatch loop as
+          // the sole next item. The loop picks it up (with a fresh controller)
+          // once the aborted onFire unwinds, so inflight stays continuously
+          // true and the new run starts without a second dispatch() racing it.
+          this.queues.set(id, [ctx])
+          reg.inflightAbort?.abort()
+          reg.lastFiredAt = ctx.firedAt
           reg.lastOverlapDecision = 'cancelled'
           reg.lastOutcome = 'cancelled'
           return 'cancelled'
+        }
       }
     }
     reg.inflight = true
@@ -746,18 +754,31 @@ export class TriggerCoordinator {
       while (current !== undefined) {
         reg.lastFiredAt = current.firedAt
         reg.fired += 1
+        // Each dispatched run gets its own controller so `overlap: 'cancel'`
+        // can abort just the in-flight one. The signal is handed to onFire,
+        // which wires it into the run (same channel the run-cancel API uses).
+        const controller = new AbortController()
+        reg.inflightAbort = controller
         try {
-          await this.opts.onFire(current)
+          await this.opts.onFire({ ...current, signal: controller.signal })
           if (!failed) reg.lastOutcome = 'succeeded'
         } catch (err) {
-          failed = true
-          this.recordError(reg, (err as Error).message)
-          this.opts.onFireError?.(reg.spec.id, err)
+          // An abort raised by `overlap: 'cancel'` is an intentional newest-wins
+          // cancellation, not a trigger failure — don't taint lastOutcome or
+          // emit onFireError for it; the next iteration runs the newer fire.
+          if (controller.signal.aborted) {
+            reg.lastOutcome = 'cancelled'
+          } else {
+            failed = true
+            this.recordError(reg, (err as Error).message)
+            this.opts.onFireError?.(reg.spec.id, err)
+          }
         }
         if (this.stopping) break
         current = this.queues.get(reg.spec.id)?.shift()
       }
     } finally {
+      reg.inflightAbort = undefined
       reg.inflight = false
     }
   }

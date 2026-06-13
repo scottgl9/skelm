@@ -102,6 +102,12 @@ export interface TriggerRegistration {
   fired: number
   /** Whether a run is currently in flight for this trigger. */
   inflight: boolean
+  /**
+   * AbortController for the currently in-flight serial dispatch. Set while a
+   * non-parallel fire is running so `overlap: 'cancel'` can abort it when a
+   * newer fire arrives. Cleared when the dispatch loop drains. Not persisted.
+   */
+  inflightAbort?: AbortController | undefined
   /** Last fire timestamp (ISO-8601). */
   lastFiredAt?: string
   /** Next scheduled fire timestamp (ISO-8601), when the trigger kind can predict one. */
@@ -161,6 +167,14 @@ export interface FireContext {
    * of the default `{ triggerId, firedAt }` metadata.
    */
   payload?: unknown
+  /**
+   * Abort signal for this fire's run, supplied by the coordinator for serial
+   * (non-parallel) triggers. The dispatcher wires it into the run so that an
+   * `overlap: 'cancel'` policy can abort the in-flight run when a newer fire
+   * arrives (newest-wins). Undefined for parallel triggers, which never gate
+   * at the trigger level.
+   */
+  signal?: AbortSignal
 }
 
 export type RunCallback = (ctx: FireContext) => Promise<void>
