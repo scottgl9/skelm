@@ -150,6 +150,7 @@ export default defineConfig({
             { text: 'Gateway', link: '/reference/gateway' },
             { text: 'Workflow Packages', link: '/reference/workflow-packages' },
             { text: 'Integration Primitives', link: '/reference/integration-primitives' },
+            { text: 'integration-http', link: '/reference/integration-http' },
             { text: 'OpenAPI', link: '/reference/openapi' },
           ],
         },
