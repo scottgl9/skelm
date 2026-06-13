@@ -49,6 +49,7 @@ export default defineConfig({
       { text: 'Guide', link: '/quickstart/' },
       { text: 'Concepts', link: '/concepts/' },
       { text: 'Recipes', link: '/recipes/' },
+      { text: 'Integrations', link: '/integrations/postgres' },
       { text: 'Reference', link: '/reference/' },
       { text: 'Contributing', link: '/contributing/' },
       { text: 'Changelog', link: '/CHANGELOG' },
@@ -158,6 +159,12 @@ export default defineConfig({
           text: 'Generated API',
           collapsed: true,
           items: typedocSidebar as { text: string; link: string }[],
+        },
+      ],
+      '/integrations/': [
+        {
+          text: 'Integrations',
+          items: [{ text: 'Postgres', link: '/integrations/postgres' }],
         },
       ],
       '/backends/': [
