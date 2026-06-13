@@ -186,6 +186,29 @@ export default pipeline({
       expect(result.reason).toBe('code-owned')
       expect(refusal(branchy, [{ kind: 'removeStep', stepId: 'route' }]).reason).toBe('code-owned')
     })
+
+    it('refuses edits targeting descendants inside a code-owned region', () => {
+      const branchy = `import { branch, pipeline, wait } from 'skelm'
+
+export default pipeline({
+  id: 'branchy',
+  steps: [
+    branch({
+      id: 'route',
+      on: () => 'a',
+      cases: {
+        a: wait({ id: 'inner', message: 'hold', timeoutMs: 10 }),
+      },
+    }),
+  ],
+})
+`
+      const result = refusal(branchy, [
+        { kind: 'setStepField', stepId: 'inner', field: 'message', value: 'changed' },
+      ])
+      expect(result.reason).toBe('code-owned')
+      expect(result.detail).toContain('nested inside code-owned step "route"')
+    })
   })
 
   describe('unsupported / invalid refusal', () => {

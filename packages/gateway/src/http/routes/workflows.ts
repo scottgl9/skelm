@@ -115,7 +115,12 @@ export function registerWorkflowRoutes(router: Router, gateway: GatewayContext):
       if (loader === undefined) {
         throw createError({ statusCode: 501, message: 'gateway has no workflow loader' })
       }
-      const { entry, workflow: preloaded } = await resolveWorkflowEntry(gateway, loader, id)
+      const { entry, workflow: preloaded } = await resolveWorkflowEntry(
+        gateway,
+        service,
+        loader,
+        id,
+      )
       if (entry === undefined) {
         throw createError({ statusCode: 404, message: 'workflow not found' })
       }
@@ -145,7 +150,7 @@ export function registerWorkflowRoutes(router: Router, gateway: GatewayContext):
       // never writes.
       const dryRun = body.dryRun !== false
       const loader = requireLoader(gateway)
-      const { entry } = await resolveWorkflowEntry(gateway, loader, id)
+      const { entry } = await resolveWorkflowEntry(gateway, service, loader, id)
       if (entry === undefined) {
         throw createError({ statusCode: 404, message: 'workflow not found' })
       }
@@ -429,6 +434,7 @@ export function registerWorkflowRoutes(router: Router, gateway: GatewayContext):
  */
 async function resolveWorkflowEntry(
   gateway: GatewayContext,
+  service: WorkflowRegistrationService,
   loader: (registryId: string, absolutePath: string) => Promise<unknown>,
   id: string,
 ): Promise<{
@@ -439,7 +445,8 @@ async function resolveWorkflowEntry(
   if (direct !== undefined) return { entry: direct }
   for (const candidate of gateway.registries.workflows.list()) {
     try {
-      const workflow = await loadWorkflowForGraph(loader, candidate.id, candidate.path)
+      const real = await service.resolveSourcePath(candidate.path)
+      const workflow = await loadWorkflowForGraph(loader, candidate.id, real)
       if (workflow.id === id) return { entry: candidate, workflow }
     } catch {
       // skip workflows that fail to load
