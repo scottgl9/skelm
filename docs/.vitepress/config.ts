@@ -89,6 +89,7 @@ export default defineConfig({
             { text: 'Matrix Persistent Agent', link: '/recipes/matrix-persistent-agent' },
             { text: 'Coding Agent on Chat', link: '/recipes/coding-agent-on-chat' },
             { text: 'Ticket to PR', link: '/recipes/ticket-to-pr' },
+            { text: 'PR Review Agent', link: '/recipes/pr-review-agent' },
             { text: 'Email Triage', link: '/recipes/email-triage' },
             { text: 'HTTP Enrichment', link: '/recipes/http-enrichment' },
             { text: 'OpenTelemetry', link: '/recipes/otel-exporter' },

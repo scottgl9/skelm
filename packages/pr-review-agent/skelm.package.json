@@ -1,0 +1,34 @@
+{
+  "name": "@skelm/pr-review-agent",
+  "version": "0.1.0",
+  "description": "Project-agnostic PR review workflow: fetch a PR, classify first-vs-follow-up, produce findings, optionally post a gated review.",
+  "license": "MIT",
+  "skelm": {
+    "apiVersion": 1,
+    "requiredSkelmVersion": ">=0.4.0",
+    "workflows": [
+      {
+        "id": "default",
+        "entry": "workflows/pr-review.workflow.ts",
+        "kind": "pipeline",
+        "description": "Review a pull request and optionally post a gated review.",
+        "permissions": {
+          "networkEgress": { "allowHosts": ["api.github.com"] },
+          "allowedSecrets": ["GITHUB_REVIEW_TOKEN", "GITHUB_REVIEW_WRITE_TOKEN"]
+        }
+      }
+    ],
+    "integrations": ["github"],
+    "secrets": [
+      {
+        "name": "GITHUB_REVIEW_TOKEN",
+        "description": "Read-only GitHub token reference used to fetch PR data."
+      },
+      {
+        "name": "GITHUB_REVIEW_WRITE_TOKEN",
+        "description": "Write-capable GitHub token reference. Required to post a review; omit for read-only."
+      }
+    ],
+    "selfTest": { "entry": "self-test/self-test.ts" }
+  }
+}
