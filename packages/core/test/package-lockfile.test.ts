@@ -86,6 +86,22 @@ describe('skelm.lock.json helpers', () => {
     expect(Object.keys((await readLockfile(projectRoot)).packages)).toEqual(['@skelm/b'])
   })
 
+  it('round-trips a trustLevel and rejects an invalid one', async () => {
+    const e = entry('@skelm/a', { trustLevel: 'npm' })
+    await writeLockfile(projectRoot, { lockfileVersion: 1, packages: { [e.name]: e } })
+    expect((await readLockfile(projectRoot)).packages['@skelm/a']?.trustLevel).toBe('npm')
+
+    const path = join(projectRoot, SKELM_LOCKFILE_NAME)
+    await writeFile(
+      path,
+      JSON.stringify({
+        lockfileVersion: 1,
+        packages: { x: { ...entry('x'), trustLevel: 'bogus' } },
+      }),
+    )
+    await expect(readLockfile(projectRoot)).rejects.toThrow('invalid `trustLevel`')
+  })
+
   it('throws ConfigError on malformed JSON or invalid shapes', async () => {
     const path = join(projectRoot, SKELM_LOCKFILE_NAME)
 

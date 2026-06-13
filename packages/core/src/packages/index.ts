@@ -25,3 +25,19 @@ export {
   writeLockfile,
 } from './lockfile.js'
 export type { SkelmLockfile, SkelmLockfileEntry } from './lockfile.js'
+export {
+  ALL_PACKAGE_TRUST_LEVELS,
+  DEFAULT_PACKAGE_TRUST_POLICY,
+  derivePackageTrustLevel,
+  diffPackagePermissions,
+  evaluatePackageTrust,
+  summarizePackagePermissions,
+} from './trust.js'
+export type {
+  DerivePackageTrustOptions,
+  PackagePermissionExpansion,
+  PackagePermissionSummary,
+  PackageTrustDecision,
+  PackageTrustLevel,
+  PackageTrustPolicy,
+} from './trust.js'

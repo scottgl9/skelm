@@ -1,6 +1,7 @@
 // skelm.config.ts surface. Customers import `defineConfig` from skelm
 // and export a default value; the CLI walks up from cwd to find it.
 
+import type { PackageTrustPolicy } from './packages/trust.js'
 import type { AgentPermissions, ExecutableProfileDefinition } from './permissions.js'
 
 /**
@@ -229,6 +230,16 @@ export interface SkelmGatewayConfig extends SkelmConfigBase {
      * a `permission.bypassed` event.
      */
     unrestrictedGrants?: readonly string[]
+    /**
+     * Operator posture over workflow-package trust levels. Default-deny: a
+     * level in neither `allow` nor `requireApproval` is refused at install. When
+     * omitted the gateway applies `DEFAULT_PACKAGE_TRUST_POLICY` (local +
+     * workspace allowed; npm/verified/private require an explicit approval).
+     *
+     * SECURITY: widening this (e.g. moving `npm` into `allow`) lets registry
+     * packages activate without review — call it out when you change it.
+     */
+    packageTrust?: PackageTrustPolicy
   }
   secrets?: SkelmConfigSecrets
   storage?: SkelmConfigStorage

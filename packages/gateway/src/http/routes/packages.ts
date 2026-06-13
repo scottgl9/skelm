@@ -3,13 +3,20 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, normalize, sep } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import {
+  DEFAULT_PACKAGE_TRUST_POLICY,
   PackageIntegrityError,
   PackageManifestError,
+  type PackagePermissionExpansion,
+  type PackageTrustPolicy,
   type SkelmLockfileEntry,
   WorkflowPackageStore,
   computePackageIntegrity,
+  derivePackageTrustLevel,
+  diffPackagePermissions,
+  evaluatePackageTrust,
   readLockfile,
   removeLockfileEntry,
+  summarizePackagePermissions,
   updateLockfileEntry,
 } from '@skelm/core'
 import { type Router, createError, eventHandler, getQuery, readBody } from 'h3'
@@ -74,6 +81,10 @@ export function registerPackageRoutes(router: Router, gateway: GatewayContext): 
         ...(primary !== undefined && { manifest: primary.manifest }),
         versions: versions.map((p) => p.version),
         ...(integrity !== undefined && { integrity }),
+        ...(lock?.trustLevel !== undefined && { trustLevel: lock.trustLevel }),
+        ...(primary !== undefined && {
+          permissions: summarizePackagePermissions(primary.manifest),
+        }),
         lock,
       }
     }),
@@ -84,33 +95,160 @@ export function registerPackageRoutes(router: Router, gateway: GatewayContext): 
     eventHandler(async (event) => {
       const rawBody = await readBody(event).catch(() => undefined)
       const body =
-        rawBody !== null && typeof rawBody === 'object' ? (rawBody as { source?: unknown }) : {}
+        rawBody !== null && typeof rawBody === 'object'
+          ? (rawBody as { source?: unknown; approve?: unknown })
+          : {}
       if (typeof body.source !== 'string' || body.source.length === 0) {
         throw createError({ statusCode: 400, message: 'source: must be a non-empty string' })
       }
       const source = body.source
+      const approve = body.approve === true
 
       // A tarball source is staged into a temp dir, validated, then installed
       // from there; otherwise the source is treated as a local directory.
-      const isTarball = /\.(tgz|tar\.gz)$/i.test(source)
+      const sourceInfo = classifyPackageInstallSource(source)
+      const trustLevel = derivePackageTrustLevel(
+        source,
+        sourceInfo.registryOrigin === undefined
+          ? { isTarball: sourceInfo.isLocalTarball }
+          : {
+              isTarball: sourceInfo.isLocalTarball,
+              registryOrigin: sourceInfo.registryOrigin,
+            },
+      )
+      const policy = resolveTrustPolicy(gateway)
+
       let installDir = source
       let cleanup: (() => Promise<void>) | undefined
-      if (isTarball) {
+      if (sourceInfo.isLocalTarball) {
         const staged = await stageTarball(source)
         installDir = staged.dir
         cleanup = staged.cleanup
       }
 
+      if (sourceInfo.registryOrigin !== undefined) {
+        const trustDecision = evaluatePackageTrust(trustLevel, policy)
+        if (trustDecision === 'denied') {
+          await gateway.enforcement.auditWriter.write({
+            actor: 'gateway',
+            action: 'package.install.refused',
+            details: {
+              source,
+              trustLevel,
+              reason: 'trust-level-denied',
+            },
+          })
+          throw createError({
+            statusCode: 403,
+            message: `package source ${source} has trust level "${trustLevel}", which the trust policy denies`,
+          })
+        }
+        if (trustDecision === 'requires-approval' && !approve) {
+          await gateway.enforcement.auditWriter.write({
+            actor: 'gateway',
+            action: 'package.install.pending',
+            details: {
+              source,
+              trustLevel,
+              reason: 'trust-level-requires-approval',
+            },
+          })
+          throw createError({
+            statusCode: 409,
+            message: `package source ${source} has trust level "${trustLevel}", which requires explicit approval; re-send with { "approve": true }`,
+          })
+        }
+        throw createError({
+          statusCode: 400,
+          message:
+            'remote package installs are not yet supported; source must be a local directory or local .tgz tarball',
+        })
+      }
+
       try {
-        const installed = await store.installFromDirectory(installDir)
+        // Validate the manifest before any trust decision so a malformed
+        // package fails the same way regardless of policy, and so a refusal can
+        // name the package and fire BEFORE any file reaches the cache.
+        const manifest = await store.readSourceManifest(installDir)
+
+        // Trust-level gate: a level the policy does not allow is refused, or held
+        // pending until an explicit approval, before the package activates.
+        const trustDecision = evaluatePackageTrust(trustLevel, policy)
+        if (trustDecision === 'denied') {
+          await gateway.enforcement.auditWriter.write({
+            actor: 'gateway',
+            action: 'package.install.refused',
+            details: {
+              name: manifest.name,
+              version: manifest.version,
+              trustLevel,
+              reason: 'trust-level-denied',
+            },
+          })
+          throw createError({
+            statusCode: 403,
+            message: `package ${manifest.name}@${manifest.version} has trust level "${trustLevel}", which the trust policy denies`,
+          })
+        }
+        if (trustDecision === 'requires-approval' && !approve) {
+          await gateway.enforcement.auditWriter.write({
+            actor: 'gateway',
+            action: 'package.install.pending',
+            details: {
+              name: manifest.name,
+              version: manifest.version,
+              trustLevel,
+              reason: 'trust-level-requires-approval',
+            },
+          })
+          throw createError({
+            statusCode: 409,
+            message: `package ${manifest.name}@${manifest.version} has trust level "${trustLevel}", which requires explicit approval; re-send with { "approve": true }`,
+          })
+        }
+
+        // Permission-expansion gate on UPDATE: when a version of this package is
+        // already recorded, flag any broadening of the requested permission /
+        // secret / trigger surface. An expansion needs its own approval so a
+        // package can never silently widen its reach across an update.
+        const priorLock = (await readLockfile(projectRoot)).packages[manifest.name]
+        let expansion: PackagePermissionExpansion | undefined
+        if (priorLock !== undefined) {
+          const prior = await store.get(priorLock.name, priorLock.version)
+          if (prior !== undefined) {
+            expansion = diffPackagePermissions(
+              summarizePackagePermissions(prior.manifest),
+              summarizePackagePermissions(manifest),
+            )
+            if (expansion.expanded && !approve) {
+              await gateway.enforcement.auditWriter.write({
+                actor: 'gateway',
+                action: 'package.update.flagged',
+                details: {
+                  name: manifest.name,
+                  fromVersion: priorLock.version,
+                  toVersion: manifest.version,
+                  expansion,
+                },
+              })
+              throw createError({
+                statusCode: 409,
+                message: `update of ${manifest.name} to ${manifest.version} expands its requested permissions; re-send with { "approve": true } to approve`,
+              })
+            }
+          }
+        }
+
+        const result = await store.installFromDirectory(installDir)
         const entry: SkelmLockfileEntry = {
-          name: installed.name,
-          version: installed.version,
+          name: result.name,
+          version: result.version,
           resolved: source,
-          integrity: installed.integrity,
+          integrity: result.integrity,
           installedAt: new Date().toISOString(),
-          ...(installed.manifest.skelm.requiredSkelmVersion !== undefined && {
-            requiredSkelmVersion: installed.manifest.skelm.requiredSkelmVersion,
+          trustLevel,
+          ...(manifest.skelm.requiredSkelmVersion !== undefined && {
+            requiredSkelmVersion: manifest.skelm.requiredSkelmVersion,
           }),
         }
         await updateLockfileEntry(projectRoot, entry)
@@ -118,17 +256,23 @@ export function registerPackageRoutes(router: Router, gateway: GatewayContext): 
           actor: 'gateway',
           action: 'package.install',
           details: {
-            name: installed.name,
-            version: installed.version,
-            integrity: installed.integrity,
-            source: isTarball ? 'tarball' : 'directory',
+            name: result.name,
+            version: result.version,
+            integrity: result.integrity,
+            source: sourceInfo.isLocalTarball ? 'tarball' : 'directory',
+            trustLevel,
+            ...(approve && trustDecision === 'requires-approval' && { approved: true }),
+            ...(expansion?.expanded === true && { expansion, expansionApproved: approve }),
           },
         })
         return {
           installed: {
-            name: installed.name,
-            version: installed.version,
-            integrity: installed.integrity,
+            name: result.name,
+            version: result.version,
+            integrity: result.integrity,
+            trustLevel,
+            permissions: summarizePackagePermissions(manifest),
+            ...(expansion?.expanded === true && { expansion }),
           },
         }
       } catch (err) {
@@ -313,9 +457,43 @@ function readName(raw: string | undefined): string {
   return name
 }
 
+/**
+ * The operator trust policy from gateway config, falling back to the
+ * conservative default (local + workspace allowed; registry levels require
+ * approval; unknown denied).
+ */
+function resolveTrustPolicy(gateway: GatewayContext): PackageTrustPolicy {
+  return gateway.getConfig().defaults?.packageTrust ?? DEFAULT_PACKAGE_TRUST_POLICY
+}
+
 interface StagedTarball {
   dir: string
   cleanup: () => Promise<void>
+}
+
+interface PackageInstallSourceInfo {
+  isLocalTarball: boolean
+  registryOrigin?: 'npm' | 'private'
+}
+
+function classifyPackageInstallSource(source: string): PackageInstallSourceInfo {
+  const tarball = /\.(tgz|tar\.gz)(?:[?#].*)?$/i.test(source)
+  if (!tarball) return { isLocalTarball: false }
+  const remote = readRemoteTarballUrl(source)
+  if (remote === undefined) return { isLocalTarball: true }
+  return {
+    isLocalTarball: false,
+    registryOrigin: remote.hostname === 'registry.npmjs.org' ? 'npm' : 'private',
+  }
+}
+
+function readRemoteTarballUrl(source: string): URL | undefined {
+  try {
+    const url = new URL(source)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /**

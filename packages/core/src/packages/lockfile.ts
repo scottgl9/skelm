@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto'
 import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ConfigError } from '../errors.js'
+import { ALL_PACKAGE_TRUST_LEVELS, type PackageTrustLevel } from './trust.js'
 
 /** Lockfile filename at the project root. */
 export const SKELM_LOCKFILE_NAME = 'skelm.lock.json'
@@ -22,6 +23,8 @@ export interface SkelmLockfileEntry {
   /** ISO 8601 timestamp of the install. */
   installedAt: string
   requiredSkelmVersion?: string
+  /** Trust level derived from the install source; recorded for later review. */
+  trustLevel?: PackageTrustLevel
 }
 
 export interface SkelmLockfile {
@@ -51,6 +54,12 @@ function validateEntry(name: string, value: unknown): SkelmLockfileEntry {
   }
   if (value.requiredSkelmVersion !== undefined && typeof value.requiredSkelmVersion !== 'string') {
     invalid(`entry "${name}" has a non-string \`requiredSkelmVersion\``)
+  }
+  if (
+    value.trustLevel !== undefined &&
+    !ALL_PACKAGE_TRUST_LEVELS.includes(value.trustLevel as PackageTrustLevel)
+  ) {
+    invalid(`entry "${name}" has an invalid \`trustLevel\`: ${JSON.stringify(value.trustLevel)}`)
   }
   return value as unknown as SkelmLockfileEntry
 }
@@ -98,6 +107,7 @@ function serializeLockfile(lockfile: SkelmLockfile): string {
       ...(e.requiredSkelmVersion !== undefined && {
         requiredSkelmVersion: e.requiredSkelmVersion,
       }),
+      ...(e.trustLevel !== undefined && { trustLevel: e.trustLevel }),
     }
   }
   return `${JSON.stringify({ lockfileVersion: 1, packages }, null, 2)}\n`

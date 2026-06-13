@@ -200,6 +200,25 @@ describe('/v1/packages', () => {
     expect((await (await fetch(`${base}/v1/packages`)).json()).packages).toHaveLength(0)
   })
 
+  it('holds a remote npm tarball source pending instead of treating it as workspace trust', async () => {
+    const source = 'https://registry.npmjs.org/@skelm/hello/-/hello-0.1.0.tgz'
+    const res = await fetch(`${base}/v1/packages/install`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source }),
+    })
+    expect(res.status).toBe(409)
+    expect((await res.json()).message).toContain('trust level "npm"')
+    expect((await (await fetch(`${base}/v1/packages`)).json()).packages).toHaveLength(0)
+    const pending = await (await fetch(`${base}/audit?action=package.install.pending`)).json()
+    expect(pending.entries).toHaveLength(1)
+    expect(pending.entries[0]?.details).toMatchObject({
+      source,
+      trustLevel: 'npm',
+      reason: 'trust-level-requires-approval',
+    })
+  })
+
   it('install rejects an invalid manifest with 400', async () => {
     const badDir = await mkdtemp(join(tmpdir(), 'skelm-pkg-bad-'))
     await writeFile(join(badDir, 'skelm.package.json'), JSON.stringify({ name: 'Bad Name!!' }))
@@ -269,6 +288,231 @@ describe('/v1/packages', () => {
     })
     expect(res.status).toBe(409)
     expect((await res.json()).message).toMatch(/failed integrity verification/)
+  })
+
+  it('records the derived trust level (local dir) and surfaces it + permissions on info', async () => {
+    await fetch(`${base}/v1/packages/install`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source: sourceDir }),
+    })
+    const info = await (
+      await fetch(`${base}/v1/packages/${encodeURIComponent('@skelm/hello')}`)
+    ).json()
+    expect(info.trustLevel).toBe('local')
+    expect(info.permissions).toBeDefined()
+    expect(info.lock.trustLevel).toBe('local')
+  })
+
+  it('refuses a package whose trust level the policy denies (403 + audit)', async () => {
+    const projRoot = await mkdtemp(join(tmpdir(), 'skelm-pkg-deny-proj-'))
+    const stDir = await mkdtemp(join(tmpdir(), 'skelm-pkg-deny-state-'))
+    const audit = join(stDir, 'audit.jsonl')
+    const booted = await bootGatewayWithRetry((port) => ({
+      stateDir: stDir,
+      projectRoot: projRoot,
+      enableHttp: true,
+      httpPort: port,
+      installSignalHandlers: false,
+      watchRegistries: false,
+      runStore: new MemoryRunStore(),
+      auditWriter: new ChainAuditWriter(audit),
+      // Policy denies the `local` level outright.
+      config: {
+        server: { host: '127.0.0.1', port, auth: { mode: 'none' } },
+        defaults: { packageTrust: { allow: ['npm'] } },
+      },
+    }))
+    try {
+      const res = await fetch(`${booted.base}/v1/packages/install`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: sourceDir }),
+      })
+      expect(res.status).toBe(403)
+      expect((await res.json()).message).toMatch(/trust policy denies/i)
+      // Nothing reached the store.
+      expect((await (await fetch(`${booted.base}/v1/packages`)).json()).packages).toHaveLength(0)
+      const refused = await fetch(`${booted.base}/audit?action=package.install.refused`)
+      expect((await refused.json()).entries).toHaveLength(1)
+    } finally {
+      await booted.gw.stop()
+      await rm(projRoot, { recursive: true, force: true })
+      await rm(stDir, { recursive: true, force: true })
+    }
+  })
+
+  it('holds a require-approval package pending without approve (409 + audit), installs with approve', async () => {
+    const projRoot = await mkdtemp(join(tmpdir(), 'skelm-pkg-pend-proj-'))
+    const stDir = await mkdtemp(join(tmpdir(), 'skelm-pkg-pend-state-'))
+    const audit = join(stDir, 'audit.jsonl')
+    const booted = await bootGatewayWithRetry((port) => ({
+      stateDir: stDir,
+      projectRoot: projRoot,
+      enableHttp: true,
+      httpPort: port,
+      installSignalHandlers: false,
+      watchRegistries: false,
+      runStore: new MemoryRunStore(),
+      auditWriter: new ChainAuditWriter(audit),
+      // `local` (directory) requires approval here.
+      config: {
+        server: { host: '127.0.0.1', port, auth: { mode: 'none' } },
+        defaults: { packageTrust: { allow: ['npm'], requireApproval: ['local'] } },
+      },
+    }))
+    try {
+      const pending = await fetch(`${booted.base}/v1/packages/install`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: sourceDir }),
+      })
+      expect(pending.status).toBe(409)
+      expect((await pending.json()).message).toMatch(/requires explicit approval/i)
+      expect((await (await fetch(`${booted.base}/v1/packages`)).json()).packages).toHaveLength(0)
+      const pend = await fetch(`${booted.base}/audit?action=package.install.pending`)
+      expect((await pend.json()).entries).toHaveLength(1)
+
+      // With approve:true it installs.
+      const approved = await fetch(`${booted.base}/v1/packages/install`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: sourceDir, approve: true }),
+      })
+      expect(approved.status).toBe(200)
+      expect((await (await fetch(`${booted.base}/v1/packages`)).json()).packages).toHaveLength(1)
+    } finally {
+      await booted.gw.stop()
+      await rm(projRoot, { recursive: true, force: true })
+      await rm(stDir, { recursive: true, force: true })
+    }
+  })
+
+  it('flags an update that expands the requested permission surface (409 + audit), proceeds with approve', async () => {
+    // Install v1 with no requested permissions.
+    const v1 = await mkdtemp(join(tmpdir(), 'skelm-pkg-v1-'))
+    await mkdir(join(v1, 'workflows'), { recursive: true })
+    await writeFile(
+      join(v1, 'skelm.package.json'),
+      JSON.stringify({
+        name: '@skelm/grow',
+        version: '1.0.0',
+        skelm: {
+          apiVersion: 1,
+          workflows: [{ id: 'default', entry: 'workflows/main.ts' }],
+        },
+      }),
+    )
+    await writeFile(join(v1, 'workflows', 'main.ts'), HELLO_WORKFLOW)
+
+    // v2 keeps the same version dir contents but broadens permissions (and a
+    // new secret) — the adversarial silent-widening case.
+    const v2 = await mkdtemp(join(tmpdir(), 'skelm-pkg-v2-'))
+    await mkdir(join(v2, 'workflows'), { recursive: true })
+    await writeFile(
+      join(v2, 'skelm.package.json'),
+      JSON.stringify({
+        name: '@skelm/grow',
+        version: '2.0.0',
+        skelm: {
+          apiVersion: 1,
+          workflows: [
+            {
+              id: 'default',
+              entry: 'workflows/main.ts',
+              permissions: { allowedExecutables: ['sh'], networkEgress: 'allow' },
+            },
+          ],
+          secrets: [{ name: 'PROD_KEY' }],
+        },
+      }),
+    )
+    await writeFile(join(v2, 'workflows', 'main.ts'), HELLO_WORKFLOW)
+
+    try {
+      const i1 = await fetch(`${base}/v1/packages/install`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: v1 }),
+      })
+      expect(i1.status).toBe(200)
+
+      // The expanding update is flagged and held.
+      const flagged = await fetch(`${base}/v1/packages/install`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: v2 }),
+      })
+      expect(flagged.status).toBe(409)
+      expect((await flagged.json()).message).toMatch(/expands its requested permissions/i)
+      const flagAudit = await fetch(`${base}/audit?action=package.update.flagged`)
+      const flagEntries = (await flagAudit.json()).entries
+      expect(flagEntries).toHaveLength(1)
+      expect(flagEntries[0].details.expansion.executables).toContain('sh')
+      expect(flagEntries[0].details.expansion.secrets).toContain('PROD_KEY')
+      expect(flagEntries[0].details.expansion.networkBroadened).toBe(true)
+
+      // With approve:true the expanding update proceeds and is surfaced.
+      const approved = await fetch(`${base}/v1/packages/install`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: v2, approve: true }),
+      })
+      expect(approved.status).toBe(200)
+      const body = await approved.json()
+      expect(body.installed.expansion.expanded).toBe(true)
+    } finally {
+      await rm(v1, { recursive: true, force: true })
+      await rm(v2, { recursive: true, force: true })
+    }
+  })
+
+  it('does NOT flag a same-or-narrower update', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'skelm-pkg-same-'))
+    await mkdir(join(dir, 'workflows'), { recursive: true })
+    const writeManifest = async (version: string) => {
+      await writeFile(
+        join(dir, 'skelm.package.json'),
+        JSON.stringify({
+          name: '@skelm/stable',
+          version,
+          skelm: {
+            apiVersion: 1,
+            workflows: [
+              {
+                id: 'default',
+                entry: 'workflows/main.ts',
+                permissions: { allowedExecutables: ['git'] },
+              },
+            ],
+          },
+        }),
+      )
+    }
+    await writeFile(join(dir, 'workflows', 'main.ts'), HELLO_WORKFLOW)
+    try {
+      await writeManifest('1.0.0')
+      expect(
+        (
+          await fetch(`${base}/v1/packages/install`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ source: dir }),
+          })
+        ).status,
+      ).toBe(200)
+      // Same permission set, new version — no expansion, no approval needed.
+      await writeManifest('1.1.0')
+      const update = await fetch(`${base}/v1/packages/install`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: dir }),
+      })
+      expect(update.status).toBe(200)
+      expect((await update.json()).installed.expansion).toBeUndefined()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 
   it('rejects unauthenticated requests with 401 when bearer auth is on', async () => {

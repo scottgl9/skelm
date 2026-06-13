@@ -273,6 +273,22 @@ export class PackageIntegrityError extends Error {
   }
 }
 
+/**
+ * Thrown when a workflow package's trust level is refused by the trust policy,
+ * or when an update broadens the requested permission surface without approval.
+ * `reason` distinguishes a hard refusal from a pending-approval hold.
+ */
+export class PackageTrustError extends Error {
+  override readonly name = 'PackageTrustError'
+  constructor(
+    message: string,
+    readonly reason: 'denied' | 'requires-approval' | 'permission-expansion',
+    readonly packageName: string,
+  ) {
+    super(message)
+  }
+}
+
 /** Thrown when a registry operation violates uniqueness or lookup invariants. */
 export class RegistryError extends Error {
   override readonly name = 'RegistryError'
