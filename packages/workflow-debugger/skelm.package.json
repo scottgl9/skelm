@@ -1,0 +1,35 @@
+{
+  "name": "@skelm/workflow-debugger",
+  "version": "0.4.8",
+  "description": "Ingest a failed run and produce a redacted debug report with a reviewable remediation.",
+  "license": "MIT",
+  "homepage": "https://skelm.dev",
+  "skelm": {
+    "apiVersion": 1,
+    "requiredSkelmVersion": ">=0.4.0",
+    "workflows": [
+      {
+        "id": "default",
+        "entry": "workflows/debug.workflow.ts",
+        "kind": "pipeline",
+        "description": "Analyze a failed run (events/audit/artifacts) and identify the failing step.",
+        "permissions": { "network": { "allow": ["127.0.0.1:14738"] } }
+      }
+    ],
+    "config": {
+      "gatewayUrl": "Gateway base URL (default http://127.0.0.1:14738).",
+      "tokenRef": "Name of the env var holding the gateway bearer token.",
+      "timeoutMs": "Per-request timeout in milliseconds (default 5000)."
+    },
+    "secrets": [
+      {
+        "name": "SKELM_GATEWAY_TOKEN",
+        "description": "Bearer token for the gateway run/audit/artifact HTTP API, by reference."
+      }
+    ],
+    "artifacts": ["debug-report"],
+    "selfTest": {
+      "entry": "workflows/self-test.ts"
+    }
+  }
+}
