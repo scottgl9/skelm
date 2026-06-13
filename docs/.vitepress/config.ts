@@ -171,6 +171,7 @@ export default defineConfig({
             { text: 'Codex', link: '/backends/codex' },
             { text: 'ACP Backends', link: '/backends/acp-backends' },
             { text: 'Vercel AI', link: '/backends/vercel-ai' },
+            { text: 'Browser automation', link: '/backends/browser-automation' },
           ],
         },
       ],
