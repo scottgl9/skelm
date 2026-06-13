@@ -1,0 +1,46 @@
+{
+  "name": "@skelm/browser-automation",
+  "version": "0.4.8",
+  "description": "Playwright-backed browser driver and provider for skelm — egress-gated navigation, artifact-sink screenshots, gateway-owned lifecycle",
+  "license": "MIT",
+  "author": "Scott Glover <scottgl@gmail.com>",
+  "homepage": "https://skelm.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scottgl9/skelm.git",
+    "directory": "packages/browser-automation"
+  },
+  "bugs": {
+    "url": "https://github.com/scottgl9/skelm/issues"
+  },
+  "keywords": ["skelm", "browser", "automation", "playwright", "agent", "provider"],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@skelm/integration-sdk": "workspace:*",
+    "playwright-core": "^1.60.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

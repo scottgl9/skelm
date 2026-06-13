@@ -1,0 +1,17 @@
+value:BrowserEgressError
+value:BrowserNotNavigatedError
+value:PlaywrightBrowserDriver
+value:PlaywrightBrowserProvider
+value:capturePageArtifact
+value:extractTable
+value:manifest
+type:ArtifactSink
+type:BrowserActionResult
+type:BrowserScreenshot
+type:PlaywrightBrowserDriverOptions
+type:PlaywrightBrowserProviderOptions
+type:PlaywrightLauncher
+type:PwBrowser
+type:PwContext
+type:PwLocator
+type:PwPage

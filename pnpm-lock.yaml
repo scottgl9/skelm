@@ -167,6 +167,19 @@ importers:
         specifier: ^4.1.0
         version: 4.1.8(@types/node@22.19.17)(vite@8.0.16)
 
+  packages/browser-automation:
+    dependencies:
+      '@skelm/integration-sdk':
+        specifier: workspace:*
+        version: link:../integration-sdk
+      playwright-core:
+        specifier: ^1.60.0
+        version: 1.60.0
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
   packages/cli:
     dependencies:
       '@skelm/agent':
@@ -3909,6 +3922,12 @@ packages:
   /picomatch@4.0.4:
     resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
     engines: {node: '>=12'}
+
+  /playwright-core@1.60.0:
+    resolution: {integrity: sha512-9bW6zvX/m0lEbgTKJ6YppOKx8H3VOPBMOCFh2irXFOT4BbHgrx5hPjwJYLT40Lu+4qtD36qKc/Hn56StUW57IA==}
+    engines: {node: '>=18'}
+    hasBin: true
+    dev: false
 
   /postcss@8.5.13:
     resolution: {integrity: sha512-qif0+jGGZoLWdHey3UFHHWP0H7Gbmsk8T5VEqyYFbWqPr1XqvLGBbk/sl8V5exGmcYJklJOhOQq1pV9IcsiFag==}
