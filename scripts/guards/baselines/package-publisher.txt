@@ -1,0 +1,17 @@
+value:SECRET_SCAN_RULES
+value:buildDryRun
+value:buildPermissionSummary
+value:redactSecret
+value:runPublish
+value:scanPackageForSecrets
+value:scanText
+type:DryRunFile
+type:DryRunReport
+type:PermissionSummary
+type:PublishOptions
+type:PublishReport
+type:PublishStageStatus
+type:PublishStages
+type:SecretFinding
+type:SelfTestResult
+type:WorkflowPermissionSummary

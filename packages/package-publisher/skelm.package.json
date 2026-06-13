@@ -1,0 +1,45 @@
+{
+  "name": "@skelm/package-publisher",
+  "version": "0.4.8",
+  "description": "Validate self-test entries, secret-scan, and publish-dry-run skelm workflow packages.",
+  "license": "MIT",
+  "homepage": "https://skelm.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scottgl9/skelm.git",
+    "directory": "packages/package-publisher"
+  },
+  "skelm": {
+    "apiVersion": 1,
+    "requiredSkelmVersion": ">=0.4.0",
+    "workflows": [
+      {
+        "id": "default",
+        "entry": "workflows/publish.workflow.ts",
+        "kind": "pipeline",
+        "description": "Validate, secret-scan, self-test entry-check, and publish-dry-run a target workflow package.",
+        "permissions": {
+          "fsRead": ["${input.packageDir}"]
+        }
+      }
+    ],
+    "config": {
+      "type": "object",
+      "properties": {
+        "packageDir": {
+          "type": "string",
+          "description": "Absolute path to the workflow-package directory to check."
+        },
+        "runSelfTest": {
+          "type": "boolean",
+          "default": true,
+          "description": "Validate the target package's declared self-test entry without executing it."
+        }
+      },
+      "required": ["packageDir"]
+    },
+    "selfTest": {
+      "entry": "workflows/self-test.workflow.ts"
+    }
+  }
+}

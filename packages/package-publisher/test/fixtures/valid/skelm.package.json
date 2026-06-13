@@ -1,0 +1,31 @@
+{
+  "name": "@fixtures/valid",
+  "version": "1.0.0",
+  "description": "A clean fixture package that passes every publish stage.",
+  "license": "MIT",
+  "skelm": {
+    "apiVersion": 1,
+    "requiredSkelmVersion": ">=0.4.0",
+    "workflows": [
+      {
+        "id": "default",
+        "entry": "workflows/main.workflow.ts",
+        "kind": "pipeline",
+        "description": "Greets someone.",
+        "permissions": {
+          "allowedExecutables": ["node"],
+          "executableProfiles": ["build-tools"],
+          "fsRead": ["./data"],
+          "fsWrite": ["./out"],
+          "allowedSecrets": ["GREETER_TOKEN"],
+          "networkEgress": { "allowedHosts": ["api.example.com"] }
+        }
+      }
+    ],
+    "secrets": [{ "name": "GREETER_TOKEN", "description": "API token (name only)." }],
+    "integrations": ["github"],
+    "stateNamespaces": ["greeter"],
+    "triggers": [{ "id": "daily", "kind": "cron", "description": "Disabled until armed." }],
+    "selfTest": { "entry": "workflows/self-test.ts" }
+  }
+}
