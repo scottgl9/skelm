@@ -54,6 +54,21 @@ Beyond the core dimensions (tools, executables, MCP servers, skills, secrets, ne
 
 The `delegation` dimension gates agent-to-agent [delegation](/concepts/delegation): which agents/pipelines an agent may hand off to via the `delegate` tool. It is matched like `allowedTools` (exact ids, `foo.*` prefixes, or `*`) and follows every rule above — omitted ⇒ deny (proven by `packages/core/test/security/delegation-default-deny.test.ts`), intersection-only composition. Critically, a delegated child's *entire* resolved policy is intersected with the delegating agent's, so delegation can only ever narrow authority down the chain. See [Delegation](/concepts/delegation).
 
+### MCP filesystem & exec enforcement is best-effort
+
+For MCP tool calls, the gateway enforces the `executable` and `fs.read`/`fs.write`
+dimensions by inspecting the call's arguments. Recognised filesystem/shell tool
+names are classified precisely; a tool with an **unrecognised** name is treated
+fail-closed — any path-shaped argument it carries is checked as a **write** (so an
+unknown tool cannot read or write outside `fsWrite`), and an `argv` array is
+checked against `allowedExecutables`. This cannot be complete: a tool can still
+act on a path hardcoded server-side, or passed under an argument name skelm does
+not recognise, and a bare `command` string on an unknown tool is not auto-detected
+(it is too ambiguous to gate reliably). **Treat the MCP servers you attach as part
+of your trust boundary** — scope `allowedTools` tightly and only attach servers you
+trust. The `tool` dimension (`canCallTool`) is always enforced and is the primary
+gate; the fs/exec checks are defense-in-depth on top of it.
+
 ## The unrestricted bypass (freewheeling agents)
 
 Some use cases — a personal chat assistant you talk to over Telegram, a [persistent workflow](/concepts/persistent-workflows) behaving like a freewheeling shell — want a full bypass of default-deny rather than an exhaustive allow-list. skelm supports this **only as an explicit, operator-gated, audited opt-in**. It never weakens default-deny for anything that does not opt in.
