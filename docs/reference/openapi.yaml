@@ -1083,6 +1083,73 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /v1/admin/tokens:
+    post:
+      summary: Issue a scoped RBAC token
+      description: >-
+        Create a scoped bearer token. RBAC is opt-in and additive: the legacy
+        single token is root (`*:*`) and remains valid; issuing the first token
+        here activates scope enforcement. Requires the `admin:administer` scope.
+        The plaintext `secret` is returned exactly once and is never recoverable;
+        only its scrypt hash is persisted.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTokenRequest' }
+      responses:
+        '200':
+          description: Token created; secret returned once
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedToken' }
+        '400': { description: Invalid roles, scopes, label, or expiresAt }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    get:
+      summary: List scoped RBAC tokens (metadata only)
+      description: >-
+        Returns token metadata. Never includes the secret, hash, or salt.
+        Requires the `admin:administer` scope.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokens:
+                    type: array
+                    items: { $ref: '#/components/schemas/TokenMetadata' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/admin/tokens/{id}/revoke:
+    post:
+      summary: Revoke a scoped RBAC token
+      description: >-
+        Marks the token revoked; its next request resolves to 401. Requires the
+        `admin:administer` scope.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked: { type: boolean }
+                  id: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1109,11 +1176,51 @@ components:
 
   responses:
     Unauthorized:
-      description: Missing or invalid bearer token
+      description: Missing, unknown, expired, or revoked bearer token
+    Forbidden:
+      description: >-
+        Authenticated, but the token's effective scopes do not satisfy the
+        route's required `resource:action` scope (RBAC). Audited as
+        `auth.denied`.
     NotFound:
       description: Resource not found
 
   schemas:
+    CreateTokenRequest:
+      type: object
+      description: >-
+        At least one of `roles` or `scopes` is required. Effective scopes are
+        the union of the named roles' scopes and the explicit scopes.
+      properties:
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [Owner, Admin, Operator, Developer, Auditor, Approver, Viewer, ServiceAccount]
+        scopes:
+          type: array
+          description: '`resource:action` strings; either half may be `*`.'
+          items: { type: string }
+        label: { type: string }
+        expiresAt: { type: string, format: date-time }
+    TokenMetadata:
+      type: object
+      description: Token metadata. Never includes the secret, hash, or salt.
+      properties:
+        id: { type: string }
+        roles: { type: array, items: { type: string } }
+        scopes: { type: array, items: { type: string } }
+        label: { type: string }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        revokedAt: { type: string, format: date-time }
+    CreatedToken:
+      type: object
+      properties:
+        secret:
+          type: string
+          description: Plaintext bearer secret — returned once, never recoverable.
+        token: { $ref: '#/components/schemas/TokenMetadata' }
     PipelineSummary:
       type: object
       properties:

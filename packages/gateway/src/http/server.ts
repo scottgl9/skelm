@@ -22,6 +22,13 @@ import {
   setResponseStatus,
   toNodeListener,
 } from 'h3'
+import {
+  type Scope,
+  isExemptRoute,
+  isRootScopes,
+  requiredScopeFor,
+  scopesSatisfy,
+} from '../auth/index.js'
 import type { GatewayContext } from '../lifecycle/gateway-types.js'
 import type { AuthMode, ServerConfig } from './config.js'
 import { validateServerConfig } from './config.js'
@@ -126,31 +133,97 @@ export function createServer(
     )
   }
 
-  // Middleware: Auth
+  // Middleware: Auth + RBAC.
+  //
+  // RBAC is additive and default-safe. The legacy single token (config token or
+  // SKELM_TOKEN) is ROOT (`*:*`) and bypasses scope checks — so a deployment
+  // with no issued scoped tokens behaves exactly as before. RBAC only engages
+  // once the token store holds tokens: a presented bearer is then resolved
+  // either as the legacy root token or as a stored scoped token, and scoped
+  // tokens must satisfy the route's required scope. Every 401/403 denial is
+  // audited through the gateway's single audit writer (never the secret).
+  const gateway = options.gateway
+  const auditWriter = gateway?.enforcement.auditWriter
+  const auditDeny = (statusCode: number, reason: string, route: string, tokenId?: string): void => {
+    if (auditWriter === undefined) return
+    void auditWriter
+      .write({
+        actor: 'gateway',
+        action: 'auth.denied',
+        details: {
+          statusCode,
+          reason,
+          route,
+          ...(tokenId !== undefined && { tokenId }),
+        },
+      })
+      .catch(() => {
+        // Audit failure must not crash the gateway main loop; the denial
+        // response is already determined and returned regardless.
+      })
+  }
   app.use(
     eventHandler(async (event: H3Event) => {
       if (auth === 'none') {
         return
       }
 
-      const authHeader = event.headers.get('authorization')
-      const providedToken = token ?? process.env.SKELM_TOKEN
+      const method = event.node.req.method ?? 'GET'
+      const path = (event.node.req.url ?? '').split('?')[0] ?? ''
+      const route = `${method.toUpperCase()} ${path}`
 
-      if (!providedToken) {
-        throw createError({
-          statusCode: 500,
-          message: 'Server token not configured',
-        })
+      // Health/readiness/metrics probes stay open even when bearer auth is on.
+      if (isExemptRoute(method, path)) {
+        return
       }
 
-      if (
-        !authHeader?.startsWith('Bearer ') ||
-        !timingSafeStringEqual(authHeader.slice(7), providedToken)
-      ) {
-        throw createError({
-          statusCode: 401,
-          message: 'Unauthorized',
-        })
+      const authHeader = event.headers.get('authorization')
+      const providedToken = token ?? process.env.SKELM_TOKEN
+      const storeActive = gateway?.tokenStore.active === true
+
+      // Without a legacy token AND without any issued scoped token there is no
+      // credential the gateway could accept — fail closed as a misconfiguration.
+      if (!providedToken && !storeActive) {
+        throw createError({ statusCode: 500, message: 'Server token not configured' })
+      }
+
+      if (!authHeader?.startsWith('Bearer ')) {
+        auditDeny(401, 'missing-bearer', route)
+        throw createError({ statusCode: 401, message: 'Unauthorized' })
+      }
+      const presented = authHeader.slice(7)
+
+      // Legacy root token: constant-time compare. Matches ⇒ ROOT, full access.
+      if (providedToken && timingSafeStringEqual(presented, providedToken)) {
+        return
+      }
+
+      // No scoped tokens issued ⇒ legacy-only mode; a non-matching bearer is 401.
+      if (!storeActive || gateway === undefined) {
+        auditDeny(401, 'bad-token', route)
+        throw createError({ statusCode: 401, message: 'Unauthorized' })
+      }
+
+      const resolved = await gateway.tokenStore.resolve(presented)
+      if (!resolved.ok) {
+        auditDeny(401, resolved.reason, route, resolved.id)
+        throw createError({ statusCode: 401, message: 'Unauthorized' })
+      }
+
+      const scopes: readonly Scope[] = resolved.token.scopes
+      // Root scoped token bypasses the scope map, like the legacy token.
+      if (isRootScopes(scopes)) return
+
+      const required = requiredScopeFor(method, path)
+      // Default-deny: a non-exempt route absent from the map is denied to any
+      // non-root scoped token.
+      if (required === undefined) {
+        auditDeny(403, 'route-unmapped', route, resolved.token.id)
+        throw createError({ statusCode: 403, message: 'Forbidden' })
+      }
+      if (!scopesSatisfy(scopes, required)) {
+        auditDeny(403, `missing-scope:${required}`, route, resolved.token.id)
+        throw createError({ statusCode: 403, message: 'Forbidden' })
       }
     }),
   )

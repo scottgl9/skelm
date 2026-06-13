@@ -36,19 +36,14 @@ describe('Gateway auth middleware — uniform 401 on missing/bad token', () => {
       token: 'sekret',
       config: { server: { host: '127.0.0.1', port, auth: { mode: 'bearer' } } },
     }))
-    // Representative endpoint per route module. /healthz and /readyz are
-    // also auth-gated under bearer mode so health probes should send the
-    // token; if you want anonymous probes use an unprotected sidecar.
+    // Representative endpoint per route module. Exempt probe routes stay open
+    // under bearer auth; the rest should fail closed without a bearer header.
     const probes: Array<{ name: string; method: string; path: string }> = [
       { name: 'approvals', method: 'GET', path: '/approvals' },
       { name: 'config', method: 'GET', path: '/config' },
       { name: 'dashboard', method: 'GET', path: '/v1/dashboard/overview' },
       { name: 'debug', method: 'GET', path: '/debug/breakpoints' },
       { name: 'gateway-lifecycle', method: 'POST', path: '/gateway/pause' },
-      { name: 'health', method: 'GET', path: '/health' },
-      { name: 'healthz', method: 'GET', path: '/healthz' },
-      { name: 'readyz', method: 'GET', path: '/readyz' },
-      { name: 'metrics', method: 'GET', path: '/metrics' },
       { name: 'projects', method: 'POST', path: '/v1/projects/activate' },
       { name: 'active', method: 'GET', path: '/v1/active' },
       { name: 'deactivate', method: 'POST', path: '/v1/workflows/x/deactivate' },
@@ -64,6 +59,10 @@ describe('Gateway auth middleware — uniform 401 on missing/bad token', () => {
         const res = await fetch(`${base}${probe.path}`, { method: probe.method })
         expect(res.status, `${probe.name} ${probe.method} ${probe.path}`).toBe(401)
       }
+      expect((await fetch(`${base}/health`)).status).toBe(200)
+      expect((await fetch(`${base}/healthz`)).status).toBe(200)
+      expect((await fetch(`${base}/readyz`)).status).toBe(200)
+      expect((await fetch(`${base}/metrics`)).status).toBe(404)
       // And every probe succeeds (200, 404, or 400 — all post-auth)
       // when the token is supplied. Exact code depends on route shape;
       // the contract here is "auth passed → not 401".
@@ -89,7 +88,7 @@ describe('Gateway auth middleware — uniform 401 on missing/bad token', () => {
       config: { server: { host: '127.0.0.1', port, auth: { mode: 'bearer' } } },
     }))
     try {
-      const res = await fetch(`${base}/health`, {
+      const res = await fetch(`${base}/runs`, {
         headers: { authorization: 'Bearer NOT-THE-TOKEN' },
       })
       expect(res.status).toBe(401)

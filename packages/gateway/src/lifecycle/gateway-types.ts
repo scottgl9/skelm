@@ -173,6 +173,12 @@ export interface GatewayContext {
   readonly breakpoints: BreakpointRegistry
   readonly metrics: import('@skelm/metrics').MetricsCollector | null
   readonly tasks: import('../tasks/task-service.js').TaskService
+  /**
+   * Store of issued scoped RBAC tokens. RBAC is opt-in and additive: when this
+   * store holds no tokens, the gateway auth path stays on the legacy single
+   * bearer token (which is ROOT). Owned by the gateway — the trust boundary.
+   */
+  readonly tokenStore: import('../auth/token-store.js').TokenStore
 
   // ── run lifecycle ────────────────────────────────────────────────────────
   cancel(runId: string, reason?: string): boolean

@@ -28,6 +28,36 @@ export {
   writeDiscovery,
 } from './lifecycle/index.js'
 
+// RBAC: scoped tokens, roles, scope model, and the route-scope map.
+export {
+  ACTIONS,
+  RESOURCES,
+  ROLE_NAMES,
+  TokenStore,
+  TokenValidationError,
+  effectiveScopes,
+  isExemptRoute,
+  isRoleName,
+  isRootScopes,
+  isValidScope,
+  requiredScopeFor,
+  scopeSatisfies,
+  scopesForRole,
+  scopesSatisfy,
+} from './auth/index.js'
+export type {
+  Action,
+  CreateTokenInput,
+  CreatedToken,
+  HttpMethod,
+  ResolvedToken,
+  Resource,
+  RoleName,
+  Scope,
+  StoredToken,
+  TokenMetadata,
+} from './auth/index.js'
+
 // Audit + secrets
 export { ChainAuditWriter } from './audit/chain.js'
 export type { ChainEntry } from './audit/chain.js'
