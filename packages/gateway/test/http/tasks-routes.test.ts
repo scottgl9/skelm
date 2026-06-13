@@ -30,8 +30,20 @@ const slowWf = pipeline({
   steps: [
     code({
       id: 'wait',
-      run: async () => {
-        await new Promise((r) => setTimeout(r, 50))
+      // Long, abort-aware wait: stays running well past any cancel HTTP
+      // round-trip (so cancel always lands on a running task), but the run's
+      // abort signal ends it immediately on cancel — no lingering timer, no
+      // fixed sleep racing the request under parallel-suite load.
+      run: async (ctx) => {
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, 30_000)
+          const onAbort = () => {
+            clearTimeout(timer)
+            reject(ctx.signal.reason ?? new Error('aborted'))
+          }
+          if (ctx.signal.aborted) onAbort()
+          else ctx.signal.addEventListener('abort', onAbort, { once: true })
+        })
         return { done: true }
       },
     }),
