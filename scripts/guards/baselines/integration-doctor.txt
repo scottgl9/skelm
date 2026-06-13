@@ -1,0 +1,13 @@
+value:REDACTED
+value:redact
+value:runDoctor
+type:DoctorCheck
+type:DoctorCheckKind
+type:DoctorCheckStatus
+type:DoctorInput
+type:DoctorReport
+type:HealthProbe
+type:MockFixtureReplay
+type:ScopeProbe
+type:ScopeRequirement
+type:WebhookProbe
