@@ -58,6 +58,7 @@ type:MatrixConfig
 type:MatrixMessageTrigger
 type:MediaAttachment
 type:MediaKind
+type:MediaSourceKind
 type:MediaProvider
 type:MemoryProvider
 type:MockProviderFixture

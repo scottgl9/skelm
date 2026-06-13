@@ -64,6 +64,69 @@ Inbound and outbound traffic is normalized through `InboundEvent`,
 provider-specific behavior lives behind the optional ops and the descriptor's
 `escapeHatches` (Block Kit, inline keyboards, …).
 
+When `media` is non-empty, `CapabilityDescriptor.mediaSources` says which
+attachment payload forms those sends accept: hosted `url`, inline base64
+`data`, or both. Descriptors authored before `mediaSources` existed are treated
+as accepting both forms.
+
+### Built-in chat adapters
+
+`@skelm/integrations` ships `ConversationAdapter` implementations for Slack,
+Telegram, and Matrix alongside (not replacing) the existing
+`SlackIntegration` / `TelegramIntegration` / `MatrixIntegration` exports — the
+trigger sources, webhook verification, and notification helpers are unchanged.
+Each adapter takes a gateway-supplied authenticated transport in its
+constructor and a reference-only `Connection` via `connect()`; it never reads a
+token itself. Slack signature verification still runs through
+`verifySlackSignature`; Telegram webhook-secret checks through
+`TelegramIntegration.verifyWebhookSecret`.
+
+Each adapter exposes its raw-payload normalizer as a pure function
+(`normalizeSlackInbound`, `normalizeTelegramInbound`, `normalizeMatrixInbound`)
+and an `ingest()` method that normalizes then dispatches to `onInbound`
+subscribers. Outbound `OutboundEvent`s map to native sends, with
+provider-specific payloads (Block Kit blocks, inline keyboards, custom Matrix
+event content) carried verbatim through `providerOptions`.
+
+The descriptors are honest — a capability is advertised `true` only when the
+matching op is implemented:
+
+| Capability       | Slack | Telegram | Matrix |
+| ---------------- | :---: | :------: | :----: |
+| editMessage      |  yes  |   yes    |  yes   |
+| deleteMessage    |  yes  |   yes    |  yes   |
+| replyInThread    |  yes  |  no\*    |  yes   |
+| reactions        |  yes  |   yes    |  yes   |
+| buttons          |  yes  |   yes    |  no    |
+| slashCommands    |  yes  |   yes    |  no    |
+| media            | image, file | image, file, voice, video | image, file, video |
+| mediaSources     |   url |   url    |  url   |
+
+`\*` Telegram threading is reply-chain / forum-topic based rather than a
+first-class thread op, so it is declared `false` and reached through the
+`reply_to_message_id` / `message_thread_id` escape hatch on `providerOptions`.
+Matrix declares `buttons`/`slashCommands` false because the Client-Server API
+has no interactive-button or command-registration surface.
+
+Escape hatches surfaced for documentation/UX: Slack — `blockKit`, `modals`,
+`appMentions`; Telegram — `inlineKeyboards`, `callbackQueries`, `parseMode`;
+Matrix — `customEventContent`, `mInReplyTo`, `mThread`.
+
+```ts
+import { SlackConversationAdapter } from '@skelm/integrations'
+
+const slack = new SlackConversationAdapter(transport) // gateway supplies transport
+await slack.connect(connection) // connection holds credential refs only
+slack.onInbound((event) => {
+  /* normalized InboundEvent: message | edit | reaction | command | callback */
+})
+await slack.sendMessage({
+  target: { conversationId: 'C123' },
+  text: 'Deploy?',
+  providerOptions: { blocks: [/* Block Kit */] },
+})
+```
+
 ---
 
 ## Provider registry contracts
