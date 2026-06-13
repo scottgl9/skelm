@@ -151,6 +151,7 @@ export default defineConfig({
             { text: 'Workflow Packages', link: '/reference/workflow-packages' },
             { text: 'Integration Primitives', link: '/reference/integration-primitives' },
             { text: 'integration-http', link: '/reference/integration-http' },
+            { text: 'Jira Integration', link: '/integrations/jira' },
             { text: 'OpenAPI', link: '/reference/openapi' },
           ],
         },
