@@ -169,4 +169,27 @@ describe('POST /v1/audit/prune', () => {
     const reader = new ChainAuditWriter(join(stateDir, 'audit.jsonl'))
     expect(await reader.verify({ boundary: result.boundary })).toBeNull()
   })
+
+  it('prunes via the canonical writer so a full prune keeps the chain continuous', async () => {
+    // Prune EVERY pre-seeded entry. The route then writes its own audit.pruned
+    // record through the SAME canonical writer; with the old throwaway-instance
+    // code that record would reset to seq 1 / genesis and orphan the boundary.
+    const res = await fetch(`${base}/v1/audit/prune`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ before: 1000, confirm: true }),
+    })
+    expect(res.status).toBe(200)
+    const result = await res.json()
+    expect(result.retained).toBe(0)
+
+    const reader = new ChainAuditWriter(join(stateDir, 'audit.jsonl'))
+    const all = await reader.readAll()
+    // The route's own audit.pruned record continues the chain from the boundary.
+    expect(all).toHaveLength(1)
+    expect(all[0]?.action).toBe('audit.pruned')
+    expect(all[0]?.seq).toBe(result.boundary.prunedThroughSeq + 1)
+    expect(all[0]?.prevHash).toBe(result.boundary.boundaryHash)
+    expect(await reader.verify({ boundary: result.boundary })).toBeNull()
+  })
 })
