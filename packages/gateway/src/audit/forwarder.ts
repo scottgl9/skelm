@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { dirname } from 'node:path'
 import type { AuditEvent, AuditWriter, SecretResolver, SkelmConfigAuditSink } from '@skelm/core'
+import { type PruneResult, isPrunableAuditWriter } from './chain.js'
 
 /**
  * SIEM / log-streaming forwarder for the audit log.
@@ -47,6 +48,19 @@ export class ForwardingAuditWriter implements AuditWriter {
         await sink.close().catch(() => {})
       }
     }
+  }
+
+  /**
+   * Prune by delegating to the canonical inner writer. The forwarder is a tee,
+   * not a writer of its own, so pruning runs on the single backing chain writer
+   * (preserving the single-writer invariant). Sinks are not rewound — forwarded
+   * records already left the gateway.
+   */
+  prune(beforeSeq: number): Promise<PruneResult> {
+    if (!isPrunableAuditWriter(this.inner)) {
+      throw new Error('audit writer does not support prune')
+    }
+    return this.inner.prune(beforeSeq)
   }
 }
 

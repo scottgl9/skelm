@@ -1,6 +1,10 @@
 import { join } from 'node:path'
 import { type Router, createError, eventHandler, getQuery, readBody } from 'h3'
-import { type AuditExportFormat, ChainAuditWriter } from '../../audit/chain.js'
+import {
+  type AuditExportFormat,
+  ChainAuditWriter,
+  isPrunableAuditWriter,
+} from '../../audit/chain.js'
 import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 
 /**
@@ -140,8 +144,19 @@ export function registerAuditRoutes(router: Router, gateway: GatewayContext): vo
             'prune is destructive: pass confirm:true. The archived head and retained tail verify separately, not as one chain.',
         })
       }
-      const writer = new ChainAuditWriter(auditPath)
-      const result = await writer.prune(before)
+      // Prune the CANONICAL writer, never a sibling instance: a second
+      // ChainAuditWriter against the same path shares no write lock with the
+      // live writer (it would lose concurrent records) and would leave the live
+      // writer's in-memory chain state stale after the rewrite. The forwarder
+      // delegates prune to its inner chain writer.
+      const auditWriter = gateway.enforcement.auditWriter
+      if (!isPrunableAuditWriter(auditWriter)) {
+        throw createError({
+          statusCode: 409,
+          message: 'configured audit writer does not support prune',
+        })
+      }
+      const result = await auditWriter.prune(before)
       await gateway.enforcement.auditWriter.write({
         actor: 'gateway',
         action: 'audit.pruned',

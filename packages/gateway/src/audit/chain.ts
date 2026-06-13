@@ -33,6 +33,26 @@ export interface PruneResult {
   boundary: PruneBoundary
 }
 
+/**
+ * Audit writers that can prune their own backing log. Pruning MUST run on the
+ * canonical writer instance (not a sibling against the same path) so it both
+ * serializes against concurrent writes and refreshes that writer's in-memory
+ * chain state. The gateway exposes this via the enforcement audit writer so the
+ * prune route never constructs a second writer.
+ */
+export interface PrunableAuditWriter {
+  prune(beforeSeq: number): Promise<PruneResult>
+}
+
+/** Runtime capability check for {@link PrunableAuditWriter}. */
+export function isPrunableAuditWriter(writer: unknown): writer is PrunableAuditWriter {
+  return (
+    writer !== null &&
+    typeof writer === 'object' &&
+    typeof (writer as PrunableAuditWriter).prune === 'function'
+  )
+}
+
 /** Stable CSV column order for {@link ChainAuditWriter.export}. */
 const CSV_COLUMNS = [
   'seq',
@@ -214,6 +234,8 @@ export class ChainAuditWriter implements AuditWriter {
       let archived = 0
       let retained = 0
       let boundaryHash = '0'.repeat(64)
+      let lastRetainedSeq = 0
+      let lastRetainedHash: string | null = null
       try {
         for await (const entry of this.streamEntries()) {
           const line = `${JSON.stringify(entry)}\n`
@@ -224,6 +246,8 @@ export class ChainAuditWriter implements AuditWriter {
           } else {
             if (!tail.write(line)) await drain(tail)
             retained++
+            lastRetainedSeq = entry.seq
+            lastRetainedHash = entry.entryHash
           }
         }
       } finally {
@@ -241,6 +265,20 @@ export class ChainAuditWriter implements AuditWriter {
       await fs.writeFile(`${this.path}.prune-boundary.json`, `${JSON.stringify(boundary)}\n`, {
         mode: 0o600,
       })
+      // Refresh in-memory state so the SAME writer keeps appending a continuous
+      // chain after the file was rewritten. With a retained tail, continue from
+      // its last entry; with an empty tail (everything pruned), continue from
+      // the prune boundary so the next entry is seq = prunedThroughSeq + 1 with
+      // prevHash = boundaryHash — exactly what verify({ boundary }) expects.
+      // Without this, a full prune would reset the next write to seq 1 / genesis
+      // and orphan the boundary, silently breaking chain verification.
+      if (retained > 0) {
+        this.nextSeq = lastRetainedSeq + 1
+        this.lastHash = lastRetainedHash
+      } else {
+        this.nextSeq = beforeSeq + 1
+        this.lastHash = boundaryHash
+      }
       return { archived, retained, boundary }
     } finally {
       release()
@@ -288,6 +326,30 @@ export class ChainAuditWriter implements AuditWriter {
     if (last !== null) {
       this.lastHash = last.entryHash
       this.nextSeq = last.seq + 1
+      return
+    }
+    // Live file is empty. If it was emptied by a full prune, continue from the
+    // recorded boundary so a writer constructed after restart resumes the chain
+    // at prunedThroughSeq + 1 chaining from boundaryHash, instead of resetting
+    // to seq 1 / genesis and orphaning the boundary.
+    const boundary = await this.readPruneBoundary()
+    if (boundary !== null) {
+      this.lastHash = boundary.boundaryHash
+      this.nextSeq = boundary.prunedThroughSeq + 1
+    }
+  }
+
+  /** Read the persisted prune boundary, or null when none / unreadable. */
+  private async readPruneBoundary(): Promise<PruneBoundary | null> {
+    try {
+      const raw = await fs.readFile(`${this.path}.prune-boundary.json`, 'utf8')
+      const parsed = JSON.parse(raw) as PruneBoundary
+      if (typeof parsed.prunedThroughSeq === 'number' && typeof parsed.boundaryHash === 'string') {
+        return parsed
+      }
+      return null
+    } catch {
+      return null
     }
   }
 

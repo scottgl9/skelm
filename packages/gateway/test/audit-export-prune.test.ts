@@ -193,4 +193,51 @@ describe('ChainAuditWriter.prune', () => {
     const all = await w2.readAll()
     expect(all.map((e) => e.seq)).toEqual([4, 5, 6, 7])
   })
+
+  it('the SAME writer keeps appending a continuous chain after a partial prune', async () => {
+    const path = join(dir, 'p3.jsonl')
+    const w = new ChainAuditWriter(path)
+    for (let i = 0; i < 6; i++) await w.write({ actor: 'gateway', action: `act-${i}` })
+    const result = await w.prune(3)
+    // No new instance — continue on the canonical writer (the live-gateway case).
+    await w.write({ actor: 'gateway', action: 'after-prune' })
+    expect(await w.verify({ boundary: result.boundary })).toBeNull()
+    expect((await w.readAll()).map((e) => e.seq)).toEqual([4, 5, 6, 7])
+  })
+
+  it('a full prune does not reset the chain: same writer continues from the boundary', async () => {
+    const path = join(dir, 'p4.jsonl')
+    const w = new ChainAuditWriter(path)
+    for (let i = 0; i < 5; i++) await w.write({ actor: 'gateway', action: `act-${i}` })
+    // Prune EVERYTHING (beforeSeq >= last seq).
+    const result = await w.prune(100)
+    expect(result.archived).toBe(5)
+    expect(result.retained).toBe(0)
+    expect(result.boundary.prunedThroughSeq).toBe(100)
+
+    // Next append on the same writer must continue at prunedThroughSeq + 1 and
+    // chain from the boundary hash — NOT reset to seq 1 / genesis.
+    await w.write({ actor: 'gateway', action: 'after-full-prune' })
+    const all = await w.readAll()
+    expect(all.map((e) => e.seq)).toEqual([101])
+    expect(all[0]?.prevHash).toBe(result.boundary.boundaryHash)
+    expect(await w.verify({ boundary: result.boundary })).toBeNull()
+  })
+
+  it('a full prune survives restart: a fresh writer continues from the boundary', async () => {
+    const path = join(dir, 'p5.jsonl')
+    const w = new ChainAuditWriter(path)
+    for (let i = 0; i < 4; i++) await w.write({ actor: 'gateway', action: `act-${i}` })
+    const result = await w.prune(100)
+    expect(result.retained).toBe(0)
+
+    // Simulate a gateway restart: a brand-new writer reads the now-empty live
+    // log and must pick up the boundary rather than reset to genesis.
+    const w2 = new ChainAuditWriter(path)
+    await w2.write({ actor: 'gateway', action: 'after-restart' })
+    const all = await w2.readAll()
+    expect(all.map((e) => e.seq)).toEqual([101])
+    expect(all[0]?.prevHash).toBe(result.boundary.boundaryHash)
+    expect(await w2.verify({ boundary: result.boundary })).toBeNull()
+  })
 })
