@@ -11,6 +11,32 @@ Set `server.auth = { mode: 'bearer' }` in `skelm.config.ts` to require a
 bearer token; unauthenticated requests then get `401`. Tokens are read from
 the environment.
 
+### RBAC (scoped tokens)
+
+The single configured token is **root** (`*:*`) and can reach every route. This
+is the only credential until you issue scoped tokens, so existing single-token
+deployments are unchanged. RBAC is opt-in and additive: it activates only once
+at least one scoped token exists in the token store.
+
+A scoped token carries roles and/or explicit scopes; its effective scopes are
+their union. Scopes are `resource:action` strings (`*` permitted on either
+half). Each non-exempt route declares a required `resource:action`; the token's
+effective scopes must satisfy it, otherwise the gateway returns `403`. Routes
+absent from the map are denied to non-root scoped tokens (default-deny). Health
+and metrics probes are exempt. Every `401`/`403` denial is audited as
+`auth.denied` (never the secret). See the
+[RBAC & scoped tokens guide](../guides/rbac.md) for the full model.
+
+#### Admin token management
+
+These routes require the `admin:administer` scope (the root token satisfies it).
+
+| Method | Path                          | Description                                  |
+| ------ | ----------------------------- | -------------------------------------------- |
+| POST   | `/v1/admin/tokens`            | Issue a token; returns the plaintext secret once |
+| GET    | `/v1/admin/tokens`            | List token metadata (never secrets or hashes) |
+| DELETE-equivalent (POST) | `/v1/admin/tokens/:id/revoke` | Revoke a token         |
+
 ## Health & metrics
 
 | Method | Path        | Description                          |

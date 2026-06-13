@@ -129,6 +129,7 @@ export default defineConfig({
             { text: 'Approvals', link: '/guides/approvals' },
             { text: 'Secrets', link: '/guides/secrets' },
             { text: 'Audit', link: '/guides/audit' },
+            { text: 'RBAC & Scoped Tokens', link: '/guides/rbac' },
             { text: 'Production Hardening', link: '/guides/production-hardening' },
           ],
         },

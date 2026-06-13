@@ -25,6 +25,7 @@ import {
 } from '@skelm/core'
 import { SuspendApprovalGate } from '../approvals/suspend-gate.js'
 import { ChainAuditWriter } from '../audit/chain.js'
+import { TokenStore } from '../auth/token-store.js'
 import { BreakpointRegistry } from '../debug/breakpoint-registry.js'
 import { GatewayRuntime } from '../execution/gateway-runtime.js'
 import { AcpSessionManager, defaultAcpSessionStorePath } from '../managers/acp-session-manager.js'
@@ -78,6 +79,7 @@ export class Gateway implements GatewayContext {
   readonly projectRoot: string
   readonly lockfilePath: string
   readonly discoveryPath: string
+  readonly tokenStore: TokenStore
 
   private state: GatewayState = 'stopped'
   private lockfile: LockfileContents | null = null
@@ -132,6 +134,7 @@ export class Gateway implements GatewayContext {
         ? mkdtempSync(join(tmpdir(), 'skelm-embedded-gateway-'))
         : join(homedir(), '.skelm'))
     this.projectRoot = resolve(options.projectRoot ?? process.cwd())
+    this.tokenStore = new TokenStore(this.stateDir)
     this.lockfilePath = join(this.stateDir, 'gateway.lock')
     this.discoveryPath = join(this.stateDir, 'gateway.json')
     // When the caller does not supply a config (typical for embedded /
@@ -642,6 +645,7 @@ export class Gateway implements GatewayContext {
           )
         })
       this.enforcementInternal = this.buildEnforcement()
+      await this.tokenStore.load()
       this.registriesInternal = await this.buildRegistries()
       this.managersInternal = await this.buildManagers()
       this.dynamicScheduleStoreInternal = new DynamicScheduleStore(this.stateDir)
