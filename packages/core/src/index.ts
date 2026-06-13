@@ -294,10 +294,15 @@ export type { ParsedCronExpression } from './cron-expression.js'
 export { parseDuration } from './duration.js'
 export { describePipeline, describeStep } from './introspect.js'
 export type { DescribedStep, PipelineDescription } from './introspect.js'
-export { deriveWorkflowGraph } from './graph/index.js'
+export { applyGraphEdits, deriveWorkflowGraph } from './graph/index.js'
 export type {
   AgentPermissionsSummary,
+  DeclarativeStepSpec,
   GraphEdge,
+  GraphEdit,
+  GraphEditFailureReason,
+  GraphEditResult,
+  GraphEditValue,
   GraphNode,
   GraphNodeKind,
   WorkflowGraph,

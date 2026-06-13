@@ -1,6 +1,14 @@
-import { mkdir, readdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { type RunStatus, type RunSummary, deriveWorkflowGraph, describePipeline } from '@skelm/core'
+import { randomBytes } from 'node:crypto'
+import { mkdir, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises'
+import { basename, dirname, extname, join, relative, sep } from 'node:path'
+import {
+  type GraphEdit,
+  type RunStatus,
+  type RunSummary,
+  applyGraphEdits,
+  deriveWorkflowGraph,
+  describePipeline,
+} from '@skelm/core'
 import {
   type H3Event,
   type MultiPartData,
@@ -15,7 +23,9 @@ import {
 import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { materializePathWorkflow } from '../../workflows/path-materialization.js'
 import type { WorkflowArchiveService } from '../../workflows/workflow-archive-service.js'
+import type { MaterializedWorkflowArtifact } from '../../workflows/workflow-artifact-service.js'
 import {
+  type RegisteredWorkflowRecord,
   WorkflowRegistrationError,
   type WorkflowRegistrationService,
 } from '../../workflows/workflow-registration-service.js'
@@ -105,32 +115,138 @@ export function registerWorkflowRoutes(router: Router, gateway: GatewayContext):
       if (loader === undefined) {
         throw createError({ statusCode: 501, message: 'gateway has no workflow loader' })
       }
-      // Resolve by registry id first; fall back to scanning for a workflow
-      // whose declared id matches — mirrors GET /pipelines/:id so callers can
-      // pass either the registry id or the authored workflow id.
-      let entry = gateway.registries.workflows.get(id)
-      let workflow: Awaited<ReturnType<typeof loadWorkflowForGraph>> | undefined
-      if (entry === undefined) {
-        for (const candidate of gateway.registries.workflows.list()) {
-          try {
-            const w = await loadWorkflowForGraph(loader, candidate.id, candidate.path)
-            if (w.id === id) {
-              entry = candidate
-              workflow = w
-              break
-            }
-          } catch {
-            // skip workflows that fail to load
-          }
-        }
-      }
+      const { entry, workflow: preloaded } = await resolveWorkflowEntry(gateway, loader, id)
       if (entry === undefined) {
         throw createError({ statusCode: 404, message: 'workflow not found' })
       }
-      if (workflow === undefined) {
-        workflow = await loadWorkflowForGraph(loader, entry.id, entry.path)
-      }
+      const workflow = preloaded ?? (await loadWorkflowForGraph(loader, entry.id, entry.path))
       return deriveWorkflowGraph(workflow)
+    }),
+  )
+
+  router.post(
+    '/v1/workflows/:id/source/apply',
+    eventHandler(async (event) => {
+      const id = decodeMaybe(event.context.params?.id)
+      if (id === undefined || id.length === 0) {
+        throw createError({ statusCode: 400, message: 'workflow id is required' })
+      }
+      const body = (await readBody(event).catch(() => ({}))) as {
+        edits?: unknown
+        dryRun?: unknown
+      }
+      if (!Array.isArray(body.edits) || body.edits.length === 0) {
+        throw createError({ statusCode: 400, message: 'edits must be a non-empty array' })
+      }
+      if (body.dryRun !== undefined && typeof body.dryRun !== 'boolean') {
+        throw createError({ statusCode: 400, message: 'dryRun must be a boolean' })
+      }
+      // Default-safe: a request that does not explicitly set dryRun: false
+      // never writes.
+      const dryRun = body.dryRun !== false
+      const loader = requireLoader(gateway)
+      const { entry } = await resolveWorkflowEntry(gateway, loader, id)
+      if (entry === undefined) {
+        throw createError({ statusCode: 404, message: 'workflow not found' })
+      }
+      // The EXECUTABLE source is what gets edited: the gateway-owned managed
+      // copy for managed/archive registrations, the authored host file for
+      // legacy 'path' records and glob-discovered workflows (no record).
+      const record = await service.getRecord(entry.id)
+      const executablePath = record?.sourcePath ?? entry.path
+      // Path safety, defense in depth: the executable source must still
+      // resolve (realpath, so symlink swaps cannot escape) inside the allowed
+      // registration roots before we read or write anything.
+      let real: string
+      try {
+        real = await service.resolveSourcePath(executablePath)
+      } catch (err) {
+        if (err instanceof WorkflowRegistrationError) {
+          await gateway.enforcement.auditWriter.write({
+            actor: 'gateway',
+            action: 'workflow.source.apply',
+            details: {
+              workflowId: entry.id,
+              denied: true,
+              reason: 'source path is outside the allowed roots',
+            },
+          })
+          throw createError({
+            statusCode: 400,
+            message: 'workflow source path is outside the allowed roots',
+          })
+        }
+        throw err
+      }
+      const source = await readFile(real, 'utf8')
+      const result = applyGraphEdits(source, body.edits as GraphEdit[])
+      if (!result.ok) {
+        throw createError({
+          statusCode: 422,
+          message: `${result.reason}: ${result.detail}`,
+          data: { reason: result.reason, detail: result.detail },
+        })
+      }
+      // Validate the generated source by loading it through the gateway's own
+      // loader BEFORE any write. The probe lives in the same directory so
+      // relative imports resolve identically.
+      const probe = join(
+        dirname(real),
+        `.skelm-apply-${randomBytes(8).toString('hex')}${extname(real)}`,
+      )
+      await writeFile(probe, result.source, 'utf8')
+      let probeConsumed = false
+      try {
+        try {
+          await loadWorkflowForGraph(loader, `apply:${entry.id}:${probe}`, probe)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          throw createError({
+            statusCode: 422,
+            message: `generated source failed validation: ${message}`,
+          })
+        }
+        if (dryRun) {
+          return { ok: true, applied: false, dryRun: true, diff: result.diff }
+        }
+        if (
+          record !== undefined &&
+          (record.sourceKind === 'managed' || record.sourceKind === 'archive')
+        ) {
+          // Drop the probe before re-materializing so it is not copied into
+          // the new revision tree.
+          await unlink(probe).catch(() => {})
+          probeConsumed = true
+          const revision = await applyToManagedCopy(gateway, service, record, real, result.source)
+          await gateway.enforcement.auditWriter.write({
+            actor: 'gateway',
+            action: 'workflow.source.apply',
+            details: {
+              workflowId: entry.id,
+              sourceKind: record.sourceKind,
+              editCount: body.edits.length,
+              revision,
+            },
+          })
+          return { ok: true, applied: true, diff: result.diff, revision }
+        }
+        // 'path' kind: the authored host file is the source-controlled truth;
+        // replace it atomically (the probe doubles as the temp file).
+        await rename(probe, real)
+        probeConsumed = true
+        await gateway.enforcement.auditWriter.write({
+          actor: 'gateway',
+          action: 'workflow.source.apply',
+          details: {
+            workflowId: entry.id,
+            sourceKind: 'path',
+            editCount: body.edits.length,
+          },
+        })
+        return { ok: true, applied: true, diff: result.diff }
+      } finally {
+        if (!probeConsumed) await unlink(probe).catch(() => {})
+      }
     }),
   )
 
@@ -282,9 +398,11 @@ export function registerWorkflowRoutes(router: Router, gateway: GatewayContext):
       if (!removed) {
         throw createError({ statusCode: 404, message: 'workflow not registered' })
       }
-      if (existing?.sourceKind === 'archive') {
+      if (existing?.sourceKind === 'archive' || existing?.sourceKind === 'managed') {
+        // A source-apply on an archive-origin workflow cuts managed revisions
+        // while retaining the extraction dir for in-flight runs, so a record
+        // of either kind may hold data in both gateway-owned stores.
         await gateway.getWorkflowArchiveService().remove(id)
-      } else if (existing?.sourceKind === 'managed') {
         await gateway.getWorkflowArtifactService().remove(id)
       }
       // A workflow can be both explicitly registered AND surfaced by the FS
@@ -301,6 +419,131 @@ export function registerWorkflowRoutes(router: Router, gateway: GatewayContext):
       }
     }),
   )
+}
+
+/**
+ * Resolve by registry id first; fall back to scanning for a workflow whose
+ * declared id matches — mirrors GET /pipelines/:id so callers can pass either
+ * the registry id or the authored workflow id. Shared by the graph and
+ * source-apply routes so both resolve a workflow identically.
+ */
+async function resolveWorkflowEntry(
+  gateway: GatewayContext,
+  loader: (registryId: string, absolutePath: string) => Promise<unknown>,
+  id: string,
+): Promise<{
+  entry: { id: string; path: string } | undefined
+  workflow?: Awaited<ReturnType<typeof loadWorkflowForGraph>>
+}> {
+  const direct = gateway.registries.workflows.get(id)
+  if (direct !== undefined) return { entry: direct }
+  for (const candidate of gateway.registries.workflows.list()) {
+    try {
+      const workflow = await loadWorkflowForGraph(loader, candidate.id, candidate.path)
+      if (workflow.id === id) return { entry: candidate, workflow }
+    } catch {
+      // skip workflows that fail to load
+    }
+  }
+  return { entry: undefined }
+}
+
+/**
+ * Cut a NEW managed revision whose entry file carries the edited source, then
+ * repoint the registration record (and through it the registry) at the new
+ * revision entry. Old revisions are deliberately retained so in-flight runs
+ * keep resolving their tree. Returns the new revision segment.
+ */
+async function applyToManagedCopy(
+  gateway: GatewayContext,
+  service: WorkflowRegistrationService,
+  record: RegisteredWorkflowRecord,
+  realEntry: string,
+  editedSource: string,
+): Promise<string> {
+  const treeRoot = await managedSourceTreeRoot(gateway, record, realEntry)
+  let artifact: MaterializedWorkflowArtifact
+  try {
+    artifact = await gateway.getWorkflowArtifactService().materializeTree({
+      id: record.id,
+      sourceRoot: treeRoot,
+      entryPath: realEntry,
+      ...(record.originPath !== undefined && { originPath: record.originPath }),
+    })
+  } catch (err) {
+    if (err instanceof WorkflowRegistrationError) {
+      throw createError({ statusCode: err.statusCode, message: err.message })
+    }
+    throw err
+  }
+  try {
+    const tmp = join(
+      dirname(artifact.entryPath),
+      `.skelm-apply-${randomBytes(8).toString('hex')}${extname(artifact.entryPath)}`,
+    )
+    await writeFile(tmp, editedSource, 'utf8')
+    await rename(tmp, artifact.entryPath)
+    await service.upsert({
+      id: record.id,
+      sourcePath: artifact.entryPath,
+      sourceKind: 'managed',
+      ...(record.originPath !== undefined && { originPath: record.originPath }),
+      ...(record.originKind !== undefined && { originKind: record.originKind }),
+      ...(record.description !== undefined && { description: record.description }),
+      ...(record.version !== undefined && { version: record.version }),
+    })
+  } catch (err) {
+    // Nothing references the new revision until upsert succeeds, so a failure
+    // here can drop it without affecting any run.
+    await rm(artifact.artifactDir, { recursive: true, force: true }).catch(() => {})
+    throw err
+  }
+  return basename(artifact.artifactDir)
+}
+
+/**
+ * Locate the root of the gateway-owned tree holding the record's executable
+ * source: the revision dir under the artifact root for managed copies, the
+ * extraction dir for archive uploads. A record whose executable path does not
+ * sit inside its own kind's store is corrupted — refuse rather than guess.
+ */
+async function managedSourceTreeRoot(
+  gateway: GatewayContext,
+  record: RegisteredWorkflowRecord,
+  realEntry: string,
+): Promise<string> {
+  if (record.sourceKind === 'archive') {
+    const root = await realpathOr(gateway.getWorkflowArchiveService().destinationFor(record.id))
+    if (relative(root, realEntry).startsWith('..')) {
+      throw createError({
+        statusCode: 500,
+        message: 'workflow record is inconsistent with its archive storage',
+      })
+    }
+    return root
+  }
+  const artifactRoot = await realpathOr(gateway.getWorkflowArtifactService().artifactRoot)
+  const [idSegment, revisionSegment] = relative(artifactRoot, realEntry).split(sep)
+  if (
+    idSegment === undefined ||
+    idSegment === '..' ||
+    revisionSegment === undefined ||
+    realEntry === join(artifactRoot, idSegment, revisionSegment)
+  ) {
+    throw createError({
+      statusCode: 500,
+      message: 'workflow record is inconsistent with its managed storage',
+    })
+  }
+  return join(artifactRoot, idSegment, revisionSegment)
+}
+
+async function realpathOr(path: string): Promise<string> {
+  try {
+    return await realpath(path)
+  } catch {
+    return path
+  }
 }
 
 interface WorkflowLoadData {
