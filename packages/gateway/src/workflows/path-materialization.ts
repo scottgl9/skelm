@@ -1,8 +1,13 @@
 import { createHash } from 'node:crypto'
-import { realpath } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import { dirname, join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { CONFIG_FILENAMES, type SkelmConfig, pickExport } from '@skelm/core'
+import {
+  CONFIG_FILENAMES,
+  PACKAGE_MANIFEST_FILENAME,
+  type SkelmConfig,
+  pickExport,
+} from '@skelm/core'
 import type { GatewayContext } from '../lifecycle/gateway-types.js'
 import {
   WorkflowRegistrationError,
@@ -29,9 +34,16 @@ export async function materializePathWorkflow(
     opts.registrationService !== undefined
       ? await opts.registrationService.resolveSourcePath(opts.path)
       : await realpath(opts.path)
-  const configPath = await resolveConfigPath(entryPath, opts.configPath)
+  // An installed-package entry lives inside its own self-contained,
+  // integrity-verified managed copy under `.skelm/packages/<name>/<version>/`.
+  // That directory is the artifact — materialize from it, not the project tree
+  // (whose materializer excludes `.skelm`, which would drop the entry).
+  const packageRoot = await findInstalledPackageRoot(entryPath)
+  const configPath =
+    packageRoot !== undefined ? undefined : await resolveConfigPath(entryPath, opts.configPath)
   const sourceRoot =
     opts.sourceRoot ??
+    packageRoot ??
     (configPath !== undefined && isWithinPath(entryPath, dirname(configPath))
       ? dirname(configPath)
       : dirname(entryPath))
@@ -88,6 +100,41 @@ async function resolveConfigPath(
     const parent = dirname(dir)
     if (parent === dir) return undefined
     dir = parent
+  }
+}
+
+/**
+ * If `entryPath` lives inside an installed workflow-package version directory
+ * (`.../.skelm/packages/<encoded-name>/<version>/`), return that directory.
+ * The signal is an ancestor that both carries a `.skelm/packages/` path prefix
+ * and holds a package manifest — exactly the {@link WorkflowPackageStore}
+ * layout — so an unrelated file under some other `.skelm` dir is not matched.
+ */
+async function findInstalledPackageRoot(entryPath: string): Promise<string | undefined> {
+  let dir = dirname(entryPath)
+  for (;;) {
+    if (isUnderSkelmPackages(dir) && (await hasFile(join(dir, PACKAGE_MANIFEST_FILENAME)))) {
+      return dir
+    }
+    const parent = dirname(dir)
+    if (parent === dir) return undefined
+    dir = parent
+  }
+}
+
+function isUnderSkelmPackages(dir: string): boolean {
+  const segments = dir.split(sep)
+  for (let i = 1; i < segments.length; i += 1) {
+    if (segments[i] === 'packages' && segments[i - 1] === '.skelm') return true
+  }
+  return false
+}
+
+async function hasFile(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isFile()
+  } catch {
+    return false
   }
 }
 
