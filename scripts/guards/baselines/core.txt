@@ -1,4 +1,5 @@
 value:ALL_AGENTMEMORY_OPS
+value:ALL_PACKAGE_TRUST_LEVELS
 value:ALL_PERMISSION_DIMENSIONS
 value:AcpClient
 value:AcpProtocolError
@@ -35,6 +36,7 @@ value:CustomTrigger
 value:DEFAULT_ARTIFACT_QUOTA_BYTES
 value:DEFAULT_CONFIG
 value:DEFAULT_MAX_DELEGATION_DEPTH
+value:DEFAULT_PACKAGE_TRUST_POLICY
 value:DEFAULT_SESSION_LOCK_STALE_MS
 value:DelegationCycleError
 value:DelegationDepthError
@@ -66,6 +68,7 @@ value:PERSISTENT_WORKFLOW_NAMESPACE
 value:PROTOCOL_VERSION
 value:PackageIntegrityError
 value:PackageManifestError
+value:PackageTrustError
 value:PermissionDeniedError
 value:PermissionResolver
 value:PersistentSessionLockedError
@@ -145,10 +148,13 @@ value:defaultReplyOf
 value:defineConfig
 value:defineGatewayConfig
 value:defineWorkflowConfig
+value:derivePackageTrustLevel
 value:deriveWorkflowGraph
 value:describePipeline
 value:describeStep
+value:diffPackagePermissions
 value:encodePackageDirName
+value:evaluatePackageTrust
 value:executeAgentStep
 value:executeInferStep
 value:extractJsonFromText
@@ -190,6 +196,7 @@ value:saveSession
 value:selectProvider
 value:selectProviderForTask
 value:serializeError
+value:summarizePackagePermissions
 value:terminalEventTypeFor
 value:textPart
 value:timeoutSignal
@@ -266,6 +273,7 @@ type:CustomTriggerConfig
 type:DeclarativeStepSpec
 type:DelegateResult
 type:DeliveryTarget
+type:DerivePackageTrustOptions
 type:DescribedStep
 type:DiscordInteraction
 type:DiscordMessage
@@ -320,6 +328,11 @@ type:ModelProvider
 type:ModelProviderConfig
 type:NetworkPolicy
 type:OpenAIBackendOptions
+type:PackagePermissionExpansion
+type:PackagePermissionSummary
+type:PackageTrustDecision
+type:PackageTrustLevel
+type:PackageTrustPolicy
 type:ParallelOnError
 type:ParallelStep
 type:ParallelWaitFor

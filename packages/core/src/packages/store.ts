@@ -142,14 +142,25 @@ export class WorkflowPackageStore {
   }
 
   /**
+   * Parse and fully validate a source directory's manifest — including the
+   * symlink and entry-file checks — without copying anything into the cache.
+   * The gateway calls this so a trust-policy refusal can fire before any
+   * package file reaches the store.
+   */
+  async readSourceManifest(sourceDir: string): Promise<WorkflowPackageManifest> {
+    const manifest = await readManifest(sourceDir)
+    await walkFiles(sourceDir)
+    await assertPackageEntriesAreFiles(sourceDir, manifest)
+    return manifest
+  }
+
+  /**
    * Copy a local package directory into the cache. The manifest is parsed and
    * validated, and every declared entry file checked for existence, before any
    * file is copied. Re-installing an existing name/version replaces it.
    */
   async installFromDirectory(sourceDir: string): Promise<InstalledWorkflowPackage> {
-    const manifest = await readManifest(sourceDir)
-    await walkFiles(sourceDir)
-    await assertPackageEntriesAreFiles(sourceDir, manifest)
+    const manifest = await this.readSourceManifest(sourceDir)
 
     const dest = this.packageDir(manifest.name, manifest.version)
     // Staged sibling + rename so a crash mid-copy never leaves a partial

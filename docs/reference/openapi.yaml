@@ -644,8 +644,13 @@ paths:
       description: >
         Installs from a local directory path or a local `.tgz` tarball.
         The manifest is validated before any file is copied; a tarball is
-        extracted into a temp dir with path-traversal protection. Updates
-        `skelm.lock.json` and emits a `package.install` audit event. Remote
+        extracted into a temp dir with path-traversal protection. The package's
+        trust level (derived from the source) is checked against the operator
+        trust policy: a denied level returns `403`; a require-approval level
+        returns `409` unless `approve` is true. An update that broadens the
+        requested permission/secret/trigger surface returns `409` unless
+        `approve` is true. On success, updates `skelm.lock.json` (including the
+        trust level) and emits a `package.install` audit event. Remote
         (npm-registry) installs are not yet supported.
       requestBody:
         required: true
@@ -658,6 +663,11 @@ paths:
                 source:
                   type: string
                   description: Local directory path or local `.tgz` tarball path.
+                approve:
+                  type: boolean
+                  description: >
+                    Approve a require-approval trust level and/or a permission
+                    expansion on update. Defaults to false.
       responses:
         '200':
           description: Installed package summary
@@ -672,8 +682,15 @@ paths:
                       name: { type: string }
                       version: { type: string }
                       integrity: { type: string }
+                      trustLevel:
+                        type: string
+                        enum: [local, workspace, npm, verified, private]
+                      permissions: { type: object, additionalProperties: true }
+                      expansion: { type: object, additionalProperties: true }
         '400': { description: Invalid manifest, source, or tarball }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: Trust level denied by the trust policy }
+        '409': { description: Trust level requires approval, or update expands permissions }
 
   /v1/packages/resolve:
     post:
@@ -730,6 +747,10 @@ paths:
                   manifest: { type: object, additionalProperties: true }
                   versions: { type: array, items: { type: string } }
                   integrity: { type: string }
+                  trustLevel:
+                    type: string
+                    enum: [local, workspace, npm, verified, private]
+                  permissions: { type: object, additionalProperties: true }
                   lock: { type: object, additionalProperties: true, nullable: true }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: Package not installed }
