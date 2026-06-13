@@ -14,36 +14,42 @@ export interface SuspendApprovalGateOptions {
   /**
    * Optional path to write a JSON snapshot of the pending queue to on every
    * change. Lets the CLI's `skelm approvals list` reflect live state without
-   * touching the gateway HTTP surface. The snapshot is request-only (no
-   * promise resolvers); resuming requires the running gateway.
+   * touching the gateway HTTP surface, and is reloaded on the next gateway
+   * boot via {@link SuspendApprovalGate.load} so an approval parked across a
+   * restart survives and is still resolvable. The snapshot is request-only (no
+   * promise resolvers); resolving a reloaded entry requires the running gateway.
    */
   persistPath?: string
   /**
    * Gateway audit writer. When supplied, each approval lifecycle transition
-   * (requested, resolved, expired, cancelled) is recorded so decisions
-   * survive gateway restart and are tamper-evident under the chain writer.
+   * (requested, resolved, expired) is recorded so decisions survive gateway
+   * restart and are tamper-evident under the chain writer.
    */
   auditWriter?: AuditWriter
 }
 
+interface GateEntry {
+  request: ApprovalRequest
+  createdAt: string
+  // Resolvers are absent for entries rehydrated from the snapshot on boot:
+  // the run process that issued request() died with the previous gateway, so
+  // there is no in-memory promise left to settle. A reloaded entry is still
+  // listed and still resolvable via approve()/deny() — the decision is
+  // recorded to audit and removed from the durable snapshot.
+  resolve?: ((decision: ApprovalDecision) => void) | undefined
+  reject?: ((err: Error) => void) | undefined
+  timer?: NodeJS.Timeout | undefined
+}
+
 /**
- * In-memory suspend gate. Each `request()` returns a pending promise that
- * resolves only when `resolve()` is called from the HTTP control surface or
- * the CLI. Persistence across gateway restarts (RunStore-backed) lands
- * alongside the approvals HTTP endpoint integration; the in-memory gate
- * is sufficient for the same-process lifetime.
+ * Suspend gate. Each in-process `request()` returns a pending promise that
+ * resolves only when `resolve()`/`deny()` is called from the HTTP control
+ * surface or the CLI. The pending queue is persisted to `persistPath` on every
+ * change and reloaded on boot via {@link load}, so a parked approval survives a
+ * real gateway restart and stays resolvable afterwards.
  */
 export class SuspendApprovalGate implements ApprovalGate {
-  private pending: Map<
-    string,
-    {
-      request: ApprovalRequest
-      createdAt: string
-      resolve: (decision: ApprovalDecision) => void
-      reject: (err: Error) => void
-      timer?: NodeJS.Timeout
-    }
-  > = new Map()
+  private pending: Map<string, GateEntry> = new Map()
   private persistChain: Promise<void> = Promise.resolve()
   private auditChain: Promise<void> = Promise.resolve()
 
@@ -57,23 +63,72 @@ export class SuspendApprovalGate implements ApprovalGate {
     }))
   }
 
+  /**
+   * Rehydrate the pending queue from the persisted snapshot. Called once on
+   * gateway boot before the HTTP surface comes up, so approvals parked across a
+   * restart reappear in `list()` and remain resolvable via approve()/deny().
+   * Entries already present (issued in this process) are never overwritten.
+   */
+  async load(): Promise<void> {
+    const persistPath = this.opts.persistPath
+    if (persistPath === undefined) return
+    let raw: string
+    try {
+      raw = await fs.readFile(persistPath, 'utf8')
+    } catch {
+      return
+    }
+    let snapshot: unknown
+    try {
+      snapshot = JSON.parse(raw)
+    } catch {
+      return
+    }
+    if (!Array.isArray(snapshot)) return
+    for (const item of snapshot) {
+      if (item === null || typeof item !== 'object') continue
+      const rec = item as Record<string, unknown>
+      const id = typeof rec.id === 'string' ? rec.id : undefined
+      const runId = typeof rec.runId === 'string' ? rec.runId : undefined
+      const stepId = typeof rec.stepId === 'string' ? rec.stepId : undefined
+      const action = typeof rec.action === 'string' ? rec.action : undefined
+      const createdAt = typeof rec.createdAt === 'string' ? rec.createdAt : new Date().toISOString()
+      if (id === undefined || runId === undefined || stepId === undefined || action === undefined) {
+        continue
+      }
+      if (this.pending.has(id)) continue
+      const context =
+        rec.context !== null && typeof rec.context === 'object'
+          ? Object.freeze({ ...(rec.context as Record<string, unknown>) })
+          : Object.freeze({})
+      this.pending.set(id, {
+        request: { runId, stepId, action, context },
+        createdAt,
+      })
+    }
+  }
+
   async request(req: ApprovalRequest): Promise<ApprovalDecision> {
     const id = `${req.runId}:${req.stepId}`
-    if (this.pending.has(id)) {
-      throw new Error(`approval ${id} already pending`)
+    const existing = this.pending.get(id)
+    if (existing !== undefined) {
+      // A reloaded entry (no resolvers) is the same logical approval being
+      // re-requested after restart — adopt this process's resolvers rather
+      // than rejecting it as a duplicate, so the run can be resolved live.
+      if (existing.resolve !== undefined) {
+        throw new Error(`approval ${id} already pending`)
+      }
+      return new Promise<ApprovalDecision>((resolve, reject) => {
+        existing.resolve = resolve
+        existing.reject = reject
+      })
     }
     return new Promise<ApprovalDecision>((resolve, reject) => {
-      const entry = {
+      const entry: GateEntry = {
         request: req,
         createdAt: new Date().toISOString(),
         resolve,
         reject,
-      } as {
-        request: ApprovalRequest
-        createdAt: string
-        resolve: (decision: ApprovalDecision) => void
-        reject: (err: Error) => void
-        timer?: NodeJS.Timeout
       }
       if (this.opts.timeoutMs !== undefined) {
         entry.timer = setTimeout(() => {
@@ -155,36 +210,31 @@ export class SuspendApprovalGate implements ApprovalGate {
         ...(decision.reason !== undefined && { reason: decision.reason }),
       },
     }).finally(() => {
-      entry.resolve(decision)
+      // A reloaded entry has no live promise (the run died with the previous
+      // gateway); the durable audit + snapshot removal above is the decision
+      // record. Live entries settle their run's request() promise here.
+      entry.resolve?.(decision)
     })
     return true
   }
 
-  /** Reject all pending approvals — used during gateway stop. */
-  async drain(reason = 'gateway stopping'): Promise<void> {
-    const pending = Array.from(this.pending.entries())
-    for (const [, entry] of pending) {
+  /**
+   * Persist the pending queue and detach in-memory promises during gateway
+   * stop. Pending approvals are NOT rejected: the snapshot is kept so they
+   * survive the restart and reload via {@link load}, still resolvable
+   * afterwards. The in-memory promises are settled cleanly by dropping their
+   * resolvers — the run process is exiting with the gateway, so a reject()
+   * here would only surface as an unhandled rejection while destroying a
+   * still-valid pending approval.
+   */
+  async drain(_reason = 'gateway stopping'): Promise<void> {
+    for (const entry of this.pending.values()) {
       if (entry.timer !== undefined) clearTimeout(entry.timer)
+      entry.timer = undefined
+      entry.resolve = undefined
+      entry.reject = undefined
     }
-    this.pending.clear()
-    await Promise.allSettled([
-      this.persist(),
-      ...pending.map(([id, entry]) =>
-        this.audit({
-          runId: entry.request.runId,
-          actor: 'gateway',
-          action: 'approval.cancelled',
-          details: {
-            approvalId: id,
-            stepId: entry.request.stepId,
-            requestedAction: entry.request.action,
-            reason,
-          },
-        }).finally(() => {
-          entry.reject(new Error(`approval ${id} cancelled: ${reason}`))
-        }),
-      ),
-    ])
+    await this.persist()
   }
 
   private async audit(event: {
@@ -217,11 +267,12 @@ export class SuspendApprovalGate implements ApprovalGate {
     const write = async () => {
       try {
         await fs.mkdir(dirname(persistPath), { recursive: true })
-        const snapshot = this.list().map((p) => ({
-          id: p.id,
+        const snapshot = Array.from(this.pending.entries()).map(([id, p]) => ({
+          id,
           runId: p.request.runId,
           stepId: p.request.stepId,
           action: p.request.action,
+          context: p.request.context,
           createdAt: p.createdAt,
         }))
         await fs.writeFile(persistPath, JSON.stringify(snapshot, null, 2))

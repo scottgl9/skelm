@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+
+- **Durable approvals across gateway restart**: `SuspendApprovalGate` now
+  reloads its pending queue from `<stateDir>/approvals.json` on boot, so an
+  approval parked across a real gateway restart is rehydrated and stays
+  resolvable. Gateway stop no longer rejects still-pending approvals — they
+  persist and resume their pending state on the next boot instead of being
+  cancelled — which also eliminates an intermittent unhandled rejection on
+  stop.
+
 ## [0.4.9] - 2026-06-12
 
 ### Added
