@@ -157,6 +157,60 @@ describe('Gateway HTTP control surface', () => {
       await gw.stop()
     }
   })
+
+  it('reloads a parked approval across a gateway restart and resolves it', async () => {
+    // Boot 1: park an approval, then stop. The pending approval must NOT be
+    // rejected on stop (no unhandled rejection) and must survive in the
+    // snapshot so the next boot can rehydrate it.
+    const first = await bootGatewayWithRetry(async (port) => ({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+    }))
+    const gate1 = first.gw.enforcement.approvalGate as SuspendApprovalGate
+    let parkRejected = false
+    const parked = gate1.request({
+      runId: 'run-restart',
+      stepId: 'step-1',
+      action: 'tool.exec',
+      context: { tool: 'rm' },
+    })
+    void parked.catch(() => {
+      parkRejected = true
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    await first.gw.stop()
+    await new Promise((r) => setTimeout(r, 10))
+    expect(parkRejected).toBe(false)
+    const snap = JSON.parse(await fs.readFile(join(stateDir, 'approvals.json'), 'utf8'))
+    expect(snap).toHaveLength(1)
+
+    // Boot 2: same state dir. The approval rehydrates and is resolvable.
+    const second = await bootGatewayWithRetry(async (port) => ({
+      stateDir,
+      watchRegistries: false,
+      enableHttp: true,
+      httpPort: port,
+    }))
+    try {
+      const reloaded = await fetch(`${second.base}/approvals`).then((r) => r.json())
+      expect(reloaded).toHaveLength(1)
+      expect(reloaded[0].id).toBe('run-restart:step-1')
+
+      const approveRes = await fetch(`${second.base}/runs/run-restart/approve`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ stepId: 'step-1', approver: 'cli', reason: 'ok' }),
+      }).then((r) => r.json())
+      expect(approveRes).toEqual({ delivered: true })
+
+      const queueAfter = await fetch(`${second.base}/approvals`).then((r) => r.json())
+      expect(queueAfter).toEqual([])
+    } finally {
+      await second.gw.stop()
+    }
+  })
 })
 
 describe('Gateway HTTP /runs/:runId/events', () => {

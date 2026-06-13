@@ -1,5 +1,9 @@
+import { promises as fs } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { AuditEvent, AuditWriter } from '@skelm/core'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SuspendApprovalGate } from '../src/index.js'
 
 class CapturingAuditWriter implements AuditWriter {
@@ -21,6 +25,21 @@ class SlowAuditWriter implements AuditWriter {
 }
 
 const tick = (): Promise<void> => new Promise((r) => setImmediate(r))
+
+async function waitFor(assertion: () => void | Promise<void>, ms = 1000): Promise<void> {
+  const deadline = Date.now() + ms
+  let lastErr: unknown
+  while (Date.now() < deadline) {
+    try {
+      await assertion()
+      return
+    } catch (err) {
+      lastErr = err
+      await new Promise((r) => setTimeout(r, 10))
+    }
+  }
+  throw lastErr
+}
 
 describe('SuspendApprovalGate', () => {
   it('suspends until approve() delivers a decision', async () => {
@@ -56,19 +75,30 @@ describe('SuspendApprovalGate', () => {
 
   it('rejects duplicate request for the same run/step', async () => {
     const gate = new SuspendApprovalGate()
-    const first = gate.request({ runId: 'r3', stepId: 's3', action: 'x', context: {} })
+    void gate.request({ runId: 'r3', stepId: 's3', action: 'x', context: {} })
     await expect(
       gate.request({ runId: 'r3', stepId: 's3', action: 'x', context: {} }),
     ).rejects.toThrow(/already pending/)
-    gate.drain()
-    await expect(first).rejects.toThrow()
+    gate.approve('r3:s3')
   })
 
-  it('drain() rejects all pending approvals', async () => {
+  it('drain() preserves pending approvals (does not reject)', async () => {
     const gate = new SuspendApprovalGate()
     const p = gate.request({ runId: 'r4', stepId: 's4', action: 'x', context: {} })
-    gate.drain('shutdown')
-    await expect(p).rejects.toThrow(/cancelled: shutdown/)
+    let settled = false
+    void p.then(
+      () => {
+        settled = true
+      },
+      () => {
+        settled = true
+      },
+    )
+    await gate.drain('shutdown')
+    await tick()
+    expect(settled).toBe(false)
+    // The approval survives in the queue so it can be reloaded after restart.
+    expect(gate.list().map((e) => e.id)).toEqual(['r4:s4'])
   })
 
   it('honors per-gate timeout', async () => {
@@ -124,16 +154,19 @@ describe('SuspendApprovalGate', () => {
     expect(audit.events.map((e) => e.action)).toEqual(['approval.requested', 'approval.expired'])
   })
 
-  it('emits approval.cancelled on drain()', async () => {
+  it('drain() does not reject pending approvals or emit a cancelled event', async () => {
     const audit = new CapturingAuditWriter()
     const gate = new SuspendApprovalGate({ auditWriter: audit })
     const p = gate.request({ runId: 'rD', stepId: 'sD', action: 'x', context: {} })
+    let rejected = false
+    void p.catch(() => {
+      rejected = true
+    })
     await tick()
-    gate.drain('shutdown')
-    await expect(p).rejects.toThrow(/cancelled: shutdown/)
+    await gate.drain('shutdown')
     await tick()
-    const cancelled = audit.events.find((e) => e.action === 'approval.cancelled')
-    expect(cancelled?.details).toMatchObject({ reason: 'shutdown' })
+    expect(rejected).toBe(false)
+    expect(audit.events.some((e) => e.action === 'approval.cancelled')).toBe(false)
   })
 
   it('swallows audit writer failures without breaking the gate', async () => {
@@ -166,5 +199,77 @@ describe('SuspendApprovalGate', () => {
     // resolution path).
     expect(decision.approved).toBe(true)
     expect(slow.events.some((e) => e.action === 'approval.resolved')).toBe(true)
+  })
+})
+
+describe('SuspendApprovalGate durable reload', () => {
+  let dir: string
+  let persistPath: string
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'skelm-approvals-'))
+    persistPath = join(dir, 'approvals.json')
+  })
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('reloads a parked approval after a drain+restart and resolves on approve', async () => {
+    const auditA = new CapturingAuditWriter()
+    const gateA = new SuspendApprovalGate({ persistPath, auditWriter: auditA })
+    void gateA.request({ runId: 'r1', stepId: 's1', action: 'tool.exec', context: { tool: 'rm' } })
+    await tick()
+    // Stop the "old" gateway: pending approval must survive, not be rejected.
+    await gateA.drain('gateway stopping')
+
+    const snap = JSON.parse(await fs.readFile(persistPath, 'utf8'))
+    expect(snap).toHaveLength(1)
+
+    // Fresh gate on the same state dir (a real restart) rehydrates the queue.
+    const auditB = new CapturingAuditWriter()
+    const gateB = new SuspendApprovalGate({ persistPath, auditWriter: auditB })
+    await gateB.load()
+    expect(gateB.list().map((e) => e.id)).toEqual(['r1:s1'])
+    expect(gateB.list()[0]?.request.context).toEqual({ tool: 'rm' })
+
+    // The reloaded approval is still resolvable; approve records the decision
+    // and clears it from the durable snapshot.
+    expect(gateB.approve('r1:s1', 'alice', 'ok')).toBe(true)
+    await tick()
+    expect(auditB.events.map((e) => e.action)).toContain('approval.resolved')
+    expect(gateB.list()).toEqual([])
+    await waitFor(async () => {
+      const after = JSON.parse(await fs.readFile(persistPath, 'utf8'))
+      expect(after).toEqual([])
+    })
+  })
+
+  it('reloaded approval can be denied after restart', async () => {
+    const gateA = new SuspendApprovalGate({ persistPath })
+    void gateA.request({ runId: 'r2', stepId: 's2', action: 'fs.write', context: {} })
+    await tick()
+    await gateA.drain()
+
+    const gateB = new SuspendApprovalGate({ persistPath })
+    await gateB.load()
+    expect(gateB.deny('r2:s2', 'bob', 'too risky')).toBe(true)
+    await tick()
+    expect(gateB.list()).toEqual([])
+  })
+
+  it('adopts resolvers when the same run re-requests a reloaded approval', async () => {
+    const gateA = new SuspendApprovalGate({ persistPath })
+    void gateA.request({ runId: 'r3', stepId: 's3', action: 'x', context: {} })
+    await tick()
+    await gateA.drain()
+
+    const gateB = new SuspendApprovalGate({ persistPath })
+    await gateB.load()
+    // A resumed run re-issues request() for the same id; the live promise must
+    // resolve when the reloaded entry is approved.
+    const p = gateB.request({ runId: 'r3', stepId: 's3', action: 'x', context: {} })
+    expect(gateB.approve('r3:s3', 'carol')).toBe(true)
+    await expect(p).resolves.toMatchObject({ approved: true, approver: 'carol' })
   })
 })

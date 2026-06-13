@@ -24,7 +24,7 @@ When the agent attempts a matching action, the runtime calls `gateway.enforcemen
 | `AutoDenyGate` | adversarial tests | Always denies. |
 | `SuspendApprovalGate` | gateway production default | Suspends until `approve()`/`deny()` is called externally. |
 
-The suspend gate is owned by the gateway and exposed via `gateway.enforcement.approvalGate`. Persistence across gateway restarts is RunStore-backed and available through the HTTP control surface.
+The suspend gate is owned by the gateway and exposed via `gateway.enforcement.approvalGate`. The pending queue is persisted to `<stateDir>/approvals.json` on every change and reloaded on the next gateway boot, so an approval parked across a restart is rehydrated and stays resolvable through the HTTP control surface. Stopping the gateway does **not** reject pending approvals: they survive in the snapshot and resolve after restart, not into a cancelled error.
 
 ## CLI
 
@@ -44,10 +44,9 @@ skelm approvals deny    <id> --reason "too risky"
 approval.requested  actor=gateway              details={ approvalId, stepId, requestedAction, context }
 approval.resolved   actor=<approver|"unknown"> details={ approvalId, stepId, requestedAction, approved, reason? }
 approval.expired    actor=gateway              details={ approvalId, stepId, requestedAction, timeoutMs }
-approval.cancelled  actor=gateway              details={ approvalId, stepId, requestedAction, reason }
 ```
 
-A single `approval.resolved` entry covers both approve and deny — `approved: true|false` carries the decision, and the approver identity becomes the audit `actor`. Decisions survive gateway restart because the chain writer is append-only and tamper-evident; audit-write failures never block the approval flow.
+A single `approval.resolved` entry covers both approve and deny — `approved: true|false` carries the decision, and the approver identity becomes the audit `actor`. Decisions survive gateway restart because the chain writer is append-only and tamper-evident; audit-write failures never block the approval flow. A gateway stop with a still-pending approval emits no audit transition — the approval is neither resolved nor cancelled, it simply persists and resumes its pending state on the next boot.
 
 ## Status
 

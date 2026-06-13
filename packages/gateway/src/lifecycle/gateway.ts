@@ -642,6 +642,10 @@ export class Gateway implements GatewayContext {
           )
         })
       this.enforcementInternal = this.buildEnforcement()
+      {
+        const gate = this.enforcementInternal.approvalGate
+        if (gate instanceof SuspendApprovalGate) await gate.load()
+      }
       this.registriesInternal = await this.buildRegistries()
       this.managersInternal = await this.buildManagers()
       this.dynamicScheduleStoreInternal = new DynamicScheduleStore(this.stateDir)
@@ -776,6 +780,8 @@ export class Gateway implements GatewayContext {
     if (nextConfig !== undefined) {
       this.config = nextConfig
       this.enforcementInternal = this.buildEnforcement()
+      const gate = this.enforcementInternal.approvalGate
+      if (gate instanceof SuspendApprovalGate) await gate.load()
     }
     if (this.registriesInternal !== null) {
       const r = this.registriesInternal
