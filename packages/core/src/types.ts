@@ -396,7 +396,7 @@ export interface InferStep<TOutput = unknown> {
         | Promise<string | readonly import('./backend.js').ContentPart[]>)
   readonly outputSchema?: import('./schema.js').SkelmSchema<TOutput>
   readonly temperature?: number
-  readonly maxTokens?: number
+  readonly maxTokens?: number | ((ctx: Context) => number | Promise<number>)
   readonly secrets?: readonly string[]
   readonly state?: StateConfig
   readonly retry?: RetryPolicy

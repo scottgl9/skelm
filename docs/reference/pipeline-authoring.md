@@ -99,7 +99,7 @@ infer({
   model?: string
   output?: ZodSchema<TOutput>    // structured output
   temperature?: number
-  maxTokens?: number
+  maxTokens?: number | ((ctx: Context) => number | Promise<number>)
   retry?: RetryPolicy
 })
 ```

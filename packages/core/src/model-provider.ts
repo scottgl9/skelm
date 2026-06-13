@@ -6,6 +6,7 @@
  */
 
 import { RegistryError } from './errors.js'
+import { resolveValueOrFnAsync } from './execution/internal.js'
 import { ProviderNotFoundError } from './providers/base.js'
 import type { Context, InferStep } from './types.js'
 
@@ -285,7 +286,9 @@ export async function executeInferStep(
 
   const options: Partial<ModelProviderConfig> = {}
   if (step.temperature !== undefined) options.temperature = step.temperature
-  if (step.maxTokens !== undefined) options.maxTokens = step.maxTokens
+  if (step.maxTokens !== undefined) {
+    options.maxTokens = await resolveValueOrFnAsync(step.maxTokens, ctx)
+  }
 
   return provider.complete(messages, options)
 }
