@@ -127,6 +127,117 @@ describe('MatrixIntegration', () => {
     })
   })
 
+  it('editMessage PUTs an m.replace edit relation', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ event_id: '$edit:example.org' }))
+    const mx = new MatrixIntegration(makeConfig(), { fetch: fetchMock as unknown as typeof fetch })
+    await mx.init()
+    await mx.editMessage({
+      roomId: '!r:example.org',
+      eventId: '$orig:example.org',
+      body: 'updated',
+    })
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
+    expect(body).toEqual({
+      msgtype: 'm.text',
+      body: ' * updated',
+      'm.new_content': { msgtype: 'm.text', body: 'updated' },
+      'm.relates_to': { rel_type: 'm.replace', event_id: '$orig:example.org' },
+    })
+  })
+
+  it('streamReplies: opens a placeholder, edits on deltas, and commits the final reply', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ event_id: '$stream:example.org' }))
+    const mx = new MatrixIntegration(makeConfig(), { fetch: fetchMock as unknown as typeof fetch })
+    await mx.init()
+    const src = mx.createTriggerSource({ streamReplies: true, streamThrottleMs: 0 })
+    const input = {
+      eventId: '$inbound:example.org',
+      roomId: '!r:example.org',
+      sender: '@u:example.org',
+      body: 'hi',
+      date: 1,
+    }
+
+    await src.onEvent?.(input, { type: 'step.partial', delta: 'Hel' })
+    await src.onEvent?.(input, { type: 'step.partial', delta: 'lo' })
+    await src.onResult?.(input, { reply: 'Hello world' })
+
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse(String(c[1]?.body)))
+    // 1) placeholder send with the first delta, threaded as a reply
+    expect(bodies[0]).toEqual({
+      msgtype: 'm.text',
+      body: 'Hel',
+      'm.relates_to': { 'm.in_reply_to': { event_id: '$inbound:example.org' } },
+    })
+    // 2) edit with the accumulated text
+    expect(bodies[1]['m.new_content']).toEqual({ msgtype: 'm.text', body: 'Hello' })
+    expect(bodies[1]['m.relates_to'].rel_type).toBe('m.replace')
+    // 3) final commit edits the same message (no duplicate send)
+    expect(bodies[2]['m.new_content']).toEqual({ msgtype: 'm.text', body: 'Hello world' })
+    expect(bodies[2]['m.relates_to'].rel_type).toBe('m.replace')
+    expect(fetchMock.mock.calls).toHaveLength(3)
+  })
+
+  it('streamReplies: concurrent deltas during the first send post only one placeholder', async () => {
+    // The gateway dispatches run events as `void onEvent(...)` with no
+    // back-pressure (gateway/src/triggers/dispatcher.ts), so deltas can arrive
+    // while the first placeholder send is still in flight. Hold that first send
+    // open, fire a second delta, and assert only ONE reply-threaded placeholder
+    // is posted — not one per racing delta.
+    let releaseFirst: (r: Response) => void = () => {}
+    const firstSend = new Promise<Response>((res) => {
+      releaseFirst = res
+    })
+    fetchMock
+      .mockReturnValueOnce(firstSend)
+      .mockResolvedValue(jsonResponse({ event_id: '$stream:example.org' }))
+    const mx = new MatrixIntegration(makeConfig(), { fetch: fetchMock as unknown as typeof fetch })
+    await mx.init()
+    const src = mx.createTriggerSource({ streamReplies: true, streamThrottleMs: 0 })
+    const input = {
+      eventId: '$inbound:example.org',
+      roomId: '!r:example.org',
+      sender: '@u:example.org',
+      body: 'hi',
+      date: 1,
+    }
+
+    // Fire two deltas WITHOUT awaiting the first — both run before the
+    // placeholder send resolves, mirroring the unbuffered gateway dispatch.
+    const p1 = src.onEvent?.(input, { type: 'step.partial', delta: 'Hel' })
+    const p2 = src.onEvent?.(input, { type: 'step.partial', delta: 'lo' })
+    releaseFirst(jsonResponse({ event_id: '$stream:example.org' }))
+    await Promise.all([p1, p2])
+
+    const placeholderSends = fetchMock.mock.calls
+      .map((c) => JSON.parse(String(c[1]?.body)))
+      .filter((b) => b['m.relates_to']?.['m.in_reply_to'] !== undefined)
+    expect(placeholderSends).toHaveLength(1)
+  })
+
+  it('without streamReplies, posts a single final reply and has no onEvent hook', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ event_id: '$x:example.org' }))
+    const mx = new MatrixIntegration(makeConfig(), { fetch: fetchMock as unknown as typeof fetch })
+    await mx.init()
+    const src = mx.createTriggerSource({})
+    expect(src.onEvent).toBeUndefined()
+    const input = {
+      eventId: '$in:example.org',
+      roomId: '!r:example.org',
+      sender: '@u:example.org',
+      body: 'hi',
+      date: 1,
+    }
+    await src.onResult?.(input, { reply: 'final' })
+    expect(fetchMock.mock.calls).toHaveLength(1)
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
+    expect(body).toEqual({
+      msgtype: 'm.text',
+      body: 'final',
+      'm.relates_to': { 'm.in_reply_to': { event_id: '$in:example.org' } },
+    })
+  })
+
   it('sendNotification throws without a roomId and sends with one', async () => {
     const mx = new MatrixIntegration(makeConfig(), {
       fetch: fetchMock as unknown as typeof fetch,

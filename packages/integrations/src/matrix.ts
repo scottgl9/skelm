@@ -70,6 +70,12 @@ export interface MatrixTriggerSource {
   }): Promise<void> | void
   stop(): Promise<void> | void
   onResult?(payload: unknown, output: unknown): Promise<void> | void
+  /**
+   * Receives every run event for the fired turn. Present only when
+   * `streamReplies` is enabled; edits a placeholder message as `step.partial`
+   * deltas arrive so the reply streams into the room live.
+   */
+  onEvent?(payload: unknown, event: unknown): Promise<void> | void
 }
 
 export interface CreateMatrixTriggerSourceOptions {
@@ -103,6 +109,21 @@ export interface CreateMatrixTriggerSourceOptions {
    * every configured filter must pass.
    */
   allowedUsers?: readonly string[]
+  /**
+   * Stream the reply into the room as it is generated, instead of posting only
+   * the final text. When true, the source edits a single placeholder message
+   * (Matrix `m.replace`) as `step.partial` deltas arrive, and commits the final
+   * `output.reply` into that same message on completion — so the room sees one
+   * message that fills in live. Requires the workflow's backend to emit
+   * `step.partial` events; with none, behavior is identical to a normal reply.
+   * Default: false.
+   */
+  streamReplies?: boolean
+  /**
+   * Minimum gap between streamed message edits, in milliseconds, to avoid
+   * hammering the homeserver on fast token streams. Default: 600.
+   */
+  streamThrottleMs?: number
 }
 
 export interface MatrixSendMessageOptions {
@@ -241,6 +262,50 @@ export class MatrixIntegration extends IntegrationBase {
     return { eventId: r.event_id }
   }
 
+  /**
+   * Replace the body of a previously-sent message via the Matrix edit relation
+   * (`m.replace`). Edit-aware clients render the new content in place; others
+   * see the ` * <body>` fallback. Used to stream a reply into one message.
+   */
+  async editMessage(options: {
+    roomId: string
+    eventId: string
+    body: string
+    formattedBody?: string
+  }): Promise<{ eventId: string }> {
+    const txnId = `m${Date.now()}.${this.txnCounter++}`
+    const newContent: Record<string, unknown> = {
+      msgtype: 'm.text',
+      body: options.body,
+      ...(options.formattedBody !== undefined && {
+        format: 'org.matrix.custom.html',
+        formatted_body: options.formattedBody,
+      }),
+    }
+    const content: Record<string, unknown> = {
+      msgtype: 'm.text',
+      body: ` * ${options.body}`,
+      'm.new_content': newContent,
+      'm.relates_to': { rel_type: 'm.replace', event_id: options.eventId },
+    }
+    const path = `/rooms/${encodeURIComponent(options.roomId)}/send/m.room.message/${encodeURIComponent(txnId)}`
+    const r = await this.request<{ event_id: string }>('PUT', path, { body: content })
+    return { eventId: r.event_id }
+  }
+
+  /**
+   * Send a typing notification for the bot user in a room. `timeoutMs` is how
+   * long the server should keep the bot marked as typing (ignored when
+   * `typing` is false). Best-effort presence sugar for streamed replies.
+   */
+  async sendTyping(roomId: string, typing: boolean, timeoutMs = 20000): Promise<void> {
+    const userId = await this.getUserId()
+    const path = `/rooms/${encodeURIComponent(roomId)}/typing/${encodeURIComponent(userId)}`
+    await this.request('PUT', path, {
+      body: typing ? { typing: true, timeout: timeoutMs } : { typing: false },
+    })
+  }
+
   /** Notification-style helper that matches the Integration interface. */
   async sendNotification(message: string, options?: { roomId?: string }): Promise<void> {
     const roomId = options?.roomId
@@ -299,6 +364,8 @@ export class MatrixIntegration extends IntegrationBase {
     const dropPending = options.dropPending ?? true
     const syncTimeoutMs = options.syncTimeoutMs ?? 30000
     const postReply = options.postReply ?? true
+    const streamReplies = options.streamReplies ?? false
+    const streamThrottleMs = options.streamThrottleMs ?? 600
     const allowedRoomIds = options.allowedRoomIds
     const allowedUsers = options.allowedUsers
     const isAllowed = (input: MatrixMessageInput): boolean => {
@@ -310,6 +377,11 @@ export class MatrixIntegration extends IntegrationBase {
     let stopping = false
     let abortCtl: AbortController | null = null
     const seen = new Set<string>()
+    // Per-inbound-message streaming state, keyed by the originating event id.
+    const streams = new Map<
+      string,
+      { messageEventId?: string; text: string; lastEditAt: number; opening: boolean }
+    >()
     let since: string | undefined
     let loopPromise: Promise<void> | null = null
     const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -379,19 +451,86 @@ export class MatrixIntegration extends IntegrationBase {
           // ignore
         }
       },
+      ...(streamReplies && {
+        async onEvent(payload: unknown, event: unknown): Promise<void> {
+          const input = payload as MatrixMessageInput | undefined
+          const ev = event as { type?: string; delta?: unknown } | undefined
+          if (input === undefined || ev?.type !== 'step.partial' || typeof ev.delta !== 'string') {
+            return
+          }
+          let st = streams.get(input.eventId)
+          if (st === undefined) {
+            st = { text: '', lastEditAt: 0, opening: false }
+            streams.set(input.eventId, st)
+          }
+          st.text += ev.delta
+          if (st.text === '') return
+          try {
+            if (st.messageEventId === undefined) {
+              // First delta opens the placeholder. Claim it synchronously
+              // before the await: onEvent is dispatched with no back-pressure
+              // (gateway fires `void onEvent(...)`), so deltas arriving during
+              // this send would otherwise each post their own placeholder.
+              // Racing deltas still accumulate into st.text and are flushed by
+              // a later edit / the final commit, so nothing is lost.
+              if (st.opening) return
+              st.opening = true
+              const sent = await integration.sendMessage({
+                roomId: input.roomId,
+                body: st.text,
+                replyToEventId: input.eventId,
+              })
+              st.messageEventId = sent.eventId
+              st.lastEditAt = Date.now()
+              st.opening = false
+            } else {
+              const now = Date.now()
+              if (now - st.lastEditAt >= streamThrottleMs) {
+                st.lastEditAt = now
+                await integration.editMessage({
+                  roomId: input.roomId,
+                  eventId: st.messageEventId,
+                  body: st.text,
+                })
+              }
+            }
+          } catch {
+            // Best-effort streaming; onResult still commits the final reply.
+            // Release the open-claim so a later delta can retry the placeholder
+            // if the first send failed.
+            st.opening = false
+          }
+        },
+      }),
       ...(postReply && {
         async onResult(payload: unknown, output: unknown): Promise<void> {
           const input = payload as MatrixMessageInput | undefined
           const reply = (output as { reply?: unknown } | undefined)?.reply
-          if (input === undefined || typeof reply !== 'string' || reply === '') return
+          const st = input !== undefined ? streams.get(input.eventId) : undefined
+          if (input === undefined || typeof reply !== 'string' || reply === '') {
+            if (input !== undefined) streams.delete(input.eventId)
+            return
+          }
           try {
-            await integration.sendMessage({
-              roomId: input.roomId,
-              body: reply,
-              replyToEventId: input.eventId,
-            })
+            if (st?.messageEventId !== undefined) {
+              // We streamed a placeholder — commit the final text into that same
+              // message rather than posting a duplicate reply.
+              await integration.editMessage({
+                roomId: input.roomId,
+                eventId: st.messageEventId,
+                body: reply,
+              })
+            } else {
+              await integration.sendMessage({
+                roomId: input.roomId,
+                body: reply,
+                replyToEventId: input.eventId,
+              })
+            }
           } catch {
             // best-effort; gateway audit will record the run, the loop continues.
+          } finally {
+            if (input !== undefined) streams.delete(input.eventId)
           }
         },
       }),

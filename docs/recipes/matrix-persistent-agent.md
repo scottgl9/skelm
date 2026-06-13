@@ -68,6 +68,7 @@ export default defineConfig({
     driver: matrix.createTriggerSource({
       dropPending: true,
       allowedRoomIds: ['<!your-room:server>'], // who-can-talk allowlist
+      streamReplies: true,                     // edit the reply into the room as it generates
     }),
   }],
   defaults: {
@@ -93,6 +94,12 @@ export default defineConfig({
   Mandatory in practice for an unrestricted bot: it is the difference between
   "my assistant" and "a shell for anyone who can join the room." Pair with
   `allowedUsers` to also gate by sender.
+- **`streamReplies`** — stream the reply into the room as it generates: the
+  source opens one placeholder message and edits it (Matrix `m.replace`) as
+  `step.partial` deltas arrive, then commits the final text into that same
+  message. Requires a backend that emits `step.partial`; with none, it falls
+  back to a single final reply. Edit cadence is bounded by `streamThrottleMs`
+  (default 600 ms).
 
 ## Run it
 
