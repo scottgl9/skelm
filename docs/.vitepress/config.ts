@@ -121,6 +121,7 @@ export default defineConfig({
             { text: 'ACP Sessions', link: '/guides/acp-sessions' },
             { text: 'MCP Servers', link: '/guides/mcp-servers' },
             { text: 'Agentmemory', link: '/guides/agentmemory' },
+            { text: 'Memory System Workflows', link: '/guides/memory-system' },
           ],
         },
         {

@@ -1,0 +1,158 @@
+{
+  "name": "@skelm/memory-system",
+  "version": "0.4.8",
+  "description": "First-party memory-management workflows over agentmemory + durable state.",
+  "license": "MIT",
+  "homepage": "https://skelm.dev",
+  "skelm": {
+    "apiVersion": 1,
+    "requiredSkelmVersion": ">=0.4.0",
+    "workflows": [
+      {
+        "id": "default",
+        "entry": "dist/pipelines/daily-note.pipeline.js",
+        "kind": "pipeline",
+        "description": "Append a daily rollup note from recent memories.",
+        "permissions": {
+          "allowedSecrets": ["AGENTMEMORY_TOKEN"],
+          "agentmemory": { "allowRecall": true, "allowSave": true }
+        }
+      },
+      {
+        "id": "daily-note",
+        "entry": "dist/pipelines/daily-note.pipeline.js",
+        "kind": "pipeline",
+        "description": "Append a daily rollup note from recent memories.",
+        "permissions": {
+          "allowedSecrets": ["AGENTMEMORY_TOKEN"],
+          "agentmemory": { "allowRecall": true, "allowSave": true }
+        }
+      },
+      {
+        "id": "session-summary",
+        "entry": "dist/pipelines/session-summary.pipeline.js",
+        "kind": "pipeline",
+        "description": "Summarize one session into a durable memory via an agent turn.",
+        "permissions": {
+          "allowedSecrets": ["AGENTMEMORY_TOKEN"],
+          "agentmemory": { "allowRecall": true, "allowSave": true }
+        }
+      },
+      {
+        "id": "weekly-archive",
+        "entry": "dist/pipelines/weekly-archive.pipeline.js",
+        "kind": "pipeline",
+        "description": "Fold aged memories into a weekly archive memory.",
+        "permissions": {
+          "allowedSecrets": ["AGENTMEMORY_TOKEN"],
+          "agentmemory": { "allowRecall": true, "allowSave": true }
+        }
+      },
+      {
+        "id": "consolidation",
+        "entry": "dist/pipelines/consolidation.pipeline.js",
+        "kind": "pipeline",
+        "description": "Fold near-duplicate memories into consolidated memories.",
+        "permissions": {
+          "allowedSecrets": ["AGENTMEMORY_TOKEN"],
+          "agentmemory": { "allowSearch": true, "allowSave": true }
+        }
+      },
+      {
+        "id": "promotion",
+        "entry": "dist/pipelines/promotion.pipeline.js",
+        "kind": "pipeline",
+        "description": "Promote high-value memories under a promoted concept.",
+        "permissions": {
+          "allowedSecrets": ["AGENTMEMORY_TOKEN"],
+          "agentmemory": { "allowRecall": true, "allowSave": true }
+        }
+      },
+      {
+        "id": "stale-prune",
+        "entry": "dist/pipelines/stale-prune.pipeline.js",
+        "kind": "pipeline",
+        "description": "Report stale memory candidates (read-only; no deletion).",
+        "permissions": {
+          "allowedSecrets": ["AGENTMEMORY_TOKEN"],
+          "agentmemory": { "allowRecall": true }
+        }
+      },
+      {
+        "id": "search-health",
+        "entry": "dist/pipelines/search-health.pipeline.js",
+        "kind": "pipeline",
+        "description": "Probe search-index health with canary queries (read-only).",
+        "permissions": {
+          "allowedSecrets": ["AGENTMEMORY_TOKEN"],
+          "agentmemory": { "allowSearch": true }
+        }
+      },
+      {
+        "id": "integrity-audit",
+        "entry": "dist/pipelines/integrity-audit.pipeline.js",
+        "kind": "pipeline",
+        "description": "Audit memory + graph referential integrity (read-only).",
+        "permissions": {
+          "allowedSecrets": ["AGENTMEMORY_TOKEN"],
+          "agentmemory": { "allowRecall": true, "allowGraph": true }
+        }
+      }
+    ],
+    "config": {
+      "project": "Project string forwarded to every agentmemory op.",
+      "recallLimit": "Max memories any single workflow recalls in one pass.",
+      "staleAfterMs": "Age past which a memory is considered stale.",
+      "archiveAfterMs": "Age past which weekly-archive folds a memory.",
+      "duplicateScore": "Min search score for consolidation to treat memories as duplicates.",
+      "promoteScore": "Min recall score for promotion to elevate a memory.",
+      "summaryMaxTokens": "Token budget hint for the summarization turn."
+    },
+    "secrets": [
+      {
+        "name": "AGENTMEMORY_TOKEN",
+        "description": "Bearer token for the agentmemory server (name only)."
+      }
+    ],
+    "integrations": [],
+    "stateNamespaces": ["pipeline"],
+    "triggers": [
+      {
+        "id": "daily-note-cron",
+        "kind": "cron",
+        "description": "Daily note rollup. Disabled until enabled by an operator."
+      },
+      {
+        "id": "weekly-archive-cron",
+        "kind": "cron",
+        "description": "Weekly archive of aged memories. Disabled until enabled by an operator."
+      },
+      {
+        "id": "consolidation-cron",
+        "kind": "cron",
+        "description": "Periodic duplicate consolidation. Disabled until enabled by an operator."
+      },
+      {
+        "id": "promotion-cron",
+        "kind": "cron",
+        "description": "Periodic memory promotion. Disabled until enabled by an operator."
+      },
+      {
+        "id": "stale-prune-cron",
+        "kind": "cron",
+        "description": "Periodic stale-memory scan. Disabled until enabled by an operator."
+      },
+      {
+        "id": "search-health-cron",
+        "kind": "cron",
+        "description": "Periodic search-index health probe. Disabled until enabled by an operator."
+      },
+      {
+        "id": "integrity-audit-cron",
+        "kind": "cron",
+        "description": "Periodic integrity audit. Disabled until enabled by an operator."
+      }
+    ],
+    "selfTest": { "entry": "dist/self-test.js" }
+  }
+}

@@ -175,7 +175,7 @@ export function infer<TOutput>(def: {
         | Promise<string | readonly import('./backend.js').ContentPart[]>)
   output?: SkelmSchema<TOutput>
   temperature?: number
-  maxTokens?: number
+  maxTokens?: number | ((ctx: Context) => number | Promise<number>)
   secrets?: readonly string[]
   state?: StateConfig
   retry?: RetryPolicy

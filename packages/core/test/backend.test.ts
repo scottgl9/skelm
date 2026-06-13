@@ -180,6 +180,37 @@ describe('infer() step', () => {
     expect(run.output).toEqual({ text: 'hello, world', usage: undefined })
   })
 
+  it('resolves maxTokens from the infer step context', async () => {
+    const seen: number[] = []
+    const reg = new BackendRegistry()
+    reg.register(
+      fixtureBackend({
+        id: 'fake',
+        respond: (req) => {
+          if (req.maxTokens !== undefined) seen.push(req.maxTokens)
+          return { text: req.messages[0]?.content ?? '' }
+        },
+      }),
+    )
+
+    const wf = pipeline({
+      id: 'inference-max-tokens-fn',
+      input: z.object({ limit: z.number().int().positive() }),
+      steps: [
+        infer({
+          id: 'greet',
+          backend: 'fake',
+          prompt: 'hello',
+          maxTokens: (ctx) => (ctx.input as { limit: number }).limit,
+        }),
+      ],
+    })
+    const run = await runPipeline(wf, { limit: 321 }, { backends: reg })
+
+    expect(run.status).toBe('completed')
+    expect(seen).toEqual([321])
+  })
+
   it('forwards image content parts to vision-capable backends', async () => {
     const reg = new BackendRegistry()
     const seen: unknown[] = []

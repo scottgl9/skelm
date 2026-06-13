@@ -483,12 +483,14 @@ async function runInferStep(
   const promptValue = await resolveValueOrFnAsync(step.prompt, stepCtx)
   const systemText =
     step.system === undefined ? undefined : await resolveValueOrFnAsync(step.system, stepCtx)
+  const maxTokens =
+    step.maxTokens === undefined ? undefined : await resolveValueOrFnAsync(step.maxTokens, stepCtx)
   const req = {
     messages: [{ role: 'user' as const, content: promptValue as string | readonly ContentPart[] }],
     ...(systemText !== undefined && { system: systemText }),
     ...(step.model !== undefined && { model: step.model }),
     ...(step.temperature !== undefined && { temperature: step.temperature }),
-    ...(step.maxTokens !== undefined && { maxTokens: step.maxTokens }),
+    ...(maxTokens !== undefined && { maxTokens }),
     ...(step.outputSchema !== undefined && { outputSchema: step.outputSchema }),
   }
   const onPartial =
