@@ -272,6 +272,53 @@ describe('/v1/workflows/*', () => {
     }
   })
 
+  it('materializes an intra-tree symlink (CLAUDE.md -> AGENTS.md) on register', async () => {
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    const wfPath = join(projectRoot, 'workflows/a.workflow.ts')
+    await fs.writeFile(wfPath, 'export default {}')
+    await fs.writeFile(join(projectRoot, 'workflows', 'AGENTS.md'), 'agent guidance')
+    await fs.symlink('./AGENTS.md', join(projectRoot, 'workflows', 'CLAUDE.md'))
+    const { gw, base } = await bootGateway()
+    try {
+      const res = await fetch(`${base}/v1/workflows/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'symlinked', source: { type: 'path', path: wfPath } }),
+      })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { workflow: { sourcePath: string } }
+      const copied = join(dirname(body.workflow.sourcePath), 'CLAUDE.md')
+      const stat = await fs.lstat(copied)
+      expect(stat.isSymbolicLink()).toBe(false)
+      expect(await fs.readFile(copied, 'utf8')).toBe('agent guidance')
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('rejects registration when the source tree escapes via a symlink', async () => {
+    const secret = await mkdtemp(join(tmpdir(), 'skelm-secret-'))
+    await fs.writeFile(join(secret, 'passwd'), 'root:x:0:0')
+    await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
+    const wfPath = join(projectRoot, 'workflows/a.workflow.ts')
+    await fs.writeFile(wfPath, 'export default {}')
+    await fs.symlink(join(secret, 'passwd'), join(projectRoot, 'workflows', 'evil'))
+    const { gw, base } = await bootGateway()
+    try {
+      const res = await fetch(`${base}/v1/workflows/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'escapes', source: { type: 'path', path: wfPath } }),
+      })
+      expect(res.status).toBe(400)
+      const list = await fetch(`${base}/v1/workflows`).then((r) => r.json())
+      expect(list.find((e: { id: string }) => e.id === 'escapes')).toBeUndefined()
+    } finally {
+      await gw.stop()
+      await rm(secret, rmOptions)
+    }
+  })
+
   it('GET /v1/workflows surfaces glob-discovered workflows and tags by source', async () => {
     // Regression for F023: GET /v1/workflows used to return only the
     // explicitly-registered set (empty by default), while /pipelines

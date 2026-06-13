@@ -179,3 +179,12 @@ file is the executable, source-controlled truth and is edited in place.
 - Every apply appends a `workflow.source.apply` audit event carrying the
   workflow id, source kind, edit count, and (for managed copies) the new
   revision id — never the source body or any path outside gateway control.
+
+When the gateway materializes a managed copy it follows symlinks **only if
+their target resolves inside the source root** (`realpath` checked against the
+root, same no-escape rule as registration), then copies the dereferenced
+content as a regular file. This lets the common `CLAUDE.md → AGENTS.md`
+convention materialize cleanly. A symlink whose target escapes the source root,
+or one that is dangling/unresolvable, is rejected with `400` so no external
+content can be smuggled into the gateway-owned artifact; symlink cycles
+terminate via a visited-set guard rather than looping.
