@@ -1,0 +1,36 @@
+{
+  "name": "@skelm/workflow-builder",
+  "version": "0.4.8",
+  "description": "Persistent-agent workflow that inspects, authors, and revises skelm workflows as reviewable patches.",
+  "license": "MIT",
+  "homepage": "https://skelm.dev",
+  "skelm": {
+    "apiVersion": 1,
+    "requiredSkelmVersion": ">=0.4.0",
+    "workflows": [
+      {
+        "id": "default",
+        "entry": "assets/workflow-builder.workflow.ts",
+        "kind": "persistent",
+        "description": "Conversational builder that inspects, authors, and revises skelm workflows as reviewable patches.",
+        "permissions": {
+          "fsRead": ["./"],
+          "executableProfiles": ["nodeBuild"],
+          "allowedSkills": ["skelm"]
+        }
+      }
+    ],
+    "config": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "description": "Agent backend id to drive turns; resolves from skelm config when omitted."
+        }
+      }
+    },
+    "selfTest": {
+      "entry": "assets/self-test.ts"
+    }
+  }
+}
