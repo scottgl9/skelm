@@ -188,3 +188,18 @@ convention materialize cleanly. A symlink whose target escapes the source root,
 or one that is dangling/unresolvable, is rejected with `400` so no external
 content can be smuggled into the gateway-owned artifact; symlink cycles
 terminate via a visited-set guard rather than looping.
+
+Materialization skips obviously-non-source content so that build and runtime
+output does not bloat the managed copy or trip the size cap. The walk is
+**`.gitignore`-aware**: when the source root contains a `.gitignore`, paths it
+ignores are skipped during the copy (root-level patterns, including anchored
+`/dir`, directory-only `dir/`, negation `!keep`, and `*`/`**` globs). On top of
+that, a hard denylist always excludes structural dirs and never-imported
+caches — `.git`, `.skelm`, `node_modules`, `coverage`, `.next`, `.turbo`,
+`.cache`, `.codegraph`, `logs` — even when no matching ignore entry is present;
+`node_modules` is re-linked to the project's real tree separately. Compiled
+output dirs (`dist`, `build`, `out`) are deliberately **not** in the hard
+denylist, because a managed workflow may import its own compiled artifacts; they
+are skipped only when the project's own `.gitignore` ignores them. The total
+copied size is still capped (default 5 MB); with ignored and output dirs
+skipped, the cap now trips only on genuinely large **source**, returning `413`.
