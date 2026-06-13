@@ -49,6 +49,7 @@ export default defineConfig({
       { text: 'Guide', link: '/quickstart/' },
       { text: 'Concepts', link: '/concepts/' },
       { text: 'Recipes', link: '/recipes/' },
+      { text: 'Integrations', link: '/integrations/discord' },
       { text: 'Reference', link: '/reference/' },
       { text: 'Contributing', link: '/contributing/' },
       { text: 'Changelog', link: '/CHANGELOG' },
@@ -131,6 +132,12 @@ export default defineConfig({
             { text: 'Audit', link: '/guides/audit' },
             { text: 'Production Hardening', link: '/guides/production-hardening' },
           ],
+        },
+      ],
+      '/integrations/': [
+        {
+          text: 'Integrations',
+          items: [{ text: 'Discord', link: '/integrations/discord' }],
         },
       ],
       '/reference/': [
