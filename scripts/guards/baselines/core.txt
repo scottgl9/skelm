@@ -43,6 +43,7 @@ value:DEFAULT_SESSION_LOCK_STALE_MS
 value:DelegationCycleError
 value:DelegationDepthError
 value:DiscordTrigger
+value:EMPTY_PACKAGE_PERMISSION_SUMMARY
 value:EnvSecretResolver
 value:EventBus
 value:ExecConfigError

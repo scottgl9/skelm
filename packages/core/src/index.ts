@@ -277,6 +277,7 @@ export {
   PACKAGE_MANIFEST_FILENAME,
   SKELM_LOCKFILE_NAME,
   WorkflowPackageStore,
+  EMPTY_PACKAGE_PERMISSION_SUMMARY,
   computePackageIntegrity,
   derivePackageTrustLevel,
   diffPackagePermissions,

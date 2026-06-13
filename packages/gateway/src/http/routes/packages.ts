@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, normalize, sep } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import {
   DEFAULT_PACKAGE_TRUST_POLICY,
+  EMPTY_PACKAGE_PERMISSION_SUMMARY,
   PackageIntegrityError,
   PackageManifestError,
   type PackagePermissionExpansion,
@@ -214,28 +215,34 @@ export function registerPackageRoutes(router: Router, gateway: GatewayContext): 
         const priorLock = (await readLockfile(projectRoot)).packages[manifest.name]
         let expansion: PackagePermissionExpansion | undefined
         if (priorLock !== undefined) {
+          // Diff against the installed baseline when its manifest is available.
+          // If the lockfile records a version whose cached files are gone (e.g.
+          // that version was removed but another remains installed, so the lock
+          // entry persists), the baseline is unknown — fail closed by diffing
+          // against an empty surface so any requested permission counts as an
+          // expansion. Otherwise an update could silently widen its reach.
           const prior = await store.get(priorLock.name, priorLock.version)
-          if (prior !== undefined) {
-            expansion = diffPackagePermissions(
-              summarizePackagePermissions(prior.manifest),
-              summarizePackagePermissions(manifest),
-            )
-            if (expansion.expanded && !approve) {
-              await gateway.enforcement.auditWriter.write({
-                actor: 'gateway',
-                action: 'package.update.flagged',
-                details: {
-                  name: manifest.name,
-                  fromVersion: priorLock.version,
-                  toVersion: manifest.version,
-                  expansion,
-                },
-              })
-              throw createError({
-                statusCode: 409,
-                message: `update of ${manifest.name} to ${manifest.version} expands its requested permissions; re-send with { "approve": true } to approve`,
-              })
-            }
+          const priorSummary =
+            prior !== undefined
+              ? summarizePackagePermissions(prior.manifest)
+              : EMPTY_PACKAGE_PERMISSION_SUMMARY
+          expansion = diffPackagePermissions(priorSummary, summarizePackagePermissions(manifest))
+          if (expansion.expanded && !approve) {
+            await gateway.enforcement.auditWriter.write({
+              actor: 'gateway',
+              action: 'package.update.flagged',
+              details: {
+                name: manifest.name,
+                fromVersion: priorLock.version,
+                toVersion: manifest.version,
+                baselineKnown: prior !== undefined,
+                expansion,
+              },
+            })
+            throw createError({
+              statusCode: 409,
+              message: `update of ${manifest.name} to ${manifest.version} expands its requested permissions; re-send with { "approve": true } to approve`,
+            })
           }
         }
 
