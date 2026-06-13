@@ -59,6 +59,54 @@ describe('security: required HITL gate cannot be bypassed', () => {
     expect(bodyRan).toBe(true)
   })
 
+  it('risk-driven policy fires when the risky grant comes from operator defaults, not the step', async () => {
+    // Adversarial: the step declares NO permissions of its own; network egress
+    // is granted by the operator's project defaults. A policy that requires a
+    // gate iff the resolved step can egress MUST still fire — otherwise the
+    // privileged action runs un-gated (the fail-open bug).
+    let bodyRan = false
+    const policy: HitlPolicy = (ctx) =>
+      ctx.risk?.networkEgress === true ? { kind: 'approval', reason: 'egress' } : undefined
+    const wf = pipeline<undefined, unknown>({
+      id: 'sec-hitl-default-grant',
+      steps: [
+        code({
+          id: 'egress-step',
+          // No `permissions` here — the grant comes from defaultPermissions.
+          run: () => {
+            bodyRan = true
+            return { sent: true }
+          },
+        }),
+      ],
+    })
+
+    const runner = new Runner()
+    let required = false
+    let bodyRanAtPark = true
+    runner.events.subscribe((e) => {
+      if (e.type === 'run.waiting' && e.hitl?.required === true) {
+        required = true
+        bodyRanAtPark = bodyRan
+        setImmediate(
+          () => void runner.resume(e.runId, { kind: 'approval', approved: false }).catch(() => {}),
+        )
+      }
+    })
+    const result = await runner
+      .start(wf, undefined, {
+        hitlPolicy: policy,
+        defaultPermissions: { networkEgress: 'allow' },
+      })
+      .wait()
+
+    expect(required, 'risk.networkEgress from operator defaults must require the gate').toBe(true)
+    expect(bodyRanAtPark, 'body must not run before the gate resolves').toBe(false)
+    expect(result.status).toBe('failed')
+    expect(result.error?.name).toBe('HitlDeniedError')
+    expect(bodyRan, 'denied egress action must never run').toBe(false)
+  })
+
   it('a required gate with no resolver fails the step (default-deny), never proceeds', async () => {
     let bodyRan = false
     const policy: HitlPolicy = () => ({ kind: 'approval' })

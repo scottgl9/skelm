@@ -27,6 +27,13 @@ import {
   hitlTimeoutAction,
   toHitlPending,
 } from '../hitl.js'
+import {
+  type AgentPermissions,
+  type NetworkPolicy,
+  type ResolvedPolicy,
+  intersectResolvedPolicies,
+  resolvePermissions,
+} from '../permissions.js'
 import { freezeContext } from '../runner-utils.js'
 import { validate } from '../schema.js'
 import type { Context, Step } from '../types.js'
@@ -97,7 +104,7 @@ function buildPolicyContext(
   ctx: Context,
   runtime: ExecutionRuntime,
 ): HitlPolicyContext {
-  const risk = deriveRisk(step)
+  const risk = deriveRisk(step, runtime)
   return {
     runId: ctx.run.runId,
     stepId: step.id,
@@ -108,19 +115,67 @@ function buildPolicyContext(
   }
 }
 
-function deriveRisk(step: Step): HitlPolicyContext['risk'] {
-  const perms = (step as { permissions?: Record<string, unknown> }).permissions
-  if (perms === undefined) return undefined
-  const exec = perms.allowedExecutables as readonly string[] | undefined
-  const profiles = perms.executableProfiles as readonly string[] | undefined
+/**
+ * Derive the policy hook's risk signals from the step's RESOLVED permission
+ * surface — operator defaults + named profiles + executable-profile expansion +
+ * any delegation ceiling — NOT the raw author-declared `step.permissions`.
+ *
+ * A risky grant frequently comes from the operator's project defaults or a
+ * profile rather than the step itself; reading only `step.permissions` would
+ * leave `risk` empty for those steps, so a policy that requires a gate for
+ * (say) network egress would never fire and the privileged action would proceed
+ * UN-gated — a fail-open bypass of the very gate the policy exists to enforce.
+ * Resolving here mirrors what the step handler resolves for enforcement (minus
+ * the per-run workspace path, which never changes WHETHER a dimension is
+ * granted).
+ */
+function deriveRisk(step: Step, runtime: ExecutionRuntime): HitlPolicyContext['risk'] {
+  const resolved = resolveStepPolicy(step, runtime)
+  const executables = [...resolved.allowedExecutables]
+  const profiles = [...(resolved.executableProfileNames ?? [])]
+  const matchesAnyTool =
+    resolved.allowedTools.star ||
+    resolved.allowedTools.exact.size > 0 ||
+    resolved.allowedTools.prefixes.length > 0
   return {
-    ...(exec !== undefined && { allowedExecutables: exec }),
-    ...(profiles !== undefined && { executableProfiles: profiles }),
-    ...(perms.networkEgress !== undefined && { networkEgress: true }),
-    ...(perms.allowedTools !== undefined && { toolDispatch: true }),
-    ...(perms.fsWrite !== undefined && { fsWrite: true }),
-    ...(perms.unrestricted === true && { unrestricted: true }),
+    ...(executables.length > 0 && { allowedExecutables: executables }),
+    ...(profiles.length > 0 && { executableProfiles: profiles }),
+    ...(networkGranted(resolved.networkEgress) && { networkEgress: true }),
+    ...(matchesAnyTool && { toolDispatch: true }),
+    ...(resolved.fsWrite.size > 0 && { fsWrite: true }),
+    ...(resolved.unrestricted === true && { unrestricted: true }),
   }
+}
+
+/** True when the resolved egress policy grants any outbound access. */
+function networkGranted(policy: NetworkPolicy): boolean {
+  if (policy === 'allow') return true
+  if (policy === 'deny') return false
+  return policy.allowHosts.length > 0
+}
+
+/**
+ * Resolve the step's effective permission policy the same way the step handler
+ * does (defaults → step → profiles → executable-profile expansion), then bound
+ * it by any delegation ceiling. Workspace-path binding is intentionally omitted:
+ * it scopes fs roots but never flips whether a dimension is granted.
+ */
+function resolveStepPolicy(step: Step, runtime: ExecutionRuntime): ResolvedPolicy {
+  const stepPermissions = (step as { permissions?: AgentPermissions }).permissions
+  const resolved = resolvePermissions(
+    runtime.defaultPermissions,
+    stepPermissions,
+    runtime.permissionProfiles ?? {},
+    {
+      grantUnrestricted: runtime.unrestrictedGrant === true,
+      ...(runtime.executableProfiles !== undefined && {
+        executableProfiles: runtime.executableProfiles,
+      }),
+    },
+  )
+  return runtime.delegationCeiling !== undefined
+    ? intersectResolvedPolicies(runtime.delegationCeiling, resolved)
+    : resolved
 }
 
 /** Pause the run at a gate and return the typed decision. */
