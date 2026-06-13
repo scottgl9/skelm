@@ -152,6 +152,7 @@ export default defineConfig({
             { text: 'Workflow Packages', link: '/reference/workflow-packages' },
             { text: 'Integration Primitives', link: '/reference/integration-primitives' },
             { text: 'integration-http', link: '/reference/integration-http' },
+            { text: 'Webhook Trigger', link: '/reference/integration-webhook' },
             { text: 'OpenAPI', link: '/reference/openapi' },
           ],
         },
