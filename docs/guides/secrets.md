@@ -8,11 +8,58 @@ skelm resolves secrets through a gateway-owned `SecretResolver`. Pipeline source
 |--------|------|-----------|
 | `env` | default | `process.env` (12-factor friendly) |
 | `file` | opt-in via `secrets: { driver: 'file' }` in `skelm.config.ts` | `~/.skelm/secrets.json`, mode `0600` |
-| `vault` | <!-- @planned M4 --> | HashiCorp Vault KV v2; see `VaultSecretResolver` in `@skelm/gateway` |
+| `vault` | `secrets: { driver: 'vault' }` | HashiCorp Vault KV v2 over HTTP; `VaultSecretResolver` |
+| `aws-secrets-manager` | `secrets: { driver: 'aws-secrets-manager' }` | AWS Secrets Manager `GetSecretValue`; `AwsSecretsManagerResolver` |
 
 Override the file path with `secrets: { driver: 'file', file: '/path/to/secrets.json' }`.
 
-Vault and cloud secret drivers land in M4+. The `VaultSecretResolver` shape is exported from `@skelm/gateway` today as a typed skeleton — every method throws `NotImplementedError` until the driver lands.
+All drivers implement the same gateway-owned `SecretResolver` (`resolve(name)`). The gateway resolves the value in-process and audits only the **name** — the value never reaches logs, audit, or error messages, and is never serialized over HTTP. This by-reference model is identical across drivers: pipeline source references `{ secret: 'NAME' }`; the gateway dereferences it at call time against whichever driver is configured.
+
+### HashiCorp Vault (KV v2)
+
+```ts
+// skelm.gateway.ts
+export default {
+  secrets: {
+    driver: 'vault',
+    vault: {
+      url: 'https://vault.internal:8200',
+      // token omitted ⇒ read from the VAULT_TOKEN env var so it never
+      // lives in config; prefer a short-lived credential in production.
+      mount: 'secret', // KV v2 mount; default 'secret'
+      prefix: 'skelm/', // optional per-environment namespace
+      field: 'value',   // which key in the KV v2 data map; default 'value'
+      cacheTtlMs: 30_000, // optional in-memory TTL cache (in-memory only)
+    },
+  },
+}
+```
+
+`resolve('OPENAI_KEY')` issues `GET <url>/v1/<mount>/data/<prefix>OPENAI_KEY` with the token in the `X-Vault-Token` header (held privately, never logged). Nested secret names are preserved as path segments, but any `.` or `..` segment in the effective Vault path is rejected before the request is sent so prefix scoping cannot be escaped via URL normalization. A 404 returns `undefined` (unknown secret → `MissingSecretError` upstream); any auth/transport failure throws a typed `VaultSecretError` whose message carries the secret name and HTTP status only — never the value or the token.
+
+### AWS Secrets Manager
+
+Add the SDK dependency once (`@aws-sdk/client-secrets-manager`), then:
+
+```ts
+// skelm.gateway.ts
+export default {
+  secrets: {
+    driver: 'aws-secrets-manager',
+    awsSecretsManager: {
+      region: 'us-east-1', // omitted ⇒ resolved from the AWS environment
+      prefix: 'skelm/',    // optional secret-id prefix
+      cacheTtlMs: 30_000,  // optional in-memory TTL cache (in-memory only)
+    },
+  },
+}
+```
+
+Credentials come from the standard AWS provider chain (env vars, shared config, SSO, instance/container role) — they are owned by the SDK client and never logged. `resolve('OPENAI_KEY')` calls `GetSecretValue` and returns the `SecretString`. A `ResourceNotFound` returns `undefined`; any other failure throws a typed `AwsSecretsManagerError` carrying the secret name and the AWS error name only — never the value.
+
+> The optional `cacheTtlMs` holds resolved values **in memory only** for the
+> TTL window — never persisted to disk, never logged. Omit it (the default)
+> to fetch fresh on every access.
 
 ## CLI
 

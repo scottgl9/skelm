@@ -1,5 +1,7 @@
 value:AcpSessionManager
 value:AgentRegistry
+value:AwsSecretsManagerError
+value:AwsSecretsManagerResolver
 value:BaseRegistry
 value:BreakpointRegistry
 value:ChainAuditWriter
@@ -19,6 +21,7 @@ value:SuspendApprovalGate
 value:TeeLogSink
 value:TriggerCoordinator
 value:VaultNotImplementedError
+value:VaultSecretError
 value:VaultSecretResolver
 value:WorkflowRegistry
 value:acquireLockfile
@@ -41,6 +44,7 @@ type:AcpSessionState
 type:AgentEntry
 type:AgentRegistryOptions
 type:AuthMode
+type:AwsSecretsManagerResolverOptions
 type:ChainEntry
 type:CodingAgentHandle
 type:CodingAgentManagerOptions
@@ -77,6 +81,7 @@ type:RegistryChange
 type:RegistryListener
 type:ResidentHandle
 type:RunCallback
+type:SecretsManagerSendClient
 type:ServerConfig
 type:SkelmServer
 type:SkillRegistryOptions

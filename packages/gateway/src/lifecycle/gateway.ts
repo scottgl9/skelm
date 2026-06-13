@@ -7,6 +7,7 @@ import {
   type ApprovalGate,
   type AuditWriter,
   BackendRegistry,
+  ConfigError,
   DEFAULT_CONFIG,
   EnvSecretResolver,
   EventBus,
@@ -39,6 +40,7 @@ import {
   WorkflowRegistry,
 } from '../registries/index.js'
 import { FileSecretResolver } from '../secrets/file-driver.js'
+import { VaultSecretResolver } from '../secrets/vault-driver.js'
 import { TaskService } from '../tasks/task-service.js'
 import { TriggerCoordinator } from '../triggers/coordinator.js'
 import { createTriggerDispatcher } from '../triggers/dispatcher.js'
@@ -641,7 +643,7 @@ export class Gateway implements GatewayContext {
             }`,
           )
         })
-      this.enforcementInternal = this.buildEnforcement()
+      this.enforcementInternal = await this.buildEnforcement()
       this.registriesInternal = await this.buildRegistries()
       this.managersInternal = await this.buildManagers()
       this.dynamicScheduleStoreInternal = new DynamicScheduleStore(this.stateDir)
@@ -775,7 +777,7 @@ export class Gateway implements GatewayContext {
     }
     if (nextConfig !== undefined) {
       this.config = nextConfig
-      this.enforcementInternal = this.buildEnforcement()
+      this.enforcementInternal = await this.buildEnforcement()
     }
     if (this.registriesInternal !== null) {
       const r = this.registriesInternal
@@ -1039,7 +1041,7 @@ export class Gateway implements GatewayContext {
     }
   }
 
-  private buildEnforcement(): GatewayEnforcement {
+  private async buildEnforcement(): Promise<GatewayEnforcement> {
     const defaults = this.config.defaults?.permissions
     const profiles = this.config.defaults?.permissionProfiles ?? {}
 
@@ -1051,17 +1053,12 @@ export class Gateway implements GatewayContext {
         ? new ChainAuditWriter(join(this.stateDir, 'audit.jsonl'))
         : new NoopAuditWriter())
 
-    // Default to the file-backed secret driver when the config asks for it
-    // or the user supplied a path; otherwise read from process.env.
+    // Select the secret driver from config; otherwise read from process.env.
+    // An explicitly injected resolver always wins (tests, embedding).
     const secretsCfg = this.config.secrets
     let secretResolver = this.options.secretResolver
     if (secretResolver === undefined) {
-      if (secretsCfg?.driver === 'file') {
-        const path = secretsCfg.file ?? join(this.stateDir, 'secrets.json')
-        secretResolver = new FileSecretResolver(path)
-      } else {
-        secretResolver = new EnvSecretResolver()
-      }
+      secretResolver = await this.buildSecretResolver(secretsCfg)
     }
 
     // Default to the suspend gate so production runs actually wait for
@@ -1081,6 +1078,49 @@ export class Gateway implements GatewayContext {
       auditWriter,
       secretResolver,
       approvalGate,
+    }
+  }
+
+  private async buildSecretResolver(secretsCfg: SkelmConfig['secrets']): Promise<SecretResolver> {
+    switch (secretsCfg?.driver) {
+      case 'file': {
+        const path = secretsCfg.file ?? join(this.stateDir, 'secrets.json')
+        return new FileSecretResolver(path)
+      }
+      case 'vault': {
+        const v = secretsCfg.vault
+        if (v?.url === undefined) {
+          throw new ConfigError("secrets.vault.url is required when driver is 'vault'", 'secrets')
+        }
+        const token = v.token ?? process.env.VAULT_TOKEN
+        if (token === undefined) {
+          throw new ConfigError(
+            "secrets.vault.token (or VAULT_TOKEN) is required when driver is 'vault'",
+            'secrets',
+          )
+        }
+        return new VaultSecretResolver({
+          url: v.url,
+          token,
+          ...(v.mount !== undefined && { mount: v.mount }),
+          ...(v.prefix !== undefined && { prefix: v.prefix }),
+          ...(v.field !== undefined && { field: v.field }),
+          ...(v.cacheTtlMs !== undefined && { cacheTtlMs: v.cacheTtlMs }),
+        })
+      }
+      case 'aws-secrets-manager': {
+        const { AwsSecretsManagerResolver } = await import(
+          '../secrets/aws-secrets-manager-driver.js'
+        )
+        const a = secretsCfg.awsSecretsManager
+        return new AwsSecretsManagerResolver({
+          ...(a?.region !== undefined && { region: a.region }),
+          ...(a?.prefix !== undefined && { prefix: a.prefix }),
+          ...(a?.cacheTtlMs !== undefined && { cacheTtlMs: a.cacheTtlMs }),
+        })
+      }
+      default:
+        return new EnvSecretResolver()
     }
   }
 

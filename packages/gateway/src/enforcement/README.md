@@ -12,7 +12,7 @@ a running pipeline step.
 GatewayOptions
   └─ buildEnforcement()                   ← gateway/src/lifecycle/gateway.ts
         ├─ auditWriter   (ChainAuditWriter | caller-supplied | NoopAuditWriter)
-        ├─ secretResolver (FileSecretResolver | EnvSecretResolver | caller-supplied)
+        ├─ secretResolver (Env | File | Vault | AwsSecretsManager | caller-supplied)
         ├─ approvalGate  (SuspendApprovalGate | caller-supplied)
         └─ permissionResolver (PermissionResolver from @skelm/core)
               └─ resolvePermissions(defaults, step) → ResolvedPolicy
@@ -41,7 +41,7 @@ again on `reload()`), containing:
 |---------------------|---------------------|----------------------------------------------|
 | `permissionResolver` | `PermissionResolver` | Derived from `config.defaults.permissions` + `permissionProfiles` |
 | `auditWriter`       | `AuditWriter`       | `ChainAuditWriter` at `<stateDir>/audit.jsonl` |
-| `secretResolver`    | `SecretResolver`    | `FileSecretResolver` if `secrets.driver = 'file'`, else `EnvSecretResolver` |
+| `secretResolver`    | `SecretResolver`    | Selected by `secrets.driver`: `file` → `FileSecretResolver`, `vault` → `VaultSecretResolver`, `aws-secrets-manager` → `AwsSecretsManagerResolver`, else `EnvSecretResolver` |
 | `approvalGate`      | `ApprovalGate`      | `SuspendApprovalGate` at `<stateDir>/approvals.json` |
 
 All four can be overridden via `GatewayOptions` for tests and embedders.

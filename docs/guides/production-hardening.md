@@ -27,7 +27,12 @@ do not fully control.
 - [ ] Gateway runs as a dedicated, unprivileged user.
 - [ ] Workspace directory (`.skelm/`) is owned by that user with `0700`.
 - [ ] Secrets file (default `secrets.json`) is `0600` and audited via
-      `skelm audit query --action secrets.*`.
+      `skelm audit query --action secrets.*`. For an external secret
+      backend, set `secrets.driver` to `vault` (HashiCorp Vault KV v2) or
+      `aws-secrets-manager` instead — see the [secrets guide](./secrets.md).
+      Either driver keeps the by-reference model: the gateway audits the
+      secret **name**, never the value, and the value/backend token never
+      reaches logs, audit, or error messages.
 - [ ] Disk quota or per-pipeline workspace limits are enforced at the OS
       layer; the runtime does not bound disk by itself.
 - [ ] Process supervisor (systemd / launchd) restarts the gateway on
