@@ -1,0 +1,16 @@
+{
+  "name": "@fixtures/no-selftest",
+  "version": "1.0.0",
+  "description": "Valid fixture package that declares no self-test entry.",
+  "license": "MIT",
+  "skelm": {
+    "apiVersion": 1,
+    "workflows": [
+      {
+        "id": "default",
+        "entry": "workflows/main.workflow.ts",
+        "kind": "pipeline"
+      }
+    ]
+  }
+}

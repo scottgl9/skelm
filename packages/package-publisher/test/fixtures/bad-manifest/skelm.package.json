@@ -1,0 +1,8 @@
+{
+  "name": "@fixtures/bad-manifest",
+  "version": "1.0.0",
+  "skelm": {
+    "apiVersion": 2,
+    "workflows": [{ "id": "default", "entry": "workflows/main.workflow.ts" }]
+  }
+}
