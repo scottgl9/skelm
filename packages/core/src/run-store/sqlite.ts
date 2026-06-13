@@ -14,6 +14,7 @@ import {
 } from './types.js'
 import type {
   AuditEntry,
+  ChildRunRef,
   DeliveryTarget,
   RunFilter,
   RunPatch,
@@ -365,6 +366,29 @@ export class SqliteRunStore implements RunStore {
         ...(row.completed_at !== null && { completedAt: row.completed_at }),
       }
     }
+  }
+
+  async getChildRuns(parentRunId: RunId): Promise<readonly ChildRunRef[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT run_id, pipeline_id, parent_step_id, task_id, status
+         FROM runs WHERE parent_run_id = ?
+         ORDER BY run_id ASC`,
+      )
+      .all(parentRunId) as Array<{
+      run_id: string
+      pipeline_id: string
+      parent_step_id: string | null
+      task_id: string | null
+      status: RunStatus
+    }>
+    return rows.map((row) => ({
+      runId: row.run_id,
+      pipelineId: row.pipeline_id,
+      status: row.status,
+      ...(row.parent_step_id !== null && { parentStepId: row.parent_step_id }),
+      ...(row.task_id !== null && { taskId: row.task_id }),
+    }))
   }
 
   async appendEvent(event: RunEvent): Promise<void> {
@@ -853,6 +877,9 @@ export class SqliteRunStore implements RunStore {
     if (!cols.some((c) => c.name === 'task_id')) {
       this.db.exec('ALTER TABLE runs ADD COLUMN task_id TEXT')
     }
+    // getChildRuns (lineage) is WHERE parent_run_id = ?; index it after the
+    // migration above has guaranteed the column exists.
+    this.db.exec('CREATE INDEX IF NOT EXISTS runs_parent_idx ON runs(parent_run_id, run_id)')
   }
 
   private pruneExpiredState(namespace: string, key?: string): void {

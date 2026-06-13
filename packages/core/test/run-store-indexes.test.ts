@@ -35,5 +35,9 @@ describe('SqliteRunStore schema indexes', () => {
 
     expect(indexes.has('runs_status_idx')).toBe(true)
     expect(indexes.get('runs_status_idx')).toContain('status')
+
+    // getChildRuns (lineage) is WHERE parent_run_id = ?
+    expect(indexes.has('runs_parent_idx')).toBe(true)
+    expect(indexes.get('runs_parent_idx')).toContain('parent_run_id')
   })
 })

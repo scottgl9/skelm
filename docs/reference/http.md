@@ -182,7 +182,12 @@ run already finished are reconciled to their terminal status after run recovery.
 
 `/v1/lineage/:runId` returns the chain of `ancestors` (nearest first) and a
 tree of `descendants`; both directions are capped at a fixed depth so a corrupt
-parent cycle or a very deep tree cannot run the query unbounded.
+parent cycle or a very deep tree cannot run the query unbounded. Descendants are
+the union of two sources, deduped by child run id: detached tasks
+(`ctx.tasks.spawn`), whose `TaskRecord` links `parentRunId` to a `childRunId`,
+and synchronous orchestration children (`ctx.workflows.invoke` / `fanout`),
+which stamp `parentRunId` / `parentStepId` directly on the child run and create
+no task. A node carries `parentStepId` and, for task-backed children, `taskId`.
 
 **Permission posture (this phase).** Task creation is a control-plane action:
 it is gated by bearer auth and audited, nothing more. The child run executes

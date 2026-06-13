@@ -148,6 +148,33 @@ for (const { name, make } of drivers) {
       expect(r).not.toHaveProperty('parentRunId')
       expect(r).not.toHaveProperty('taskId')
     })
+
+    it('getChildRuns returns child runs by parentRunId with the lineage stamp', async () => {
+      const store = make()
+      await store.putRun(sampleRun('parent'))
+      await store.putRun(
+        sampleRun('child-a', { parentRunId: 'parent', parentStepId: 'fan', status: 'running' }),
+      )
+      await store.putRun(
+        sampleRun('child-b', { parentRunId: 'parent', parentStepId: 'fan', taskId: 'task-b' }),
+      )
+      await store.putRun(sampleRun('other', { parentRunId: 'someone-else' }))
+      await store.putRun(sampleRun('top'))
+
+      const kids = await store.getChildRuns('parent')
+      expect(kids.map((k) => k.runId).sort()).toEqual(['child-a', 'child-b'])
+      const a = kids.find((k) => k.runId === 'child-a')
+      expect(a).toMatchObject({ pipelineId: 'p', status: 'running', parentStepId: 'fan' })
+      expect(a).not.toHaveProperty('taskId')
+      const b = kids.find((k) => k.runId === 'child-b')
+      expect(b).toMatchObject({ parentStepId: 'fan', taskId: 'task-b' })
+    })
+
+    it('getChildRuns returns empty for a run with no children', async () => {
+      const store = make()
+      await store.putRun(sampleRun('lonely'))
+      await expect(store.getChildRuns('lonely')).resolves.toEqual([])
+    })
   })
 }
 

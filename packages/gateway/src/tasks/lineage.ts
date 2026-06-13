@@ -8,6 +8,8 @@ export interface RunRef {
   pipelineId: string
   status: string
   taskId?: string
+  /** Step in the parent run that started this run, when known. */
+  parentStepId?: string
 }
 
 export interface LineageNode extends RunRef {
@@ -38,7 +40,7 @@ export async function buildLineage(store: RunStore, runId: string): Promise<Line
     const parent = await store.getRun(cursor)
     if (parent === null) break
     seen.add(cursor)
-    ancestors.push(toRef(parent))
+    ancestors.push(toRefFromRun(parent))
     cursor = parent.parentRunId
     depth += 1
   }
@@ -56,8 +58,12 @@ async function buildDescendants(
 ): Promise<LineageNode[]> {
   if (depth >= MAX_LINEAGE_DEPTH) return []
   const children: LineageNode[] = []
-  // Lineage is reconstructed from tasks: each task records its parentRunId and
-  // childRunId, so the children of a run are the child runs of its tasks.
+  // Child runs come from two sources, unioned and deduped by child run id:
+  //   - detached `ctx.tasks.spawn`: a TaskRecord links parentRunId -> childRunId.
+  //   - synchronous `ctx.workflows.invoke`/`fanout`: the child RUN records
+  //     parentRunId directly and never creates a task.
+  // A detached task whose childRun also carries parentRunId would otherwise be
+  // counted twice, so the run-derived pass skips ids the task pass emitted.
   const tasks = await store.listTasks({ parentRunId })
   for (const task of tasks) {
     if (task.childRunId === undefined || visited.has(task.childRunId)) continue
@@ -65,23 +71,38 @@ async function buildDescendants(
     if (child === null) continue
     visited.add(task.childRunId)
     children.push({
-      ...toRef(child),
+      ...toRefFromRun(child),
+      ...(task.parentStepId !== undefined && { parentStepId: task.parentStepId }),
       children: await buildDescendants(store, task.childRunId, depth + 1, visited),
+    })
+  }
+  for (const childRun of await store.getChildRuns(parentRunId)) {
+    if (visited.has(childRun.runId)) continue
+    visited.add(childRun.runId)
+    children.push({
+      runId: childRun.runId,
+      pipelineId: childRun.pipelineId,
+      status: childRun.status,
+      ...(childRun.taskId !== undefined && { taskId: childRun.taskId }),
+      ...(childRun.parentStepId !== undefined && { parentStepId: childRun.parentStepId }),
+      children: await buildDescendants(store, childRun.runId, depth + 1, visited),
     })
   }
   return children
 }
 
-function toRef(run: {
+function toRefFromRun(run: {
   runId: string
   pipelineId: string
   status: string
   taskId?: string
+  parentStepId?: string
 }): RunRef {
   return {
     runId: run.runId,
     pipelineId: run.pipelineId,
     status: run.status,
     ...(run.taskId !== undefined && { taskId: run.taskId }),
+    ...(run.parentStepId !== undefined && { parentStepId: run.parentStepId }),
   }
 }

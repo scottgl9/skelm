@@ -9,6 +9,7 @@ import {
   ArtifactQuotaExceededError,
   type ArtifactRef,
   type AuditEntry,
+  type ChildRunRef,
   DEFAULT_ARTIFACT_QUOTA_BYTES,
   type DeliveryTarget,
   type RunFilter,
@@ -212,6 +213,31 @@ export class PostgresRunStore implements RunStore {
         ...(row.completed_at !== null && { completedAt: row.completed_at }),
       }
     }
+  }
+
+  async getChildRuns(parentRunId: RunId): Promise<readonly ChildRunRef[]> {
+    const rows = await this.withClient((client) =>
+      client.query<{
+        run_id: string
+        pipeline_id: string
+        parent_step_id: string | null
+        task_id: string | null
+        status: RunStatus
+      }>(
+        `SELECT run_id, pipeline_id, parent_step_id, task_id, status
+         FROM ${this.table('runs')}
+         WHERE parent_run_id = $1
+         ORDER BY run_id ASC`,
+        [parentRunId],
+      ),
+    )
+    return rows.rows.map((row) => ({
+      runId: row.run_id,
+      pipelineId: row.pipeline_id,
+      status: row.status,
+      ...(row.parent_step_id !== null && { parentStepId: row.parent_step_id }),
+      ...(row.task_id !== null && { taskId: row.task_id }),
+    }))
   }
 
   async appendEvent(event: RunEvent): Promise<void> {
@@ -835,6 +861,13 @@ export class PostgresRunStore implements RunStore {
       for (const statement of alterStatements) {
         await client.query(statement)
       }
+
+      // getChildRuns (lineage) is WHERE parent_run_id = ?; index it after the
+      // migration above has guaranteed the column exists.
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS runs_parent_idx
+          ON ${this.table('runs')} (parent_run_id, run_id)
+      `)
     })
   }
 

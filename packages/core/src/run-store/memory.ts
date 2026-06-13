@@ -15,6 +15,7 @@ import {
 } from './types.js'
 import type {
   AuditEntry,
+  ChildRunRef,
   RunFilter,
   RunPatch,
   RunStore,
@@ -127,6 +128,22 @@ export class MemoryRunStore implements RunStore {
       ...(run.completedAt !== undefined && { completedAt: run.completedAt }),
     }))
     return listRunsCompat(summaries)
+  }
+
+  async getChildRuns(parentRunId: RunId): Promise<readonly ChildRunRef[]> {
+    const matches: ChildRunRef[] = []
+    for (const run of this.runs.values()) {
+      if (run.parentRunId !== parentRunId) continue
+      matches.push({
+        runId: run.runId,
+        pipelineId: run.pipelineId,
+        status: run.status,
+        ...(run.parentStepId !== undefined && { parentStepId: run.parentStepId }),
+        ...(run.taskId !== undefined && { taskId: run.taskId }),
+      })
+    }
+    matches.sort((a, b) => a.runId.localeCompare(b.runId))
+    return matches
   }
 
   async *listEvents(

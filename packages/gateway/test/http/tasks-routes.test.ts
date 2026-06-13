@@ -318,6 +318,148 @@ describe('/v1/lineage', () => {
     }
   })
 
+  it('surfaces synchronous fanout children that are runs without tasks', async () => {
+    const { gw, base, store } = await bootGateway()
+    try {
+      await store.putRun({
+        runId: 'parent',
+        pipelineId: 'orchestrator',
+        status: 'completed',
+        input: {},
+        steps: [],
+        output: undefined,
+        error: undefined,
+        startedAt: 1,
+        completedAt: 2,
+      })
+      // ctx.workflows.fanout over N children: each stamps parentRunId/parentStepId
+      // on its child RUN but creates no TaskRecord.
+      const n = 4
+      for (let i = 0; i < n; i++) {
+        await store.putRun({
+          runId: `child-${i}`,
+          pipelineId: 'worker',
+          status: 'completed',
+          input: {},
+          steps: [],
+          output: undefined,
+          error: undefined,
+          startedAt: 10 + i,
+          completedAt: 11 + i,
+          parentRunId: 'parent',
+          parentStepId: 'fanout-step',
+        })
+      }
+
+      const res = await fetch(`${base}/v1/lineage/parent`)
+      expect(res.status).toBe(200)
+      const lineage = await res.json()
+      expect(lineage.descendants).toHaveLength(n)
+      const ids = lineage.descendants.map((d: { runId: string }) => d.runId).sort()
+      expect(ids).toEqual(['child-0', 'child-1', 'child-2', 'child-3'])
+      for (const d of lineage.descendants) {
+        expect(d.pipelineId).toBe('worker')
+        expect(d.parentStepId).toBe('fanout-step')
+      }
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('does not double-count a detached task whose child run also has parentRunId', async () => {
+    const { gw, base, store } = await bootGateway()
+    try {
+      await store.putRun({
+        runId: 'parent',
+        pipelineId: 'p',
+        status: 'completed',
+        input: {},
+        steps: [],
+        output: undefined,
+        error: undefined,
+        startedAt: 1,
+        completedAt: 2,
+      })
+      // A detached ctx.tasks.spawn child: it has BOTH a TaskRecord and a child
+      // run that records parentRunId. It must appear exactly once.
+      await store.putRun({
+        runId: 'detached-child',
+        pipelineId: 'p',
+        status: 'running',
+        input: {},
+        steps: [],
+        output: undefined,
+        error: undefined,
+        startedAt: 3,
+        completedAt: undefined,
+        parentRunId: 'parent',
+        parentStepId: 'spawn-step',
+        taskId: 'task-1',
+      })
+      await store.putTask({
+        taskId: 'task-1',
+        workflowId: 'wf',
+        status: 'running',
+        parentRunId: 'parent',
+        parentStepId: 'spawn-step',
+        childRunId: 'detached-child',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      })
+
+      const res = await fetch(`${base}/v1/lineage/parent`)
+      expect(res.status).toBe(200)
+      const lineage = await res.json()
+      expect(lineage.descendants).toHaveLength(1)
+      expect(lineage.descendants[0].runId).toBe('detached-child')
+      expect(lineage.descendants[0].taskId).toBe('task-1')
+    } finally {
+      await gw.stop()
+    }
+  })
+
+  it('caps depth and survives a parentRunId cycle on the run-derived path', async () => {
+    const { gw, base, store } = await bootGateway()
+    try {
+      // Two runs that point at each other via parentRunId. The cycle guard
+      // must terminate the descendant walk rather than loop forever.
+      await store.putRun({
+        runId: 'a',
+        pipelineId: 'p',
+        status: 'completed',
+        input: {},
+        steps: [],
+        output: undefined,
+        error: undefined,
+        startedAt: 1,
+        completedAt: 2,
+        parentRunId: 'b',
+      })
+      await store.putRun({
+        runId: 'b',
+        pipelineId: 'p',
+        status: 'completed',
+        input: {},
+        steps: [],
+        output: undefined,
+        error: undefined,
+        startedAt: 3,
+        completedAt: 4,
+        parentRunId: 'a',
+      })
+
+      const res = await fetch(`${base}/v1/lineage/a`)
+      expect(res.status).toBe(200)
+      const lineage = await res.json()
+      // a's child is b; b's only child would be a (the root), already visited,
+      // so the tree stops at b with no infinite recursion.
+      expect(lineage.descendants).toHaveLength(1)
+      expect(lineage.descendants[0].runId).toBe('b')
+      expect(lineage.descendants[0].children).toEqual([])
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('returns 404 for an unknown run', async () => {
     const { gw, base } = await bootGateway()
     try {

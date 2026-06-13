@@ -44,6 +44,21 @@ export function applyRunPatch(existing: Run, patch: RunPatch): Run {
   return merged as unknown as Run
 }
 
+/**
+ * Lightweight view of a child run for lineage reconstruction. Carries the
+ * lineage stamp (`parentStepId`, `taskId`) that `RunSummary` omits, so
+ * `GET /v1/lineage/:runId` can surface synchronous orchestration children
+ * (`ctx.workflows.invoke`/`fanout`) that set `parentRunId` on the run record
+ * without ever creating a `TaskRecord`.
+ */
+export interface ChildRunRef {
+  readonly runId: RunId
+  readonly pipelineId: string
+  readonly status: RunStatus
+  readonly parentStepId?: StepId
+  readonly taskId?: string
+}
+
 export interface RunFilter {
   readonly pipelineId?: string
   readonly status?: RunStatus
@@ -243,6 +258,13 @@ export interface ExecutionStore {
   updateRun(runId: RunId, patch: RunPatch): Promise<void>
   getRun(runId: RunId): Promise<Run | null>
   listRuns(filter?: RunFilter): AsyncIterable<RunSummary>
+  /**
+   * Child runs whose `parentRunId` equals the given run id. Used to
+   * reconstruct lineage for synchronous orchestration children that record
+   * `parentRunId` on the run but no `TaskRecord`. Backed by an index on the
+   * `parent_run_id` column in the durable stores.
+   */
+  getChildRuns(parentRunId: RunId): Promise<readonly ChildRunRef[]>
   appendEvent(event: RunEvent): Promise<void>
   listEvents(runId: RunId, opts?: { since?: number; limit?: number }): AsyncIterable<RunEvent>
   putAudit?(entry: AuditEntry): Promise<void>
