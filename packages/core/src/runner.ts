@@ -157,6 +157,14 @@ export interface RunOptions {
    */
   approvalGate?: ApprovalGate
   /**
+   * Optional policy hook that may REQUIRE a human-in-the-loop gate for a risky
+   * step. Supplied only by the trust boundary (gateway). An injected gate
+   * cannot be bypassed. See `hitl.ts` and `docs/concepts/human-in-the-loop.md`.
+   */
+  hitlPolicy?: import('./hitl.js').HitlPolicy
+  /** Operator environment label threaded to the HITL policy hook (e.g. 'production'). */
+  hitlEnvironment?: string
+  /**
    * Optional hook invoked just before each step's body runs (after the
    * step.start event is published, before any retry/backend dispatch).
    * The returned promise gates step execution: callers can pause runs at
@@ -292,6 +300,13 @@ export interface WaitRequest {
   readonly message?: string
   readonly timeoutMs?: number
   readonly outputSchema?: import('./schema.js').SkelmSchema<unknown>
+  /**
+   * Present when this pause is a human-in-the-loop gate rather than a plain
+   * wait() step. A gateway-wired `waitForInput` reads this to register a typed
+   * pending HITL record and audit the request; the resolved value is the
+   * gate's `HitlDecision`. Omitted for ordinary wait() steps.
+   */
+  readonly hitl?: import('./hitl.js').HitlPending
 }
 
 const defaultStateStore = new MemoryRunStore()
@@ -791,6 +806,10 @@ export async function runPipeline<TInput, TOutput>(
             unrestrictedGrant: options.unrestrictedGrant,
           }),
           ...(options.approvalGate !== undefined && { approvalGate: options.approvalGate }),
+          ...(options.hitlPolicy !== undefined && { hitlPolicy: options.hitlPolicy }),
+          ...(options.hitlEnvironment !== undefined && {
+            hitlEnvironment: options.hitlEnvironment,
+          }),
           ...(options.skillSource !== undefined && { skillSource: options.skillSource }),
           ...(options.secretResolver !== undefined && { secretResolver: options.secretResolver }),
           ...(options.registerEgressToken !== undefined && {
@@ -813,6 +832,9 @@ export async function runPipeline<TInput, TOutput>(
           delegationDepth: options.delegationDepth ?? 0,
           ...(options.maxDelegationDepth !== undefined && {
             maxDelegationDepth: options.maxDelegationDepth,
+          }),
+          ...(pipeline.humanInLoop !== undefined && {
+            pipelineHumanInLoop: pipeline.humanInLoop,
           }),
           currentWorkspace,
           ...(pipeline.baseDir !== undefined && { pipelineBaseDir: pipeline.baseDir }),

@@ -51,6 +51,8 @@ export interface GatewayRuntimeContext {
   readonly workspaceManager: WorkspaceManager
   readonly backends: BackendRegistry | undefined
   getConfig(): SkelmConfig
+  readonly hitlPolicy: import('@skelm/core').HitlPolicy | undefined
+  readonly hitlEnvironment: string | undefined
   getWorkflowLoader(): ((registryId: string, absolutePath: string) => Promise<unknown>) | undefined
   attachMetricsBus(bus: EventBus): void
   attachOtelBus(bus: EventBus): void
@@ -174,15 +176,22 @@ export class GatewayRuntime {
     // invalid resume payloads after restart, rather than accepting then failing
     // asynchronously inside the pipeline.
     const waitingStepId = stored.waiting.stepId
-    const waitingStep = pipeline.steps.find(
-      (s): s is WaitStep => s.kind === 'wait' && s.id === waitingStepId,
-    )
+    // The parked step is a plain wait() OR any step paused at a human-in-the-loop
+    // gate (which can sit on any step kind — see RunWaiting.hitl). Both rehydrate
+    // through the same resumeFromWaiting path.
+    const waitingStep = pipeline.steps.find((s) => s.id === waitingStepId)
     if (waitingStep === undefined) {
       throw startPipelineError(400, `waiting step ${waitingStepId} not found in pipeline`)
     }
-    if (waitingStep.outputSchema !== undefined) {
+    // Only a plain wait() validates the resume value against an output schema
+    // up front; a HITL gate validates its own input/edit payload at resolution.
+    if (
+      stored.waiting.hitl === undefined &&
+      waitingStep.kind === 'wait' &&
+      (waitingStep as WaitStep).outputSchema !== undefined
+    ) {
       try {
-        await validate(waitingStep.outputSchema, resumeValue, 'output')
+        await validate((waitingStep as WaitStep).outputSchema as never, resumeValue, 'output')
       } catch (err) {
         throw startPipelineError(400, (err as Error).message)
       }
@@ -231,6 +240,7 @@ export class GatewayRuntime {
         ...this.defaultBackendRunOptions(pipeline.id),
         ...this.egressRunOptions(),
         ...this.agentmemoryRunOptions(),
+        ...this.hitlRunOptions(),
         resumeFromWaiting: { run: stored, resumeValue },
         workflowPath: stored.workflowPath,
         ...(stored.triggerId !== undefined && { triggerId: stored.triggerId }),
@@ -274,6 +284,18 @@ export class GatewayRuntime {
    * proxy entirely. The trigger dispatcher already supplies these; every
    * HTTP run path (`skelm run`, `/pipelines/:id/run`, `/v1/*`) must too.
    */
+  /**
+   * Human-in-the-loop run-options block. Spread into every `runner.start(...)`
+   * so the trust boundary's required-gate policy and environment label apply to
+   * all gateway-driven runs. Empty when no policy is configured.
+   */
+  hitlRunOptions(): { hitlPolicy?: import('@skelm/core').HitlPolicy; hitlEnvironment?: string } {
+    return {
+      ...(this.ctx.hitlPolicy !== undefined && { hitlPolicy: this.ctx.hitlPolicy }),
+      ...(this.ctx.hitlEnvironment !== undefined && { hitlEnvironment: this.ctx.hitlEnvironment }),
+    }
+  }
+
   egressRunOptions(): {
     registerEgressToken: (runId: string, stepId: string, policy: NetworkPolicy) => string
     unregisterEgressToken: (runId: string, stepId: string) => void
@@ -476,6 +498,7 @@ export class GatewayRuntime {
         ...this.defaultBackendRunOptions(pipeline.id),
         ...this.egressRunOptions(),
         ...this.agentmemoryRunOptions(),
+        ...this.hitlRunOptions(),
         ...(lineage?.parentRunId !== undefined && { parentRunId: lineage.parentRunId }),
         ...(lineage?.parentStepId !== undefined && { parentStepId: lineage.parentStepId }),
         ...(lineage?.taskId !== undefined && { taskId: lineage.taskId }),

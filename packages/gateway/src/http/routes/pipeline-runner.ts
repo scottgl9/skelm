@@ -71,6 +71,7 @@ export async function runPipelineSync(
       ...gateway.defaultBackendRunOptions(pipeline.id),
       ...gateway.egressRunOptions(),
       ...gateway.agentmemoryRunOptions(),
+      ...gateway.hitlRunOptions(),
     })
     const final = await handle.wait()
     return {

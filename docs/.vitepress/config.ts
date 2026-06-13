@@ -71,6 +71,7 @@ export default defineConfig({
           items: [
             { text: 'Overview', link: '/concepts/' },
             { text: 'Permissions', link: '/concepts/permissions' },
+            { text: 'Human-in-the-loop', link: '/concepts/human-in-the-loop' },
             { text: 'Orchestration', link: '/concepts/orchestration' },
             { text: 'Persistent Workflows', link: '/concepts/persistent-workflows' },
             { text: 'Coding Agents', link: '/concepts/coding-agents' },

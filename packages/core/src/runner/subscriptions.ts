@@ -82,6 +82,7 @@ export function subscribeRunStateMirror(opts: {
               stepId: event.stepId,
               ...(event.message !== undefined && { message: event.message }),
               ...(event.timeoutMs !== undefined && { timeoutMs: event.timeoutMs }),
+              ...(event.hitl !== undefined && { hitl: event.hitl }),
               since: event.at,
             },
           })

@@ -60,6 +60,15 @@ export interface GatewayOptions {
   /** Override the canonical approval gate; defaults to auto-approve. */
   approvalGate?: ApprovalGate
   /**
+   * Optional policy hook that REQUIRES a human-in-the-loop gate for risky
+   * steps (risky tool, broad executable profile, network egress, production
+   * env, …). Supplied by the trust boundary; an injected gate cannot be
+   * bypassed. Threaded into every gateway-driven run. See `@skelm/core` HitlPolicy.
+   */
+  hitlPolicy?: import('@skelm/core').HitlPolicy
+  /** Operator environment label passed to the HITL policy hook (e.g. 'production'). */
+  hitlEnvironment?: string
+  /**
    * When true, start the HTTP control surface alongside the rest of the
    * lifecycle. Defaults to false so unit tests don't bind a port; the CLI
    * sets this to true on `skelm gateway start --foreground`.
@@ -229,6 +238,10 @@ export interface GatewayContext {
   }
   agentmemoryRunOptions(): {
     agentmemoryHandleFactory?: AgentmemoryHandleFactory
+  }
+  hitlRunOptions(): {
+    hitlPolicy?: import('@skelm/core').HitlPolicy
+    hitlEnvironment?: string
   }
   defaultPermissionRunOptions(workflowId?: string): {
     defaultPermissions?: AgentPermissions

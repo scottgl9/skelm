@@ -143,6 +143,46 @@ export class WaitConfigError extends Error {
 }
 
 /**
+ * Thrown when a human-in-the-loop gate denies the gated action — either an
+ * explicit deny/reject decision, a `retry-skip-abort` abort, or a timeout whose
+ * `onTimeout` resolves to deny/fail. A required gate that cannot resolve fails
+ * the step; the action does not proceed.
+ */
+export class HitlDeniedError extends Error {
+  override readonly name = 'HitlDeniedError'
+  constructor(
+    readonly stepId: string,
+    readonly kind: string,
+    readonly actor?: string,
+    readonly reason?: string,
+  ) {
+    super(`human-in-the-loop ${kind} gate denied step "${stepId}"${reason ? `: ${reason}` : ''}`)
+  }
+}
+
+/** Thrown when a HITL gate is required (declared or policy-injected) but no gate runtime is wired. */
+export class HitlConfigError extends Error {
+  override readonly name = 'HitlConfigError'
+  constructor(readonly stepId: string) {
+    super(
+      `step "${stepId}" requires a human-in-the-loop decision but no wait/resume handler is configured on the runtime`,
+    )
+  }
+}
+
+/** Thrown when a gate kind is declared on a phase where it has no effect. */
+export class HitlUnsupportedGatePhaseError extends Error {
+  override readonly name = 'HitlUnsupportedGatePhaseError'
+  constructor(
+    readonly stepId: string,
+    readonly phase: string,
+    readonly kind: string,
+  ) {
+    super(`step "${stepId}" does not support human-in-the-loop ${kind} at ${phase}`)
+  }
+}
+
+/**
  * Default cap on how deep a chain of agent-to-agent delegations may go before
  * the runtime refuses further hand-offs. Bounds resource use on a runaway
  * router; gateways may override via config.

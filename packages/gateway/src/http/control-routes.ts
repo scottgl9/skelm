@@ -25,6 +25,7 @@ import { registerDashboardRoutes } from './routes/dashboard.js'
 import { registerDebugRoutes } from './routes/debug.js'
 import { registerGatewayLifecycleRoutes } from './routes/gateway-lifecycle.js'
 import { registerHealthRoutes } from './routes/health.js'
+import { registerHitlRoutes } from './routes/hitl.js'
 import { registerMetricsRoutes } from './routes/metrics.js'
 import { registerOpenAIRoutes } from './routes/openai.js'
 import { registerPackageRoutes } from './routes/packages.js'
@@ -58,6 +59,7 @@ export function mountControlRoutes(app: App, gateway: GatewayContext): void {
   registerHealthRoutes(router, gateway)
   registerGatewayLifecycleRoutes(router, gateway)
   registerApprovalRoutes(router, gateway)
+  registerHitlRoutes(router, gateway)
   registerSessionRoutes(router, gateway)
   registerRunRoutes(router, gateway)
   registerStateRoutes(router, gateway)

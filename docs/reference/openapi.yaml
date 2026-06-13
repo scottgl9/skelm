@@ -192,6 +192,77 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Approval' }
 
+  /v1/hitl:
+    get:
+      summary: List pending human-in-the-loop gates
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pending:
+                    type: array
+                    items: { $ref: '#/components/schemas/HitlPending' }
+
+  /v1/hitl/{runId}:
+    get:
+      summary: Get the pending HITL gate for a run
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HitlPending' }
+        '404': { description: No pending HITL gate for run }
+
+  /v1/hitl/{runId}/resolve:
+    post:
+      summary: Resolve a pending HITL gate with a typed decision
+      description: >-
+        The `decision` verb must match the gate kind: approve/deny (approval,
+        validate), submit-input (input), submit-edit (edit), choose (choose),
+        retry/skip/abort (retry-skip-abort). A mismatched verb is rejected with
+        400 and the run stays parked. The resolution is audited as
+        hitl.<decision>; submitted input/edit values are never audited.
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum:
+                    [approve, deny, submit-input, submit-edit, choose, retry, skip, abort]
+                actor: { type: string }
+                reason: { type: string }
+                value: {}
+                selected:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200':
+          description: Resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resolved: { type: boolean }
+                  runId: { type: string }
+                  rehydrated: { type: boolean }
+        '400': { description: Decision verb does not match the gate kind }
+        '404': { description: No pending HITL gate for run }
+
   /audit:
     get:
       summary: List hash-chained audit entries
@@ -1147,6 +1218,34 @@ components:
         stepId: { type: string }
         message: { type: string }
         createdAt: { type: string, format: date-time }
+
+    HitlPending:
+      type: object
+      properties:
+        runId: { type: string }
+        pipelineId: { type: string }
+        stepId: { type: string }
+        since: { type: integer }
+        gate:
+          type: object
+          properties:
+            kind:
+              type: string
+              enum: [approval, input, edit, validate, choose, retry-skip-abort]
+            phase: { type: string, enum: [beforeRun, afterOutput] }
+            reason: { type: string }
+            approvers: { type: array, items: { type: string } }
+            options:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  label: { type: string }
+            multi: { type: boolean }
+            onTimeout: { type: string, enum: [fail, approve, deny, escalate] }
+            deliveryTarget: { type: string }
+            required: { type: boolean }
 
     DeliveryTarget:
       type: object

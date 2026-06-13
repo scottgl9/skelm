@@ -42,6 +42,15 @@ export type { VaultSecretResolverOptions } from './secrets/vault-driver.js'
 // Approval gate
 export { SuspendApprovalGate } from './approvals/suspend-gate.js'
 export type { PendingApproval, SuspendApprovalGateOptions } from './approvals/suspend-gate.js'
+export {
+  HitlResolutionError,
+  auditHitl,
+  buildDecision,
+  getPendingHitl,
+  hitlAuditEvent,
+  listPendingHitl,
+} from './hitl/hitl-service.js'
+export type { HitlResolution, PendingHitlGate } from './hitl/hitl-service.js'
 
 // Debug / breakpoints
 export { BreakpointRegistry } from './debug/breakpoint-registry.js'
