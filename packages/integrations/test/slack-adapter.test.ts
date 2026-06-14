@@ -243,6 +243,12 @@ describe('normalizeSlackInbound — robustness', () => {
     }
   })
 
+  it('returns null for a null nested event payload (no throw)', () => {
+    expect(() => normalizeSlackInbound({ type: 'event_callback', event: null })).not.toThrow()
+    expect(normalizeSlackInbound({ type: 'event_callback', event: null })).toBeNull()
+    expect(normalizeSlackInbound({ type: 'event_callback', event: 'oops' })).toBeNull()
+  })
+
   it('maps a message_deleted event to a delete (not a bogus empty message)', () => {
     const ev = normalizeSlackInbound({
       type: 'event_callback',
