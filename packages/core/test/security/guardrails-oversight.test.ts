@@ -372,3 +372,62 @@ describe('guardrails: audit visibility (no secret leak)', () => {
     expect(serialized.includes(SECRET)).toBe(false)
   })
 })
+
+describe('guardrails: oversight fails closed + reports terminate accurately', () => {
+  it('a THROWING supervisor terminates the run even on a continueOnError step (no silent bypass)', async () => {
+    let secondRan = false
+    const supervisor: SupervisorHook = (ctx) => {
+      if (ctx.lastStepId === 'first') throw new Error('critic crashed')
+      return undefined
+    }
+    const wf = pipeline({
+      id: 'wf-supervisor-throws',
+      guardrails: { supervisor },
+      steps: [
+        // continueOnError would let a mis-attributed supervisor crash be swallowed.
+        code({ id: 'first', continueOnError: true, run: () => ({ ok: true }) }),
+        code({
+          id: 'second',
+          run: () => {
+            secondRan = true
+            return { ok: true }
+          },
+        }),
+      ],
+    })
+    const events: RunEvent[] = []
+    const bus = new EventBus()
+    bus.subscribe((e) => events.push(e))
+    const run = await runPipeline(wf, undefined, { events: bus })
+
+    expect(run.status).toBe('cancelled')
+    const intervention = events.find(
+      (e) => e.type === 'guardrail.intervention' && e.source === 'supervisor',
+    )
+    expect(intervention).toBeDefined()
+    expect(intervention?.type === 'guardrail.intervention' && intervention.action).toBe('terminate')
+    // Oversight was NOT silently dropped; the unsupervised step never ran.
+    expect(secondRan).toBe(false)
+    expect(run.guardrail?.interventions?.some((i) => i.action === 'terminate')).toBe(true)
+  })
+
+  it('a pause that degrades to termination (no resolver) is reported as a guardrail failure', async () => {
+    const supervisor: SupervisorHook = (ctx) =>
+      ctx.lastStepId === 'first'
+        ? ({ action: 'pause', reason: 'supervisor hold' } satisfies InterventionRequest)
+        : undefined
+    const wf = pipeline({
+      id: 'wf-pause-degrades',
+      guardrails: { supervisor },
+      steps: [trivial('first'), trivial('second')],
+    })
+    // No waitForInput wired: the pause cannot block, so it degrades to terminate.
+    const run = await runPipeline(wf, undefined, {})
+
+    expect(run.status).toBe('cancelled')
+    // The degraded pause must be recorded as a terminate so `failed` is true —
+    // the run WAS killed by oversight, not merely paused.
+    expect(run.guardrail?.failed).toBe(true)
+    expect(run.guardrail?.interventions?.some((i) => i.action === 'terminate')).toBe(true)
+  })
+})

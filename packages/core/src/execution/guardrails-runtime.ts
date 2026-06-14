@@ -265,17 +265,26 @@ export class OversightController {
       }
     }
     this.lastActivity = now
-    // Supervisor/critic.
+    // Supervisor/critic. A crashing oversight hook must FAIL CLOSED — terminate
+    // the run rather than let the exception propagate and be swallowed (e.g. on
+    // a continueOnError step), which would silently drop oversight and run the
+    // remaining steps unsupervised. Mirrors the pre/post validator handling.
     if (this.config.supervisor !== undefined) {
-      const request = await this.config.supervisor({
-        runId: this.runId,
-        pipelineId: this.pipelineId,
-        ...(lastStepId !== undefined && { lastStepId }),
-        ...(this.usageSnapshot(now) !== undefined && {
-          usage: this.usageSnapshot(now) as NonNullable<SupervisorContext['usage']>,
-        }),
-        ctx,
-      })
+      let request: InterventionRequest | undefined
+      try {
+        request = await this.config.supervisor({
+          runId: this.runId,
+          pipelineId: this.pipelineId,
+          ...(lastStepId !== undefined && { lastStepId }),
+          ...(this.usageSnapshot(now) !== undefined && {
+            usage: this.usageSnapshot(now) as NonNullable<SupervisorContext['usage']>,
+          }),
+          ctx,
+        })
+      } catch (err) {
+        const reason = `supervisor hook failed: ${err instanceof Error ? err.message : String(err)}`
+        return this.intervene({ action: 'terminate', reason }, 'supervisor', ctx, lastStepId)
+      }
       if (request !== undefined) {
         return this.intervene(request, 'supervisor', ctx, lastStepId)
       }
@@ -306,8 +315,15 @@ export class OversightController {
       ...(details !== undefined && { details }),
       at: Date.now(),
     })
-    this.interventions.push({ action: request.action, source, reason: request.reason })
+    // Record the EFFECTIVE action, not the requested one: a pause/escalate that
+    // degrades to termination (no handler, or a rejected hold) must be recorded
+    // as 'terminate' so the guardrail report's `failed` flag — which keys off
+    // interventions with action 'terminate' — reflects that the run was killed.
+    const record = (action: InterventionAction): void => {
+      this.interventions.push({ action, source, reason: request.reason })
+    }
     if (request.action === 'terminate') {
+      record('terminate')
       this.terminated = true
       this.abort(request.reason)
       return 'terminate'
@@ -316,6 +332,7 @@ export class OversightController {
     // pause cannot block, so we degrade to terminate (fail closed) rather than
     // silently continuing past an oversight hold.
     if (this.waitForInput === undefined) {
+      record('terminate')
       this.terminated = true
       this.abort(`${request.reason} (no wait/resume handler for oversight ${request.action})`)
       return 'terminate'
@@ -354,10 +371,14 @@ export class OversightController {
       raw === true ||
       (raw !== null && typeof raw === 'object' && (raw as { approved?: unknown }).approved === true)
     if (!approved) {
+      record('terminate')
       this.terminated = true
       this.abort(`${request.reason} (oversight ${request.action} rejected)`)
       return 'terminate'
     }
+    // The hold was approved: the run continues. Record the original action so
+    // the report shows the oversight intervention without flagging a failure.
+    record(request.action)
     return request.action
   }
 }
