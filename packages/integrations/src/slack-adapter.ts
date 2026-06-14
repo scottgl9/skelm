@@ -239,6 +239,10 @@ function requireHostedMediaUrl(media: MediaAttachment, provider: string): string
  * with no actionable normalized form (e.g. `url_verification`).
  */
 export function normalizeSlackInbound(payload: unknown): InboundEvent | null {
+  // Validate at the boundary: a malformed delivery (null/non-object body) has
+  // no normalized form. Returning null matches the {} contract; dereferencing
+  // would throw an uncaught TypeError inside ingest().
+  if (typeof payload !== 'object' || payload === null) return null
   const p = payload as Record<string, unknown>
 
   // Slash command (application/x-www-form-urlencoded, parsed to an object).
@@ -290,6 +294,18 @@ export function normalizeSlackInbound(payload: unknown): InboundEvent | null {
         target: target(item?.channel ?? channel, undefined, user),
         ...(item?.ts !== undefined && { messageId: item.ts }),
         ...(typeof inner.reaction === 'string' && { reaction: inner.reaction }),
+        at,
+        raw: p,
+      }
+    }
+
+    if (inner.type === 'message' && inner.subtype === 'message_deleted') {
+      return {
+        provider: 'slack',
+        eventId,
+        type: 'delete',
+        target: target(channel, optString(inner.thread_ts), user),
+        ...(inner.deleted_ts !== undefined && { messageId: String(inner.deleted_ts) }),
         at,
         raw: p,
       }

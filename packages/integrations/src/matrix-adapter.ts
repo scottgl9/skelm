@@ -255,6 +255,7 @@ interface RawMatrixEvent {
  * deletions. Returns null for unsupported event types.
  */
 export function normalizeMatrixInbound(event: unknown): InboundEvent | null {
+  if (typeof event !== 'object' || event === null) return null
   const e = event as RawMatrixEvent
   if (typeof e.event_id !== 'string' || typeof e.room_id !== 'string') return null
   const at = e.origin_server_ts ?? Date.now()

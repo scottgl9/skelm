@@ -236,6 +236,7 @@ interface RawTelegramMessage {
  * `bot_command` entity. Returns null for updates with no normalized form.
  */
 export function normalizeTelegramInbound(update: unknown): InboundEvent | null {
+  if (typeof update !== 'object' || update === null) return null
   const u = update as Record<string, unknown>
 
   if (u.callback_query !== undefined) {

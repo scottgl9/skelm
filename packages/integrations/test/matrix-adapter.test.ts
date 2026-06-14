@@ -197,3 +197,11 @@ describe('normalizeMatrixInbound', () => {
     expect(normalizeMatrixInbound({})).toBeNull()
   })
 })
+
+describe('normalizeMatrixInbound — robustness', () => {
+  it('returns null for null/undefined/non-object events (no throw)', () => {
+    for (const bad of [null, undefined, 'str', 42, []]) {
+      expect(normalizeMatrixInbound(bad)).toBeNull()
+    }
+  })
+})

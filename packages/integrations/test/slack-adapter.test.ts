@@ -235,3 +235,19 @@ describe('verifySlackSignature continuity', () => {
     spy.mockRestore()
   })
 })
+
+describe('normalizeSlackInbound — robustness', () => {
+  it('returns null for null/undefined/non-object payloads (no throw)', () => {
+    for (const bad of [null, undefined, 'str', 42, []]) {
+      expect(normalizeSlackInbound(bad)).toBeNull()
+    }
+  })
+
+  it('maps a message_deleted event to a delete (not a bogus empty message)', () => {
+    const ev = normalizeSlackInbound({
+      type: 'event_callback',
+      event: { type: 'message', subtype: 'message_deleted', channel: 'C1', deleted_ts: '170.5' },
+    })
+    expect(ev).toMatchObject({ provider: 'slack', type: 'delete', messageId: '170.5' })
+  })
+})
