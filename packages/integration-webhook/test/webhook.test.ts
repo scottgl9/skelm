@@ -88,14 +88,30 @@ describe('verifyWebhookRequest — HMAC', () => {
     expect(result).toEqual({ ok: false, reason: 'missing-signature' })
   })
 
-  it('rejects when no secret was resolved (default-deny, no throw)', () => {
+  it('fails closed when no secret was resolved (default-deny, no throw)', () => {
     const result = verifyWebhookRequest({
       verification: hmacVerification,
       rawBody: body,
       header: headerOf({ 'x-webhook-signature': sign(body) }),
       // resolvedSecret omitted — gateway resolved nothing
     })
-    expect(result).toEqual({ ok: false, reason: 'signature-mismatch' })
+    expect(result).toEqual({ ok: false, reason: 'missing-secret' })
+  })
+
+  it('does NOT accept an empty-key forgery when the secret is unresolved or empty', () => {
+    // Adversarial: with no secret, the HMAC key must not degrade to the empty
+    // string — an attacker computing HMAC("", body) must be rejected, not
+    // admitted. (The old `?? ''` fallback made this a valid signature.)
+    const forged = sign(body, '') // signature keyed on the empty string
+    for (const resolvedSecret of [undefined, '']) {
+      const result = verifyWebhookRequest({
+        verification: hmacVerification,
+        rawBody: body,
+        header: headerOf({ 'x-webhook-signature': forged }),
+        ...(resolvedSecret !== undefined ? { resolvedSecret } : {}),
+      })
+      expect(result).toEqual({ ok: false, reason: 'missing-secret' })
+    }
   })
 
   it('supports base64 encoding and a custom algorithm', () => {

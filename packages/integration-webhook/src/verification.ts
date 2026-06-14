@@ -51,7 +51,7 @@ export type WebhookVerificationResult =
   | { readonly ok: true; readonly strategy: WebhookVerification['strategy'] }
   | {
       readonly ok: false
-      readonly reason: 'missing-signature' | 'signature-mismatch'
+      readonly reason: 'missing-signature' | 'signature-mismatch' | 'missing-secret'
     }
 
 /** Header lookup the gateway supplies; case-insensitive on the caller side. */
@@ -90,10 +90,17 @@ export function verifyWebhookRequest(input: VerifyWebhookRequestInput): WebhookV
     return { ok: false, reason: 'missing-signature' }
   }
 
+  // Fail closed when no secret resolved. An empty/undefined secret would make
+  // the HMAC key the empty string — a known, fixed key any attacker can use to
+  // forge a valid signature. Never key the MAC on a non-secret.
+  if (input.resolvedSecret === undefined || input.resolvedSecret.length === 0) {
+    return { ok: false, reason: 'missing-secret' }
+  }
+
   const accepted = verifyHmacSignature({
     payload: input.rawBody,
     signature,
-    secret: input.resolvedSecret ?? '',
+    secret: input.resolvedSecret,
     ...(verification.algorithm ? { algorithm: verification.algorithm } : {}),
     ...(verification.prefix !== undefined ? { prefix: verification.prefix } : {}),
     ...(verification.encoding ? { encoding: verification.encoding } : {}),
