@@ -305,21 +305,23 @@ export class OversightController {
     stepId: StepId | undefined,
     details?: Record<string, unknown>,
   ): Promise<InterventionAction> {
-    this.events?.publish({
-      type: 'guardrail.intervention',
-      runId: this.runId,
-      ...(stepId !== undefined && { stepId }),
-      action: request.action,
-      source,
-      reason: request.reason,
-      ...(details !== undefined && { details }),
-      at: Date.now(),
-    })
-    // Record the EFFECTIVE action, not the requested one: a pause/escalate that
-    // degrades to termination (no handler, or a rejected hold) must be recorded
-    // as 'terminate' so the guardrail report's `failed` flag — which keys off
-    // interventions with action 'terminate' — reflects that the run was killed.
+    // Emit AND record the EFFECTIVE action, not the requested one. A
+    // pause/escalate that degrades to termination (no handler, or a rejected
+    // hold) must surface as 'terminate' in BOTH the guardrail.intervention
+    // event/audit trail (subscribers map event.action into audit details) and
+    // the recorded interventions (the report's `failed` flag keys off action
+    // 'terminate'). Publishing is therefore deferred until the outcome is known.
     const record = (action: InterventionAction): void => {
+      this.events?.publish({
+        type: 'guardrail.intervention',
+        runId: this.runId,
+        ...(stepId !== undefined && { stepId }),
+        action,
+        source,
+        reason: request.reason,
+        ...(details !== undefined && { details }),
+        at: Date.now(),
+      })
       this.interventions.push({ action, source, reason: request.reason })
     }
     if (request.action === 'terminate') {

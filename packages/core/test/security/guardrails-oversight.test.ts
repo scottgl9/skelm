@@ -422,12 +422,22 @@ describe('guardrails: oversight fails closed + reports terminate accurately', ()
       steps: [trivial('first'), trivial('second')],
     })
     // No waitForInput wired: the pause cannot block, so it degrades to terminate.
-    const run = await runPipeline(wf, undefined, {})
+    const events: RunEvent[] = []
+    const bus = new EventBus()
+    bus.subscribe((e) => events.push(e))
+    const run = await runPipeline(wf, undefined, { events: bus })
 
     expect(run.status).toBe('cancelled')
     // The degraded pause must be recorded as a terminate so `failed` is true —
     // the run WAS killed by oversight, not merely paused.
     expect(run.guardrail?.failed).toBe(true)
     expect(run.guardrail?.interventions?.some((i) => i.action === 'terminate')).toBe(true)
+    // ...and the EMITTED guardrail.intervention event (which subscribers/audit
+    // read directly) must carry 'terminate', not the requested 'pause'.
+    const intervention = events.find((e) => e.type === 'guardrail.intervention')
+    expect(intervention?.type === 'guardrail.intervention' && intervention.action).toBe('terminate')
+    expect(events.some((e) => e.type === 'guardrail.intervention' && e.action === 'pause')).toBe(
+      false,
+    )
   })
 })
