@@ -126,6 +126,18 @@ describe('SMTP header injection (CRLF) is rejected at shaping', () => {
       { ...base, subject: 'ok', headers: { 'X-Bad\r\nBcc: e@x.com': 'v' } },
       { ...base, subject: 'ok', to: 'b@x.com\r\nBcc: evil@attacker.com' },
       { ...base, subject: 'ok', from: { address: 'a@x.com', name: 'A\r\nBcc: e@x.com' } },
+      // Attachment metadata becomes MIME part headers (Content-Disposition /
+      // Content-Type) — header injection one layer down in the message.
+      {
+        ...base,
+        subject: 'ok',
+        attachments: [{ filename: 'a.txt\r\nBcc: e@x.com', content: 'x' }],
+      },
+      {
+        ...base,
+        subject: 'ok',
+        attachments: [{ filename: 'a.txt', content: 'x', contentType: 'text/plain\r\nX-I: 1' }],
+      },
     ]
     for (const input of injections) {
       expect(() => shapeOutboundMessage(input as never)).toThrow(EmailMessageError)

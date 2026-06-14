@@ -34,9 +34,12 @@ const addressSchema = z.object({
 })
 
 const attachmentSchema = z.object({
-  filename: z.string().min(1),
+  // filename + contentType become MIME part headers (Content-Disposition /
+  // Content-Type), so they must reject CRLF too — header injection one layer
+  // down in the message structure.
+  filename: headerSafeString.min(1),
   content: z.union([z.string(), z.instanceof(Uint8Array)]),
-  contentType: z.string().optional(),
+  contentType: headerSafeString.optional(),
 })
 
 /** Validated input to {@link sendEmail}. Addresses accept a string or object. */
