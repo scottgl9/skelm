@@ -278,8 +278,10 @@ export function normalizeSlackInbound(payload: unknown): InboundEvent | null {
   }
 
   if (p.type === 'event_callback') {
-    const inner = p.event as Record<string, unknown> | undefined
-    if (inner === undefined) return null
+    const inner = p.event as Record<string, unknown> | null | undefined
+    // `event: null` passes the top-level guard but would throw on the first
+    // field access below — reject any non-object inner payload.
+    if (typeof inner !== 'object' || inner === null) return null
     const channel = String(inner.channel ?? p.channel_id ?? '')
     const user = optString(inner.user)
     const at = secondsToMs(inner.event_ts ?? inner.ts) ?? Date.now()

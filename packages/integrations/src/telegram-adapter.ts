@@ -239,7 +239,7 @@ export function normalizeTelegramInbound(update: unknown): InboundEvent | null {
   if (typeof update !== 'object' || update === null) return null
   const u = update as Record<string, unknown>
 
-  if (u.callback_query !== undefined) {
+  if (typeof u.callback_query === 'object' && u.callback_query !== null) {
     const cq = u.callback_query as {
       id?: string
       from?: { id?: number }
@@ -259,7 +259,7 @@ export function normalizeTelegramInbound(update: unknown): InboundEvent | null {
     }
   }
 
-  if (u.message_reaction !== undefined) {
+  if (typeof u.message_reaction === 'object' && u.message_reaction !== null) {
     const mr = u.message_reaction as {
       chat?: { id?: number | string }
       message_id?: number
@@ -285,7 +285,8 @@ export function normalizeTelegramInbound(update: unknown): InboundEvent | null {
     | (RawTelegramMessage & { entities?: Array<{ type?: string; offset?: number }> })
     | undefined
   const msg = edited ?? message
-  if (msg === undefined || typeof msg.message_id !== 'number') return null
+  // `message: null` (or any non-object) must not reach the field access below.
+  if (typeof msg !== 'object' || msg === null || typeof msg.message_id !== 'number') return null
 
   const base = {
     provider: 'telegram' as const,

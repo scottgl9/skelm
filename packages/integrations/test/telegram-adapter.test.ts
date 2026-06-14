@@ -207,4 +207,16 @@ describe('normalizeTelegramInbound — robustness', () => {
       expect(normalizeTelegramInbound(bad)).toBeNull()
     }
   })
+
+  it('returns null for null nested payloads (callback_query/message_reaction/message)', () => {
+    for (const u of [
+      { update_id: 1, callback_query: null },
+      { update_id: 1, message_reaction: null },
+      { update_id: 1, message: null },
+      { update_id: 1, edited_message: null },
+    ]) {
+      expect(() => normalizeTelegramInbound(u)).not.toThrow()
+      expect(normalizeTelegramInbound(u)).toBeNull()
+    }
+  })
 })
