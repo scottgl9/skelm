@@ -23,7 +23,10 @@ import {
 import type { GatewayContext } from '../../lifecycle/gateway-types.js'
 import { materializePathWorkflow } from '../../workflows/path-materialization.js'
 import type { WorkflowArchiveService } from '../../workflows/workflow-archive-service.js'
-import type { MaterializedWorkflowArtifact } from '../../workflows/workflow-artifact-service.js'
+import {
+  type MaterializedWorkflowArtifact,
+  linkRuntimeNodeModules,
+} from '../../workflows/workflow-artifact-service.js'
 import {
   type RegisteredWorkflowRecord,
   WorkflowRegistrationError,
@@ -1004,6 +1007,10 @@ async function materializeInlineJsonWorkflow(
   await mkdir(dir, { recursive: true })
   const path = join(dir, 'workflow.mts')
   await writeFile(path, inlineWorkflowModule(id, body), 'utf8')
+  // The generated module imports `skelm`; the uploaded-workflows dir has no
+  // dependency tree of its own, so link the gateway's runtime node_modules or
+  // the managed load fails with "Cannot find package 'skelm'".
+  await linkRuntimeNodeModules(dir)
   return path
 }
 

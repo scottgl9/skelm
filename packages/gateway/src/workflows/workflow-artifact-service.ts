@@ -204,6 +204,23 @@ async function copyTree(
   await writeFile(dest, await readFile(source))
 }
 
+/**
+ * Ensure a generated/extracted workflow dir can resolve framework imports
+ * (`skelm`/`@skelm/*`). Used by paths that write a workflow module into the
+ * state dir without a dependency tree of their own — inline-JSON register and
+ * archive upload both land a module importing `skelm` under
+ * `uploaded-workflows/<id>/`, which has no node_modules to resolve against, so
+ * the managed load fails with "Cannot find package 'skelm'". Skips when the dir
+ * already resolves a node_modules (its own or an ancestor's), so a bundled tree
+ * is never shadowed.
+ */
+export async function linkRuntimeNodeModules(dir: string): Promise<void> {
+  if ((await findNearestNodeModules(dir)) !== undefined) return
+  const runtime = await findRuntimeNodeModules()
+  if (runtime === undefined) return
+  await symlink(runtime, join(dir, 'node_modules'))
+}
+
 async function symlinkNearestNodeModules(sourceRoot: string, artifactDir: string): Promise<void> {
   // Prefer the workflow's own dependency tree. When the source lives outside any
   // project (e.g. `skelm run /tmp/standalone.ts`), the materialized copy under
