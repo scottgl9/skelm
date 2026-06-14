@@ -213,13 +213,15 @@ describe('ChainAuditWriter.prune', () => {
     const result = await w.prune(100)
     expect(result.archived).toBe(5)
     expect(result.retained).toBe(0)
-    expect(result.boundary.prunedThroughSeq).toBe(100)
+    // prunedThroughSeq is the LAST ARCHIVED seq (5), not the caller's cutoff
+    // (100) — no artificial gaps from an oversized cutoff value.
+    expect(result.boundary.prunedThroughSeq).toBe(5)
 
     // Next append on the same writer must continue at prunedThroughSeq + 1 and
-    // chain from the boundary hash — NOT reset to seq 1 / genesis.
+    // chain from the boundary hash — NOT reset to seq 1 / genesis or jump to 101.
     await w.write({ actor: 'gateway', action: 'after-full-prune' })
     const all = await w.readAll()
-    expect(all.map((e) => e.seq)).toEqual([101])
+    expect(all.map((e) => e.seq)).toEqual([6])
     expect(all[0]?.prevHash).toBe(result.boundary.boundaryHash)
     expect(await w.verify({ boundary: result.boundary })).toBeNull()
   })
@@ -230,13 +232,14 @@ describe('ChainAuditWriter.prune', () => {
     for (let i = 0; i < 4; i++) await w.write({ actor: 'gateway', action: `act-${i}` })
     const result = await w.prune(100)
     expect(result.retained).toBe(0)
+    expect(result.boundary.prunedThroughSeq).toBe(4)
 
     // Simulate a gateway restart: a brand-new writer reads the now-empty live
     // log and must pick up the boundary rather than reset to genesis.
     const w2 = new ChainAuditWriter(path)
     await w2.write({ actor: 'gateway', action: 'after-restart' })
     const all = await w2.readAll()
-    expect(all.map((e) => e.seq)).toEqual([101])
+    expect(all.map((e) => e.seq)).toEqual([5])
     expect(all[0]?.prevHash).toBe(result.boundary.boundaryHash)
     expect(await w2.verify({ boundary: result.boundary })).toBeNull()
   })

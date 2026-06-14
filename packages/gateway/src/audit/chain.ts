@@ -234,6 +234,7 @@ export class ChainAuditWriter implements AuditWriter {
       let archived = 0
       let retained = 0
       let boundaryHash = '0'.repeat(64)
+      let lastArchivedSeq = 0
       let lastRetainedSeq = 0
       let lastRetainedHash: string | null = null
       try {
@@ -243,6 +244,7 @@ export class ChainAuditWriter implements AuditWriter {
             if (!archive.write(line)) await drain(archive)
             archived++
             boundaryHash = entry.entryHash
+            lastArchivedSeq = entry.seq
           } else {
             if (!tail.write(line)) await drain(tail)
             retained++
@@ -256,8 +258,11 @@ export class ChainAuditWriter implements AuditWriter {
       }
       await fs.rename(tailPath, this.path)
       await fs.chmod(this.path, 0o600)
+      // prunedThroughSeq is the seq of the last entry actually archived, NOT the
+      // caller's cutoff: pruning a 5-entry log with beforeSeq=100 archives
+      // through seq 5, so the retained chain must resume at 6, never 101.
       const boundary: PruneBoundary = {
-        prunedThroughSeq: beforeSeq,
+        prunedThroughSeq: lastArchivedSeq,
         boundaryHash,
         archivePath,
         prunedAt,
@@ -276,7 +281,7 @@ export class ChainAuditWriter implements AuditWriter {
         this.nextSeq = lastRetainedSeq + 1
         this.lastHash = lastRetainedHash
       } else {
-        this.nextSeq = beforeSeq + 1
+        this.nextSeq = lastArchivedSeq + 1
         this.lastHash = boundaryHash
       }
       return { archived, retained, boundary }
