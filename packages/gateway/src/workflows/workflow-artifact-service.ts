@@ -154,7 +154,11 @@ async function copyTree(
     for (const name of await readdir(source)) {
       if (EXCLUDED_DIRS.has(name)) continue
       const child = join(source, name)
-      if (ignore.ignores(relative(sourceRoot, child), true)) continue
+      // Pass the child's REAL type: a directory-only rule (`config/`) must not
+      // match a plain file named `config`. A symlink counts as a non-directory
+      // (git treats it as a file for ignore purposes).
+      const childIsDir = (await lstat(child)).isDirectory()
+      if (ignore.ignores(relative(sourceRoot, child), childIsDir)) continue
       await copyTree(child, join(dest, name), maxBytes, bytes, sourceRoot, visited, ignore)
     }
     return

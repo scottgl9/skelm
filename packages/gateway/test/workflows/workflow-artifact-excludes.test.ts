@@ -101,6 +101,29 @@ describe('WorkflowArtifactService materialization excludes', () => {
     ).toBe('nested')
   })
 
+  it('a directory-only rule (config/) ignores the directory but NOT a sibling file named config', async () => {
+    // Git semantics: a trailing-slash rule matches the directory and its
+    // contents, not a plain file of the same name. (`config` is not in the
+    // hard denylist, so this isolates the dirOnly behavior.)
+    const entry = join(sourceRoot, 'a.workflow.ts')
+    await fs.writeFile(entry, 'export default {}')
+    await fs.writeFile(join(sourceRoot, '.gitignore'), 'config/\n')
+    await fs.mkdir(join(sourceRoot, 'config'))
+    await fs.writeFile(join(sourceRoot, 'config', 'secret.txt'), 'ignored')
+    await fs.mkdir(join(sourceRoot, 'pkg'))
+    // A plain FILE named `config` (no trailing slash) must survive.
+    await fs.writeFile(join(sourceRoot, 'pkg', 'config'), 'keep me')
+
+    const artifact = await service().materializeTree({
+      id: 'dironly',
+      sourceRoot,
+      entryPath: entry,
+    })
+
+    expect(await exists(join(artifact.artifactDir, 'config'))).toBe(false)
+    expect(await fs.readFile(join(artifact.artifactDir, 'pkg', 'config'), 'utf8')).toBe('keep me')
+  })
+
   it('excludes structural/cache dirs via the hard denylist even without .gitignore', async () => {
     const entry = join(sourceRoot, 'a.workflow.ts')
     await fs.writeFile(entry, 'export default {}')
