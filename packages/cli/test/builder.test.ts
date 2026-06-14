@@ -117,7 +117,7 @@ describe('skelm builder', () => {
   it('the bundled skelm skill matches the canonical source (no drift)', () => {
     const bundled = readFileSync(join(here, '..', 'assets', 'skelm-skill', 'SKILL.md'), 'utf8')
     const canonical = readFileSync(
-      resolve(here, '..', '..', '..', 'skill', 'skelm', 'SKILL.md'),
+      resolve(here, '..', '..', '..', '.agents', 'skills', 'skelm', 'SKILL.md'),
       'utf8',
     )
     // If this fails, rebuild the CLI to refresh the bundled copy:

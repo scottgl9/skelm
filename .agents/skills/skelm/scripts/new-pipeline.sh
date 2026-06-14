@@ -2,8 +2,8 @@
 # new-pipeline.sh — scaffold a new skelm pipeline from a template
 #
 # Usage:
-#   bash skill/skelm/scripts/new-pipeline.sh <pipeline-id> "<description>"
-#   bash skill/skelm/scripts/new-pipeline.sh <pipeline-id> "<description>" --agent
+#   bash .agents/skills/skelm/scripts/new-pipeline.sh <pipeline-id> "<description>"
+#   bash .agents/skills/skelm/scripts/new-pipeline.sh <pipeline-id> "<description>" --agent
 #
 # Arguments:
 #   pipeline-id    kebab-case id; output file is <pipeline-id>.pipeline.mts
