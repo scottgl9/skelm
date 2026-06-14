@@ -9,6 +9,7 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { dirname, join, relative, sep } from 'node:path'
 import { WorkflowRegistrationError } from './workflow-registration-service.js'
 
@@ -204,9 +205,42 @@ async function copyTree(
 }
 
 async function symlinkNearestNodeModules(sourceRoot: string, artifactDir: string): Promise<void> {
-  const sourceNodeModules = await findNearestNodeModules(sourceRoot)
+  // Prefer the workflow's own dependency tree. When the source lives outside any
+  // project (e.g. `skelm run /tmp/standalone.ts`), the materialized copy under
+  // managed-workflows has no node_modules to resolve framework imports against;
+  // fall back to the gateway's own node_modules so `skelm`/`@skelm/*` still load.
+  const sourceNodeModules =
+    (await findNearestNodeModules(sourceRoot)) ?? (await findRuntimeNodeModules())
   if (sourceNodeModules === undefined) return
   await symlink(sourceNodeModules, join(artifactDir, 'node_modules'))
+}
+
+let runtimeNodeModules: string | null | undefined
+async function findRuntimeNodeModules(): Promise<string | undefined> {
+  if (runtimeNodeModules !== undefined) return runtimeNodeModules ?? undefined
+  // In a real install `skelm` resolves under a node_modules whose siblings include
+  // `@skelm/*`. In a workspace checkout it resolves to source (no node_modules
+  // ancestor), so fall back to the node_modules nearest the gateway's cwd.
+  let resolved: string | undefined
+  try {
+    const start = dirname(createRequire(import.meta.url).resolve('skelm/package.json'))
+    resolved = await nearestNamedNodeModules(start)
+  } catch {
+    resolved = undefined
+  }
+  resolved ??= await findNearestNodeModules(process.cwd())
+  runtimeNodeModules = resolved ?? null
+  return resolved
+}
+
+async function nearestNamedNodeModules(start: string): Promise<string | undefined> {
+  let dir = start
+  for (;;) {
+    if (dir.endsWith(`${sep}node_modules`)) return await realpath(dir)
+    const parent = dirname(dir)
+    if (parent === dir) return undefined
+    dir = parent
+  }
 }
 
 async function findNearestNodeModules(sourceRoot: string): Promise<string | undefined> {
