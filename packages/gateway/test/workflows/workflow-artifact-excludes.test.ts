@@ -124,6 +124,54 @@ describe('WorkflowArtifactService materialization excludes', () => {
     expect(await fs.readFile(join(artifact.artifactDir, 'pkg', 'config'), 'utf8')).toBe('keep me')
   })
 
+  it('descends into an ignored dir to honor a negated re-include (dist/ + !dist/keep.js)', async () => {
+    // Git semantics: `dist/` ignores the tree, but `!dist/keep.js` re-includes
+    // that one descendant. The walker must descend into dist/ rather than
+    // pruning it, keep keep.js, and still drop the rest.
+    const entry = join(sourceRoot, 'a.workflow.ts')
+    await fs.writeFile(entry, 'export default {}')
+    await fs.writeFile(join(sourceRoot, '.gitignore'), 'dist/\n!dist/keep.js\n')
+    await fs.mkdir(join(sourceRoot, 'dist'))
+    await fs.writeFile(join(sourceRoot, 'dist', 'keep.js'), 'export default 1')
+    await fs.writeFile(join(sourceRoot, 'dist', 'drop.js'), 'export default 2')
+    await fs.mkdir(join(sourceRoot, 'dist', 'sub'))
+    await fs.writeFile(join(sourceRoot, 'dist', 'sub', 'also-drop.js'), 'x')
+
+    const artifact = await service().materializeTree({
+      id: 'negated-reinclude',
+      sourceRoot,
+      entryPath: entry,
+    })
+
+    // The re-included file survives.
+    expect(await fs.readFile(join(artifact.artifactDir, 'dist', 'keep.js'), 'utf8')).toBe(
+      'export default 1',
+    )
+    // The rest of the ignored tree is still dropped.
+    expect(await exists(join(artifact.artifactDir, 'dist', 'drop.js'))).toBe(false)
+    expect(await exists(join(artifact.artifactDir, 'dist', 'sub'))).toBe(false)
+  })
+
+  it('still prunes an ignored dir entirely when no negation re-includes a descendant', async () => {
+    const entry = join(sourceRoot, 'a.workflow.ts')
+    await fs.writeFile(entry, 'export default {}')
+    // A negation elsewhere must not force a needless descend into out/.
+    await fs.writeFile(join(sourceRoot, '.gitignore'), 'out/\n!keep-me.txt\n')
+    await fs.mkdir(join(sourceRoot, 'out'))
+    await fs.writeFile(join(sourceRoot, 'out', 'big.bin'), 'x'.repeat(1000))
+
+    const artifact = await service().materializeTree({
+      id: 'pruned-no-reinclude',
+      sourceRoot,
+      entryPath: entry,
+    })
+
+    // `!keep-me.txt` is a basename re-include that could match anywhere, so the
+    // walker descends; out/ has no re-included file, so it ends up empty/absent
+    // of content. The point: out/big.bin is NOT copied.
+    expect(await exists(join(artifact.artifactDir, 'out', 'big.bin'))).toBe(false)
+  })
+
   it('excludes structural/cache dirs via the hard denylist even without .gitignore', async () => {
     const entry = join(sourceRoot, 'a.workflow.ts')
     await fs.writeFile(entry, 'export default {}')
