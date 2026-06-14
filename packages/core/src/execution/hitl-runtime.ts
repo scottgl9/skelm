@@ -137,7 +137,7 @@ function deriveRisk(step: Step, runtime: ExecutionRuntime): HitlPolicyContext['r
     resolved.allowedTools.star ||
     resolved.allowedTools.exact.size > 0 ||
     resolved.allowedTools.prefixes.length > 0
-  return {
+  const risk = {
     ...(executables.length > 0 && { allowedExecutables: executables }),
     ...(profiles.length > 0 && { executableProfiles: profiles }),
     ...(networkGranted(resolved.networkEgress) && { networkEgress: true }),
@@ -145,6 +145,9 @@ function deriveRisk(step: Step, runtime: ExecutionRuntime): HitlPolicyContext['r
     ...(resolved.fsWrite.size > 0 && { fsWrite: true }),
     ...(resolved.unrestricted === true && { unrestricted: true }),
   }
+  // Preserve the "no signals → absent" shape: a policy that only tests
+  // `ctx.risk` presence must not fire for a step that grants nothing risky.
+  return Object.keys(risk).length > 0 ? risk : undefined
 }
 
 /** True when the resolved egress policy grants any outbound access. */

@@ -131,3 +131,32 @@ describe('security: required HITL gate cannot be bypassed', () => {
     expect(bodyRan).toBe(false)
   })
 })
+
+describe('security: risk-derivation preserves the no-signals shape', () => {
+  it('a step that grants nothing risky leaves ctx.risk absent (presence-only policies do not fire)', async () => {
+    let bodyRan = false
+    let sawRisk: unknown = 'unset'
+    // Presence-only policy: gates iff `ctx.risk` is present at all.
+    const policy: HitlPolicy = (ctx) => {
+      sawRisk = ctx.risk
+      return ctx.risk !== undefined ? { kind: 'approval' } : undefined
+    }
+    const wf = pipeline<undefined, unknown>({
+      id: 'sec-hitl-no-risk',
+      steps: [
+        code({
+          id: 'benign',
+          // No permissions, no operator defaults granting anything risky.
+          run: () => {
+            bodyRan = true
+            return { ok: true }
+          },
+        }),
+      ],
+    })
+    const run = await new Runner().start(wf, undefined, { hitlPolicy: policy }).wait()
+    expect(sawRisk, 'risk must be absent for a step with no risky grant').toBeUndefined()
+    expect(run.status).toBe('completed')
+    expect(bodyRan).toBe(true)
+  })
+})
