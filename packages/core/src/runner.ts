@@ -390,6 +390,8 @@ export class Runner {
   ): RunHandle<TInput, TOutput> {
     const runId = options.runId ?? crypto.randomUUID()
     const resumeFromWaiting = options.resumeFromWaiting
+    // The persisted resume value is delivered at most once (see waitForInput).
+    let resumeConsumed = false
     // Synchronous preflight so gateway start paths reject an unknown
     // executable profile reference at load time instead of surfacing it as an
     // async rejection on a runId the caller already received.
@@ -426,11 +428,31 @@ export class Runner {
       auditWriter: this.enforcement.auditWriter,
       waitForInput: (request) => {
         if (
+          !resumeConsumed &&
           resumeFromWaiting !== undefined &&
           resumeFromWaiting.run.runId === request.runId &&
           resumeFromWaiting.run.waiting?.stepId === request.stepId
         ) {
-          return Promise.resolve(resumeFromWaiting.resumeValue)
+          // Phase-aware delivery: a restarted step re-runs from the top
+          // (beforeRun → body → afterOutput), so several waitForInput calls can
+          // share a stepId. Deliver the persisted resume value ONLY to the gate
+          // phase that was actually parked; a different phase (e.g. beforeRun
+          // re-presenting before the parked afterOutput) must block on a fresh
+          // resume, never consume the stale value. Plain wait() resumes carry no
+          // hitl phase, so they keep the original stepId-only match.
+          const parkedPhase = resumeFromWaiting.run.waiting?.hitl?.phase
+          const requestPhase = request.hitl?.phase
+          if (
+            parkedPhase === undefined ||
+            requestPhase === undefined ||
+            parkedPhase === requestPhase
+          ) {
+            // One-shot: once delivered, later waitForInput calls on this run
+            // (a retry loop, or the other phase) block on a real resume so a
+            // stale value can't be replayed indefinitely.
+            resumeConsumed = true
+            return Promise.resolve(resumeFromWaiting.resumeValue)
+          }
         }
         return this.awaitResume(request)
       },

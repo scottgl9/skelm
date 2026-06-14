@@ -217,6 +217,16 @@ export class GatewayRuntime {
         if (event.type === 'run.resumed') {
           unsubscribe()
           resolve()
+        } else if (event.type === 'run.waiting') {
+          // The resumed run progressed and re-parked at another gate without
+          // consuming this resume value — e.g. a step with both a beforeRun and
+          // an afterOutput gate, parked at afterOutput, re-runs from the top on
+          // restart and re-parks at beforeRun (the persisted afterOutput value
+          // is phase-matched, so it is NOT misapplied to beforeRun). The resume
+          // is still "accepted": the run moved forward and now awaits a fresh
+          // decision for the re-parked gate, so return rather than hang.
+          unsubscribe()
+          resolve()
         } else if (event.type === 'run.failed') {
           unsubscribe()
           reject(new Error(event.error.message))
