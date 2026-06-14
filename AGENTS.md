@@ -2,7 +2,7 @@
 
 Guidance for AI coding assistants and human contributors working on **skelm** — a TypeScript-first framework for authoring, running, and operating agentic and deterministic pipelines.
 
-This file is the single source of truth for agent guidance. `CLAUDE.md` is a symlink to this file so Claude Code, Codex, Cursor, Aider, and other agents read the same rules.
+This file is the single source of truth for agent guidance. `CLAUDE.md` is a symlink to this file so Claude Code, Codex, Cursor, Aider, and other agents read the same rules. Bundled repo-local skills live under `.agents/skills/`, and the root `.claude` symlink points at `.agents` for tool compatibility.
 
 ## What skelm is
 
@@ -38,6 +38,7 @@ skelm/
 │   └── otel/             — OpenTelemetry tracing
 ├── examples/
 ├── scripts/guards/       — architectural-invariant checks
+├── .agents/skills/       — bundled repo-local skills (mirrored by `.claude/`)
 └── docs/
 ```
 

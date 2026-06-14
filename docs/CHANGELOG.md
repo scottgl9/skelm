@@ -638,7 +638,7 @@ If you prefer to keep `.ts`, add `"type": "module"` to your `package.json`.
 - Coverage gaps closed in `@skelm/otel` (failure, cancel, tool, dispose event paths), `@skelm/integrations` (GitHub and Slack webhook event mappings), and `@skelm/agent` (MCP-tool permission enforcement in the native loop).
 
 ### Docs
-- **`loadTsModule` cache contract** — JSDoc spells out that the module cache is process-global with no TTL/mtime check, and how to clear it from tests. Dropped the unused `fileUrlToPath` export; restored the `secrets?: string[]` line in skill/skelm/references that was inadvertently dropped from the `code()` signature block.
+- **`loadTsModule` cache contract** — JSDoc spells out that the module cache is process-global with no TTL/mtime check, and how to clear it from tests. Dropped the unused `fileUrlToPath` export; restored the `secrets?: string[]` line in `.agents/skills/skelm/references` that was inadvertently dropped from the `code()` signature block.
 - **README** — `@skelm/integration-sdk` listed in the packages table.
 
 ## [0.4.1] - 2026-05-17
@@ -812,7 +812,7 @@ Publish-pipeline fixes on top of 0.3.5.
 - **Pi SDK backend** — native tool allowlist enforcement via Pi's `tools[]`/`noTools` API; system prompt injection and per-agent sandbox defaults.
 - **opencode backend improvements** — non-blocking `promptAsync`+SSE streaming; `OPENCODE_CONFIG_CONTENT` injection at spawn time for model/logLevel config; `serverPermissions` field for server-level bash/edit/webfetch defaults.
 - **Core permission enforcement wired** — runtime call sites for `canLoadSkill`, `canRead`, `canWrite`, and expanded `canExec` are now active.
-- **skelm Agent Skill** — published at `skill/skelm` for use as a Claude Code skill.
+- **skelm Agent Skill** — published at `.agents/skills/skelm` for use as a Claude Code skill.
 - **VitePress documentation site** — scaffolded at `docs/`; `PUBLISHING.md` and publish scripts added.
 
 ### Changed

@@ -4,7 +4,7 @@
 // project. Kept here (build step) rather than committed duplicates that drift:
 // the build refreshes them, and guard tests assert the copies match canonical.
 //
-//   1. The canonical skelm authoring skill (`skill/skelm/SKILL.md`).
+//   1. The canonical skelm authoring skill (`.agents/skills/skelm/SKILL.md`).
 //   2. The shareable builder project files (`builder/*`) → `*.tmpl`. The root
 //      `builder/` is the runnable, canonical instance; the scaffold ships these
 //      verbatim. `tsconfig.json` and `package.json` are intentionally NOT derived
@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..', '..')
 
-const skillSrc = join(repoRoot, 'skill', 'skelm', 'SKILL.md')
+const skillSrc = join(repoRoot, '.agents', 'skills', 'skelm', 'SKILL.md')
 const skillDestDir = join(here, '..', 'assets', 'skelm-skill')
 mkdirSync(skillDestDir, { recursive: true })
 copyFileSync(skillSrc, join(skillDestDir, 'SKILL.md'))

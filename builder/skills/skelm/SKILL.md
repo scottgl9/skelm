@@ -1,1 +1,1 @@
-../../../skill/skelm/SKILL.md
+../../../.agents/skills/skelm/SKILL.md
