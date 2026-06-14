@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { classifyError, isRetryableMailError } from '../src/classify.js'
-import { EmailAuthError } from '../src/errors.js'
+import { EmailAuthError, EmailMessageError } from '../src/errors.js'
 import { checkImapHealth, checkSmtpHealth } from '../src/health.js'
 import { listMessages, pollMailbox } from '../src/imap.js'
 import { EMAIL_AUDIT_REDACTION, redactMailFields } from '../src/redaction.js'
-import { sendEmail } from '../src/smtp.js'
+import { sendEmail, shapeOutboundMessage } from '../src/smtp.js'
 import { RESOLVED_CREDS, SAMPLE_MESSAGE, makeImapFake, makeSmtpFake } from './fakes.js'
 
 const PASSWORD = RESOLVED_CREDS.password
@@ -113,5 +113,34 @@ describe('health checks', () => {
     await checkSmtpHealth(RESOLVED_CREDS, factory)
     expect(spy).not.toHaveBeenCalled()
     spy.mockRestore()
+  })
+})
+
+describe('SMTP header injection (CRLF) is rejected at shaping', () => {
+  it('rejects CR/LF in subject, header keys/values, and address fields', () => {
+    const base = { from: 'a@x.com', to: 'b@x.com', text: 'body' }
+    const injections = [
+      { ...base, subject: 'Hi\r\nBcc: evil@attacker.com' },
+      { ...base, subject: 'Hi\nX-Injected: 1' },
+      { ...base, subject: 'ok', headers: { 'X-Custom': 'v\r\nBcc: evil@attacker.com' } },
+      { ...base, subject: 'ok', headers: { 'X-Bad\r\nBcc: e@x.com': 'v' } },
+      { ...base, subject: 'ok', to: 'b@x.com\r\nBcc: evil@attacker.com' },
+      { ...base, subject: 'ok', from: { address: 'a@x.com', name: 'A\r\nBcc: e@x.com' } },
+    ]
+    for (const input of injections) {
+      expect(() => shapeOutboundMessage(input as never)).toThrow(EmailMessageError)
+    }
+  })
+
+  it('still accepts multi-line text/html bodies (only headers are CRLF-restricted)', () => {
+    const msg = shapeOutboundMessage({
+      from: 'a@x.com',
+      to: 'b@x.com',
+      subject: 'normal subject',
+      text: 'line 1\r\nline 2\nline 3',
+      html: '<p>a</p>\n<p>b</p>',
+    } as never)
+    expect(msg.text).toContain('line 2')
+    expect(msg.html).toContain('<p>b</p>')
   })
 })
