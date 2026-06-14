@@ -200,3 +200,11 @@ describe('normalizeTelegramInbound', () => {
     expect(normalizeTelegramInbound({ update_id: 6 })).toBeNull()
   })
 })
+
+describe('normalizeTelegramInbound — robustness', () => {
+  it('returns null for null/undefined/non-object updates (no throw)', () => {
+    for (const bad of [null, undefined, 'str', 42, []]) {
+      expect(normalizeTelegramInbound(bad)).toBeNull()
+    }
+  })
+})
