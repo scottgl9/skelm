@@ -128,6 +128,7 @@ async function copyTree(
   sourceRoot: string,
   visited: Set<string>,
   ignore: GitignoreMatcher,
+  inheritedIgnored = false,
 ): Promise<void> {
   const stat = await lstat(source)
   if (stat.isSymbolicLink()) {
@@ -146,7 +147,16 @@ async function copyTree(
     }
     assertWithin(target, sourceRoot, `symbolic link target (${source})`)
     if (visited.has(target)) return
-    await copyTree(target, dest, maxBytes, bytes, sourceRoot, new Set(visited).add(target), ignore)
+    await copyTree(
+      target,
+      dest,
+      maxBytes,
+      bytes,
+      sourceRoot,
+      new Set(visited).add(target),
+      ignore,
+      inheritedIgnored,
+    )
     return
   }
   if (stat.isDirectory()) {
@@ -154,16 +164,33 @@ async function copyTree(
     for (const name of await readdir(source)) {
       if (EXCLUDED_DIRS.has(name)) continue
       const child = join(source, name)
+      const childRel = relative(sourceRoot, child)
       // Pass the child's REAL type: a directory-only rule (`config/`) must not
       // match a plain file named `config`. A symlink counts as a non-directory
       // (git treats it as a file for ignore purposes).
       const childIsDir = (await lstat(child)).isDirectory()
-      if (ignore.ignores(relative(sourceRoot, child), childIsDir)) continue
-      await copyTree(child, join(dest, name), maxBytes, bytes, sourceRoot, visited, ignore)
+      const childIgnored = ignore.ignores(childRel, childIsDir, inheritedIgnored)
+      if (childIgnored) {
+        // Prune the ignored node UNLESS it is a directory a later negation rule
+        // could re-include a descendant of — then descend with the ignore status
+        // inherited, so the per-node checks re-include only the negated paths
+        // (e.g. `dist/` + `!dist/keep.js` keeps keep.js, drops the rest).
+        if (!childIsDir || !ignore.mayReincludeUnder(childRel)) continue
+      }
+      await copyTree(
+        child,
+        join(dest, name),
+        maxBytes,
+        bytes,
+        sourceRoot,
+        visited,
+        ignore,
+        childIgnored,
+      )
     }
     return
   }
-  if (ignore.ignores(relative(sourceRoot, source), false)) return
+  if (ignore.ignores(relative(sourceRoot, source), false, inheritedIgnored)) return
   if (!stat.isFile()) return
   bytes.total += stat.size
   if (bytes.total > maxBytes) {
@@ -201,16 +228,37 @@ async function findNearestNodeModules(sourceRoot: string): Promise<string | unde
 }
 
 interface GitignoreMatcher {
-  ignores(relPath: string, isDir: boolean): boolean
+  /**
+   * Whether `relPath` is ignored. `inherited` carries the ignore status of the
+   * parent directory: a node under an ignored directory is ignored unless a
+   * later rule (a negation) re-includes it — this is how `dist/` + `!dist/keep.js`
+   * keeps `keep.js` while dropping the rest of `dist/`.
+   */
+  ignores(relPath: string, isDir: boolean, inherited: boolean): boolean
+  /**
+   * Whether a negation rule could re-include some descendant of the ignored
+   * directory `relPath`. When true the walker must DESCEND into the ignored
+   * directory (rather than pruning it) so the re-included descendant is reached.
+   */
+  mayReincludeUnder(relPath: string): boolean
 }
 
 interface GitignoreRule {
   re: RegExp
   negated: boolean
   dirOnly: boolean
+  /** Cleaned pattern (root-relative path, or a bare basename). */
+  body: string
+  /** True when `body` contains a path separator (anchored to the root). */
+  hasSlash: boolean
+  /** True when `body` contains a glob metacharacter (`*`, `?`, `[`). */
+  glob: boolean
 }
 
-const ALLOW_NOTHING: GitignoreMatcher = { ignores: () => false }
+const ALLOW_NOTHING: GitignoreMatcher = {
+  ignores: () => false,
+  mayReincludeUnder: () => false,
+}
 
 /**
  * Builds a matcher from the source root's `.gitignore` so build/runtime output
@@ -233,15 +281,30 @@ async function loadGitignore(sourceRoot: string): Promise<GitignoreMatcher> {
     if (rule !== undefined) rules.push(rule)
   }
   if (rules.length === 0) return ALLOW_NOTHING
+  const hasNegation = rules.some((r) => r.negated)
   return {
-    ignores(relPath, isDir) {
+    ignores(relPath, isDir, inherited) {
       const normalized = relPath.split(sep).join('/')
-      let ignored = false
+      let ignored = inherited
       for (const rule of rules) {
         if (rule.dirOnly && !isDir) continue
         if (rule.re.test(normalized)) ignored = !rule.negated
       }
       return ignored
+    },
+    mayReincludeUnder(relPath) {
+      if (!hasNegation) return false
+      const dir = relPath.split(sep).join('/')
+      for (const rule of rules) {
+        if (!rule.negated) continue
+        // A bare basename matches at any depth, so it could re-include a file
+        // anywhere under `dir`. An anchored glob might too — be conservative.
+        if (!rule.hasSlash || rule.glob) return true
+        // A literal, root-anchored negation only matters when it targets a path
+        // inside `dir`.
+        if (rule.body === dir || rule.body.startsWith(`${dir}/`)) return true
+      }
+      return false
     },
   }
 }
@@ -263,7 +326,16 @@ function parseGitignoreLine(raw: string): GitignoreRule | undefined {
   const anchored = line.startsWith('/')
   if (anchored) line = line.slice(1)
   if (line.length === 0) return undefined
-  return { re: gitignorePatternToRegExp(line, anchored), negated, dirOnly }
+  // `line` is now the root-relative body. A body with a slash is path-anchored;
+  // a slash-free body matches its basename at any depth.
+  return {
+    re: gitignorePatternToRegExp(line, anchored),
+    negated,
+    dirOnly,
+    body: line,
+    hasSlash: line.includes('/'),
+    glob: /[*?[]/.test(line),
+  }
 }
 
 function gitignorePatternToRegExp(pattern: string, anchored: boolean): RegExp {
