@@ -168,6 +168,109 @@ describe('HITL gate durability across gateway restart', () => {
       await second.gw.stop()
     }
   })
+
+  it(
+    'a both-phase step parked at afterOutput does not misapply the resume to beforeRun on restart',
+    { timeout: 30000 },
+    async () => {
+      // Adversarial: a step with BOTH a beforeRun approval and an afterOutput edit
+      // is parked at afterOutput across restart. On resume the step re-runs from
+      // the top, so beforeRun's waitForInput fires for the same stepId. The
+      // persisted afterOutput value must NOT be delivered to the beforeRun gate
+      // (which would coerce to deny → HitlDeniedError, failing a run the human
+      // approved). With the phase-aware short-circuit, beforeRun re-parks for a
+      // fresh decision instead.
+      const workflowPath = join(projectRoot, 'both.workflow.mts')
+      await writeFile(workflowPath, '// loaded by the test gateway loader\n')
+      const wf = pipeline({
+        id: 'hitl-both-phase',
+        input: z.object({ seed: z.number() }),
+        output: z.object({ value: z.number() }),
+        steps: [
+          code({
+            id: 'gated',
+            humanInLoop: {
+              beforeRun: { kind: 'approval' },
+              afterOutput: { kind: 'edit' },
+            },
+            run: (ctx) => ({ value: ctx.input.seed }),
+          }),
+        ],
+        finalize: (ctx) => ctx.steps.gated,
+      })
+      const loadWorkflow = async (_id: string, absolutePath: string): Promise<unknown> => {
+        if (absolutePath !== workflowPath) throw new Error(`unexpected path: ${absolutePath}`)
+        return { default: wf }
+      }
+      const boot = async () =>
+        bootGatewayWithRetry((port) => ({
+          stateDir,
+          projectRoot,
+          enableHttp: true,
+          watchRegistries: false,
+          httpPort: port,
+          config: {},
+          loadWorkflow,
+        }))
+
+      const waitForPhase = async (gw: Gateway, runId: string, phase: string): Promise<void> => {
+        for (let i = 0; i < 100; i++) {
+          const r = await gw.runStore.getRun(runId)
+          if (r?.status === 'waiting' && r.waiting?.hitl?.phase === phase) return
+          if (r?.status === 'failed' || r?.status === 'completed') return
+          await new Promise((res) => setTimeout(res, 20))
+        }
+      }
+
+      const first = await boot()
+      const start = await fetch(`${first.base}/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pipelinePath: workflowPath, input: { seed: 7 } }),
+      })
+      const { runId } = (await start.json()) as { runId: string }
+
+      // Approve beforeRun → body runs → parks at afterOutput.
+      await waitForPhase(first.gw, runId, 'beforeRun')
+      await fetch(`${first.base}/v1/hitl/${runId}/resolve`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ decision: 'approve', actor: 'alice' }),
+      })
+      await waitForPhase(first.gw, runId, 'afterOutput')
+      const parked = await first.gw.runStore.getRun(runId)
+      expect(parked?.waiting?.hitl?.phase).toBe('afterOutput')
+
+      first.gw.unregisterRun(runId)
+      await first.gw.stop()
+
+      // Restart, then resolve the parked afterOutput edit.
+      const second = await boot()
+      try {
+        const resolve = await fetch(`${second.base}/v1/hitl/${runId}/resolve`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ decision: 'submit-edit', value: { value: 99 }, actor: 'bob' }),
+        })
+        expect(resolve.status).toBe(200)
+
+        let after = await second.gw.runStore.getRun(runId)
+        for (let i = 0; i < 100 && after?.status === 'running'; i++) {
+          await new Promise((r) => setTimeout(r, 20))
+          after = await second.gw.runStore.getRun(runId)
+        }
+        // The bug delivered the edit value to the beforeRun approval gate, failing
+        // the run with HitlDeniedError. The fix re-parks at beforeRun instead.
+        expect(after?.status).not.toBe('failed')
+        expect(after?.error?.name).not.toBe('HitlDeniedError')
+        if (after?.status === 'waiting') {
+          expect(after.waiting?.hitl?.phase).toBe('beforeRun')
+        }
+      } finally {
+        await second.gw.stop()
+      }
+    },
+  )
 })
 
 describe('HITL gate /v1/hitl resolve API + audit', () => {
