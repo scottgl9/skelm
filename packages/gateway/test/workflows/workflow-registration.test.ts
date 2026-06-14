@@ -136,6 +136,31 @@ describe('/v1/workflows/*', () => {
     }
   })
 
+  it('links a node_modules into the inline-JSON workflow dir so `skelm` resolves', async () => {
+    // The generated module imports `skelm`; without a node_modules link the
+    // managed load fails with "Cannot find package 'skelm'" (the route's
+    // loadWorkflow is mocked here, so assert the link directly).
+    const { gw, base } = await bootGateway()
+    try {
+      const res = await fetch(`${base}/v1/workflows/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: 'inline-link',
+          steps: [{ kind: 'code', id: 'hello', run: 'async () => ({ ok: true })' }],
+        }),
+      })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { workflow: { sourcePath: string } }
+      const linkPath = join(dirname(body.workflow.sourcePath), 'node_modules')
+      const stat = await fs.lstat(linkPath)
+      expect(stat.isSymbolicLink()).toBe(true)
+      expect((await fs.stat(await fs.realpath(linkPath))).isDirectory()).toBe(true)
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('rejects paths outside projectRoot (default-deny)', async () => {
     const outside = await mkdtemp(join(tmpdir(), 'skelm-outside-'))
     const wfPath = join(outside, 'x.ts')
