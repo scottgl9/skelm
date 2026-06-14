@@ -20,9 +20,17 @@ import type {
   SmtpTransportFactory,
 } from './transport.js'
 
+// Reject CR/LF in any value that becomes an email header (subject, header keys
+// and values, address fields). This package is transport-agnostic — it cannot
+// assume the injected transport sanitizes — so it fails closed at shaping time
+// to prevent SMTP header injection (smuggling Bcc/extra headers via "\r\n").
+const noHeaderCrlf = (s: string): boolean => !/[\r\n]/.test(s)
+const CRLF_MSG = 'must not contain CR or LF (header injection)'
+const headerSafeString = z.string().refine(noHeaderCrlf, { message: CRLF_MSG })
+
 const addressSchema = z.object({
-  address: z.string().min(1),
-  name: z.string().optional(),
+  address: headerSafeString.min(1),
+  name: headerSafeString.optional(),
 })
 
 const attachmentSchema = z.object({
@@ -34,19 +42,23 @@ const attachmentSchema = z.object({
 /** Validated input to {@link sendEmail}. Addresses accept a string or object. */
 export const sendEmailInputSchema = z
   .object({
-    from: z.union([z.string().min(1), addressSchema]),
-    to: z.union([z.string().min(1), addressSchema, z.array(z.union([z.string(), addressSchema]))]),
+    from: z.union([headerSafeString.min(1), addressSchema]),
+    to: z.union([
+      headerSafeString.min(1),
+      addressSchema,
+      z.array(z.union([headerSafeString, addressSchema])),
+    ]),
     cc: z
-      .union([z.string(), addressSchema, z.array(z.union([z.string(), addressSchema]))])
+      .union([headerSafeString, addressSchema, z.array(z.union([headerSafeString, addressSchema]))])
       .optional(),
     bcc: z
-      .union([z.string(), addressSchema, z.array(z.union([z.string(), addressSchema]))])
+      .union([headerSafeString, addressSchema, z.array(z.union([headerSafeString, addressSchema]))])
       .optional(),
-    subject: z.string(),
+    subject: headerSafeString,
     text: z.string().optional(),
     html: z.string().optional(),
     attachments: z.array(attachmentSchema).optional(),
-    headers: z.record(z.string(), z.string()).optional(),
+    headers: z.record(headerSafeString, headerSafeString).optional(),
   })
   .refine((v) => v.text !== undefined || v.html !== undefined, {
     message: 'email must have a text or html body',
