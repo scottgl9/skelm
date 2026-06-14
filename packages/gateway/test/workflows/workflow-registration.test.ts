@@ -272,6 +272,32 @@ describe('/v1/workflows/*', () => {
     }
   })
 
+  it('symlinks a fallback node_modules when the source tree has none', async () => {
+    // A workflow run from a directory outside any project (no node_modules up the
+    // tree) must still resolve framework imports (`skelm`/`@skelm/*`) from the
+    // materialized copy. Without the runtime fallback the managed load fails with
+    // "Cannot find package 'skelm'".
+    const wfPath = join(projectRoot, 'standalone.workflow.ts')
+    await fs.writeFile(wfPath, "import 'skelm'\nexport default {}")
+    const { gw, base } = await bootGateway()
+    try {
+      const res = await fetch(`${base}/v1/workflows/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'standalone', source: { type: 'path', path: wfPath } }),
+      })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { workflow: { sourcePath: string } }
+      const linkPath = join(dirname(body.workflow.sourcePath), 'node_modules')
+      const stat = await fs.lstat(linkPath)
+      expect(stat.isSymbolicLink()).toBe(true)
+      const target = await fs.realpath(linkPath)
+      expect((await fs.stat(target)).isDirectory()).toBe(true)
+    } finally {
+      await gw.stop()
+    }
+  })
+
   it('materializes an intra-tree symlink (CLAUDE.md -> AGENTS.md) on register', async () => {
     await fs.mkdir(join(projectRoot, 'workflows'), { recursive: true })
     const wfPath = join(projectRoot, 'workflows/a.workflow.ts')
